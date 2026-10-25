@@ -1,0 +1,699 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Primary user profile document containing high-level identity data.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "The unique user ID matching Firebase Authentication UID."
+        },
+        "email": {
+          "type": "string",
+          "description": "Primary email address of the user."
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Display name or name of the user."
+        },
+        "photoURL": {
+          "type": "string",
+          "description": "URL to the user's avatar image."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Firebase server timestamp representing creation time."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Firebase server timestamp representing last update time."
+        }
+      },
+      "required": ["uid", "email", "createdAt", "updatedAt"]
+    },
+    "Channel": {
+      "title": "Channel",
+      "description": "Sub-collection document holding OAuth access tokens and metadata for linked social networks.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier of the channel (e.g. linkedin, instagram)."
+        },
+        "platform": {
+          "type": "string",
+          "enum": ["facebook", "instagram", "linkedin", "tiktok", "x", "youtube"],
+          "description": "The target social network platform."
+        },
+        "connected": {
+          "type": "boolean",
+          "description": "Indicates whether the connection is active."
+        },
+        "handle": {
+          "type": "string",
+          "description": "The public handle or username of the account (e.g., @flow_forge)."
+        },
+        "accessToken": {
+          "type": "string",
+          "description": "OAuth 2.0 Access Token used to authenticate publisher requests."
+        },
+        "refreshToken": {
+          "type": "string",
+          "description": "OAuth 2.0 Refresh Token used to request new Access Tokens."
+        },
+        "tokenExpiry": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp indicating when the accessToken expires."
+        },
+        "profilePictureUrl": {
+          "type": "string",
+          "description": "Account avatar or branding photo from the provider API."
+        },
+        "scope": {
+          "type": "array",
+          "description": "List of authorized OAuth scopes granted by the user."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Firebase server timestamp representing last sync time."
+        }
+      },
+      "required": ["id", "platform", "connected", "accessToken", "updatedAt"]
+    },
+    "Post": {
+      "title": "Post",
+      "description": "Root-level or relational document containing scheduled social media posts.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique auto-generated document ID."
+        },
+        "userId": {
+          "type": "string",
+          "description": "The UID of the user who owns/created the post."
+        },
+        "content": {
+          "type": "string",
+          "description": "Main text content or caption of the social post."
+        },
+        "caption": {
+          "type": "string",
+          "description": "Main text content or caption of the social post."
+        },
+        "mediaUrls": {
+          "type": "array",
+          "description": "Array of strings or objects containing multi-photo or video assets."
+        },
+        "scheduled_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Firebase timestamp specifying when the post should publish."
+        },
+        "scheduledAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO timestamp specifying when the post should publish."
+        },
+        "platforms": {
+          "type": "array",
+          "description": "Array of target channel/platform IDs (e.g., ['x', 'linkedin', 'bluesky', 'mastodon'])."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "published", "failed", "processing", "draft", "scheduled", "partial_success"],
+          "description": "Current publication lifecycle status."
+        },
+        "failure_reason": {
+          "type": "string",
+          "description": "Publish failure logs or error messages from API response."
+        },
+        "error": {
+          "type": "string",
+          "description": "Publish failure logs or error messages from API response."
+        },
+        "actual_publish_time": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp indicating when the post was published."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last modified timestamp."
+        }
+      },
+      "required": ["userId", "caption", "status", "createdAt", "updatedAt"]
+    },
+    "SocialAccount": {
+      "title": "SocialAccount",
+      "description": "Schema storing connected external social media accounts with encrypted tokens.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier of the account document."
+        },
+        "userId": {
+          "type": "string",
+          "description": "The UID of the user who owns this connected social account."
+        },
+        "platform": {
+          "type": "string",
+          "enum": ["x", "twitter", "linkedin", "bluesky", "mastodon", "facebook", "instagram"],
+          "description": "Target social media platform."
+        },
+        "handle": {
+          "type": "string",
+          "description": "Account handle or username (e.g. @sarah_jenkins)."
+        },
+        "encryptedToken": {
+          "type": "string",
+          "description": "AES-256-GCM encrypted access token or secret."
+        },
+        "iv": {
+          "type": "string",
+          "description": "AES-256-GCM initialization vector in hexadecimal."
+        },
+        "authTag": {
+          "type": "string",
+          "description": "AES-256-GCM authentication tag in hexadecimal."
+        },
+        "refreshToken": {
+          "type": "string",
+          "description": "Optional encrypted OAuth refresh token."
+        },
+        "instanceUrl": {
+          "type": "string",
+          "description": "Optional server instance domain (e.g. for Mastodon)."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last synchronization timestamp."
+        }
+      },
+      "required": ["id", "userId", "platform", "handle", "encryptedToken", "iv", "authTag", "updatedAt"]
+    },
+    "Draft": {
+      "title": "Draft",
+      "description": "User social post drafts that are saved to continue editing later.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique auto-generated document ID."
+        },
+        "userId": {
+          "type": "string",
+          "description": "The UID of the user who owns/created the draft."
+        },
+        "caption": {
+          "type": "string",
+          "description": "Main text content or caption of the social post draft."
+        },
+        "mediaUrl": {
+          "type": "string",
+          "description": "URL of the optional image attachment."
+        },
+        "mediaName": {
+          "type": "string",
+          "description": "Filename of the optional image attachment."
+        },
+        "platforms": {
+          "type": "array",
+          "description": "Array of target platforms selected for the draft."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Draft creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Draft last modified timestamp."
+        }
+      },
+      "required": ["userId", "caption", "createdAt", "updatedAt"]
+    },
+    "LinkedInScheduledPost": {
+      "title": "LinkedInScheduledPost",
+      "description": "Enterprise-grade database schema representing a scheduled or dispatched LinkedIn social post.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique auto-generated Firestore document ID."
+        },
+        "user_id": {
+          "type": "string",
+          "description": "The Firebase Authentication UID of the user who owns or scheduled this post."
+        },
+        "linkedin_member_urn": {
+          "type": "string",
+          "description": "The unique URN for the target LinkedIn member account (e.g., urn:li:person:abcdefgh)."
+        },
+        "encrypted_access_token": {
+          "type": "string",
+          "description": "AES-256-GCM encrypted LinkedIn OAuth access token. Never stored in plain text."
+        },
+        "post_content": {
+          "type": "string",
+          "description": "The body, text commentary, or markdown content of the LinkedIn post."
+        },
+        "scheduled_publish_time": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Firebase server timestamp or UTC timestamp specifying when the post should be published."
+        },
+        "actual_publish_time": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Firebase server timestamp indicating when the post was successfully shared on LinkedIn."
+        },
+        "linkedin_post_urn": {
+          "type": "string",
+          "description": "The unique post or Share URN returned by the LinkedIn UGC/Share API after creation (e.g., urn:li:share:123456789)."
+        },
+        "retry_count": {
+          "type": "integer",
+          "description": "Number of failed delivery attempts. Useful for exponential backoff algorithms."
+        },
+        "failure_reason": {
+          "type": "string",
+          "description": "The detail/text block describing the API or network failure reason if the post state is FAILED."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["DRAFT", "SCHEDULED", "PROCESSING", "PUBLISHED", "FAILED"],
+          "description": "Current lifecycle status of the LinkedIn post publication."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Document creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Document last updated timestamp."
+        }
+      },
+      "required": ["user_id", "linkedin_member_urn", "encrypted_access_token", "post_content", "scheduled_publish_time", "status", "createdAt", "updatedAt"]
+    },
+    "LinkedInAccount": {
+      "title": "LinkedInAccount",
+      "description": "Schema to manage LinkedIn OAuth tokens and basic profile info.",
+      "type": "object",
+      "properties": {
+        "user_id": {
+          "type": "string",
+          "description": "The UID of the user who owns this connected LinkedIn account."
+        },
+        "provider_account_id": {
+          "type": "string",
+          "description": "The unique URN for the LinkedIn member (e.g., urn:li:person:abcdefgh)."
+        },
+        "access_token": {
+          "type": "string",
+          "description": "Plaintext or encrypted LinkedIn OAuth access token."
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp indicating when the access token expires."
+        },
+        "refresh_token": {
+          "type": "string",
+          "description": "The LinkedIn OAuth refresh token used to rotatively renew access tokens."
+        },
+        "refresh_token_expires_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp indicating when the refresh token expires."
+        },
+        "name": {
+          "type": "string",
+          "description": "Basic profile display name of the LinkedIn user."
+        },
+        "avatar_url": {
+          "type": "string",
+          "description": "Basic profile avatar URL of the LinkedIn user."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Document creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Document last updated timestamp."
+        }
+      },
+      "required": ["user_id", "provider_account_id", "access_token", "expires_at", "createdAt", "updatedAt"]
+    },
+    "ScheduledPost": {
+      "title": "ScheduledPost",
+      "description": "Schema to manage scheduled posts for LinkedIn.",
+      "type": "object",
+      "properties": {
+        "user_id": {
+          "type": "string",
+          "description": "The UID of the user who scheduled the post."
+        },
+        "provider_account_id": {
+          "type": "string",
+          "description": "The unique URN of the LinkedIn account used for publishing (e.g. urn:li:person:abc)."
+        },
+        "commentary": {
+          "type": "string",
+          "description": "Text commentary/content of the LinkedIn post."
+        },
+        "media_urls": {
+          "type": "array",
+          "description": "Array of media URLs uploaded and attached to the post."
+        },
+        "scheduled_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "The timestamp indicating when the post is scheduled to publish."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["PENDING", "PUBLISHED", "FAILED"],
+          "description": "Lifecycle status of the scheduled post."
+        },
+        "failure_reason": {
+          "type": "string",
+          "description": "Text content detailing the cause of a delivery failure."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Document creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Document last updated timestamp."
+        }
+      },
+      "required": ["user_id", "provider_account_id", "commentary", "scheduled_at", "status", "createdAt", "updatedAt"]
+    },
+    "ImapSyncCheckpoint": {
+      "title": "ImapSyncCheckpoint",
+      "description": "Maintains persistent, thread-safe high-water mark sequence numbers (highestModseq) for stateful IMAP synchronization.",
+      "type": "object",
+      "properties": {
+        "mailboxName": {
+          "type": "string",
+          "description": "Name of the synchronized folder, e.g. INBOX"
+        },
+        "highestModseq": {
+          "type": "string",
+          "description": "The highest modseq string parsed from IMAP CONDSTORE."
+        },
+        "lastSyncTime": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO timestamp indicating when the synchronization occurred."
+        },
+        "syncType": {
+          "type": "string",
+          "description": "Type of synchronization performed, e.g. FULL or INCREMENTAL_CONDSTORE"
+        },
+        "syncedMessagesCount": {
+          "type": "integer",
+          "description": "Total number of email documents synced in this session."
+        },
+        "changesFetchedCount": {
+          "type": "integer",
+          "description": "Total number of flag or state delta modifications retrieved."
+        }
+      },
+      "required": ["mailboxName", "highestModseq", "lastSyncTime"]
+    },
+    "EmailThread": {
+      "title": "EmailThread",
+      "description": "Enterprise conversation thread tree generated and updated using the Jamie Zawinski (JWZ) algorithm.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "The unique thread ID."
+        },
+        "messageId": {
+          "type": "string",
+          "description": "Primary Message-ID header identifying the head node of this branch."
+        },
+        "subject": {
+          "type": "string",
+          "description": "The conversation subject title, normalized."
+        },
+        "date": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp indicating the temporal start of the conversation thread."
+        },
+        "isPlaceholder": {
+          "type": "boolean",
+          "description": "Indicates if this thread represents a ghost or placeholder parent in an incomplete conversation."
+        },
+        "emailDetails": {
+          "type": "object",
+          "description": "Key-value partial payload of the head email metadata."
+        },
+        "children": {
+          "type": "array",
+          "description": "Recursive collection of child JWZ thread trees."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "The exact date-time when the thread was last synchronized."
+        }
+      },
+      "required": ["id", "messageId", "subject", "isPlaceholder", "updatedAt"]
+    },
+    "CRMDeal": {
+      "title": "CRMDeal",
+      "description": "Sales pipeline deal tracking value, stage, probability, and ownership.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique deal ID" },
+        "name": { "type": "string", "description": "Deal or opportunity title" },
+        "client": { "type": "string", "description": "Client company or account name" },
+        "value": { "type": "number", "description": "Monetary value of the deal in USD" },
+        "stage": {
+          "type": "string",
+          "enum": ["discovery", "qualified", "proposal", "negotiation", "closing", "won", "lost"],
+          "description": "Sales stage in the pipeline"
+        },
+        "probability": { "type": "number", "description": "Win probability percentage 0-100" },
+        "expectedClose": { "type": "string", "description": "Target closing timeline string or date" },
+        "momentum": { "type": "string", "enum": ["hot", "steady", "stagnant"], "description": "Deal velocity indicator" },
+        "channelOrigin": { "type": "string", "description": "Originating channel e.g. whatsapp, web, phone, email" },
+        "owner": { "type": "string", "description": "Responsible sales executive or closer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "client", "value", "stage", "createdAt", "updatedAt"]
+    },
+    "CRMSupportTicket": {
+      "title": "CRMSupportTicket",
+      "description": "Customer support and SLA tracking ticket across omnichannel communications.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique ticket ID" },
+        "customerName": { "type": "string", "description": "Contact or customer name" },
+        "company": { "type": "string", "description": "Customer company" },
+        "channel": { "type": "string", "enum": ["whatsapp", "email", "web", "phone", "sms"], "description": "Channel of origin" },
+        "subject": { "type": "string", "description": "Ticket issue summary" },
+        "priority": { "type": "string", "enum": ["critical", "high", "normal"], "description": "SLA priority level" },
+        "slaMinutesRemaining": { "type": "number", "description": "Minutes before SLA breach" },
+        "status": { "type": "string", "enum": ["open", "in_progress", "resolved"], "description": "Ticket lifecycle status" },
+        "sentiment": { "type": "string", "enum": ["urgent", "neutral", "positive"], "description": "Detected customer sentiment" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "customerName", "channel", "subject", "priority", "status", "createdAt", "updatedAt"]
+    },
+    "CRMActivity": {
+      "title": "CRMActivity",
+      "description": "Audit trail log tracking actions across the omnichannel CRM.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique activity ID" },
+        "type": { "type": "string", "enum": ["deal_created", "stage_advanced", "ticket_resolved", "message_sent", "call_logged"], "description": "Action type" },
+        "title": { "type": "string", "description": "Short action headline" },
+        "description": { "type": "string", "description": "Detailed explanation of the action" },
+        "actor": { "type": "string", "description": "Name or ID of user who executed action" },
+        "targetId": { "type": "string", "description": "Referenced entity ID" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "type", "title", "timestamp"]
+    },
+    "CRMLead": {
+      "title": "CRMLead",
+      "description": "Full lifecycle omnichannel CRM Lead with qualification, source tracking, and scoring.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique lead ID" },
+        "name": { "type": "string", "description": "Lead full name" },
+        "email": { "type": "string", "description": "Lead contact email" },
+        "phone": { "type": "string", "description": "Lead phone number" },
+        "company": { "type": "string", "description": "Lead company / organization" },
+        "title": { "type": "string", "description": "Job title or role" },
+        "source": { "type": "string", "description": "Channel of origin e.g. whatsapp, email, voice, linkedin, website" },
+        "status": { "type": "string", "enum": ["new", "contacted", "qualifying", "qualified", "unqualified", "converted"], "description": "Lead lifecycle stage" },
+        "owner": { "type": "string", "description": "Assigned sales rep name" },
+        "ownerId": { "type": "string", "description": "Assigned sales rep user ID" },
+        "score": { "type": "number", "description": "Lead quality score 0-100" },
+        "notes": { "type": "string", "description": "Lead contextual notes and summaries" },
+        "channel": { "type": "string", "description": "Preferred communication channel" },
+        "isConverted": { "type": "boolean", "description": "Flag indicating if converted" },
+        "convertedAt": { "type": "string", "format": "date-time" },
+        "convertedContactId": { "type": "string" },
+        "convertedCompanyId": { "type": "string" },
+        "convertedDealId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "email", "status", "source", "createdAt", "updatedAt"]
+    },
+    "CRMCompany": {
+      "title": "CRMCompany",
+      "description": "Company / Account organization record created during lead conversion or direct ingestion.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "domain": { "type": "string" },
+        "industry": { "type": "string" },
+        "tier": { "type": "string" },
+        "primaryContactId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "createdAt", "updatedAt"]
+    },
+    "CRMTask": {
+      "title": "CRMTask",
+      "description": "Follow-up task associated with a lead, contact, or deal.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "leadId": { "type": "string" },
+        "title": { "type": "string" },
+        "dueDate": { "type": "string" },
+        "completed": { "type": "boolean" },
+        "assignedTo": { "type": "string" },
+        "priority": { "type": "string", "enum": ["urgent", "high", "medium", "low"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "title", "completed", "createdAt"]
+    },
+    "CRMProposal": {
+      "title": "CRMProposal",
+      "description": "Customer proposal with auto-saved drafts, scope items, approval workflow, and signatures.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique proposal ID" },
+        "contactId": { "type": "string", "description": "Associated contact ID" },
+        "clientName": { "type": "string", "description": "Name of recipient" },
+        "title": { "type": "string", "description": "Title of the proposal document" },
+        "status": {
+          "type": "string",
+          "enum": ["draft", "under_review", "sent", "accepted"],
+          "description": "Lifecycle state of the proposal"
+        },
+        "industry": { "type": "string", "description": "Client industry" },
+        "bottlenecks": { "type": "string", "description": "Discovery bottlenecks" },
+        "scopeRequirements": { "type": "string", "description": "Technical scope" },
+        "pricingTier": { "type": "string", "description": "Standard, Premium Enterprise, Emergency Fast-Track" },
+        "deliverySpeed": { "type": "string", "description": "Normal, Accelerated, Express" },
+        "total": { "type": "number", "description": "Total value of proposal items" },
+        "signatureName": { "type": "string", "description": "Name of authorized signer" },
+        "signedAt": { "type": "string", "format": "date-time", "description": "Signing timestamp" },
+        "autoSavedAt": { "type": "string", "format": "date-time", "description": "Local/cloud autosave timestamp" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "title", "status", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "Primary user directory."
+    },
+    "/users/{userId}/channels/{channelId}": {
+      "schema": { "$ref": "#/entities/Channel" },
+      "description": "Nested sub-collection containing authorization tokens for connected accounts."
+    },
+    "/posts/{postId}": {
+      "schema": { "$ref": "#/entities/Post" },
+      "description": "Root collection holding cross-platform posts."
+    },
+    "/drafts/{draftId}": {
+      "schema": { "$ref": "#/entities/Draft" },
+      "description": "Root collection holding user-authored drafts."
+    },
+    "/linkedin_scheduled_posts/{postId}": {
+      "schema": { "$ref": "#/entities/LinkedInScheduledPost" },
+      "description": "Root collection holding LinkedIn specific scheduled posts."
+    },
+    "/linkedin_accounts/{accountId}": {
+      "schema": { "$ref": "#/entities/LinkedInAccount" },
+      "description": "Root collection managing LinkedIn connected account OAuth tokens and profile details."
+    },
+    "/scheduled_posts/{postId}": {
+      "schema": { "$ref": "#/entities/ScheduledPost" },
+      "description": "Root collection holding generic scheduled social posts."
+    },
+    "/social_accounts/{accountId}": {
+      "schema": { "$ref": "#/entities/SocialAccount" },
+      "description": "Root collection managing multi-platform connected accounts with encrypted credentials."
+    },
+    "/crm_proposals/{proposalId}": {
+      "schema": { "$ref": "#/entities/CRMProposal" },
+      "description": "Root collection holding customer proposals, auto-saved drafts, and signature data."
+    },
+    "/crm_deals/{dealId}": {
+      "schema": { "$ref": "#/entities/CRMDeal" },
+      "description": "Root collection holding sales pipeline opportunities."
+    },
+    "/crm_tickets/{ticketId}": {
+      "schema": { "$ref": "#/entities/CRMSupportTicket" },
+      "description": "Root collection holding omnichannel support tickets and SLA queues."
+    },
+    "/crm_activities/{activityId}": {
+      "schema": { "$ref": "#/entities/CRMActivity" },
+      "description": "Root collection holding historical audit logs and recent activities."
+    },
+    "/crm_leads/{leadId}": {
+      "schema": { "$ref": "#/entities/CRMLead" },
+      "description": "Root collection holding omnichannel sales leads throughout their qualification lifecycle."
+    },
+    "/crm_companies/{companyId}": {
+      "schema": { "$ref": "#/entities/CRMCompany" },
+      "description": "Root collection holding business organizations and accounts."
+    },
+    "/crm_tasks/{taskId}": {
+      "schema": { "$ref": "#/entities/CRMTask" },
+      "description": "Root collection holding lead and deal follow-up tasks."
+    }
+  }
+}

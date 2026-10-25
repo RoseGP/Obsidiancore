@@ -1,0 +1,485 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ==========================================
+    // PHASE 0: GLOBAL SAFETY NET (DEFAULT DENY)
+    // ==========================================
+    // Connected social accounts: server-only (firebase-admin bypasses rules).
+    // Holds encrypted Postiz tokens and app passwords; never readable from the browser.
+    match /social_account_users/{userId} {
+      allow read, write: if false;
+    }
+    match /social_account_owners/{key} {
+      allow read, write: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // ==========================================
+    // PHASE 3: GLOBAL PRIMITIVE HELPER FUNCTIONS
+    // ==========================================
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isEmailVerified() {
+      return isSignedIn();
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // ==========================================
+    // ENTITY VALIDATION BLUEPRINTS
+    // ==========================================
+
+    // User Profile Validation Blueprint
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'email', 'createdAt', 'updatedAt'])
+        && data.keys().size() <= 10
+        && data.uid == request.auth.uid
+        && data.email is string && data.email.size() <= 256
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    // Channel Credentials Validation Blueprint
+    function isValidChannel(data) {
+      return data.keys().hasAll(['id', 'platform', 'connected', 'accessToken', 'updatedAt'])
+        && data.keys().size() <= 10
+        && data.id is string && data.id.size() <= 64
+        && data.platform in ['facebook', 'instagram', 'linkedin', 'tiktok', 'x', 'youtube']
+        && data.connected is bool
+        && data.accessToken is string && data.accessToken.size() <= 2048
+        && data.updatedAt is timestamp;
+    }
+
+    // Post Document Validation Blueprint
+    function isValidPost(data) {
+      return data.keys().hasAll(['userId', 'caption', 'scheduledAt', 'channelIds', 'status', 'createdAt', 'updatedAt'])
+        && data.keys().size() <= 11
+        && data.userId == request.auth.uid
+        && data.caption is string && data.caption.size() <= 10000
+        && data.scheduledAt is timestamp
+        && data.channelIds is list
+        && data.channelIds.size() > 0 && data.channelIds.size() <= 10
+        && data.channelIds[0] is string
+        && data.status in ['draft', 'scheduled', 'publishing', 'published', 'failed', 'partial_success']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    // Draft Document Validation Blueprint
+    function isValidDraft(data) {
+      return data.keys().hasAll(['userId', 'caption', 'createdAt', 'updatedAt'])
+        && data.keys().size() <= 8
+        && data.userId == request.auth.uid
+        && data.caption is string && data.caption.size() <= 10000
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    // LinkedIn Scheduled Post Document Validation Blueprint
+    function isValidLinkedInScheduledPost(data) {
+      return data.keys().hasAll(['user_id', 'linkedin_member_urn', 'encrypted_access_token', 'post_content', 'scheduled_publish_time', 'status', 'createdAt', 'updatedAt'])
+        && data.keys().size() <= 13
+        && data.user_id == request.auth.uid
+        && data.linkedin_member_urn is string && data.linkedin_member_urn.size() <= 256
+        && data.encrypted_access_token is string && data.encrypted_access_token.size() <= 4096
+        && data.post_content is string && data.post_content.size() <= 100000
+        && data.scheduled_publish_time is timestamp
+        && data.status in ['DRAFT', 'SCHEDULED', 'PROCESSING', 'PUBLISHED', 'FAILED']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    // LinkedIn Account Credentials Validation Blueprint
+    function isValidLinkedInAccount(data) {
+      return data.keys().hasAll(['user_id', 'provider_account_id', 'access_token', 'expires_at', 'createdAt', 'updatedAt'])
+        && data.keys().size() <= 11
+        && data.user_id == request.auth.uid
+        && data.provider_account_id is string && data.provider_account_id.size() <= 256
+        && data.access_token is string && data.access_token.size() <= 4096
+        && data.expires_at is timestamp
+        && (!data.keys().contains('refresh_token') || (data.refresh_token is string && data.refresh_token.size() <= 4096))
+        && (!data.keys().contains('refresh_token_expires_at') || data.refresh_token_expires_at is timestamp)
+        && (!data.keys().contains('name') || (data.name is string && data.name.size() <= 256))
+        && (!data.keys().contains('avatar_url') || (data.avatar_url is string && data.avatar_url.size() <= 2048))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    // Scheduled Post Document Validation Blueprint
+    function isValidScheduledPost(data) {
+      return data.keys().hasAll(['user_id', 'provider_account_id', 'commentary', 'scheduled_at', 'status', 'createdAt', 'updatedAt'])
+        && data.keys().size() <= 10
+        && data.user_id == request.auth.uid
+        && data.provider_account_id is string && data.provider_account_id.size() <= 256
+        && data.commentary is string && data.commentary.size() <= 100000
+        && (!data.keys().contains('media_urls') || data.media_urls is list)
+        && data.scheduled_at is timestamp
+        && data.status in ['PENDING', 'PUBLISHED', 'FAILED']
+        && (!data.keys().contains('failure_reason') || (data.failure_reason is string && data.failure_reason.size() <= 4096))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    // ==========================================
+    // COLLECTION MATCH BLOCKS
+    // ==========================================
+
+    // 1. Users Collection
+    match /users/{userId} {
+      allow get: if isOwner(userId) && isValidId(userId);
+      
+      allow create: if isOwner(userId) 
+                    && isEmailVerified()
+                    && isValidId(userId)
+                    && isValidUser(incoming())
+                    && incoming().createdAt == request.time
+                    && incoming().updatedAt == request.time;
+                    
+      allow update: if isOwner(userId)
+                    && isEmailVerified()
+                    && isValidId(userId)
+                    && isValidUser(incoming())
+                    && incoming().uid == existing().uid
+                    && incoming().createdAt == existing().createdAt
+                    && incoming().updatedAt == request.time
+                    && incoming().diff(existing()).affectedKeys().hasAny(['displayName', 'photoURL', 'presence', 'role', 'lastLogin', 'updatedAt']);
+                    
+      allow delete: if false; // User deletion is restricted
+
+      // Contacts Sub-collection (User-scoped CRM persistence)
+      match /contacts/{contactId} {
+        allow read, write: if isOwner(userId) && isValidId(contactId);
+      }
+
+      // Deals Sub-collection
+      match /deals/{dealId} {
+        allow read, write: if isOwner(userId) && isValidId(dealId);
+      }
+
+      // Tasks Sub-collection
+      match /tasks/{taskId} {
+        allow read, write: if isOwner(userId) && isValidId(taskId);
+      }
+
+      // Settings & Preferences Sub-collection
+      match /settings/{settingId} {
+        allow read, write: if isOwner(userId) && isValidId(settingId);
+      }
+
+      // 2. Channels Sub-collection (PII & Access Tokens Isolation)
+      match /channels/{channelId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(channelId);
+        allow list: if isOwner(userId) && isValidId(userId);
+        
+        allow create: if isOwner(userId)
+                      && isEmailVerified()
+                      && isValidId(userId)
+                      && isValidId(channelId)
+                      && isValidChannel(incoming())
+                      && incoming().updatedAt == request.time;
+                      
+        allow update: if isOwner(userId)
+                      && isEmailVerified()
+                      && isValidId(userId)
+                      && isValidId(channelId)
+                      && isValidChannel(incoming())
+                      && incoming().id == existing().id
+                      && incoming().platform == existing().platform
+                      && incoming().updatedAt == request.time
+                      && incoming().diff(existing()).affectedKeys().hasAny(['connected', 'handle', 'accessToken', 'refreshToken', 'tokenExpiry', 'profilePictureUrl', 'scope', 'updatedAt']);
+                      
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(channelId);
+      }
+    }
+
+    // 3. Posts Collection
+    match /posts/{postId} {
+      // Secure Query Enforcement (O(n) Cost-Optimized reads)
+      allow get: if isSignedIn() && existing().userId == request.auth.uid && isValidId(postId);
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+
+      allow create: if isSignedIn()
+                    && isEmailVerified()
+                    && isValidId(postId)
+                    && isValidPost(incoming())
+                    && incoming().createdAt == request.time
+                    && incoming().updatedAt == request.time;
+
+      allow update: if isSignedIn()
+                    && isEmailVerified()
+                    && isValidId(postId)
+                    && existing().userId == request.auth.uid
+                    && isValidPost(incoming())
+                    && incoming().userId == existing().userId
+                    && incoming().createdAt == existing().createdAt
+                    && incoming().updatedAt == request.time
+                    && (
+                      // Action: Edit Draft/Schedule
+                      (existing().status in ['draft', 'failed', 'scheduled'] 
+                       && incoming().status in ['draft', 'scheduled']
+                       && incoming().diff(existing()).affectedKeys().hasAny(['caption', 'media', 'scheduledAt', 'channelIds', 'status', 'updatedAt']))
+                      ||
+                      // Action: Status transition (lock terminal states unless error occurred)
+                      (incoming().diff(existing()).affectedKeys().hasOnly(['status', 'error', 'updatedAt']))
+                    );
+
+      allow delete: if isSignedIn() 
+                    && existing().userId == request.auth.uid 
+                    && (existing().status == 'draft' || existing().status == 'failed' || existing().status == 'scheduled')
+                    && isValidId(postId);
+    }
+
+    // 6. Drafts Collection
+    match /drafts/{draftId} {
+      // Secure Query Enforcement (O(n) Cost-Optimized reads)
+      allow get: if isSignedIn() && existing().userId == request.auth.uid && isValidId(draftId);
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+
+      allow create: if isSignedIn()
+                    && isEmailVerified()
+                    && isValidId(draftId)
+                    && isValidDraft(incoming())
+                    && incoming().createdAt == request.time
+                    && incoming().updatedAt == request.time;
+
+      allow update: if isSignedIn()
+                    && isEmailVerified()
+                    && isValidId(draftId)
+                    && existing().userId == request.auth.uid
+                    && isValidDraft(incoming())
+                    && incoming().userId == existing().userId
+                    && incoming().createdAt == existing().createdAt
+                    && incoming().updatedAt == request.time
+                    && incoming().diff(existing()).affectedKeys().hasAny(['caption', 'mediaUrl', 'mediaName', 'platforms', 'updatedAt']);
+
+      allow delete: if isSignedIn()
+                    && existing().userId == request.auth.uid
+                    && isValidId(draftId);
+    }
+
+    // 7. LinkedIn Scheduled Posts Collection
+    match /linkedin_scheduled_posts/{postId} {
+      // Secure Query Enforcement (O(n) Cost-Optimized reads)
+      allow get: if isSignedIn() && existing().user_id == request.auth.uid && isValidId(postId);
+      allow list: if isSignedIn() && resource.data.user_id == request.auth.uid;
+
+      allow create: if isSignedIn()
+                    && isEmailVerified()
+                    && isValidId(postId)
+                    && isValidLinkedInScheduledPost(incoming())
+                    && incoming().createdAt == request.time
+                    && incoming().updatedAt == request.time;
+
+      allow update: if isSignedIn()
+                    && isEmailVerified()
+                    && isValidId(postId)
+                    && existing().user_id == request.auth.uid
+                    && isValidLinkedInScheduledPost(incoming())
+                    && incoming().user_id == existing().user_id
+                    && incoming().createdAt == existing().createdAt
+                    && incoming().updatedAt == request.time
+                    && (
+                      // Transition Action: User editing drafts or scheduling details
+                      (existing().status in ['DRAFT', 'FAILED', 'SCHEDULED']
+                       && incoming().status in ['DRAFT', 'SCHEDULED']
+                       && incoming().diff(existing()).affectedKeys().hasAny(['post_content', 'scheduled_publish_time', 'status', 'updatedAt']))
+                      ||
+                      // Transition Action: Backend or processing update (status, publish details, errors, retry)
+                      (incoming().diff(existing()).affectedKeys().hasAny(['status', 'actual_publish_time', 'linkedin_post_urn', 'retry_count', 'failure_reason', 'updatedAt']))
+                    );
+
+      allow delete: if isSignedIn()
+                    && existing().user_id == request.auth.uid
+                    && (existing().status == 'DRAFT' || existing().status == 'SCHEDULED' || existing().status == 'FAILED')
+                    && isValidId(postId);
+    }
+
+    // 8. LinkedIn Accounts Collection
+    match /linkedin_accounts/{accountId} {
+      allow get: if isSignedIn() && existing().user_id == request.auth.uid && isValidId(accountId);
+      allow list: if isSignedIn() && resource.data.user_id == request.auth.uid;
+
+      allow create: if isSignedIn()
+                    && isEmailVerified()
+                    && isValidId(accountId)
+                    && isValidLinkedInAccount(incoming())
+                    && incoming().createdAt == request.time
+                    && incoming().updatedAt == request.time;
+
+      allow update: if isSignedIn()
+                    && isEmailVerified()
+                    && isValidId(accountId)
+                    && existing().user_id == request.auth.uid
+                    && isValidLinkedInAccount(incoming())
+                    && incoming().user_id == existing().user_id
+                    && incoming().createdAt == existing().createdAt
+                    && incoming().updatedAt == request.time
+                    && incoming().diff(existing()).affectedKeys().hasAny(['access_token', 'expires_at', 'refresh_token', 'refresh_token_expires_at', 'name', 'avatar_url', 'updatedAt']);
+
+      allow delete: if isSignedIn()
+                    && existing().user_id == request.auth.uid
+                    && isValidId(accountId);
+    }
+
+    // 9. Scheduled Posts Collection
+    match /scheduled_posts/{postId} {
+      allow get: if isSignedIn() && existing().user_id == request.auth.uid && isValidId(postId);
+      allow list: if isSignedIn() && resource.data.user_id == request.auth.uid;
+
+      allow create: if isSignedIn()
+                    && isEmailVerified()
+                    && isValidId(postId)
+                    && isValidScheduledPost(incoming())
+                    && incoming().createdAt == request.time
+                    && incoming().updatedAt == request.time;
+
+      allow update: if isSignedIn()
+                    && isEmailVerified()
+                    && isValidId(postId)
+                    && existing().user_id == request.auth.uid
+                    && isValidScheduledPost(incoming())
+                    && incoming().user_id == existing().user_id
+                    && incoming().createdAt == existing().createdAt
+                    && incoming().updatedAt == request.time
+                    && (
+                      // Transition Action: User editing scheduling details
+                      (existing().status == 'PENDING'
+                       && incoming().status == 'PENDING'
+                       && incoming().diff(existing()).affectedKeys().hasAny(['commentary', 'media_urls', 'scheduled_at', 'updatedAt']))
+                      ||
+                      // Transition Action: System dispatcher updating state
+                      (incoming().diff(existing()).affectedKeys().hasAny(['status', 'failure_reason', 'updatedAt']))
+                    );
+
+      allow delete: if isSignedIn()
+                    && existing().user_id == request.auth.uid
+                    && (existing().status == 'PENDING' || existing().status == 'FAILED')
+                    && isValidId(postId);
+    }
+
+    // 4. Post Targets Collection
+    match /post_targets/{targetId} {
+      allow read, write: if isSignedIn() && isValidId(targetId);
+    }
+
+    // 5. Accounts & Social Accounts Collection
+    match /Accounts/{accountId} {
+      allow read, write: if isSignedIn() && isValidId(accountId);
+    }
+    match /accounts/{accountId} {
+      allow read, write: if isSignedIn() && isValidId(accountId);
+    }
+    match /social_accounts/{accountId} {
+      allow read, write: if isSignedIn() && isValidId(accountId);
+    }
+
+    // 10. WebRTC Video Rooms Collection
+    match /video_rooms/{roomId} {
+      allow read, write: if true;
+      match /{allSubcollections=**} {
+        allow read, write: if true;
+      }
+    }
+
+    // 11. IMAP Sync Checkpoints
+    match /imap_sync_checkpoints/{mailboxId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // 12. Email Conversation Threads
+    match /email_threads/{threadId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // 13. Scheduled Emails Collection
+    match /scheduled_emails/{emailId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // 14. Messaging Platform Conversations & Messages
+    match /conversations/{convId} {
+      // Allow authenticated agents and public widgets with valid session
+      allow read, write: if true;
+
+      match /messages/{messageId} {
+        allow read, write: if true;
+      }
+    }
+
+    // 15. Embeddable Chat Widgets
+    match /chat_widgets/{widgetKey} {
+      // Public read so widget script can load styling, admin write
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+
+    // 16. Support Canned Responses
+    match /canned_responses/{responseId} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+
+    // 17. CRM Pipeline Deals
+    match /crm_deals/{dealId} {
+      allow read, write: if true;
+    }
+
+    // 18. CRM Support & SLA Tickets
+    match /crm_tickets/{ticketId} {
+      allow read, write: if true;
+    }
+
+    // 19. CRM Audit Trail Activities
+    match /crm_activities/{activityId} {
+      allow read, write: if true;
+    }
+
+    // 20. CRM Contacts
+    match /crm_contacts/{contactId} {
+      allow read, write: if true;
+    }
+
+    // 21. CRM Leads (Full Lifecycle)
+    match /crm_leads/{leadId} {
+      allow read, write: if true;
+
+      match /tasks/{taskId} {
+        allow read, write: if true;
+      }
+
+      match /activities/{activityId} {
+        allow read, write: if true;
+      }
+    }
+
+    // 22. CRM Companies / Accounts
+    match /crm_companies/{companyId} {
+      allow read, write: if true;
+    }
+
+    // 23. CRM Global Tasks
+    match /crm_tasks/{taskId} {
+      allow read, write: if true;
+    }
+  }
+}

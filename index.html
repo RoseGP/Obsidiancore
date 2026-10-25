@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <script>
+      // Apply the saved theme before first paint (no flash). Keep in sync with src/context/ThemeContext.tsx.
+      (function () { try { var p = localStorage.getItem('obsidian-theme') || 'system'; var d = p === 'dark' || (p === 'system' && matchMedia('(prefers-color-scheme: dark)').matches); document.documentElement.dataset.theme = d ? 'dark' : 'light'; } catch (e) { document.documentElement.dataset.theme = 'light'; } })();
+    </script>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OmniChannel Messaging Platform</title>
+    <meta name="description" content="Production-ready messaging platform with real-time direct messaging, unified customer inbox, and embeddable live-chat widget for external websites." />
+    <meta property="og:title" content="OmniChannel Messaging Platform" />
+    <meta property="og:description" content="Production-ready messaging platform with real-time direct messaging, unified customer inbox, and embeddable live-chat widget for external websites." />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

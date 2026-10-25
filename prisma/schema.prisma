@@ -1,0 +1,333 @@
+// This is your Prisma schema file.
+// Learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+/// Designed by a Principal Database Architect for a High-Performance,
+/// Multi-Tenant, Multi-Channel Marketing CRM & Communication Dashboard.
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+/// 1. WORKSPACE: Agency-Level Multi-Tenancy Core
+/// Supports fully isolated environments for distinct brands, accounts, or agency locations.
+model Workspace {
+  id        String   @id @default(uuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Tenant isolated pools
+  users     User[]
+  clients   Client[]
+}
+
+/// 2. USER: System representatives, marketers, and account representatives.
+/// Supports a self-referential organizational reporting structure (hierarchy).
+model User {
+  id           String       @id @default(uuid())
+  email        String       @unique
+  name         String
+  role         String       @default("MARKETEER")
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  // Multi-Tenancy isolating link
+  workspaceId  String?
+  workspace    Workspace?   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  // Self-referential organizational reporting hierarchy
+  reportsToId  String?
+  reportsTo    User?        @relation("UserHierarchy", fields: [reportsToId], references: [id], onDelete: SetNull)
+  subordinates User[]       @relation("UserHierarchy")
+
+  // Many-to-many assignment to client portfolios (Relationship Managers)
+  managedClients Client[]   @relation("ClientRelationshipManagers")
+
+  // Communications authorship lookup
+  messages     Message[]    @relation("MessageAuthor")
+
+  // Content automation creation logs
+  socialPosts  SocialPost[] @relation("PostCreator")
+
+  // Connected social accounts with encrypted credentials
+  socialAccounts SocialAccount[]
+
+  // Real-time Social Multi-Platform Publishing Channels, Posts, and Targets
+  channels     Channel[]    @relation("UserChannels")
+  createdPosts Post[]       @relation("CreatedPosts")
+
+  // Chat sessions history
+  chatSessions ChatSession[] @relation("UserChatSessions")
+
+  // Connected OAuth Accounts (Google Business Profile, etc.) with AES-256 encrypted tokens
+  accounts     Account[]
+
+  @@index([email])
+  @@index([workspaceId])
+}
+
+/// 3. CLIENT: Enterprise contacts, leads, and high-trust relationship cards.
+/// Fully isolated via Workspace and assigned to multiple Relationship Managers.
+model Client {
+  id              String             @id @default(uuid())
+  name            String
+  email           String             @unique
+  phone           String?
+  location        String?            // Location details (Country / City)
+  lifecycleStatus String             @default("LEAD") // Lead lifecycle tracking status
+  avatar          String?
+  company         String?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  // Multi-Tenancy relation
+  workspaceId     String?
+  workspace       Workspace?         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  // M-M Relationship Assignment for multiple system managers/staff assignment
+  relationshipManagers User[]        @relation("ClientRelationshipManagers")
+
+  // Communications History Log
+  messages        Message[]          @relation("ClientCommunication")
+
+  // B-Tree Performance Optimization Indexes
+  @@index([email])
+  @@index([phone])             // Critical optimal index for client inbound phone webhook lookups
+  @@index([company])
+  @@index([workspaceId])
+}
+
+/// Enumeration of integrated digital messaging networks
+enum MessageChannel {
+  EMAIL
+  WHATSAPP
+  GOOGLE_BUSINESS
+  SMS
+}
+
+/// Directional classification of communications logic
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+/// Standardized messaging status transitions
+enum MessageStatus {
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
+/// 4. MESSAGE: Unified Communications Log (Polymorphic communications history card)
+model Message {
+  id          String           @id @default(uuid())
+  channel     MessageChannel
+  direction   MessageDirection @default(OUTBOUND)
+  body        String           @db.Text
+  mediaUrls   String[]         @default([]) // Support for slide attachments, media, documents
+  status      MessageStatus    @default(SENT)
+  createdAt   DateTime         @default(now())
+
+  // Dynamic polymorphic routing foreign keys linking back to client and author user
+  clientId    String
+  client      Client           @relation("ClientCommunication", fields: [clientId], references: [id], onDelete: Cascade)
+
+  userId      String?
+  user        User?            @relation("MessageAuthor", fields: [userId], references: [id], onDelete: SetNull)
+
+  // Optimization indexes for dashboard analytics pipelines
+  @@index([clientId])
+  @@index([userId])
+  @@index([channel])
+  @@index([createdAt])
+}
+
+/// Staging & publishing transitions of queue nodes
+enum SocialPublishStatus {
+  DRAFT
+  SCHEDULED
+  PUBLISHED
+  FAILED
+}
+
+/// Enumeration of social broadcasting networks
+enum TargetPlatform {
+  LINKEDIN
+  INSTAGRAM
+  GOOGLE_BUSINESS
+}
+
+/// 5. SOCIAL POST: Automation Engine & Content Scheduling Staging Queues
+model SocialPost {
+  id               String              @id @default(uuid())
+  status           SocialPublishStatus @default(DRAFT)
+  body             String              @db.Text             // Required caption content
+  mediaAttachments String[]            @default([])         // Content media URLs
+  scheduledAt      DateTime?                                // Chronological trigger point
+  errorLog         String?             @db.Text             // Remote api error logging info
+
+  // Backwards compatibility channels & mapping supports
+  caption          String?             @db.Text
+  mediaUrls        String[]            @default([])
+  platforms        TargetPlatform[]    @default([])
+  channels         TargetPlatform[]    @default([])         // Target channels array as requested
+
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  // Staged platform author identification relationship
+  createdById      String
+  creator          User                @relation("PostCreator", fields: [createdById], references: [id], onDelete: Cascade)
+
+  // Indexes maximizing background scheduler performance and sorting
+  @@index([scheduledAt])
+  @@index([status])
+  @@index([createdById])
+}
+
+/// 6. GOOGLE LOCATION: Cache for Google Business Profile verified location structures
+model GoogleLocation {
+  id              String   @id @default(uuid())
+  locationId      String   @unique
+  businessName    String
+  primaryCategory String?
+  address         String?
+  phone           String?
+  websiteUrl      String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("google_locations")
+}
+
+/// 7. GBP PROFILE DETAILS: Cache complete configurations mapping to Google Business Information API
+model GbpProfileDetails {
+  locationId          String   @id @map("location_id")
+  businessName        String   @map("business_name")
+  primaryPhone        String?  @map("primary_phone")
+  websiteUrl          String?  @map("website_url")
+  businessDescription String?  @map("business_description") @db.Text
+  storefrontAddress   Json?    @map("storefront_address")
+  regularHours        Json?    @map("regular_hours")
+  lastSyncedAt        DateTime @default(now()) @updatedAt @map("last_synced_at")
+
+  @@map("gbp_profile_details")
+}
+
+/// 8. SOCIAL ACCOUNT: Connected social accounts storing encrypted OAuth tokens (AES-256-GCM)
+model SocialAccount {
+  id             String   @id @default(uuid())
+  platform       String   // e.g., 'LINKEDIN', 'FACEBOOK', etc.
+  accountId      String   @map("account_id") // ID of the account on the social platform
+  encryptedToken String   @map("encrypted_token") // Encrypted access token
+  iv             String   // Cipher initialization vector for GCM decryption
+  authTag        String   @map("auth_tag") // Authentication tag for GCM verification
+  userId         String   @map("user_id") // Reference to our application User ID
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@unique([platform, accountId])
+  @@map("social_accounts")
+}
+
+/// 9. CHANNEL: Connected social channels storing raw or encrypted OAuth credentials and handles
+model Channel {
+  id           String       @id @default(uuid())
+  platform     String       // e.g., 'LINKEDIN', 'FACEBOOK', 'TWITTER', etc.
+  handle       String?      // e.g., '@flowforge'
+  accessToken  String       @map("access_token")
+  refreshToken String?      @map("refresh_token")
+  expiresAt    DateTime?    @map("expires_at")
+  userId       String       @map("user_id")
+  user         User         @relation("UserChannels", fields: [userId], references: [id], onDelete: Cascade)
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+
+  postTargets  PostTarget[]
+
+  @@unique([platform, userId])
+  @@map("channels")
+}
+
+/// 10. POST: Multi-platform scheduled broadcast content store
+model Post {
+  id          String       @id @default(uuid())
+  text        String       @db.Text
+  imageUrls   String[]     @default([]) @map("image_urls")
+  scheduledAt DateTime?    @map("scheduled_at")
+  createdById String       @map("created_by_id")
+  creator     User         @relation("CreatedPosts", fields: [createdById], references: [id], onDelete: Cascade)
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+
+  targets     PostTarget[]
+
+  @@map("posts")
+}
+
+/// 11. POST_TARGET: Junction table tracking publishing status per platform per post
+model PostTarget {
+  id          String     @id @default(uuid())
+  postId      String     @map("post_id")
+  post        Post       @relation(fields: [postId], references: [id], onDelete: Cascade)
+  channelId   String     @map("channel_id")
+  channel     Channel    @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  status      String     @default("PENDING") // e.g., "PENDING", "PUBLISHED", "FAILED"
+  errorLog    String?    @map("error_log") @db.Text
+  publishedAt DateTime?  @map("published_at")
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
+
+  @@unique([postId, channelId])
+  @@map("post_targets")
+}
+
+/// 12. CHAT_SESSION: Multi-turn conversational AI sessions with message history
+model ChatSession {
+  id          String   @id @default(uuid())
+  sessionId   String   @unique @map("session_id")
+  userId      String   @map("user_id")
+  messages    Json     @default("[]") // Array of { role: string, content: string, timestamp: string }
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  user        User     @relation("UserChatSessions", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@index([userId])
+  @@map("chat_sessions")
+}
+
+/// 13. ACCOUNT: Connected OAuth accounts storing AES-256 encrypted tokens linked to User
+model Account {
+  id                    String    @id @default(uuid())
+  userId                String    @map("user_id")
+  provider              String    // e.g., 'google' or 'google_business'
+  providerAccountId     String?   @map("provider_account_id")
+  encryptedAccessToken  String    @map("encrypted_access_token") @db.Text
+  encryptedRefreshToken String?   @map("encrypted_refresh_token") @db.Text
+  accessTokenIv         String    @map("access_token_iv")
+  refreshTokenIv        String?   @map("refresh_token_iv")
+  accessTokenAuthTag    String?   @map("access_token_auth_tag")
+  refreshTokenAuthTag   String?   @map("refresh_token_auth_tag")
+  expiresAt             DateTime  @map("expires_at")
+  scope                 String?   @db.Text
+  tokenType             String?   @default("Bearer") @map("token_type")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, provider])
+  @@map("accounts")
+}
+
+
+

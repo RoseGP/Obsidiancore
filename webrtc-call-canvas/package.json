@@ -1,0 +1,14 @@
+{
+  "name": "webrtc-call-canvas-server",
+  "version": "1.0.0",
+  "description": "Express and Socket.io WebRTC Signaling Call Canvas Server",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "socket.io": "^4.8.3"
+  }
+}

@@ -1,0 +1,35 @@
+name = "cloudflare-email-handler"
+main = "src/workers/cloudflareEmailHandler.ts"
+compatibility_date = "2026-08-08"
+
+# Cloudflare D1 Database Binding for Metadata & Message Indexing
+[[d1_databases]]
+binding = "DB"
+database_name = "obsidiandashoarddb"
+database_id = "adc1da90-6d37-45e1-88ce-9522ea7bf3ee"
+
+# Cloudflare R2 Bucket Binding for Raw MIME Email (.eml) Storage
+[[r2_buckets]]
+binding = "EMAIL_BUCKET"
+bucket_name = "obsidiancrm"
+
+# Cloudflare R2 Bucket Binding for Extracted Attachments Storage
+[[r2_buckets]]
+binding = "ATTACHMENTS_BUCKET"
+bucket_name = "obsidiancrm"
+
+# Cloudflare Send Email Binding for Outbound Dispatch (Phase 3)
+[[send_email]]
+name = "EMAIL"
+destination_address = "achmadhakim@gmail.com"
+allowed_destination_addresses = ["*"]
+
+# Cloudflare Workers AI Binding
+[ai]
+binding = "AI"
+
+# Environment Variables & Secrets
+[vars]
+DOMAIN_NAME = "devdesk.webmail.edge"
+JWT_SECRET = "cloudflare_r2_attachment_secret_key_2026"
+LOG_LEVEL = "info"

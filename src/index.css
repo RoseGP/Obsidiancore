@@ -1,0 +1,9 @@
+@import url("https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400..700;1,400..700&display=swap");
+@import "tailwindcss";
+@import "./styles/obsidian-theme.css";
+
+@layer base {
+  /* Base colors and type come from styles/obsidian-theme.css (light/dark tokens). */
+}
+
+/* Scrollbars: see styles/obsidian-theme.css */

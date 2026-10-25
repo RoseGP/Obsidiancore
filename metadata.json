@@ -1,0 +1,12 @@
+{
+  "name": "OmniChannel Messaging Platform",
+  "description": "Production-ready messaging platform with real-time direct messaging, unified customer inbox, and embeddable live-chat widget for external websites.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "display-capture"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

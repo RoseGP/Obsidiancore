@@ -1,0 +1,5 @@
+{
+  "summary":  "Comprehensive Firebase Firestore Database Schema definition for the OmniChannel CRM Platform. Details collections, sub-collections, documents, data types, relationships, indexes, security rules, and auto-save draft schemas for users, content, proposals, sales pipeline, and real-time messaging.",
+  "updatedAt":  "2026-10-24T12:53:58.010607722Z",
+  "userFacing":  true
+}
