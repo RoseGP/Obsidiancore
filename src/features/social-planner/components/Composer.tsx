@@ -8,7 +8,7 @@ import { Banner, Button, Dialog, PlatformGlyph, useToast } from '../ui/kit';
 
 const shownErrors_media = (attempt: string | null, r: { errors: { mediaUrls?: string } }) => !!attempt && !!r.errors.mediaUrls;
 
-export interface ComposerTarget { mode: 'create'; scheduledAt: string } // ISO
+export interface ComposerTarget { mode: 'create'; scheduledAt: string; initialPlatforms?: PlatformId[] } // ISO
 export type ComposerOpen = ComposerTarget | { mode: 'edit'; post: PlannerPost };
 
 export function Composer({ open, target, defaultPlatforms, onClose }: {
@@ -24,7 +24,7 @@ export function Composer({ open, target, defaultPlatforms, onClose }: {
       const p = target.post;
       return { content: p.content, platforms: p.platforms, scheduledAt: p.scheduledAt, mediaUrls: p.mediaUrls, intent: p.status === 'draft' ? 'draft' : 'scheduled' };
     }
-    return { content: '', platforms: defaultPlatforms, scheduledAt: target?.scheduledAt ?? null, mediaUrls: [], intent: 'scheduled' };
+    return { content: '', platforms: (target && 'initialPlatforms' in target && target.initialPlatforms?.length) ? target.initialPlatforms : defaultPlatforms, scheduledAt: target?.scheduledAt ?? null, mediaUrls: [], intent: 'scheduled' };
   }, [target, defaultPlatforms]);
 
   const [draft, setDraft] = useState<PostDraft>(initial);

@@ -748,7 +748,7 @@ export default function DashboardView({ contacts, onSelectContact, onNavigate }:
   const vipContacts = contacts.slice(0, 4);
 
   return (
-    <div className="relative min-h-full w-full flex flex-col items-center justify-start p-4 sm:p-6 md:p-8 font-sans overflow-x-hidden bg-slate-50 text-neutral-800 rounded-3xl border border-neutral-200/80 shadow-xs gap-8 sm:gap-12 md:gap-14">
+    <div className="relative min-h-full w-full flex flex-col items-center justify-start p-4 sm:p-6 md:p-8 font-sans overflow-x-hidden bg-[var(--app-bg)] text-[var(--text)] transition-colors gap-8 sm:gap-10">
       
 
       {/* TOP BAR / LIVE SYSTEM TELEMETRY & PRODUCTIVITY HUD */}
@@ -1019,88 +1019,98 @@ export default function DashboardView({ contacts, onSelectContact, onNavigate }:
         {/* Metric 1: Pipeline Value */}
         <div 
           onClick={() => onNavigate('deals')}
-          className="p-4 rounded-2xl bg-white/80 border border-neutral-200/80 shadow-xs hover:shadow-md transition cursor-pointer"
+          className="p-4 rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 shadow-xs hover:shadow-md transition cursor-pointer group"
         >
-          <div className="flex items-center justify-between text-neutral-500 mb-1.5">
-            <span className="text-[12px] font-medium">Pipeline Value</span>
-            <TrendingUp className="h-4 w-4 text-emerald-500" />
+          <div className="flex items-center justify-between text-neutral-500 dark:text-neutral-400 mb-2">
+            <span className="text-xs font-medium">Pipeline Value</span>
+            <TrendingUp className="h-4 w-4 text-emerald-500 group-hover:scale-110 transition-transform" />
           </div>
-          <div className="flex items-baseline justify-between">
-            <span className="text-2xl font-black text-neutral-900 font-mono tabular-nums">
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="text-2xl font-bold text-neutral-900 dark:text-neutral-100 font-mono tracking-tight tabular-nums">
               ${(dashboardStats?.totalPipelineValue || 366500).toLocaleString()}
             </span>
-            <span className="text-[10px] font-mono font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">
+            <span className="text-xs font-mono font-medium text-emerald-600 dark:text-emerald-400">
               {dashboardStats?.openDealsCount || 5} deals
             </span>
           </div>
-          <div className="text-[11px] text-neutral-400 mt-1 font-mono">
-            Weighted: ${(dashboardStats?.weightedForecastValue || 231500).toLocaleString()}
+          <div className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-1.5 flex items-center gap-1.5">
+            <span>Weighted</span>
+            <span aria-hidden="true">·</span>
+            <span className="font-mono text-neutral-700 dark:text-neutral-300">
+              ${(dashboardStats?.weightedForecastValue || 231500).toLocaleString()}
+            </span>
           </div>
         </div>
 
         {/* Metric 2: AI Receptionist Status */}
         <div 
           onClick={() => onNavigate('voice_dialer')}
-          className="p-4 rounded-2xl bg-white/80 border border-neutral-200/80 shadow-xs hover:shadow-md transition cursor-pointer"
+          className="p-4 rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 shadow-xs hover:shadow-md transition cursor-pointer group"
         >
-          <div className="flex items-center justify-between text-neutral-500 mb-1.5">
-            <span className="text-[12px] font-medium">AI Receptionist</span>
-            <Activity className="h-4 w-4 text-indigo-500" />
+          <div className="flex items-center justify-between text-neutral-500 dark:text-neutral-400 mb-2">
+            <span className="text-xs font-medium">AI Receptionist</span>
+            <Activity className="h-4 w-4 text-indigo-500 group-hover:scale-110 transition-transform" />
           </div>
-          <div className="flex items-baseline justify-between">
-            <span className="text-2xl font-black text-neutral-900 font-mono tabular-nums">
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="text-2xl font-bold text-neutral-900 dark:text-neutral-100 font-mono tracking-tight tabular-nums">
               {dashboardStats?.callsToday || 14}
             </span>
-            <span className="text-[10px] font-mono font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">
+            <span className="text-xs font-mono font-medium text-indigo-600 dark:text-indigo-400">
               Active Triage
             </span>
           </div>
-          <div className="text-[11px] text-neutral-400 mt-1">
-            Calls handled today · 100% uptime
+          <div className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-1.5 flex items-center gap-1.5">
+            <span>Calls handled today</span>
+            <span aria-hidden="true">·</span>
+            <span className="text-emerald-600 dark:text-emerald-400 font-medium">100% SLA</span>
           </div>
         </div>
 
         {/* Metric 3: Inbound Messages & Queue */}
         <div 
           onClick={() => onNavigate('messages')}
-          className="p-4 rounded-2xl bg-white/80 border border-neutral-200/80 shadow-xs hover:shadow-md transition cursor-pointer"
+          className="p-4 rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 shadow-xs hover:shadow-md transition cursor-pointer group"
         >
-          <div className="flex items-center justify-between text-neutral-500 mb-1.5">
-            <span className="text-[12px] font-medium">Inbound Queue</span>
-            <Mail className="h-4 w-4 text-sky-500" />
+          <div className="flex items-center justify-between text-neutral-500 dark:text-neutral-400 mb-2">
+            <span className="text-xs font-medium">Inbound Queue</span>
+            <Mail className="h-4 w-4 text-sky-500 group-hover:scale-110 transition-transform" />
           </div>
-          <div className="flex items-baseline justify-between">
-            <span className="text-2xl font-black text-neutral-900 font-mono tabular-nums">
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="text-2xl font-bold text-neutral-900 dark:text-neutral-100 font-mono tracking-tight tabular-nums">
               {dashboardStats?.activeTicketsCount || 3}
             </span>
-            <span className="text-[10px] font-mono font-bold text-sky-600 bg-sky-50 px-1.5 py-0.5 rounded">
-              {dashboardStats?.criticalTicketsCount || 1} critical
+            <span className="text-xs font-mono font-medium text-amber-600 dark:text-amber-400">
+              {dashboardStats?.criticalTicketsCount || 1} priority
             </span>
           </div>
-          <div className="text-[11px] text-neutral-400 mt-1 font-mono">
-            Avg Response: {dashboardStats?.avgResponseMinutes || 1.2}m · {dashboardStats?.slaMetRate || 98.4}% SLA
+          <div className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-1.5 flex items-center gap-1.5 font-mono">
+            <span>Avg {dashboardStats?.avgResponseMinutes || 1.2}m</span>
+            <span aria-hidden="true">·</span>
+            <span>{dashboardStats?.slaMetRate || 98.4}% SLA met</span>
           </div>
         </div>
 
         {/* Metric 4: Scheduled Video Meetings */}
         <div 
           onClick={() => onNavigate('calendar')}
-          className="p-4 rounded-2xl bg-white/80 border border-neutral-200/80 shadow-xs hover:shadow-md transition cursor-pointer"
+          className="p-4 rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 shadow-xs hover:shadow-md transition cursor-pointer group"
         >
-          <div className="flex items-center justify-between text-neutral-500 mb-1.5">
-            <span className="text-[12px] font-medium">Meetings Today</span>
-            <Clock className="h-4 w-4 text-purple-500" />
+          <div className="flex items-center justify-between text-neutral-500 dark:text-neutral-400 mb-2">
+            <span className="text-xs font-medium">Meetings Today</span>
+            <Clock className="h-4 w-4 text-purple-500 group-hover:scale-110 transition-transform" />
           </div>
-          <div className="flex items-baseline justify-between">
-            <span className="text-2xl font-black text-neutral-900 font-mono tabular-nums">
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="text-2xl font-bold text-neutral-900 dark:text-neutral-100 font-mono tracking-tight tabular-nums">
               {dashboardStats?.meetingsToday || 3}
             </span>
-            <span className="text-[10px] font-mono font-bold text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded">
+            <span className="text-xs font-mono font-medium text-purple-600 dark:text-purple-400">
               Scheduled
             </span>
           </div>
-          <div className="text-[11px] text-neutral-400 mt-1">
-            Google Calendar & Meet synced
+          <div className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-1.5 flex items-center gap-1.5">
+            <span>Calendar matrix</span>
+            <span aria-hidden="true">·</span>
+            <span>Live sync</span>
           </div>
         </div>
 

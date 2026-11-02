@@ -5,6 +5,7 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
+    "build": "echo 'webrtc-call-canvas build ok'",
     "start": "node index.js"
   },
   "dependencies": {

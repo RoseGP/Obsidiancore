@@ -32,7 +32,9 @@ import ExpandableOmnichannelChat from './components/ExpandableOmnichannelChat';
 import { RealtimeSyncProvider } from './context/RealtimeSyncContext';
 import RealTimeSyncBadge from './components/RealTimeSyncBadge';
 import NotificationPreferencesModal from './components/notifications/NotificationPreferencesModal';
-import { CRMContact, CalendarEvent, CRMMessage, AppNotification, ActiveView } from './types';
+import QuickActionButton, { QuickActionType } from './components/QuickActionButton';
+import QuickActionModal from './components/QuickActionModal';
+import { CRMContact, CRMLead, CalendarEvent, CRMMessage, AppNotification, ActiveView } from './types';
 import { MessageSquare, X } from 'lucide-react';
 import { useTheme } from './context/ThemeContext';
 import ThemeSwitch from './components/ThemeSwitch';
@@ -169,7 +171,38 @@ function AppMain() {
   const [isOmniChatOpen, setIsOmniChatOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [showNotificationPreferencesModal, setShowNotificationPreferencesModal] = useState<boolean>(false);
-  const [settingsDefaultTab, setSettingsDefaultTab] = useState<SettingsTab>('general');
+  const [settingsDefaultTab, setSettingsDefaultTab] = useState<SettingsTab>('account');
+  const [isQuickActionModalOpen, setIsQuickActionModalOpen] = useState(false);
+  const [quickActionInitialType, setQuickActionInitialType] = useState<QuickActionType>('lead');
+
+  const handleTriggerQuickAction = useCallback((type: QuickActionType) => {
+    setQuickActionInitialType(type);
+    setIsQuickActionModalOpen(true);
+  }, []);
+
+  const handleLeadCreated = useCallback((newLead: CRMLead) => {
+    setContacts(prev => {
+      const exists = prev.some(c => c.email.toLowerCase() === newLead.email.toLowerCase());
+      if (exists) return prev;
+      const contactFromLead: CRMContact = {
+        id: newLead.id,
+        name: newLead.name,
+        avatar: `https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=150`,
+        channel: newLead.source || 'website',
+        lastMessage: newLead.notes || 'Inbound prospect created via Quick Action',
+        timestamp: 'Just now',
+        unread: true,
+        status: 'active',
+        sentiment: 'positive',
+        email: newLead.email,
+        phone: newLead.phone || '',
+        company: newLead.company || '',
+        title: newLead.title || '',
+        notes: newLead.notes || ''
+      };
+      return [contactFromLead, ...prev];
+    });
+  }, []);
 
   // Auto-route to proposals view if OAuth callback redirected with payment provider params
   React.useEffect(() => {
@@ -447,24 +480,27 @@ function AppMain() {
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col h-screen overflow-hidden">
-        {/* Top Navbar */}
-        <header className="h-14 px-5 flex items-center justify-between border-b border-[var(--border)] bg-[var(--surface)] shrink-0 z-30">
-          {/* Universal Command Search Bar */}
-          <div className="flex-1 max-w-xl">
-            <UnifiedCommandSearchBar
-              themeMode={themeMode}
-              contacts={contacts}
-              events={events}
-              navItems={SEARCH_NAV_ITEMS}
-              activeView={activeView}
-              setActiveView={(v) => setActiveView(v as SemanticView)}
-              onSelectContact={handleSelectContact}
-              placeholder="Search contacts, deals, calls, or type command..."
-            />
+        {/* Top Navbar - Clean Murmura-inspired modern executive header */}
+        <header className="h-14 px-5 flex items-center justify-between border-b border-[var(--border)] bg-[var(--surface)]/95 backdrop-blur-md shrink-0 z-30 transition-colors">
+          {/* Universal Command Search Bar & Quick Action */}
+          <div className="flex-1 max-w-2xl flex items-center gap-3">
+            <div className="flex-1 max-w-xl">
+              <UnifiedCommandSearchBar
+                themeMode={themeMode}
+                contacts={contacts}
+                events={events}
+                navItems={SEARCH_NAV_ITEMS}
+                activeView={activeView}
+                setActiveView={(v) => setActiveView(v as SemanticView)}
+                onSelectContact={handleSelectContact}
+                placeholder="Search contacts, deals, calls, or type command..."
+              />
+            </div>
+            <QuickActionButton onTriggerAction={handleTriggerQuickAction} />
           </div>
 
           {/* Right actions: Real-Time Sync + Notifications + Profile */}
-          <div className="flex items-center gap-3 ml-4">
+          <div className="flex items-center gap-2.5 ml-4">
             <ThemeSwitch />
             <RealTimeSyncBadge
               onOpenDiagnostics={() => {
@@ -553,6 +589,17 @@ function AppMain() {
 
       {/* Floating Mini Meeting HUD during Background Navigation */}
       <FloatingMeetingHUD onReturnToMeeting={() => setActiveView('call_canvas')} />
+
+      {/* Global Quick Action Modal (Lead / Deal / Event) */}
+      <QuickActionModal
+        isOpen={isQuickActionModalOpen}
+        onClose={() => setIsQuickActionModalOpen(false)}
+        initialType={quickActionInitialType}
+        onLeadCreated={handleLeadCreated}
+        onEventCreated={handleAddCalendarEvent}
+        onShowToast={showToast}
+        onNavigateView={(view) => setActiveView(view as SemanticView)}
+      />
 
       {/* Customizable Notification Preferences Modal */}
       <NotificationPreferencesModal

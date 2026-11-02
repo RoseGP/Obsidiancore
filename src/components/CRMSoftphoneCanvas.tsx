@@ -1591,23 +1591,46 @@ export default function CRMSoftphoneCanvas({
                       {localStream && !isVideoOffLocal && (
                         <div className="absolute bottom-16 right-4 w-36 h-24 rounded-xl overflow-hidden border-2 border-white/20 shadow-2xl z-20 bg-black">
                           <video 
+                            id="local-video"
                             ref={setLocalVideoRef}
                             autoPlay
                             playsInline
                             muted
                             className="w-full h-full object-cover transform scale-x-[-1]"
                           />
+                          {isMutedLocal && (
+                            <div
+                              id="local-video-muted-overlay"
+                              className="absolute top-1.5 left-1.5 z-30 flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-rose-600/90 text-white shadow-md border border-rose-400/40 text-[10px] font-semibold"
+                              title="Microphone is muted"
+                            >
+                              <MicOff className="h-2.5 w-2.5" />
+                              <span>Muted</span>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
                   ) : presenter.id === "p1" && !isVideoOffLocal && localStream ? (
-                    <video 
-                      ref={setLocalVideoRef}
-                      autoPlay
-                      playsInline
-                      muted
-                      className="absolute inset-0 w-full h-full object-cover transform scale-x-[-1]"
-                    />
+                    <div className="absolute inset-0 w-full h-full">
+                      <video 
+                        id="local-video-presenter"
+                        ref={setLocalVideoRef}
+                        autoPlay
+                        playsInline
+                        muted
+                        className="w-full h-full object-cover transform scale-x-[-1]"
+                      />
+                      {isMutedLocal && (
+                        <div
+                          className="absolute top-4 left-4 z-30 flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-rose-600/90 text-white shadow-lg border border-rose-400/40 text-xs font-semibold"
+                          title="Microphone is muted"
+                        >
+                          <MicOff className="h-3.5 w-3.5" />
+                          <span>Muted</span>
+                        </div>
+                      )}
+                    </div>
                   ) : presenter.id !== "p1" && remoteStream ? (
                     <div id="remote-container" className="absolute inset-0 w-full h-full">
                       {presenter.isVideoOff ? (

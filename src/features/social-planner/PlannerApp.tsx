@@ -17,6 +17,7 @@ import { Composer, type ComposerOpen } from './components/Composer';
 import { CalendarPage, type CalView } from './pages/CalendarPage';
 import { AccountsPage as LegacyAccountsPage, AnalyticsPage, DashboardPage, InboxPage, NotificationList, SettingsPage, useNotifications } from './pages/OtherPages';
 import { AccountsPage } from './pages/AccountsPage';
+import { OverviewPage } from './pages/OverviewPage';
 import type { AccountsApi } from '../social-accounts/client/accountsApi';
 import { normalizeAccount } from './domain/model';
 import { Button, Dialog, IconButton, PlatformGlyph, Portal, Skeleton, ToastProvider, cx } from './ui/kit';
@@ -24,7 +25,7 @@ import { Button, Dialog, IconButton, PlatformGlyph, Portal, Skeleton, ToastProvi
 type Route = 'dashboard' | 'calendar' | 'compose' | 'analytics' | 'accounts' | 'inbox' | 'settings' | 'classic';
 
 const NAV: { id: Exclude<Route, 'classic'>; label: string; icon: React.ElementType }[] = [
-  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { id: 'dashboard', label: 'Overview', icon: LayoutDashboard },
   { id: 'calendar', label: 'Calendar', icon: Calendar },
   { id: 'compose', label: 'Compose', icon: PenSquare },
   { id: 'analytics', label: 'Analytics', icon: BarChart3 },
@@ -34,7 +35,7 @@ const NAV: { id: Exclude<Route, 'classic'>; label: string; icon: React.ElementTy
 ];
 
 const TITLES: Record<Route, string> = {
-  dashboard: 'Dashboard', calendar: 'Content Calendar', compose: 'Compose', analytics: 'Analytics',
+  dashboard: 'Overview', calendar: 'Content Calendar', compose: 'Compose', analytics: 'Analytics',
   accounts: 'Accounts', inbox: 'Inbox', settings: 'Settings', classic: 'Advanced tools',
 };
 
@@ -217,7 +218,7 @@ function NotificationsButton() {
 function Shell(props: PlannerAppProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(1280);
-  const [route, setRoute] = useState<Route>(props.startInClassic ? 'classic' : props.startInAccounts ? 'accounts' : 'calendar');
+  const [route, setRoute] = useState<Route>(props.startInClassic ? 'classic' : props.startInAccounts ? 'accounts' : 'dashboard');
   const [drawer, setDrawer] = useState(false);
   const [noticeHidden, setNoticeHidden] = useState(false);
   const [search, setSearch] = useState(false);
@@ -236,7 +237,12 @@ function Shell(props: PlannerAppProps) {
   const mode = width >= 1100 ? 'desktop' : width >= 720 ? 'tablet' : 'mobile';
   useEffect(() => { if (mode === 'mobile' && calView === 'week') setCalView('list'); }, [mode]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const newPost = (iso?: string) => setComposer({ mode: 'create', scheduledAt: iso ?? defaultSlot(new Date(), prefs.defaultHour) });
+  const newPost = (iso?: string, platforms?: import('./domain/model').PlatformId[]) =>
+    setComposer({
+      mode: 'create',
+      scheduledAt: iso ?? defaultSlot(new Date(), prefs.defaultHour),
+      initialPlatforms: platforms,
+    });
   const go = (r: Route) => {
     setDrawer(false);
     if (r === 'compose') { newPost(); return; }
@@ -260,24 +266,63 @@ function Shell(props: PlannerAppProps) {
           </Portal>
         )}
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="flex flex-none items-center gap-3 px-4 py-4 sm:px-6" style={{ borderBottom: '1px solid var(--sp-border)' }}>
+          <header className="flex flex-none items-center gap-3 px-4 py-3.5 sm:px-6" style={{ borderBottom: '1px solid var(--sp-border)' }}>
             {mode === 'mobile' && <IconButton label="Open navigation" small onClick={() => setDrawer(true)}><Menu size={20} /></IconButton>}
             {route === 'classic' && <IconButton label="Back to settings" small onClick={() => setRoute('settings')}><ArrowLeft size={18} /></IconButton>}
-            <h1 className="display min-w-0 flex-1 truncate text-[20px] font-semibold sm:text-[22px]">{mode === 'mobile' && route === 'calendar' ? 'Calendar' : TITLES[route]}</h1>
-            <IconButton label="Search posts" onClick={() => setSearch(true)}><Search size={18} /></IconButton>
-            <NotificationsButton />
-            {mode === 'mobile'
-              ? <IconButton label="New post" onClick={() => newPost()} style={{ background: 'linear-gradient(135deg,#6d5ef5,#5468f2)', border: 0 }}><Plus size={18} /></IconButton>
-              : <Button variant="primary" icon={<Plus size={16} />} onClick={() => newPost()}>New Post</Button>}
+            <h1 className="display min-w-0 flex-none truncate text-[18px] font-semibold sm:text-[20px]">{mode === 'mobile' && route === 'calendar' ? 'Calendar' : TITLES[route]}</h1>
+
+            {/* Murmura Segmented View Switcher */}
+            {mode !== 'mobile' && (
+              <div className="mx-auto flex items-center gap-1 rounded-xl p-1" style={{ background: 'var(--sp-surface)', border: '1px solid var(--sp-border)' }}>
+                {(['dashboard', 'calendar', 'accounts', 'analytics'] as const).map((r) => {
+                  const active = route === r;
+                  return (
+                    <button
+                      key={r}
+                      type="button"
+                      onClick={() => setRoute(r)}
+                      className={cx(
+                        'rounded-lg px-3 py-1 text-[12.5px] font-medium transition-all',
+                        active
+                          ? 'font-semibold shadow-sm'
+                          : 'hover:text-[var(--sp-text)]',
+                      )}
+                      style={{
+                        background: active ? 'var(--sp-surface-3)' : 'transparent',
+                        color: active ? 'var(--sp-text)' : 'var(--sp-muted)',
+                      }}
+                    >
+                      {r === 'dashboard' ? 'Overview' : TITLES[r]}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            <div className="flex items-center gap-2">
+              <IconButton label="Search posts" onClick={() => setSearch(true)}><Search size={18} /></IconButton>
+              <NotificationsButton />
+              {mode === 'mobile'
+                ? <IconButton label="New post" onClick={() => newPost()} style={{ background: 'linear-gradient(135deg,#6366f1,#4f46e5)', border: 0 }}><Plus size={18} /></IconButton>
+                : <Button variant="primary" icon={<Plus size={16} />} onClick={() => newPost()}>New Post</Button>}
+            </div>
           </header>
           {props.notice && !noticeHidden && (
-            <div role="status" className="flex flex-none items-center gap-3 px-4 py-2 text-[12.5px] sm:px-6" style={{ background: 'rgba(109,94,245,0.14)', borderBottom: '1px solid var(--sp-border)' }}>
+            <div role="status" className="flex flex-none items-center gap-3 px-4 py-2 text-[12.5px] sm:px-6" style={{ background: 'rgba(99,102,241,0.14)', borderBottom: '1px solid var(--sp-border)' }}>
               <span className="min-w-0 flex-1">{props.notice}</span>
               <IconButton label="Hide notice" small onClick={() => setNoticeHidden(true)}><X size={14} /></IconButton>
             </div>
           )}
           <main className="relative min-h-0 flex-1 overflow-y-auto" id="sp-main">
-            {route === 'dashboard' && <DashboardPage onOpenCalendar={() => setRoute('calendar')} onCompose={() => newPost()} />}
+            {route === 'dashboard' && (
+              <OverviewPage
+                onOpenCalendar={() => setRoute('calendar')}
+                onOpenAccounts={() => setRoute('accounts')}
+                onOpenAnalytics={() => setRoute('analytics')}
+                onCompose={(iso, pl) => newPost(iso, pl)}
+                workspaceName={props.workspaceName}
+              />
+            )}
             {route === 'calendar' && <CalendarPage onCompose={newPost} view={calView} setView={setCalView} anchor={anchor} setAnchor={setAnchor} />}
             {route === 'analytics' && <AnalyticsPage />}
             {route === 'accounts' && (props.accountsApi

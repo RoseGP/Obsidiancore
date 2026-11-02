@@ -104,6 +104,36 @@ export interface MeetingDeviceSettings {
   notifyOnParticipantJoin: boolean;
 }
 
+export type MeetingPlanTier = 'standard' | 'premium' | 'enterprise';
+
+export interface MeetingPlanConfig {
+  tier: MeetingPlanTier;
+  maxParticipants: number;
+  maxDurationMinutes: number; // 60 for standard, 0 for unlimited
+  label: string;
+}
+
+export const MEETING_PLANS: Record<MeetingPlanTier, MeetingPlanConfig> = {
+  standard: {
+    tier: 'standard',
+    maxParticipants: 100,
+    maxDurationMinutes: 60,
+    label: 'Standard Plan',
+  },
+  premium: {
+    tier: 'premium',
+    maxParticipants: 250,
+    maxDurationMinutes: 0,
+    label: 'Premium Plan',
+  },
+  enterprise: {
+    tier: 'enterprise',
+    maxParticipants: 500,
+    maxDurationMinutes: 0,
+    label: 'Enterprise Plan',
+  },
+};
+
 export interface ActiveMeetingSession {
   id: string;
   roomId: string;
@@ -119,6 +149,9 @@ export interface ActiveMeetingSession {
   tasks: MeetingFollowupTask[];
   linkedContactId?: string;
   recordingData?: MeetingRecordingData;
+  planTier?: MeetingPlanTier;
+  maxParticipants?: number;
+  maxDurationMinutes?: number;
 }
 
 interface MeetingSessionContextType {
@@ -126,6 +159,13 @@ interface MeetingSessionContextType {
   isCallActive: boolean;
   meetingViewMode: 'fullscreen' | 'workspace' | 'minimized';
   setMeetingViewMode: (mode: 'fullscreen' | 'workspace' | 'minimized') => void;
+
+  // Plan limits & capacity
+  currentPlanTier: MeetingPlanTier;
+  setPlanTier: (tier: MeetingPlanTier) => void;
+  planConfig: MeetingPlanConfig;
+  isDurationWarning: boolean;
+  isDurationLimitReached: boolean;
   
   // Media streams & hardware controls
   localStream: MediaStream | null;
@@ -224,6 +264,30 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
   const [activeMeeting, setActiveMeeting] = useState<ActiveMeetingSession | null>(null);
   const [meetingViewMode, setMeetingViewMode] = useState<'fullscreen' | 'workspace' | 'minimized'>('workspace');
   
+  // Plan limits & capacity (Standard 100 max & 60m limit, Premium 250 max, Enterprise 500 max)
+  const [currentPlanTier, setCurrentPlanTier] = useState<MeetingPlanTier>(() => {
+    try {
+      const saved = localStorage.getItem('obsidian_meeting_plan_tier');
+      if (saved === 'standard' || saved === 'premium' || saved === 'enterprise') return saved;
+    } catch (e) {}
+    return 'standard';
+  });
+
+  const setPlanTier = useCallback((tier: MeetingPlanTier) => {
+    setCurrentPlanTier(tier);
+    try {
+      localStorage.setItem('obsidian_meeting_plan_tier', tier);
+    } catch (e) {}
+  }, []);
+
+  const planConfig = MEETING_PLANS[currentPlanTier];
+  const isDurationWarning = Boolean(
+    planConfig.maxDurationMinutes === 60 && (activeMeeting?.durationSeconds || 0) >= 55 * 60
+  );
+  const isDurationLimitReached = Boolean(
+    planConfig.maxDurationMinutes === 60 && (activeMeeting?.durationSeconds || 0) >= 60 * 60
+  );
+
   // Media streams
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [screenStream, setScreenStream] = useState<MediaStream | null>(null);
@@ -665,7 +729,10 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
           contactName: 'Sarah Jenkins'
         }
       ],
-      linkedContactId: linkedContact?.id || '1'
+      linkedContactId: linkedContact?.id || '1',
+      planTier: currentPlanTier,
+      maxParticipants: planConfig.maxParticipants,
+      maxDurationMinutes: planConfig.maxDurationMinutes
     };
 
     if (initialOptions?.startMuted) {
@@ -719,7 +786,10 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
       messages: INITIAL_CHAT_MESSAGES,
       notes: `Joined session ${cleanCode} at ${new Date().toLocaleTimeString()}.\n`,
       tasks: [],
-      linkedContactId: linkedContact?.id || '1'
+      linkedContactId: linkedContact?.id || '1',
+      planTier: currentPlanTier,
+      maxParticipants: planConfig.maxParticipants,
+      maxDurationMinutes: planConfig.maxDurationMinutes
     };
 
     setActiveMeeting(joinedMeeting);
@@ -1374,6 +1444,13 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
     if (!email || !email.includes('@')) {
       return { success: false, message: 'Please enter a valid email address.' };
     }
+
+    if (activeMeeting && (activeMeeting.participants.length + 1) >= planConfig.maxParticipants) {
+      return {
+        success: false,
+        message: `Meeting capacity reached for ${planConfig.label} (${planConfig.maxParticipants} max participants). Upgrade to Premium (250) or Enterprise (500) for more capacity.`
+      };
+    }
     
     // Simulate email dispatch
     await new Promise(r => setTimeout(r, 600));
@@ -1427,6 +1504,11 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
         isCallActive: !!activeMeeting && activeMeeting.status === 'active',
         meetingViewMode,
         setMeetingViewMode,
+        currentPlanTier,
+        setPlanTier,
+        planConfig,
+        isDurationWarning,
+        isDurationLimitReached,
         localStream,
         screenStream,
         isMicMuted,

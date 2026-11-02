@@ -39,6 +39,11 @@ export default function VideoMeetingWorkspace({
 }: VideoMeetingWorkspaceProps) {
   const {
     activeMeeting,
+    currentPlanTier,
+    setPlanTier,
+    planConfig,
+    isDurationWarning,
+    isDurationLimitReached,
     localStream,
     screenStream,
     isMicMuted,
@@ -523,11 +528,18 @@ export default function VideoMeetingWorkspace({
           </div>
         </div>
 
-        {/* Center: Live Timer & Security Badge */}
-        <div className="hidden lg:flex items-center gap-3 shrink-0">
-          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-neutral-900 border border-white/10 text-xs font-mono font-medium text-neutral-200">
+        {/* Center: Live Timer, Plan Tier & Group Capacity */}
+        <div className="hidden lg:flex items-center gap-2.5 shrink-0">
+          <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-mono font-medium transition-colors ${
+            isDurationLimitReached ? 'bg-rose-950/60 border-rose-500/50 text-rose-300' :
+            isDurationWarning ? 'bg-amber-950/60 border-amber-500/50 text-amber-300 animate-pulse' :
+            'bg-neutral-900 border-white/10 text-neutral-200'
+          }`}>
             <Clock className="h-3.5 w-3.5 text-indigo-400" />
             <span>{formatDuration(currentDuration)}</span>
+            {planConfig.maxDurationMinutes > 0 && (
+              <span className="text-neutral-400 font-mono text-[11px]">/ {planConfig.maxDurationMinutes}:00</span>
+            )}
           </div>
 
           <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-950/40 border border-emerald-500/20 text-[11px] text-emerald-300 font-medium">
@@ -535,9 +547,67 @@ export default function VideoMeetingWorkspace({
             <span>Encrypted WebRTC</span>
           </div>
 
+          {/* Group Capacity Counter */}
           <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-indigo-950/40 border border-indigo-500/20 text-[11px] text-indigo-300 font-medium">
             <Users className="h-3 w-3 text-indigo-400" />
-            <span>{participantsList.length + 1} Active</span>
+            <span>{participantsList.length + 1} / {planConfig.maxParticipants} Attendees</span>
+          </div>
+
+          {/* Plan Tier Selector Pill */}
+          <div className="relative group">
+            <button
+              type="button"
+              className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-neutral-900 hover:bg-neutral-800 border border-white/15 text-[11px] text-neutral-200 font-medium cursor-pointer transition-colors"
+              title={`Active Tier: ${planConfig.label}. Up to ${planConfig.maxParticipants} participants${planConfig.maxDurationMinutes > 0 ? `, ${planConfig.maxDurationMinutes}m limit` : ', unlimited duration'}. Click to toggle plan.`}
+            >
+              <Award className="h-3 w-3 text-amber-400" />
+              <span className="capitalize">{currentPlanTier}</span>
+              <span className="text-[10px] text-neutral-400">({planConfig.maxParticipants})</span>
+            </button>
+            <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1.5 hidden group-hover:flex flex-col bg-neutral-950 border border-white/15 rounded-2xl p-2 shadow-2xl z-50 min-w-[220px] animate-in fade-in">
+              <div className="px-2 py-1 text-[10px] uppercase tracking-wider text-neutral-400 font-bold border-b border-white/10 mb-1">
+                Meeting Plan Capacity
+              </div>
+              <button
+                type="button"
+                onClick={() => setPlanTier('standard')}
+                className={`flex items-center justify-between px-2.5 py-2 rounded-xl text-xs text-left cursor-pointer transition-colors ${
+                  currentPlanTier === 'standard' ? 'bg-indigo-600 text-white font-semibold' : 'text-neutral-300 hover:bg-neutral-900'
+                }`}
+              >
+                <div>
+                  <div className="font-semibold">Standard Plan</div>
+                  <div className="text-[10px] opacity-75">100 participants • 60 min limit</div>
+                </div>
+                {currentPlanTier === 'standard' && <Check className="h-3.5 w-3.5" />}
+              </button>
+              <button
+                type="button"
+                onClick={() => setPlanTier('premium')}
+                className={`flex items-center justify-between px-2.5 py-2 rounded-xl text-xs text-left cursor-pointer transition-colors ${
+                  currentPlanTier === 'premium' ? 'bg-indigo-600 text-white font-semibold' : 'text-neutral-300 hover:bg-neutral-900'
+                }`}
+              >
+                <div>
+                  <div className="font-semibold">Premium Plan</div>
+                  <div className="text-[10px] opacity-75">250 participants • Unlimited</div>
+                </div>
+                {currentPlanTier === 'premium' && <Check className="h-3.5 w-3.5" />}
+              </button>
+              <button
+                type="button"
+                onClick={() => setPlanTier('enterprise')}
+                className={`flex items-center justify-between px-2.5 py-2 rounded-xl text-xs text-left cursor-pointer transition-colors ${
+                  currentPlanTier === 'enterprise' ? 'bg-indigo-600 text-white font-semibold' : 'text-neutral-300 hover:bg-neutral-900'
+                }`}
+              >
+                <div>
+                  <div className="font-semibold">Enterprise Plan</div>
+                  <div className="text-[10px] opacity-75">500 participants • Unlimited</div>
+                </div>
+                {currentPlanTier === 'enterprise' && <Check className="h-3.5 w-3.5" />}
+              </button>
+            </div>
           </div>
         </div>
 
@@ -666,6 +736,51 @@ export default function VideoMeetingWorkspace({
             </div>
           )}
 
+          {/* 60-Minute Duration Warning & Limit Banners on Standard Tier */}
+          {isDurationWarning && !isDurationLimitReached && (
+            <div className="flex items-center justify-between px-3.5 py-2 rounded-xl bg-amber-950/80 border border-amber-500/40 text-xs text-amber-200 shadow-md">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="h-4 w-4 text-amber-400 animate-pulse shrink-0" />
+                <span>
+                  <strong>Standard Plan Notice:</strong> Approaching 60-minute duration limit ({Math.max(1, 60 - Math.floor(currentDuration / 60))} minutes remaining).
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPlanTier('premium')}
+                className="px-3 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold text-xs transition-all cursor-pointer shrink-0"
+              >
+                Upgrade to Premium (Unlimited)
+              </button>
+            </div>
+          )}
+          {isDurationLimitReached && (
+            <div className="flex items-center justify-between px-3.5 py-2 rounded-xl bg-rose-950/90 border border-rose-500/50 text-xs text-rose-200 shadow-md animate-pulse">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="h-4 w-4 text-rose-400 shrink-0" />
+                <span>
+                  <strong>60-minute meeting limit reached on Standard Plan.</strong> Switch to Premium (250 attendees) or Enterprise (500 attendees) for unlimited group calls.
+                </span>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setPlanTier('premium')}
+                  className="px-3 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs transition-all cursor-pointer"
+                >
+                  Switch to Premium
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowLeaveConfirmModal(true)}
+                  className="px-2.5 py-1 rounded-lg bg-neutral-900 hover:bg-neutral-800 text-neutral-300 text-xs cursor-pointer border border-white/10"
+                >
+                  End Meeting
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Video Grid / Presentation Container */}
           <div className="flex-1 rounded-2xl bg-black/60 border border-white/5 overflow-hidden relative flex flex-col items-center justify-center p-2">
             
@@ -693,6 +808,7 @@ export default function VideoMeetingWorkspace({
                   <div className="obsidian w-48 lg:w-full h-full lg:h-36 rounded-xl bg-[var(--obsidian-1)] border border-white/10 relative overflow-hidden shrink-0">
                     {!isCamOff ? (
                       <video
+                        id="local-video-rail"
                         ref={localVideoRef}
                         autoPlay
                         playsInline
@@ -704,6 +820,16 @@ export default function VideoMeetingWorkspace({
                         <div className="h-10 w-10 rounded-full bg-indigo-600 flex items-center justify-center font-bold text-white text-sm">
                           CR
                         </div>
+                      </div>
+                    )}
+                    {/* Small Muted Icon Overlay in rail */}
+                    {isMicMuted && (
+                      <div
+                        className="absolute top-2 left-2 z-20 flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-rose-600/90 text-[10px] font-semibold text-white shadow-md border border-rose-400/40"
+                        title="Microphone muted"
+                      >
+                        <MicOff className="h-3 w-3" />
+                        <span>Muted</span>
                       </div>
                     )}
                     {/* Paused Video Overlay in Screen Share Thumbnail */}
@@ -755,6 +881,7 @@ export default function VideoMeetingWorkspace({
                     <>
                       {!isCamOff ? (
                         <video
+                          id="local-video-spotlight"
                           ref={localVideoRef}
                           autoPlay
                           playsInline
@@ -764,6 +891,16 @@ export default function VideoMeetingWorkspace({
                       ) : (
                         <div className="h-24 w-24 rounded-full bg-indigo-600 flex items-center justify-center font-bold text-white text-3xl">
                           CR
+                        </div>
+                      )}
+                      {/* Small Muted Icon Overlay in spotlight */}
+                      {isMicMuted && (
+                        <div
+                          className="absolute top-3 left-3 z-20 flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-rose-600/90 text-xs font-semibold text-white shadow-lg backdrop-blur-md border border-rose-400/40 animate-in fade-in"
+                          title="Microphone muted"
+                        >
+                          <MicOff className="h-3.5 w-3.5 text-white" />
+                          <span>Muted</span>
                         </div>
                       )}
                       {isVideoPaused && (
@@ -831,6 +968,7 @@ export default function VideoMeetingWorkspace({
                 }`}>
                   {!isCamOff ? (
                     <video
+                      id="local-video"
                       ref={localVideoRef}
                       autoPlay
                       playsInline
@@ -857,11 +995,23 @@ export default function VideoMeetingWorkspace({
                     </div>
                   )}
 
-                  {/* Local Audio Wave HUD */}
+                  {/* Local Audio Wave HUD (when unmuted) */}
                   {!isMicMuted && (
                     <div className="absolute top-3 left-3 flex items-center gap-1 px-2 py-0.5 rounded-full bg-black/60 backdrop-blur-md text-[10px] text-emerald-400 font-mono">
                       <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
                       <span>Audio Active</span>
+                    </div>
+                  )}
+
+                  {/* Small 'muted' icon overlay on local video feed when audio track is disabled */}
+                  {isMicMuted && (
+                    <div
+                      id="local-video-muted-overlay"
+                      className="absolute top-3 left-3 z-20 flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-rose-600/90 text-xs font-semibold text-white shadow-lg backdrop-blur-md border border-rose-400/40 animate-in fade-in"
+                      title="Microphone muted"
+                    >
+                      <MicOff className="h-3.5 w-3.5 text-white" />
+                      <span>Muted</span>
                     </div>
                   )}
 
@@ -2038,6 +2188,59 @@ export default function VideoMeetingWorkspace({
               >
                 <X className="h-4 w-4" />
               </button>
+            </div>
+
+            {/* Plan Tier & Capacity Overview */}
+            <div className="p-3.5 rounded-2xl bg-neutral-900/90 border border-white/10 space-y-2.5">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-neutral-300 font-medium flex items-center gap-1.5">
+                  <Users className="h-3.5 w-3.5 text-indigo-400" />
+                  <span>Room Capacity ({planConfig.label})</span>
+                </span>
+                <span className="font-mono font-bold text-white text-[11px]">
+                  {participantsList.length + 1} / {planConfig.maxParticipants} max attendees
+                </span>
+              </div>
+              <div className="w-full h-1.5 rounded-full bg-neutral-800 overflow-hidden">
+                <div 
+                  className={`h-full rounded-full transition-all duration-300 ${
+                    (participantsList.length + 1) >= planConfig.maxParticipants ? 'bg-rose-500' : 'bg-indigo-500'
+                  }`}
+                  style={{ width: `${Math.min(100, ((participantsList.length + 1) / planConfig.maxParticipants) * 100)}%` }}
+                />
+              </div>
+              <div className="grid grid-cols-3 gap-1.5 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setPlanTier('standard')}
+                  className={`p-2 rounded-xl text-left border cursor-pointer transition-all ${
+                    currentPlanTier === 'standard' ? 'bg-indigo-600/30 border-indigo-500 text-white' : 'bg-neutral-950/60 border-white/5 text-neutral-400 hover:text-white'
+                  }`}
+                >
+                  <div className="text-[10px] font-bold">Standard</div>
+                  <div className="text-[9px] text-neutral-400">100 • 60 min</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPlanTier('premium')}
+                  className={`p-2 rounded-xl text-left border cursor-pointer transition-all ${
+                    currentPlanTier === 'premium' ? 'bg-indigo-600/30 border-indigo-500 text-white' : 'bg-neutral-950/60 border-white/5 text-neutral-400 hover:text-white'
+                  }`}
+                >
+                  <div className="text-[10px] font-bold">Premium</div>
+                  <div className="text-[9px] text-neutral-400">250 • Unlim.</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPlanTier('enterprise')}
+                  className={`p-2 rounded-xl text-left border cursor-pointer transition-all ${
+                    currentPlanTier === 'enterprise' ? 'bg-indigo-600/30 border-indigo-500 text-white' : 'bg-neutral-950/60 border-white/5 text-neutral-400 hover:text-white'
+                  }`}
+                >
+                  <div className="text-[10px] font-bold">Enterprise</div>
+                  <div className="text-[9px] text-neutral-400">500 • Unlim.</div>
+                </button>
+              </div>
             </div>
 
             {/* Method A: Copy Link */}

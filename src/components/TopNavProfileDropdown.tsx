@@ -187,7 +187,10 @@ export default function TopNavProfileDropdown({
               <button
                 type="button"
                 id="menu-item-account-settings"
-                onClick={() => handleOpenModal('account')}
+                onClick={() => {
+                  setIsOpen(false);
+                  onNavigateToSettings('account');
+                }}
                 className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl hover:bg-neutral-100 dark:hover:bg-white/5 font-medium transition-colors cursor-pointer text-left"
               >
                 <div className="flex items-center gap-2.5">
@@ -200,7 +203,10 @@ export default function TopNavProfileDropdown({
               <button
                 type="button"
                 id="menu-item-workspace-settings"
-                onClick={() => handleOpenModal('workspace')}
+                onClick={() => {
+                  setIsOpen(false);
+                  onNavigateToSettings('workspace');
+                }}
                 className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl hover:bg-neutral-100 dark:hover:bg-white/5 font-medium transition-colors cursor-pointer text-left"
               >
                 <div className="flex items-center gap-2.5">
@@ -213,7 +219,10 @@ export default function TopNavProfileDropdown({
               <button
                 type="button"
                 id="menu-item-preferences"
-                onClick={() => handleOpenModal('preferences')}
+                onClick={() => {
+                  setIsOpen(false);
+                  onNavigateToSettings('account');
+                }}
                 className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl hover:bg-neutral-100 dark:hover:bg-white/5 font-medium transition-colors cursor-pointer text-left"
               >
                 <div className="flex items-center gap-2.5">
@@ -229,7 +238,10 @@ export default function TopNavProfileDropdown({
               <button
                 type="button"
                 id="menu-item-notifications"
-                onClick={() => handleOpenModal('notifications')}
+                onClick={() => {
+                  setIsOpen(false);
+                  onNavigateToSettings('notifications');
+                }}
                 className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl hover:bg-neutral-100 dark:hover:bg-white/5 font-medium transition-colors cursor-pointer text-left"
               >
                 <div className="flex items-center gap-2.5">
@@ -244,14 +256,17 @@ export default function TopNavProfileDropdown({
               <button
                 type="button"
                 id="menu-item-billing"
-                onClick={() => handleOpenModal('billing')}
+                onClick={() => {
+                  setIsOpen(false);
+                  onNavigateToSettings('billing');
+                }}
                 className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl hover:bg-neutral-100 dark:hover:bg-white/5 font-medium transition-colors cursor-pointer text-left"
               >
                 <div className="flex items-center gap-2.5">
                   <CreditCard className="h-4 w-4 text-emerald-500" />
                   <span>Billing & Subscription</span>
                 </div>
-                <span className="text-[10px] font-mono text-emerald-600 dark:text-emerald-400 font-bold">VIP Plan</span>
+                <span className="text-[10px] font-mono text-emerald-600 dark:text-emerald-400 font-bold">Pro Plan</span>
               </button>
 
               <button
@@ -259,7 +274,7 @@ export default function TopNavProfileDropdown({
                 id="menu-item-sessions"
                 onClick={() => {
                   setIsOpen(false);
-                  setIsSessionsModalOpen(true);
+                  onNavigateToSettings('sessions');
                 }}
                 className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl hover:bg-neutral-100 dark:hover:bg-white/5 font-medium transition-colors cursor-pointer text-left"
               >
@@ -275,20 +290,26 @@ export default function TopNavProfileDropdown({
               <button
                 type="button"
                 id="menu-item-security"
-                onClick={() => handleOpenModal('security')}
+                onClick={() => {
+                  setIsOpen(false);
+                  onNavigateToSettings('security');
+                }}
                 className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl hover:bg-neutral-100 dark:hover:bg-white/5 font-medium transition-colors cursor-pointer text-left"
               >
                 <div className="flex items-center gap-2.5">
                   <Lock className="h-4 w-4 text-teal-500" />
                   <span>Security & Access</span>
                 </div>
-                <span className="text-[10px] text-neutral-400">2FA & PIN</span>
+                <span className="text-[10px] text-neutral-400">2FA & RBAC</span>
               </button>
 
               <button
                 type="button"
                 id="menu-item-social-accounts"
-                onClick={() => handleOpenModal('connected_accounts')}
+                onClick={() => {
+                  setIsOpen(false);
+                  onNavigateToSettings('channels');
+                }}
                 className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl hover:bg-neutral-100 dark:hover:bg-white/5 font-medium transition-colors cursor-pointer text-left"
               >
                 <div className="flex items-center gap-2.5">

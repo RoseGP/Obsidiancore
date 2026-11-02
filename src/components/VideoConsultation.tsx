@@ -1348,6 +1348,7 @@ export default function VideoConsultation({ contact, onEndCall }: VideoConsultat
             /* Actual webcam stream */
             <div className="relative w-full h-full">
               <video 
+                id="local-video"
                 ref={localVideoRef}
                 autoPlay 
                 playsInline 
