@@ -12,7 +12,7 @@
     "test:payments": "npx tsx src/tests/paymentIntegration.test.ts",
     "test:stripe": "npx tsx src/tests/stripePaymentIntegration.test.ts",
     "test:postiz": "npx tsx src/tests/postizIntegration.test.ts",
-    "test:video": "npx tsx src/tests/videoMeetingIntegration.test.ts",
+    "test:video": "npx tsx src/tests/videoMeetingIntegration.test.ts && npx tsx src/tests/meetingPolicy.test.ts",
     "test:invoicing": "npx tsx src/features/invoicing/__tests__/calc.test.ts && npx tsx src/features/invoicing/__tests__/api.test.ts",
     "test:social-accounts": "npx tsx src/features/social-accounts/__tests__/api.test.ts oauth && npx tsx src/features/social-accounts/__tests__/api.test.ts shared && npx tsx src/features/social-accounts/__tests__/firestoreStore.test.ts",
     "test:local-seo": "npx tsx src/features/gbp/__tests__/localSeo.test.ts",

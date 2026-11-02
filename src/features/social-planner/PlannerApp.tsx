@@ -4,7 +4,7 @@
  */
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
-  ArrowLeft, BarChart3, Bell, Calendar, Check, ChevronsUpDown, Inbox, LayoutDashboard, Menu, PenSquare, Plus, Search, Settings, Users, X, Zap,
+  ArrowLeft, BarChart3, Radio, Bell, Calendar, Check, ChevronsUpDown, Inbox, LayoutDashboard, Menu, PenSquare, Plus, Search, Settings, Users, X, Zap,
 } from 'lucide-react';
 import './planner.css';
 import { addDays, defaultSlot, formatDateTime, startOfDay } from './domain/calendar';
@@ -18,13 +18,16 @@ import { CalendarPage, type CalView } from './pages/CalendarPage';
 import { AccountsPage as LegacyAccountsPage, AnalyticsPage, DashboardPage, InboxPage, NotificationList, SettingsPage, useNotifications } from './pages/OtherPages';
 import { AccountsPage } from './pages/AccountsPage';
 import { OverviewPage } from './pages/OverviewPage';
+import { ChannelsPage } from './pages/ChannelsPage';
+import { channelKey } from './domain/channels';
 import type { AccountsApi } from '../social-accounts/client/accountsApi';
 import { normalizeAccount } from './domain/model';
 import { Button, Dialog, IconButton, PlatformGlyph, Portal, Skeleton, ToastProvider, cx } from './ui/kit';
 
-type Route = 'dashboard' | 'calendar' | 'compose' | 'analytics' | 'accounts' | 'inbox' | 'settings' | 'classic';
+type Route = 'channels' | 'dashboard' | 'calendar' | 'compose' | 'analytics' | 'accounts' | 'inbox' | 'settings' | 'classic';
 
 const NAV: { id: Exclude<Route, 'classic'>; label: string; icon: React.ElementType }[] = [
+  { id: 'channels', label: 'Channels', icon: Radio },
   { id: 'dashboard', label: 'Overview', icon: LayoutDashboard },
   { id: 'calendar', label: 'Calendar', icon: Calendar },
   { id: 'compose', label: 'Compose', icon: PenSquare },
@@ -35,7 +38,7 @@ const NAV: { id: Exclude<Route, 'classic'>; label: string; icon: React.ElementTy
 ];
 
 const TITLES: Record<Route, string> = {
-  dashboard: 'Overview', calendar: 'Content Calendar', compose: 'Compose', analytics: 'Analytics',
+  channels: 'Channels', dashboard: 'Overview', calendar: 'Content Calendar', compose: 'Compose', analytics: 'Analytics',
   accounts: 'Accounts', inbox: 'Inbox', settings: 'Settings', classic: 'Advanced tools',
 };
 
@@ -106,7 +109,10 @@ function WorkspaceSelector({ name, compact }: { name: string; compact?: boolean 
   );
 }
 
-function Sidebar({ route, go, workspaceName, compact, failedCount }: { route: Route; go: (r: Route) => void; workspaceName: string; compact: boolean; failedCount: number }) {
+function Sidebar({ route, go, workspaceName, compact, failedCount, onOpenChannel, activeChannel }: {
+  route: Route; go: (r: Route) => void; workspaceName: string; compact: boolean; failedCount: number;
+  onOpenChannel: (key: string) => void; activeChannel: string;
+}) {
   const { accounts, accountsState } = usePlanner();
   return (
     <nav aria-label="Pulse" className="flex h-full flex-col gap-5 px-3 py-5" style={{ background: 'var(--sp-sidebar)', borderRight: '1px solid var(--sp-border)' }}>
@@ -134,12 +140,20 @@ function Sidebar({ route, go, workspaceName, compact, failedCount }: { route: Ro
             : !accounts?.length ? <button type="button" onClick={() => go('accounts')} className="px-3 text-left text-[12.5px]" style={{ background: 'none', border: 0, color: 'var(--sp-accent-text)', cursor: 'pointer', font: 'inherit' }}>Connect an account</button>
             : (
               <ul className="space-y-1">
-                {accounts.map((a) => (
-                  <li key={a.id} className="flex items-center gap-2.5 rounded-lg px-3 py-1.5 text-[12.5px]">
-                    {a.platform ? <PlatformGlyph id={a.platform} size={14} color={PLATFORMS[a.platform].dot} /> : <span className="h-3.5 w-3.5" />}
-                    <span className="sp-muted min-w-0 flex-1 truncate">{a.handle || a.rawPlatform}</span>
-                  </li>
-                ))}
+                {accounts.map((a) => {
+                  const key = a.platform ? channelKey(a.platform) : null;
+                  const current = route === 'channels' && key === activeChannel;
+                  return (
+                    <li key={a.id}>
+                      <button type="button" disabled={!key} onClick={() => key && onOpenChannel(key)} aria-current={current ? 'page' : undefined}
+                        className="flex w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-[12.5px]"
+                        style={{ background: current ? 'var(--sp-surface-2)' : 'none', border: 0, font: 'inherit', color: 'inherit', cursor: key ? 'pointer' : 'default' }}>
+                        {a.platform ? <PlatformGlyph id={a.platform} size={14} color={PLATFORMS[a.platform].dot} /> : <span className="h-3.5 w-3.5" />}
+                        <span className={cx('min-w-0 flex-1 truncate', !current && 'sp-muted')}>{a.handle || a.rawPlatform}</span>
+                      </button>
+                    </li>
+                  );
+                })}
               </ul>
             )}
         </div>
@@ -218,7 +232,8 @@ function NotificationsButton() {
 function Shell(props: PlannerAppProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(1280);
-  const [route, setRoute] = useState<Route>(props.startInClassic ? 'classic' : props.startInAccounts ? 'accounts' : 'dashboard');
+  const [route, setRoute] = useState<Route>(props.startInClassic ? 'classic' : props.startInAccounts ? 'accounts' : 'channels');
+  const [activeChannel, setActiveChannel] = useState('all');
   const [drawer, setDrawer] = useState(false);
   const [noticeHidden, setNoticeHidden] = useState(false);
   const [search, setSearch] = useState(false);
@@ -249,7 +264,11 @@ function Shell(props: PlannerAppProps) {
     setRoute(r);
   };
 
-  const sidebar = (compact: boolean) => <Sidebar route={route} go={go} workspaceName={props.workspaceName} compact={compact} failedCount={failedCount} />;
+  const openChannel = (key: string) => { setDrawer(false); setActiveChannel(key); setRoute('channels'); };
+  const sidebar = (compact: boolean) => (
+    <Sidebar route={route} go={go} workspaceName={props.workspaceName} compact={compact} failedCount={failedCount}
+      onOpenChannel={openChannel} activeChannel={activeChannel} />
+  );
 
   return (
     <PreviewProvider onEdit={(p: PlannerPost) => setComposer({ mode: 'edit', post: p })}>
@@ -274,7 +293,7 @@ function Shell(props: PlannerAppProps) {
             {/* Murmura Segmented View Switcher */}
             {mode !== 'mobile' && (
               <div className="mx-auto flex items-center gap-1 rounded-xl p-1" style={{ background: 'var(--sp-surface)', border: '1px solid var(--sp-border)' }}>
-                {(['dashboard', 'calendar', 'accounts', 'analytics'] as const).map((r) => {
+                {(['channels', 'dashboard', 'calendar', 'analytics'] as const).map((r) => {
                   const active = route === r;
                   return (
                     <button
@@ -282,7 +301,7 @@ function Shell(props: PlannerAppProps) {
                       type="button"
                       onClick={() => setRoute(r)}
                       className={cx(
-                        'rounded-lg px-3 py-1 text-[12.5px] font-medium transition-all',
+                        'whitespace-nowrap rounded-lg px-3 py-1 text-[12.5px] font-medium transition-all',
                         active
                           ? 'font-semibold shadow-sm'
                           : 'hover:text-[var(--sp-text)]',
@@ -292,7 +311,7 @@ function Shell(props: PlannerAppProps) {
                         color: active ? 'var(--sp-text)' : 'var(--sp-muted)',
                       }}
                     >
-                      {r === 'dashboard' ? 'Overview' : TITLES[r]}
+                      {r === 'dashboard' ? 'Overview' : r === 'calendar' ? 'Calendar' : TITLES[r]}
                     </button>
                   );
                 })}
@@ -313,7 +332,17 @@ function Shell(props: PlannerAppProps) {
               <IconButton label="Hide notice" small onClick={() => setNoticeHidden(true)}><X size={14} /></IconButton>
             </div>
           )}
-          <main className="relative min-h-0 flex-1 overflow-y-auto" id="sp-main">
+          <main className={cx('relative min-h-0 flex-1', route === 'channels' ? 'overflow-hidden' : 'overflow-y-auto')} id="sp-main">
+            {route === 'channels' && (
+              <ChannelsPage
+                compact={mode !== 'desktop'}
+                selected={activeChannel}
+                onSelect={setActiveChannel}
+                onCompose={(iso, pl) => newPost(iso, pl)}
+                onOpenAccounts={() => setRoute('accounts')}
+                onOpenCalendar={() => setRoute('calendar')}
+              />
+            )}
             {route === 'dashboard' && (
               <OverviewPage
                 onOpenCalendar={() => setRoute('calendar')}

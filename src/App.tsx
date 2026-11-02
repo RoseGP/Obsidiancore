@@ -346,12 +346,14 @@ function AppMain() {
           <VideoWelcomePage
             contacts={contacts}
             onStartInstantMeeting={async (roomCode, contact, title, options) => {
-              await meetingSession.startInstantMeeting(roomCode, contact, title, options);
-              setActiveView('call_canvas');
+              const res = await meetingSession.startInstantMeeting(roomCode, contact, title, options);
+              if (res.ok) setActiveView('call_canvas');
+              else showToast(res.message || 'Couldn’t start the meeting.');
             }}
             onJoinMeeting={async (code) => {
-              await meetingSession.joinMeeting(code);
-              setActiveView('call_canvas');
+              const res = await meetingSession.joinMeeting(code);
+              if (res.ok) setActiveView('call_canvas');
+              else showToast(res.message || 'Couldn’t join the meeting.');
             }}
             onScheduleMeeting={handleAddCalendarEvent}
             onNavigateToDashboard={() => setActiveView('dashboard')}

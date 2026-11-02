@@ -1,5 +1,32 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { CRMContact, CalendarEvent } from '../types';
+import {
+  GROUP_MEETING_LIMITS,
+  admitParticipants,
+  closeRoomSession,
+  getSessionTimeState,
+  openRoomSession,
+  parseInviteEmails,
+  remainingSeats,
+  type RoomRegistry,
+  type SessionLimits,
+  type SessionTimeState,
+} from '../lib/meetingPolicy';
+
+export type MeetingActionResult = { ok: boolean; message?: string };
+export type MeetingEndReason = 'duration_limit' | 'host_ended' | 'left';
+
+const ROOM_REGISTRY_KEY = 'obsidian_meeting_rooms';
+function loadRoomRegistry(): RoomRegistry {
+  try {
+    const raw = localStorage.getItem(ROOM_REGISTRY_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch { return {}; }
+}
+function saveRoomRegistry(r: RoomRegistry) {
+  try { localStorage.setItem(ROOM_REGISTRY_KEY, JSON.stringify(r)); } catch { /* storage unavailable */ }
+}
 
 export interface MeetingParticipant {
   id: string;
@@ -116,8 +143,8 @@ export interface MeetingPlanConfig {
 export const MEETING_PLANS: Record<MeetingPlanTier, MeetingPlanConfig> = {
   standard: {
     tier: 'standard',
-    maxParticipants: 100,
-    maxDurationMinutes: 60,
+    maxParticipants: GROUP_MEETING_LIMITS.maxParticipants,
+    maxDurationMinutes: GROUP_MEETING_LIMITS.maxDurationMinutes,
     label: 'Standard Plan',
   },
   premium: {
@@ -164,8 +191,15 @@ interface MeetingSessionContextType {
   currentPlanTier: MeetingPlanTier;
   setPlanTier: (tier: MeetingPlanTier) => void;
   planConfig: MeetingPlanConfig;
+  /** Limits locked to the active meeting (falls back to the plan when idle). */
+  sessionLimits: SessionLimits;
+  sessionTime: SessionTimeState | null;
+  remainingSeats: number;
   isDurationWarning: boolean;
   isDurationLimitReached: boolean;
+  /** Why the last meeting ended (shown once on the welcome page). */
+  lastMeetingEnd: { reason: MeetingEndReason; title: string; at: number } | null;
+  clearLastMeetingEnd: () => void;
   
   // Media streams & hardware controls
   localStream: MediaStream | null;
@@ -189,12 +223,12 @@ interface MeetingSessionContextType {
       startMuted?: boolean;
       startCamOff?: boolean;
     }
-  ) => Promise<void>;
-  joinMeeting: (codeOrLink: string, linkedContact?: CRMContact) => Promise<void>;
+  ) => Promise<MeetingActionResult>;
+  joinMeeting: (codeOrLink: string, linkedContact?: CRMContact) => Promise<MeetingActionResult>;
   returnToMeeting: () => void;
   minimizeToDashboard: () => void;
   leaveMeeting: () => void;
-  endMeetingForEveryone: () => void;
+  endMeetingForEveryone: (reason?: 'duration_limit' | 'host_ended') => void;
   
   // Hardware toggles
   toggleMic: () => void;
@@ -210,7 +244,10 @@ interface MeetingSessionContextType {
   addFollowupTask: (task: Omit<MeetingFollowupTask, 'id' | 'completed'>) => void;
   toggleTaskCompleted: (taskId: string) => void;
   addParticipantToCrm: (participant: MeetingParticipant) => void;
+  /** Accepts one or many emails (comma, semicolon or whitespace separated). */
   inviteParticipantByEmail: (email: string) => Promise<{ success: boolean; message: string }>;
+  /** Admits participants up to the room's capacity. */
+  admitToMeeting: (people: MeetingParticipant[]) => { admitted: number; rejected: number };
   exchangeContactConsent: (participantId: string) => Promise<{ success: boolean; message: string }>;
   
   // Recording capabilities
@@ -281,12 +318,23 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
   }, []);
 
   const planConfig = MEETING_PLANS[currentPlanTier];
-  const isDurationWarning = Boolean(
-    planConfig.maxDurationMinutes === 60 && (activeMeeting?.durationSeconds || 0) >= 55 * 60
-  );
-  const isDurationLimitReached = Boolean(
-    planConfig.maxDurationMinutes === 60 && (activeMeeting?.durationSeconds || 0) >= 60 * 60
-  );
+  // A running meeting keeps the limits it started with; plan changes apply to the next one.
+  const sessionLimits: SessionLimits = activeMeeting
+    ? {
+        maxParticipants: activeMeeting.maxParticipants ?? planConfig.maxParticipants,
+        maxDurationMinutes: activeMeeting.maxDurationMinutes ?? planConfig.maxDurationMinutes,
+      }
+    : { maxParticipants: planConfig.maxParticipants, maxDurationMinutes: planConfig.maxDurationMinutes };
+  const sessionTime = activeMeeting
+    ? getSessionTimeState(activeMeeting.startedAt, activeMeeting.startedAt + activeMeeting.durationSeconds * 1000, sessionLimits.maxDurationMinutes)
+    : null;
+  const isDurationWarning = Boolean(sessionTime?.isWarning);
+  const isDurationLimitReached = Boolean(sessionTime?.isLimitReached);
+  const seatsLeft = remainingSeats(sessionLimits, activeMeeting?.participants.length ?? 0);
+  const [lastMeetingEnd, setLastMeetingEnd] = useState<{ reason: MeetingEndReason; title: string; at: number } | null>(null);
+  const clearLastMeetingEnd = useCallback(() => setLastMeetingEnd(null), []);
+  const activeMeetingRef = useRef<ActiveMeetingSession | null>(null);
+  activeMeetingRef.current = activeMeeting;
 
   // Media streams
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
@@ -587,10 +635,9 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
       durationIntervalRef.current = setInterval(() => {
         setActiveMeeting(prev => {
           if (!prev || prev.status !== 'active') return prev;
-          return {
-            ...prev,
-            durationSeconds: Math.floor((Date.now() - prev.startedAt) / 1000)
-          };
+          const t = getSessionTimeState(prev.startedAt, Date.now(), prev.maxDurationMinutes ?? 0);
+          if (t.elapsedSeconds === prev.durationSeconds) return prev;
+          return { ...prev, durationSeconds: t.elapsedSeconds };
         });
       }, 1000);
     } else {
@@ -687,11 +734,25 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
       startMuted?: boolean;
       startCamOff?: boolean;
     }
-  ) => {
+  ): Promise<MeetingActionResult> => {
+    const uniqueRoomId = roomCode?.trim() || `omni-room-${Math.random().toString(36).substring(2, 7)}`;
+    const current = activeMeetingRef.current;
+    if (current && current.status === 'active' && current.roomId === uniqueRoomId) {
+      // Already in this room: go back to it instead of restarting the clock.
+      setMeetingViewMode('workspace');
+      return { ok: true };
+    }
+    const opened = openRoomSession(loadRoomRegistry(), uniqueRoomId, {
+      maxParticipants: planConfig.maxParticipants,
+      maxDurationMinutes: planConfig.maxDurationMinutes,
+    }, Date.now());
+    saveRoomRegistry(opened.registry);
+    if (!opened.ok) return { ok: false, message: opened.message };
+    const room = opened.record;
+
     cleanupMediaTracks();
     await initializeLocalMedia();
 
-    const uniqueRoomId = roomCode?.trim() || `omni-room-${Math.random().toString(36).substring(2, 7)}`;
     const now = Date.now();
     const meetingTitle = customTitle?.trim() 
       ? customTitle.trim() 
@@ -704,8 +765,8 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
       roomId: uniqueRoomId,
       title: meetingTitle,
       hostName: 'Camelia Rose (You)',
-      startedAt: now,
-      durationSeconds: 0,
+      startedAt: room.startedAt,
+      durationSeconds: Math.floor((now - room.startedAt) / 1000),
       status: 'active',
       isHost: true,
       participants: DEFAULT_PARTICIPANTS,
@@ -731,8 +792,8 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
       ],
       linkedContactId: linkedContact?.id || '1',
       planTier: currentPlanTier,
-      maxParticipants: planConfig.maxParticipants,
-      maxDurationMinutes: planConfig.maxDurationMinutes
+      maxParticipants: room.maxParticipants,
+      maxDurationMinutes: room.maxDurationMinutes
     };
 
     if (initialOptions?.startMuted) {
@@ -748,6 +809,7 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
       }
     }
 
+    setLastMeetingEnd(null);
     setActiveMeeting(newMeeting);
     setMeetingViewMode('workspace');
     playChime('join');
@@ -757,29 +819,47 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
         startRecording();
       }, 1000);
     }
+    return { ok: true };
   };
 
   // JOIN MEETING
-  const joinMeeting = async (codeOrLink: string, linkedContact?: CRMContact) => {
-    cleanupMediaTracks();
-    await initializeLocalMedia();
-
+  const joinMeeting = async (codeOrLink: string, linkedContact?: CRMContact): Promise<MeetingActionResult> => {
     // Extract room id from full URL or bare code
     let cleanCode = codeOrLink.trim();
     if (cleanCode.includes('/meet/')) {
       cleanCode = cleanCode.split('/meet/')[1];
-    } else if (cleanCode.includes('room=')) {
-      cleanCode = new URL(cleanCode).searchParams.get('room') || cleanCode;
+    } else if (cleanCode.includes('room=') || cleanCode.includes('meet=')) {
+      try {
+        const u = new URL(cleanCode, window.location.origin);
+        cleanCode = u.searchParams.get('room') || u.searchParams.get('meet') || cleanCode;
+      } catch { /* keep the raw code */ }
     }
+    const roomId = cleanCode || `room-${Math.random().toString(36).substring(2, 6)}`;
+
+    const current = activeMeetingRef.current;
+    if (current && current.status === 'active' && current.roomId === roomId) {
+      setMeetingViewMode('workspace');
+      return { ok: true };
+    }
+    const opened = openRoomSession(loadRoomRegistry(), roomId, {
+      maxParticipants: planConfig.maxParticipants,
+      maxDurationMinutes: planConfig.maxDurationMinutes,
+    }, Date.now());
+    saveRoomRegistry(opened.registry);
+    if (!opened.ok) return { ok: false, message: opened.message };
+    const room = opened.record;
+
+    cleanupMediaTracks();
+    await initializeLocalMedia();
 
     const now = Date.now();
     const joinedMeeting: ActiveMeetingSession = {
       id: `mtg_${now}`,
-      roomId: cleanCode || `room-${Math.random().toString(36).substring(2, 6)}`,
+      roomId,
       title: `Consultation Room (${cleanCode || 'General'})`,
       hostName: 'Marcus Aurelius (Host)',
-      startedAt: now,
-      durationSeconds: 0,
+      startedAt: room.startedAt,
+      durationSeconds: Math.floor((now - room.startedAt) / 1000),
       status: 'active',
       isHost: false,
       participants: DEFAULT_PARTICIPANTS,
@@ -788,13 +868,15 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
       tasks: [],
       linkedContactId: linkedContact?.id || '1',
       planTier: currentPlanTier,
-      maxParticipants: planConfig.maxParticipants,
-      maxDurationMinutes: planConfig.maxDurationMinutes
+      maxParticipants: room.maxParticipants,
+      maxDurationMinutes: room.maxDurationMinutes
     };
 
+    setLastMeetingEnd(null);
     setActiveMeeting(joinedMeeting);
     setMeetingViewMode('workspace');
     playChime('join');
+    return { ok: true };
   };
 
   // RETURN TO MEETING
@@ -809,6 +891,8 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
 
   // LEAVE MEETING (Self leaves, room remains if host or continues)
   const leaveMeeting = async () => {
+    const m = activeMeetingRef.current;
+    if (m) setLastMeetingEnd({ reason: 'left', title: m.title, at: Date.now() });
     playChime('leave');
     if (isRecording) {
       await stopRecording();
@@ -822,7 +906,12 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
   };
 
   // END MEETING FOR EVERYONE (Host terminates room)
-  const endMeetingForEveryone = async () => {
+  const endMeetingForEveryone = async (reason: 'duration_limit' | 'host_ended' = 'host_ended') => {
+    const m = activeMeetingRef.current;
+    if (m) {
+      saveRoomRegistry(closeRoomSession(loadRoomRegistry(), m.roomId, reason, Date.now()));
+      setLastMeetingEnd({ reason, title: m.title, at: Date.now() });
+    }
     playChime('leave');
     if (isRecording) {
       await stopRecording();
@@ -1440,50 +1529,78 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
 
 
   // INVITE PARTICIPANT BY EMAIL
-  const inviteParticipantByEmail = async (email: string): Promise<{ success: boolean; message: string }> => {
-    if (!email || !email.includes('@')) {
-      return { success: false, message: 'Please enter a valid email address.' };
+  const admitToMeeting = (people: MeetingParticipant[]) => {
+    const m = activeMeetingRef.current;
+    if (!m || m.status !== 'active') return { admitted: 0, rejected: people.length };
+    const limits = { maxParticipants: m.maxParticipants ?? planConfig.maxParticipants, maxDurationMinutes: m.maxDurationMinutes ?? 0 };
+    const result = admitParticipants(m.participants, people, limits);
+    if (result.admitted.length) {
+      activeMeetingRef.current = { ...m, participants: result.roster };
+      // Re-apply against the latest state so a concurrent update can't push the room past capacity.
+      setActiveMeeting(prev => (prev && prev.id === m.id ? { ...prev, participants: admitParticipants(prev.participants, result.admitted, limits).roster } : prev));
     }
+    return { admitted: result.admitted.length, rejected: result.rejected.length };
+  };
 
-    if (activeMeeting && (activeMeeting.participants.length + 1) >= planConfig.maxParticipants) {
+  // INVITE PARTICIPANTS BY EMAIL (one or many)
+  const inviteParticipantByEmail = async (input: string): Promise<{ success: boolean; message: string }> => {
+    const { valid, invalid } = parseInviteEmails(input || '');
+    if (!valid.length) {
+      return { success: false, message: invalid.length ? `Not a valid email: ${invalid.slice(0, 3).join(', ')}` : 'Please enter a valid email address.' };
+    }
+    const m = activeMeetingRef.current;
+    if (!m || m.status !== 'active') return { success: false, message: 'Start or join a meeting before inviting people.' };
+    if (isDurationLimitReached) return { success: false, message: 'This meeting has reached its time limit.' };
+
+    const limits = { maxParticipants: m.maxParticipants ?? planConfig.maxParticipants, maxDurationMinutes: m.maxDurationMinutes ?? 0 };
+    if (remainingSeats(limits, m.participants.length) === 0) {
       return {
         success: false,
-        message: `Meeting capacity reached for ${planConfig.label} (${planConfig.maxParticipants} max participants). Upgrade to Premium (250) or Enterprise (500) for more capacity.`
+        message: `This meeting is full (${limits.maxParticipants} participants max, host included).`
       };
     }
-    
+
     // Simulate email dispatch
     await new Promise(r => setTimeout(r, 600));
 
-    // Add guest to room participant roster as invited/joined
-    const newGuestName = email.split('@')[0].replace('.', ' ');
-    const guestObj: MeetingParticipant = {
-      id: `p-guest-${Date.now()}`,
-      name: newGuestName.charAt(0).toUpperCase() + newGuestName.slice(1),
-      role: 'Invited Guest',
-      title: 'Partner Representative',
-      company: email.split('@')[1] || 'Guest Organization',
-      email,
-      avatar: newGuestName.substring(0, 2).toUpperCase(),
-      avatarColor: 'from-purple-600 to-indigo-700',
-      isMuted: false,
-      isVideoOff: false,
-      isSpeaking: false,
-      joinedAt: 'Just now',
-      isCrmContact: false
-    };
-
-    setActiveMeeting(prev => {
-      if (!prev) return prev;
+    const stamp = Date.now();
+    const guests: MeetingParticipant[] = valid.map((email, i) => {
+      const local = email.split('@')[0].replace(/[._-]+/g, ' ').trim() || 'Guest';
+      const name = local.replace(/\b\w/g, c => c.toUpperCase());
       return {
-        ...prev,
-        participants: [...prev.participants, guestObj]
+        id: `p-guest-${stamp}-${i}`,
+        name,
+        role: 'Invited Guest',
+        title: 'Partner Representative',
+        company: email.split('@')[1] || 'Guest Organization',
+        email,
+        avatar: name.substring(0, 2).toUpperCase(),
+        avatarColor: 'from-purple-600 to-indigo-700',
+        isMuted: true,
+        isVideoOff: false,
+        isSpeaking: false,
+        joinedAt: 'Just now',
+        isCrmContact: false
       };
     });
 
-    playChime('join');
-    return { success: true, message: `Invitation dispatched to ${email}. Guest joined room.` };
+    const { admitted, rejected } = admitToMeeting(guests);
+    if (admitted) playChime('join');
+    const duplicates = guests.length - admitted - rejected;
+    const parts = [`${admitted} invited`];
+    if (rejected) parts.push(`${rejected} not added — meeting full (${limits.maxParticipants} max)`);
+    if (duplicates) parts.push(`${duplicates} already in the meeting`);
+    if (invalid.length) parts.push(`${invalid.length} invalid`);
+    return { success: admitted > 0, message: admitted === 1 && parts.length === 1 ? `Invitation sent to ${guests[0].email}.` : `${parts.join(' · ')}.` };
   };
+
+  // ENFORCE THE SESSION TIME LIMIT: end the meeting for everyone when the window closes.
+  useEffect(() => {
+    if (activeMeeting?.status === 'active' && isDurationLimitReached) {
+      endMeetingForEveryone('duration_limit');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeMeeting?.status, isDurationLimitReached]);
 
   // BROADCAST REACTION
   const broadcastReaction = (emoji: string) => {
@@ -1507,8 +1624,13 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
         currentPlanTier,
         setPlanTier,
         planConfig,
+        sessionLimits,
+        sessionTime,
+        remainingSeats: seatsLeft,
         isDurationWarning,
         isDurationLimitReached,
+        lastMeetingEnd,
+        clearLastMeetingEnd,
         localStream,
         screenStream,
         isMicMuted,
@@ -1536,6 +1658,7 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
         toggleTaskCompleted,
         addParticipantToCrm,
         inviteParticipantByEmail,
+        admitToMeeting,
         exchangeContactConsent,
         isRecording,
         isRecordingPaused,

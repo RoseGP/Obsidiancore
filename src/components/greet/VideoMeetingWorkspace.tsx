@@ -20,6 +20,7 @@ import {
   MeetingHistoryRecord,
   MeetingDeviceSettings
 } from '../../context/MeetingSessionContext';
+import { gridColumns, gridPage, isGroupMeeting } from '../../lib/meetingPolicy';
 import { CRMContact } from '../../types';
 
 interface VideoMeetingWorkspaceProps {
@@ -42,6 +43,11 @@ export default function VideoMeetingWorkspace({
     currentPlanTier,
     setPlanTier,
     planConfig,
+    sessionLimits,
+    sessionTime,
+    remainingSeats,
+    lastMeetingEnd,
+    clearLastMeetingEnd,
     isDurationWarning,
     isDurationLimitReached,
     localStream,
@@ -453,6 +459,19 @@ export default function VideoMeetingWorkspace({
 
   const participantsList = activeMeeting?.participants || [];
   const currentDuration = activeMeeting?.durationSeconds || 0;
+  const headcountNow = participantsList.length + 1;
+  const remainingLabel = sessionTime?.remainingSeconds != null ? formatDuration(sessionTime.remainingSeconds) : null;
+
+  // Group meetings (up to 100 people) are paged 25 tiles at a time.
+  const [gridPageIndex, setGridPageIndex] = useState(0);
+  const grid = gridPage(participantsList.length, gridPageIndex);
+  const visibleParticipants = participantsList.slice(grid.start, grid.end);
+  const gridCols = gridColumns(grid.tileCount);
+  /** 4+ columns: compact tiles so 25 people fit on a page. */
+  const denseGrid = gridCols > 3;
+  useEffect(() => {
+    if (grid.page !== gridPageIndex) setGridPageIndex(grid.page);
+  }, [grid.page, gridPageIndex]);
 
   return (
     <div className="obsidian w-full h-screen bg-[var(--obsidian-0)] text-neutral-100 flex flex-col overflow-hidden select-none font-sans">
@@ -537,8 +556,8 @@ export default function VideoMeetingWorkspace({
           }`}>
             <Clock className="h-3.5 w-3.5 text-indigo-400" />
             <span>{formatDuration(currentDuration)}</span>
-            {planConfig.maxDurationMinutes > 0 && (
-              <span className="text-neutral-400 font-mono text-[11px]">/ {planConfig.maxDurationMinutes}:00</span>
+            {sessionLimits.maxDurationMinutes > 0 && (
+              <span className="text-neutral-400 font-mono text-[11px]">/ {sessionLimits.maxDurationMinutes}:00</span>
             )}
           </div>
 
@@ -550,7 +569,7 @@ export default function VideoMeetingWorkspace({
           {/* Group Capacity Counter */}
           <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-indigo-950/40 border border-indigo-500/20 text-[11px] text-indigo-300 font-medium">
             <Users className="h-3 w-3 text-indigo-400" />
-            <span>{participantsList.length + 1} / {planConfig.maxParticipants} Attendees</span>
+            <span>{headcountNow} / {sessionLimits.maxParticipants} {isGroupMeeting(participantsList.length) ? 'in group call' : 'Attendees'}</span>
           </div>
 
           {/* Plan Tier Selector Pill */}
@@ -558,7 +577,7 @@ export default function VideoMeetingWorkspace({
             <button
               type="button"
               className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-neutral-900 hover:bg-neutral-800 border border-white/15 text-[11px] text-neutral-200 font-medium cursor-pointer transition-colors"
-              title={`Active Tier: ${planConfig.label}. Up to ${planConfig.maxParticipants} participants${planConfig.maxDurationMinutes > 0 ? `, ${planConfig.maxDurationMinutes}m limit` : ', unlimited duration'}. Click to toggle plan.`}
+              title={`Active Tier: ${planConfig.label}. Up to ${planConfig.maxParticipants} participants${planConfig.maxDurationMinutes > 0 ? `, ${planConfig.maxDurationMinutes}m limit` : ', unlimited duration'}. Changes apply to your next meeting.`}
             >
               <Award className="h-3 w-3 text-amber-400" />
               <span className="capitalize">{currentPlanTier}</span>
@@ -568,6 +587,11 @@ export default function VideoMeetingWorkspace({
               <div className="px-2 py-1 text-[10px] uppercase tracking-wider text-neutral-400 font-bold border-b border-white/10 mb-1">
                 Meeting Plan Capacity
               </div>
+              {activeMeeting && (
+                <p className="px-2 pb-1 text-[10px] text-neutral-400 leading-snug">
+                  This meeting keeps its limits ({sessionLimits.maxParticipants} people{sessionLimits.maxDurationMinutes > 0 ? `, ${sessionLimits.maxDurationMinutes} min` : ''}). Plan changes apply to your next meeting.
+                </p>
+              )}
               <button
                 type="button"
                 onClick={() => setPlanTier('standard')}
@@ -736,48 +760,28 @@ export default function VideoMeetingWorkspace({
             </div>
           )}
 
-          {/* 60-Minute Duration Warning & Limit Banners on Standard Tier */}
+          {/* Session time limit: warning before the end; the session auto-ends at the limit. */}
           {isDurationWarning && !isDurationLimitReached && (
-            <div className="flex items-center justify-between px-3.5 py-2 rounded-xl bg-amber-950/80 border border-amber-500/40 text-xs text-amber-200 shadow-md">
+            <div role="status" className="flex items-center justify-between gap-3 px-3.5 py-2 rounded-xl bg-amber-950/80 border border-amber-500/40 text-xs text-amber-200 shadow-md">
               <div className="flex items-center gap-2">
-                <AlertCircle className="h-4 w-4 text-amber-400 animate-pulse shrink-0" />
+                <AlertCircle className="h-4 w-4 text-amber-400 shrink-0" />
                 <span>
-                  <strong>Standard Plan Notice:</strong> Approaching 60-minute duration limit ({Math.max(1, 60 - Math.floor(currentDuration / 60))} minutes remaining).
+                  <strong>{remainingLabel} left.</strong> This meeting ends automatically at the {sessionLimits.maxDurationMinutes}-minute limit.
                 </span>
               </div>
               <button
                 type="button"
-                onClick={() => setPlanTier('premium')}
+                onClick={() => setShowLeaveConfirmModal(true)}
                 className="px-3 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold text-xs transition-all cursor-pointer shrink-0"
               >
-                Upgrade to Premium (Unlimited)
+                Wrap up
               </button>
             </div>
           )}
           {isDurationLimitReached && (
-            <div className="flex items-center justify-between px-3.5 py-2 rounded-xl bg-rose-950/90 border border-rose-500/50 text-xs text-rose-200 shadow-md animate-pulse">
-              <div className="flex items-center gap-2">
-                <AlertCircle className="h-4 w-4 text-rose-400 shrink-0" />
-                <span>
-                  <strong>60-minute meeting limit reached on Standard Plan.</strong> Switch to Premium (250 attendees) or Enterprise (500 attendees) for unlimited group calls.
-                </span>
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setPlanTier('premium')}
-                  className="px-3 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs transition-all cursor-pointer"
-                >
-                  Switch to Premium
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowLeaveConfirmModal(true)}
-                  className="px-2.5 py-1 rounded-lg bg-neutral-900 hover:bg-neutral-800 text-neutral-300 text-xs cursor-pointer border border-white/10"
-                >
-                  End Meeting
-                </button>
-              </div>
+            <div role="alert" className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-rose-950/90 border border-rose-500/50 text-xs text-rose-200 shadow-md">
+              <AlertCircle className="h-4 w-4 text-rose-400 shrink-0" />
+              <span><strong>{sessionLimits.maxDurationMinutes}-minute limit reached.</strong> Ending the meeting for everyone…</span>
             </div>
           )}
 
@@ -960,9 +964,14 @@ export default function VideoMeetingWorkspace({
 
             ) : (
               /* SCENARIO 3: HIGH-DEFINITION MULTI-PARTICIPANT GRID VIEW (Default) */
-              <div className="w-full h-full grid grid-cols-1 sm:grid-cols-2 gap-3 auto-rows-fr">
+              <div className="w-full h-full flex flex-col gap-2 min-h-0">
+              <div
+                className={`flex-1 min-h-0 grid ${gridCols > 3 ? 'gap-1.5' : 'gap-3'} auto-rows-fr`}
+                style={{ gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))` }}
+              >
                 
-                {/* 1. LOCAL USER TILE (You / Host) */}
+                {/* 1. LOCAL USER TILE (You / Host) — pinned to the first page */}
+                {grid.includeLocal && (
                 <div className={`rounded-xl bg-[var(--obsidian-1)] border relative overflow-hidden flex items-center justify-center transition-all ${
                   !isMicMuted && micAudioLevel > 30 ? 'border-emerald-500/60 shadow-[0_0_20px_rgba(16,185,129,0.15)]' : 'border-white/10'
                 }`}>
@@ -1034,9 +1043,10 @@ export default function VideoMeetingWorkspace({
                     )}
                   </div>
                 </div>
+                )}
 
-                {/* 2. REMOTE PARTICIPANTS TILES */}
-                {participantsList.map(p => (
+                {/* 2. REMOTE PARTICIPANTS TILES (current page) */}
+                {visibleParticipants.map(p => (
                   <div
                     key={p.id}
                     className={`rounded-xl bg-[var(--obsidian-1)] border relative overflow-hidden flex items-center justify-center transition-all ${
@@ -1044,9 +1054,9 @@ export default function VideoMeetingWorkspace({
                     }`}
                   >
                     {/* Simulated High-Resolution Participant Feed / Canvas */}
-                    <div className="flex flex-col items-center gap-2.5 text-center p-4">
+                    <div className={`flex flex-col items-center text-center ${denseGrid ? 'gap-1 p-1 -translate-y-2' : 'gap-2.5 p-4'}`}>
                       <div className="relative">
-                        <div className={`h-20 w-20 rounded-full bg-gradient-to-tr ${p.avatarColor || 'from-indigo-600 to-purple-800'} flex items-center justify-center font-bold text-white text-2xl shadow-xl shadow-black/50`}>
+                        <div className={`${denseGrid ? 'h-10 w-10 text-sm' : 'h-20 w-20 text-2xl'} rounded-full bg-gradient-to-tr ${p.avatarColor || 'from-indigo-600 to-purple-800'} flex items-center justify-center font-bold text-white shadow-xl shadow-black/50`}>
                           {p.avatar}
                         </div>
                         {p.isSpeaking && (
@@ -1054,13 +1064,13 @@ export default function VideoMeetingWorkspace({
                         )}
                       </div>
 
-                      <div>
+                      {!denseGrid && <div>
                         <h4 className="text-sm font-bold text-white">{p.name}</h4>
                         <p className="text-xs text-neutral-400">{p.title}</p>
                         <p className="text-[11px] text-indigo-400 font-medium">{p.company}</p>
-                      </div>
+                      </div>}
 
-                      {p.isSpeaking && (
+                      {p.isSpeaking && !denseGrid && (
                         <div className="flex items-center gap-1 text-[10px] text-emerald-400 font-mono">
                           <Radio className="h-3 w-3 animate-pulse" />
                           <span>Speaking...</span>
@@ -1069,13 +1079,13 @@ export default function VideoMeetingWorkspace({
                     </div>
 
                     {/* Participant Badge */}
-                    <div className="absolute bottom-3 left-3 flex items-center gap-2 px-2.5 py-1 rounded-xl bg-black/75 backdrop-blur-md border border-white/10">
-                      <span className="text-xs font-bold text-white truncate max-w-[120px]">{p.name}</span>
-                      <span className="text-[10px] font-semibold text-neutral-400">{p.role}</span>
+                    <div className={`absolute flex items-center gap-2 rounded-xl bg-black/75 backdrop-blur-md border border-white/10 ${denseGrid ? 'bottom-1.5 left-1.5 right-9 px-1.5 py-0.5' : 'bottom-3 left-3 px-2.5 py-1'}`}>
+                      <span className={`font-bold text-white truncate ${denseGrid ? 'text-[10px]' : 'text-xs max-w-[120px]'}`}>{p.name}</span>
+                      {!denseGrid && <span className="text-[10px] font-semibold text-neutral-400">{p.role}</span>}
                     </div>
 
                     {/* Participant Audio Badge */}
-                    <div className="absolute bottom-3 right-3 flex items-center gap-1.5">
+                    <div className={`absolute flex items-center gap-1.5 ${denseGrid ? 'bottom-1.5 right-1.5' : 'bottom-3 right-3'}`}>
                       {p.isMuted ? (
                         <div className="p-1.5 rounded-lg bg-rose-950/80 text-rose-400 border border-rose-800/40" title="Muted">
                           <MicOff className="h-3.5 w-3.5" />
@@ -1113,6 +1123,30 @@ export default function VideoMeetingWorkspace({
                     </div>
                   </div>
                 ))}
+              </div>
+              {grid.pageCount > 1 && (
+                <nav aria-label="Participant pages" className="flex items-center justify-center gap-2 text-[11px] text-neutral-300">
+                  <button
+                    type="button"
+                    onClick={() => setGridPageIndex(grid.page - 1)}
+                    disabled={grid.page === 0}
+                    className="px-2.5 py-1 rounded-lg bg-neutral-900 border border-white/10 disabled:opacity-40 cursor-pointer"
+                    aria-label="Previous page of participants"
+                  >
+                    ‹ Prev
+                  </button>
+                  <span className="font-mono">Page {grid.page + 1} / {grid.pageCount} · {headcountNow} people</span>
+                  <button
+                    type="button"
+                    onClick={() => setGridPageIndex(grid.page + 1)}
+                    disabled={grid.page >= grid.pageCount - 1}
+                    className="px-2.5 py-1 rounded-lg bg-neutral-900 border border-white/10 disabled:opacity-40 cursor-pointer"
+                    aria-label="Next page of participants"
+                  >
+                    Next ›
+                  </button>
+                </nav>
+              )}
               </div>
             )}
           </div>
@@ -2169,6 +2203,46 @@ export default function VideoMeetingWorkspace({
         </AnimatePresence>
       </div>
 
+      {/* Meeting-ended notice (e.g. the 60-minute limit closed the session) */}
+      {!activeMeeting && lastMeetingEnd && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+          <div role="alertdialog" aria-labelledby="meeting-ended-title" className="obsidian w-full max-w-sm p-6 rounded-3xl bg-[var(--obsidian-1)] border border-white/15 shadow-2xl space-y-4">
+            <div className="flex items-center gap-3">
+              <div className={`p-2.5 rounded-2xl ${lastMeetingEnd.reason === 'duration_limit' ? 'bg-rose-600/20 text-rose-400' : 'bg-indigo-600/20 text-indigo-300'}`}>
+                <Clock className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 id="meeting-ended-title" className="text-sm font-bold text-white">
+                  {lastMeetingEnd.reason === 'duration_limit' ? 'Meeting ended at the time limit' : lastMeetingEnd.reason === 'host_ended' ? 'Meeting ended' : 'You left the meeting'}
+                </h3>
+                <p className="text-xs text-neutral-400 truncate max-w-[240px]">{lastMeetingEnd.title}</p>
+              </div>
+            </div>
+            {lastMeetingEnd.reason === 'duration_limit' && (
+              <p className="text-xs text-neutral-300">
+                Meetings can run for up to {sessionLimits.maxDurationMinutes || 60} minutes. Start a new meeting to keep talking.
+              </p>
+            )}
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => { clearLastMeetingEnd(); onNavigateToGreet?.(); }}
+                className="flex-1 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold cursor-pointer"
+              >
+                Back to meetings
+              </button>
+              <button
+                type="button"
+                onClick={() => { clearLastMeetingEnd(); onNavigateToDashboard?.(); }}
+                className="flex-1 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-white text-xs font-semibold cursor-pointer"
+              >
+                Dashboard
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* =========================================================================
           4. INVITE PARTICIPANTS MODAL
           ========================================================================= */}
@@ -2195,20 +2269,23 @@ export default function VideoMeetingWorkspace({
               <div className="flex items-center justify-between text-xs">
                 <span className="text-neutral-300 font-medium flex items-center gap-1.5">
                   <Users className="h-3.5 w-3.5 text-indigo-400" />
-                  <span>Room Capacity ({planConfig.label})</span>
+                  <span>Room capacity</span>
                 </span>
                 <span className="font-mono font-bold text-white text-[11px]">
-                  {participantsList.length + 1} / {planConfig.maxParticipants} max attendees
+                  {headcountNow} / {sessionLimits.maxParticipants} · {remainingSeats} seats left
                 </span>
               </div>
               <div className="w-full h-1.5 rounded-full bg-neutral-800 overflow-hidden">
                 <div 
                   className={`h-full rounded-full transition-all duration-300 ${
-                    (participantsList.length + 1) >= planConfig.maxParticipants ? 'bg-rose-500' : 'bg-indigo-500'
+                    remainingSeats === 0 ? 'bg-rose-500' : 'bg-indigo-500'
                   }`}
-                  style={{ width: `${Math.min(100, ((participantsList.length + 1) / planConfig.maxParticipants) * 100)}%` }}
+                  style={{ width: `${Math.min(100, (headcountNow / sessionLimits.maxParticipants) * 100)}%` }}
                 />
               </div>
+              <p className="text-[10px] text-neutral-400">
+                Limits are fixed for this meeting{sessionLimits.maxDurationMinutes > 0 ? ` (${sessionLimits.maxDurationMinutes} min max${remainingLabel ? `, ${remainingLabel} left` : ''})` : ''}. Plan changes apply to your next meeting.
+              </p>
               <div className="grid grid-cols-3 gap-1.5 pt-1">
                 <button
                   type="button"
@@ -2266,18 +2343,19 @@ export default function VideoMeetingWorkspace({
 
             {/* Method B: Email Invite */}
             <form onSubmit={handleSendInviteEmail} className="space-y-3">
-              <label className="text-xs font-semibold text-neutral-400">Invite by Email Address</label>
-              <div className="flex gap-2">
-                <input
-                  type="email"
+              <label htmlFor="invite-emails" className="text-xs font-semibold text-neutral-400">Invite by email — paste one or many (comma or new line)</label>
+              <div className="flex gap-2 items-start">
+                <textarea
+                  id="invite-emails"
+                  rows={3}
                   value={inviteEmailInput}
                   onChange={(e) => setInviteEmailInput(e.target.value)}
-                  placeholder="e.g. client.executive@alpha-tech.cloud"
-                  className="flex-1 px-3 py-2.5 rounded-xl bg-neutral-900 border border-white/10 text-xs text-white placeholder:text-neutral-500 focus:outline-none focus:border-indigo-500"
+                  placeholder={'ana@acme.com, li@acme.com\nsam@partner.io'}
+                  className="flex-1 px-3 py-2.5 rounded-xl bg-neutral-900 border border-white/10 text-xs text-white placeholder:text-neutral-500 focus:outline-none focus:border-indigo-500 resize-y"
                 />
                 <button
                   type="submit"
-                  disabled={isInviting || !inviteEmailInput.trim()}
+                  disabled={isInviting || !inviteEmailInput.trim() || remainingSeats === 0}
                   className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white font-bold text-xs transition-all cursor-pointer"
                 >
                   {isInviting ? 'Sending...' : 'Send'}
