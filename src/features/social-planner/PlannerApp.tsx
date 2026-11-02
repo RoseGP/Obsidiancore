@@ -4,7 +4,7 @@
  */
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
-  ArrowLeft, BarChart3, Bell, Calendar, Check, ChevronsUpDown, Inbox, LayoutDashboard, Menu, PenSquare, Plus, Search, Settings, Users, X, Zap,
+  ArrowLeft, BarChart3, Bell, Calendar, Check, ChevronsUpDown, Inbox, LayoutDashboard, Menu, PenSquare, Plus, Radio, Search, Settings, X,
 } from 'lucide-react';
 import './planner.css';
 import { addDays, defaultSlot, formatDateTime, startOfDay } from './domain/calendar';
@@ -19,23 +19,36 @@ import { AccountsPage as LegacyAccountsPage, AnalyticsPage, DashboardPage, Inbox
 import { AccountsPage } from './pages/AccountsPage';
 import type { AccountsApi } from '../social-accounts/client/accountsApi';
 import { normalizeAccount } from './domain/model';
-import { Button, Dialog, IconButton, PlatformGlyph, Portal, Skeleton, ToastProvider, cx } from './ui/kit';
+import { Button, Dialog, IconButton, PlatformGlyph, PlatformLogo, Portal, SectionHeader, Skeleton, ToastProvider, cx } from './ui/kit';
 
 type Route = 'dashboard' | 'calendar' | 'compose' | 'analytics' | 'accounts' | 'inbox' | 'settings' | 'classic';
 
-const NAV: { id: Exclude<Route, 'classic'>; label: string; icon: React.ElementType }[] = [
-  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { id: 'calendar', label: 'Calendar', icon: Calendar },
-  { id: 'compose', label: 'Compose', icon: PenSquare },
-  { id: 'analytics', label: 'Analytics', icon: BarChart3 },
-  { id: 'accounts', label: 'Accounts', icon: Users },
-  { id: 'inbox', label: 'Inbox', icon: Inbox },
-  { id: 'settings', label: 'Settings', icon: Settings },
+type NavItem = { id: Exclude<Route, 'classic'>; label: string; icon: React.ElementType };
+const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
+  { label: 'Plan', items: [
+    { id: 'dashboard', label: 'Overview', icon: LayoutDashboard },
+    { id: 'calendar', label: 'Calendar', icon: Calendar },
+    { id: 'compose', label: 'Compose', icon: PenSquare },
+  ] },
+  { label: 'Manage', items: [
+    { id: 'accounts', label: 'Channels', icon: Radio },
+    { id: 'inbox', label: 'Inbox', icon: Inbox },
+  ] },
+  { label: 'Insights', items: [
+    { id: 'analytics', label: 'Analytics', icon: BarChart3 },
+  ] },
 ];
 
-const TITLES: Record<Route, string> = {
-  dashboard: 'Dashboard', calendar: 'Content Calendar', compose: 'Compose', analytics: 'Analytics',
-  accounts: 'Accounts', inbox: 'Inbox', settings: 'Settings', classic: 'Advanced tools',
+/** Section title + one-line description shown above each page. */
+const SECTIONS: Record<Route, { title: string; description: string }> = {
+  dashboard: { title: 'Overview', description: 'What’s scheduled, what went out, and what needs your attention.' },
+  calendar: { title: 'Content calendar', description: 'Plan and reschedule posts across every channel. Drag a post to move it.' },
+  compose: { title: 'Compose', description: '' },
+  analytics: { title: 'Analytics', description: 'Publishing activity across your channels.' },
+  accounts: { title: 'Channels', description: '' },
+  inbox: { title: 'Inbox', description: 'Comments and direct messages from your channels.' },
+  settings: { title: 'Settings', description: 'Planner preferences and advanced integrations.' },
+  classic: { title: 'Advanced tools', description: 'Postiz panel, publishing worker monitor and the grid planner.' },
 };
 
 export interface PlannerAppProps {
@@ -62,17 +75,6 @@ export interface PlannerAppProps {
   style?: React.CSSProperties;
 }
 
-function Logo({ compact }: { compact?: boolean }) {
-  return (
-    <div className="flex items-center gap-2.5">
-      <span className="flex h-9 w-9 flex-none items-center justify-center rounded-full" style={{ background: 'linear-gradient(135deg,#7c6cf6,#5468f2)', boxShadow: '0 6px 16px -6px rgba(109,94,245,.8)' }}>
-        <Zap size={18} fill="#fff" color="#fff" aria-hidden />
-      </span>
-      {!compact && <span className="display text-[21px] font-bold tracking-tight">Pulse</span>}
-    </div>
-  );
-}
-
 function WorkspaceSelector({ name, compact }: { name: string; compact?: boolean }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -84,19 +86,28 @@ function WorkspaceSelector({ name, compact }: { name: string; compact?: boolean 
     return () => { document.removeEventListener('mousedown', close); document.removeEventListener('keydown', esc); };
   }, [open]);
   const initial = name.trim().charAt(0).toUpperCase() || 'W';
+  const mark = (s: number) => (
+    <span className="flex flex-none items-center justify-center rounded-lg font-semibold" style={{ width: s, height: s, fontSize: s * 0.42, background: 'var(--sp-accent)', color: 'var(--accent-contrast, #fff)' }} aria-hidden>{initial}</span>
+  );
   return (
     <div ref={ref} className="relative">
       <button type="button" aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen((o) => !o)} aria-label={`Workspace: ${name}`}
-        className={cx('flex w-full items-center gap-2.5 rounded-xl text-left', compact ? 'justify-center p-1.5' : 'px-2.5 py-2')}
-        style={{ background: 'var(--sp-surface)', border: '1px solid var(--sp-border-strong)', font: 'inherit', color: 'inherit', cursor: 'pointer' }}>
-        <span className="flex h-7 w-7 flex-none items-center justify-center rounded-full text-[12px] font-bold" style={{ background: '#2b2c55', color: '#c4bcff' }} aria-hidden>{initial}</span>
-        {!compact && <><span className="min-w-0 flex-1 truncate text-[13.5px] font-medium">{name}</span><ChevronsUpDown size={15} className="sp-faint" aria-hidden /></>}
+        className={cx('flex w-full items-center gap-2.5 rounded-[10px] text-left transition-colors hover:bg-[var(--sp-surface-2)]', compact ? 'justify-center p-1.5' : 'p-1.5 pr-2')}
+        style={{ background: 'transparent', border: 0, font: 'inherit', color: 'inherit', cursor: 'pointer' }}>
+        {mark(32)}
+        {!compact && <>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-[13.5px] font-semibold leading-tight">{name}</span>
+            <span className="sp-faint block truncate text-[12px] leading-tight">Social Planner</span>
+          </span>
+          <ChevronsUpDown size={15} className="sp-faint" aria-hidden />
+        </>}
       </button>
       {open && (
-        <div role="listbox" aria-label="Workspaces" className="sp-pop absolute left-0 top-[calc(100%+6px)] z-40 w-[230px] p-1.5">
+        <div role="listbox" aria-label="Workspaces" className="sp-pop animate absolute left-0 top-[calc(100%+6px)] z-40 w-[232px] p-1.5">
           <div role="option" aria-selected="true" className="flex items-center gap-2.5 rounded-lg p-2 text-[13.5px]" style={{ background: 'var(--sp-surface-2)' }}>
-            <span className="flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-bold" style={{ background: '#2b2c55', color: '#c4bcff' }}>{initial}</span>
-            <span className="flex-1 truncate">{name}</span><Check size={15} style={{ color: 'var(--sp-accent-text)' }} />
+            {mark(24)}
+            <span className="flex-1 truncate font-medium">{name}</span><Check size={15} style={{ color: 'var(--sp-accent-text)' }} />
           </div>
           <p className="sp-faint px-2 pb-1 pt-2 text-[12px]">Workspaces are managed in CRM settings.</p>
         </div>
@@ -105,44 +116,70 @@ function WorkspaceSelector({ name, compact }: { name: string; compact?: boolean 
   );
 }
 
-function Sidebar({ route, go, workspaceName, compact, failedCount }: { route: Route; go: (r: Route) => void; workspaceName: string; compact: boolean; failedCount: number }) {
-  const { accounts, accountsState } = usePlanner();
+function NavButton({ item, active, compact, onClick, badge }: { item: NavItem; active: boolean; compact: boolean; onClick: () => void; badge?: number }) {
   return (
-    <nav aria-label="Pulse" className="flex h-full flex-col gap-5 px-3 py-5" style={{ background: 'var(--sp-sidebar)', borderRight: '1px solid var(--sp-border)' }}>
-      <div className={cx(compact ? 'flex justify-center' : 'px-2')}><Logo compact={compact} /></div>
-      <WorkspaceSelector name={workspaceName} compact={compact} />
-      <ul className="space-y-1">
-        {NAV.map((n) => (
-          <li key={n.id}>
-            <button type="button" className={cx('sp-nav-item', compact && 'justify-center px-0')} aria-current={route === n.id || (n.id === 'settings' && route === 'classic') ? 'page' : undefined}
-              onClick={() => go(n.id)} title={compact ? n.label : undefined} aria-label={compact ? n.label : undefined}>
-              <n.icon size={18} aria-hidden />
-              {!compact && n.label}
-              {n.id === 'dashboard' && failedCount > 0 && (compact
-                ? <span className="absolute right-2 top-2 h-2 w-2 rounded-full" style={{ background: 'var(--sp-danger)' }} aria-label={`${failedCount} failed`} />
-                : <span className="sp-badge" style={{ background: 'var(--sp-danger-strong)' }} aria-label={`${failedCount} failed posts`}>{failedCount}</span>)}
-            </button>
-          </li>
+    <button type="button" className={cx('sp-nav-item', compact && 'justify-center px-0')} aria-current={active ? 'page' : undefined}
+      onClick={onClick} title={compact ? item.label : undefined} aria-label={compact ? item.label : undefined}>
+      <item.icon size={17} aria-hidden />
+      {!compact && item.label}
+      {!!badge && (compact
+        ? <span className="absolute right-2 top-1.5 h-2 w-2 rounded-full" style={{ background: 'var(--sp-danger)' }} aria-label={`${badge} failed`} />
+        : <span className="sp-badge" style={{ background: 'var(--sp-danger)' }} aria-label={`${badge} failed posts`}>{badge}</span>)}
+    </button>
+  );
+}
+
+function Sidebar({ route, go, workspaceName, compact, failedCount, onClose }: { route: Route; go: (r: Route) => void; workspaceName: string; compact: boolean; failedCount: number; onClose?: () => void }) {
+  const { accounts, accountsState } = usePlanner();
+  const shown = accounts?.slice(0, 5) ?? [];
+  const more = (accounts?.length ?? 0) - shown.length;
+  return (
+    <nav aria-label="Social Planner" className="flex h-full flex-col px-3 py-4" style={{ background: 'var(--sp-sidebar)', borderRight: '1px solid var(--sp-border)' }}>
+      <div className="flex items-center gap-1">
+        <div className="min-w-0 flex-1"><WorkspaceSelector name={workspaceName} compact={compact} /></div>
+        {onClose && <IconButton label="Close navigation" small onClick={onClose}><X size={18} /></IconButton>}
+      </div>
+      <div className="mt-5 min-h-0 flex-1 space-y-5 overflow-y-auto">
+        {NAV_GROUPS.map((g) => (
+          <div key={g.label}>
+            {compact ? <div className="sp-divider mx-2 mb-2" /> : <p className="sp-nav-label">{g.label}</p>}
+            <ul className="space-y-0.5">
+              {g.items.map((n) => (
+                <li key={n.id}><NavButton item={n} active={route === n.id} compact={compact} onClick={() => go(n.id)} badge={n.id === 'dashboard' ? failedCount : undefined} /></li>
+              ))}
+            </ul>
+          </div>
         ))}
-      </ul>
-      {!compact && (
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          <p className="sp-faint px-3 pb-2 text-[11px] font-semibold uppercase tracking-[0.1em]">Connected accounts</p>
-          {accountsState.status === 'loading' ? <div className="space-y-2 px-3">{[0, 1].map((i) => <Skeleton key={i} style={{ height: 18 }} />)}</div>
-            : accountsState.status === 'error' ? <p className="sp-faint px-3 text-[12.5px]">Couldn’t load accounts.</p>
-            : !accounts?.length ? <button type="button" onClick={() => go('accounts')} className="px-3 text-left text-[12.5px]" style={{ background: 'none', border: 0, color: 'var(--sp-accent-text)', cursor: 'pointer', font: 'inherit' }}>Connect an account</button>
-            : (
-              <ul className="space-y-1">
-                {accounts.map((a) => (
-                  <li key={a.id} className="flex items-center gap-2.5 rounded-lg px-3 py-1.5 text-[12.5px]">
-                    {a.platform ? <PlatformGlyph id={a.platform} size={14} color={PLATFORMS[a.platform].dot} /> : <span className="h-3.5 w-3.5" />}
-                    <span className="sp-muted min-w-0 flex-1 truncate">{a.handle || a.rawPlatform}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-        </div>
-      )}
+        {!compact && (
+          <div>
+            <div className="flex items-center justify-between pr-1">
+              <p className="sp-nav-label">Connected</p>
+              <button type="button" onClick={() => go('accounts')} className="sp-faint -mt-1.5 rounded-md p-1 hover:text-[var(--sp-text)]" style={{ background: 'none', border: 0, cursor: 'pointer' }} aria-label="Connect an account" title="Connect an account"><Plus size={14} /></button>
+            </div>
+            {accountsState.status === 'loading' && !accounts ? <div className="space-y-2 px-2.5">{[0, 1].map((i) => <Skeleton key={i} style={{ height: 18 }} />)}</div>
+              : accountsState.status === 'error' ? <p className="sp-faint px-2.5 text-[12.5px]">Couldn’t load channels.</p>
+              : !accounts?.length ? <button type="button" onClick={() => go('accounts')} className="px-2.5 text-left text-[12.5px] font-medium" style={{ background: 'none', border: 0, color: 'var(--sp-accent-text)', cursor: 'pointer', font: 'inherit' }}>Connect your first channel</button>
+              : (
+                <ul className="space-y-0.5">
+                  {shown.map((a) => (
+                    <li key={a.id}>
+                      <button type="button" onClick={() => go('accounts')} className="sp-nav-item" style={{ height: 32, fontSize: 12.5 }}>
+                        {a.platform ? <PlatformLogo id={a.platform} size={18} style={{ borderRadius: 5 }} /> : <span className="h-[18px] w-[18px]" />}
+                        <span className="min-w-0 flex-1 truncate">{a.handle || a.rawPlatform}</span>
+                        <span className="h-1.5 w-1.5 flex-none rounded-full" style={{ background: a.health === 'expired' ? 'var(--sp-danger)' : a.health === 'attention' ? 'var(--sp-warning)' : 'var(--sp-success)' }}
+                          title={a.health === 'expired' ? 'Expired' : a.health === 'attention' ? 'Needs attention' : 'Connected'} aria-label={a.health === 'expired' ? 'Expired' : a.health === 'attention' ? 'Needs attention' : 'Connected'} />
+                      </button>
+                    </li>
+                  ))}
+                  {more > 0 && <li><button type="button" onClick={() => go('accounts')} className="sp-nav-item" style={{ height: 30, fontSize: 12.5 }}><span className="w-[18px]" />+{more} more</button></li>}
+                </ul>
+              )}
+          </div>
+        )}
+      </div>
+      <div className="mt-3 pt-3" style={{ borderTop: '1px solid var(--sp-border)' }}>
+        <NavButton item={{ id: 'settings', label: 'Settings', icon: Settings }} active={route === 'settings' || route === 'classic'} compact={compact} onClick={() => go('settings')} />
+      </div>
     </nav>
   );
 }
@@ -164,7 +201,7 @@ function SearchDialog({ open, onClose }: { open: boolean; onClose: () => void })
       </div>
       <div className="mt-3 min-h-[120px]" aria-live="polite">
         {range.status === 'loading' && term ? <div className="space-y-2">{[0, 1].map((i) => <Skeleton key={i} style={{ height: 48 }} />)}</div>
-          : range.status === 'error' ? <p className="text-[13px]" style={{ color: '#fca5a5' }}>{range.error}</p>
+          : range.status === 'error' ? <p className="sp-danger-text text-[13px]">{range.error}</p>
           : !term ? <p className="sp-faint py-8 text-center text-[13px]">Type to search your posts.</p>
           : !results.length ? <p className="sp-muted py-8 text-center text-[13px]">No posts match “{q.trim()}”.</p>
           : (
@@ -202,11 +239,11 @@ function NotificationsButton() {
   return (
     <div ref={ref} className="relative">
       <IconButton label={`Notifications${total ? `, ${total}` : ''}`} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
-        <span className="relative"><Bell size={18} />{count > 0 && <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full" style={{ background: 'var(--sp-danger-strong)', boxShadow: '0 0 0 2px var(--sp-surface)' }} />}</span>
+        <span className="relative flex"><Bell size={17} />{count > 0 && <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full" style={{ background: 'var(--sp-danger)', boxShadow: '0 0 0 2px var(--sp-surface)' }} />}</span>
       </IconButton>
       {open && (
         <div className="sp-pop animate absolute right-0 top-[calc(100%+8px)] z-40 w-[min(340px,calc(100vw-24px))]" role="dialog" aria-label="Notifications">
-          <p className="display px-4 pb-1 pt-3 text-[14px] font-semibold">Notifications</p>
+          <p className="px-4 pb-1 pt-3 text-[13.5px] font-semibold">Notifications</p>
           <NotificationList onPick={(p, el) => { setOpen(false); openPreview(p, el, true); }} />
         </div>
       )}
@@ -236,62 +273,85 @@ function Shell(props: PlannerAppProps) {
   const mode = width >= 1100 ? 'desktop' : width >= 720 ? 'tablet' : 'mobile';
   useEffect(() => { if (mode === 'mobile' && calView === 'week') setCalView('list'); }, [mode]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ⌘K / Ctrl+K opens post search.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k' && rootRef.current?.isConnected) { e.preventDefault(); setSearch(true); }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, []);
+
   const newPost = (iso?: string) => setComposer({ mode: 'create', scheduledAt: iso ?? defaultSlot(new Date(), prefs.defaultHour) });
   const go = (r: Route) => {
     setDrawer(false);
     if (r === 'compose') { newPost(); return; }
     setRoute(r);
+    document.getElementById('sp-main')?.scrollTo({ top: 0 });
   };
 
-  const sidebar = (compact: boolean) => <Sidebar route={route} go={go} workspaceName={props.workspaceName} compact={compact} failedCount={failedCount} />;
+  const sidebar = (compact: boolean, onClose?: () => void) => <Sidebar route={route} go={go} workspaceName={props.workspaceName} compact={compact} failedCount={failedCount} onClose={onClose} />;
+  const section = SECTIONS[route];
+  const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 
   return (
     <PreviewProvider onEdit={(p: PlannerPost) => setComposer({ mode: 'edit', post: p })}>
-      <div ref={rootRef} className="flex h-full overflow-hidden rounded-[22px]" style={{ background: 'var(--sp-shell)', border: '1px solid var(--sp-border)' }}>
-        {mode !== 'mobile' && <aside className="flex-none" style={{ width: mode === 'desktop' ? 244 : 76 }}>{sidebar(mode === 'tablet')}</aside>}
+      <div ref={rootRef} className="flex h-full overflow-hidden rounded-[var(--sp-radius-panel)]" style={{ background: 'var(--sp-shell)', border: '1px solid var(--sp-border)' }}>
+        {mode !== 'mobile' && <aside className="flex-none" style={{ width: mode === 'desktop' ? 248 : 68 }}>{sidebar(mode === 'tablet')}</aside>}
         {mode === 'mobile' && drawer && (
           <Portal>
             <div className="sp-overlay" style={{ justifyContent: 'flex-start', padding: 0 }} onMouseDown={(e) => { if (e.target === e.currentTarget) setDrawer(false); }}>
-              <div className="relative h-full w-[272px] max-w-[85vw]" role="dialog" aria-modal="true" aria-label="Navigation">
-                {sidebar(false)}
-                <IconButton label="Close navigation" small className="absolute right-2 top-5" onClick={() => setDrawer(false)}><X size={18} /></IconButton>
+              <div className="relative h-full w-[280px] max-w-[85vw]" role="dialog" aria-modal="true" aria-label="Navigation">
+                {sidebar(false, () => setDrawer(false))}
               </div>
             </div>
           </Portal>
         )}
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="flex flex-none items-center gap-3 px-4 py-4 sm:px-6" style={{ borderBottom: '1px solid var(--sp-border)' }}>
+          <header className="flex flex-none items-center gap-3 px-4 py-3.5 sm:px-6" style={{ background: 'var(--sp-surface)', borderBottom: '1px solid var(--sp-border)' }}>
             {mode === 'mobile' && <IconButton label="Open navigation" small onClick={() => setDrawer(true)}><Menu size={20} /></IconButton>}
-            {route === 'classic' && <IconButton label="Back to settings" small onClick={() => setRoute('settings')}><ArrowLeft size={18} /></IconButton>}
-            <h1 className="display min-w-0 flex-1 truncate text-[20px] font-semibold sm:text-[22px]">{mode === 'mobile' && route === 'calendar' ? 'Calendar' : TITLES[route]}</h1>
-            <IconButton label="Search posts" onClick={() => setSearch(true)}><Search size={18} /></IconButton>
+            <div className="min-w-0 flex-1">
+              <h1 className="display truncate text-[18px] font-semibold leading-tight sm:text-[20px]">Social Planner</h1>
+              {mode !== 'mobile' && <p className="sp-muted truncate text-[13px]">Plan, schedule and publish to every channel from one place.</p>}
+            </div>
+            {mode === 'desktop'
+              ? <button type="button" className="sp-search-trigger" onClick={() => setSearch(true)} aria-label="Search posts" aria-keyshortcuts={isMac ? 'Meta+K' : 'Control+K'}><Search size={15} aria-hidden /><span>Search posts…</span><span className="sp-kbd" aria-hidden>{isMac ? '⌘K' : 'Ctrl K'}</span></button>
+              : <IconButton label="Search posts" onClick={() => setSearch(true)}><Search size={17} /></IconButton>}
             <NotificationsButton />
             {mode === 'mobile'
-              ? <IconButton label="New post" onClick={() => newPost()} style={{ background: 'linear-gradient(135deg,#6d5ef5,#5468f2)', border: 0 }}><Plus size={18} /></IconButton>
-              : <Button variant="primary" icon={<Plus size={16} />} onClick={() => newPost()}>New Post</Button>}
+              ? <IconButton label="New post" onClick={() => newPost()} style={{ background: 'var(--sp-accent)', borderColor: 'var(--sp-accent)', color: '#fff' }}><Plus size={18} /></IconButton>
+              : <Button variant="primary" icon={<Plus size={16} />} onClick={() => newPost()}>New post</Button>}
           </header>
           {props.notice && !noticeHidden && (
-            <div role="status" className="flex flex-none items-center gap-3 px-4 py-2 text-[12.5px] sm:px-6" style={{ background: 'rgba(109,94,245,0.14)', borderBottom: '1px solid var(--sp-border)' }}>
+            <div role="status" className="flex flex-none items-center gap-3 px-4 py-2 text-[12.5px] sm:px-6" style={{ background: 'var(--sp-accent-tint)', borderBottom: '1px solid var(--sp-border)' }}>
               <span className="min-w-0 flex-1">{props.notice}</span>
               <IconButton label="Hide notice" small onClick={() => setNoticeHidden(true)}><X size={14} /></IconButton>
             </div>
           )}
           <main className="relative min-h-0 flex-1 overflow-y-auto" id="sp-main">
-            {route === 'dashboard' && <DashboardPage onOpenCalendar={() => setRoute('calendar')} onCompose={() => newPost()} />}
-            {route === 'calendar' && <CalendarPage onCompose={newPost} view={calView} setView={setCalView} anchor={anchor} setAnchor={setAnchor} />}
-            {route === 'analytics' && <AnalyticsPage />}
-            {route === 'accounts' && (props.accountsApi
-              ? <AccountsPage api={props.accountsApi} onOpenAdvanced={props.renderClassicTools ? () => setRoute('classic') : undefined} />
-              : <LegacyAccountsPage onManage={() => setRoute('classic')} />)}
-            {route === 'inbox' && <InboxPage onOpenMessaging={props.onOpenMessaging} />}
-            {route === 'settings' && <SettingsPage onOpenClassic={() => setRoute('classic')} />}
-            {route === 'classic' && (
-              <div className="p-3 sm:p-5">
-                <div className="overflow-hidden rounded-2xl" style={{ background: '#f8fafc', color: '#0f172a' }}>
-                  {props.renderClassicTools ? props.renderClassicTools() : <p className="p-6 text-[13px]">Advanced tools aren’t available here.</p>}
+            <div className="mx-auto w-full max-w-[1320px]">
+              {route !== 'accounts' && (
+                <div className="flex items-start gap-2 px-4 pt-5 sm:px-6 sm:pt-6">
+                  {route === 'classic' && <IconButton label="Back to settings" small onClick={() => setRoute('settings')}><ArrowLeft size={18} /></IconButton>}
+                  <div className="min-w-0 flex-1"><SectionHeader title={section.title} description={section.description} /></div>
                 </div>
-              </div>
-            )}
+              )}
+              {route === 'dashboard' && <DashboardPage onOpenCalendar={() => setRoute('calendar')} onCompose={() => newPost()} />}
+              {route === 'calendar' && <CalendarPage onCompose={newPost} view={calView} setView={setCalView} anchor={anchor} setAnchor={setAnchor} />}
+              {route === 'analytics' && <AnalyticsPage />}
+              {route === 'accounts' && (props.accountsApi
+                ? <AccountsPage api={props.accountsApi} onOpenAdvanced={props.renderClassicTools ? () => setRoute('classic') : undefined} />
+                : <LegacyAccountsPage onManage={() => setRoute('classic')} />)}
+              {route === 'inbox' && <InboxPage onOpenMessaging={props.onOpenMessaging} />}
+              {route === 'settings' && <SettingsPage onOpenClassic={() => setRoute('classic')} />}
+              {route === 'classic' && (
+                <div className="p-4 sm:p-6">
+                  <div className="sp-card overflow-hidden" style={{ background: '#f8fafc', color: '#0f172a' }}>
+                    {props.renderClassicTools ? props.renderClassicTools() : <p className="p-6 text-[13px]">Advanced tools aren’t available here.</p>}
+                  </div>
+                </div>
+              )}
+            </div>
           </main>
         </div>
       </div>
@@ -312,7 +372,7 @@ export default function PlannerApp(props: PlannerAppProps) {
       async listAccounts() {
         const o = await accountsApi.overview();
         return o.platforms.flatMap((c) => c.status === 'not_connected' ? [] : c.accounts.map((a) =>
-          normalizeAccount({ id: a.connectionId, platform: c.platform, handle: a.handle || a.name }))).filter((a): a is NonNullable<typeof a> => a !== null);
+          normalizeAccount({ id: a.connectionId, platform: c.platform, handle: a.handle || a.name, health: c.status === 'expired' ? 'expired' : c.status === 'needs_attention' ? 'attention' : 'ok' }))).filter((a): a is NonNullable<typeof a> => a !== null);
       },
     };
   }, [props.api, props.getAuthHeaders, props.accountsApi]);

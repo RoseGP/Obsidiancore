@@ -189,7 +189,7 @@ export function Composer({ open, target, defaultPlatforms, onClose }: {
                   title={accounts && !connected.has(p) ? `${PLATFORMS[p].label}: no connected account` : PLATFORMS[p].label}>
                   <PlatformGlyph id={p} size={14} color={on ? '#fff' : PLATFORMS[p].dot} />
                   {PLATFORMS[p].label}
-                  {accounts && <span className="h-1.5 w-1.5 rounded-full" style={{ background: connected.has(p) ? 'var(--sp-success)' : '#5c5e6c' }} aria-label={connected.has(p) ? 'connected' : 'not connected'} />}
+                  {accounts && <span className="h-1.5 w-1.5 rounded-full" style={{ background: connected.has(p) ? 'var(--sp-success)' : 'var(--sp-border-strong)' }} aria-label={connected.has(p) ? 'connected' : 'not connected'} />}
                 </button>
               );
             })}
@@ -206,7 +206,7 @@ export function Composer({ open, target, defaultPlatforms, onClose }: {
             {draft.platforms.length === 0 && <span className="sp-faint">{text.length.toLocaleString()} characters</span>}
             {draft.platforms.map((p) => {
               const over = text.length > PLATFORMS[p].charLimit;
-              return <span key={p} style={{ color: over ? '#fca5a5' : 'var(--sp-faint)' }}>{PLATFORMS[p].label} {text.length.toLocaleString()}/{PLATFORMS[p].charLimit.toLocaleString()}</span>;
+              return <span key={p} style={{ color: over ? 'var(--sp-danger)' : 'var(--sp-faint)' }}>{PLATFORMS[p].label} {text.length.toLocaleString()}/{PLATFORMS[p].charLimit.toLocaleString()}</span>;
             })}
           </div>
           {shownErrors.content && <p className="sp-error" role="alert">{shownErrors.content}</p>}

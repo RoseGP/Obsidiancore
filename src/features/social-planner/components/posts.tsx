@@ -9,7 +9,7 @@ import { Button, IconButton, PlatformGlyph, PlatformTile, Portal, StatusBadge, S
 export function chipBackground(p: PlannerPost): string {
   if (p.status === 'draft') return 'transparent';
   const first = p.platforms[0];
-  return first ? PLATFORMS[first].chip : '#3a3b47';
+  return first ? PLATFORMS[first].chip : 'var(--sp-muted)';
 }
 
 // ---------- Preview popover (shared, one at a time) ----------
@@ -115,7 +115,7 @@ function PostPreview({ postId, fallback, rect, pinned, onClose, onPin, onEdit }:
         onMouseEnter={onPin}
       >
         <div className="flex items-center gap-2.5">
-          <span className="flex h-8 w-8 flex-none items-center justify-center rounded-full text-white" style={{ background: first ? PLATFORMS[first].chip : '#3a3b47' }}>
+          <span className="flex h-8 w-8 flex-none items-center justify-center rounded-full text-white" style={{ background: first ? PLATFORMS[first].brand : 'var(--sp-muted)' }}>
             {first && <PlatformGlyph id={first} size={15} color="#fff" />}
           </span>
           <div className="min-w-0 flex-1">
@@ -128,7 +128,7 @@ function PostPreview({ postId, fallback, rect, pinned, onClose, onPin, onEdit }:
           <IconButton label="Delete post" small onClick={() => setConfirmDelete(true)} disabled={busy || post.status === 'publishing'} style={{ color: 'var(--sp-danger)' }}><Trash2 size={15} /></IconButton>
         </div>
 
-        <p className="mt-3 whitespace-pre-wrap break-words text-[13.5px] leading-relaxed" style={{ color: '#d6d7e0', display: '-webkit-box', WebkitLineClamp: 6, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+        <p className="mt-3 whitespace-pre-wrap break-words text-[13.5px] leading-relaxed" style={{ color: 'var(--sp-text)', display: '-webkit-box', WebkitLineClamp: 6, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
           {post.content ? `“${post.content}”` : <span className="sp-faint">No text</span>}
         </p>
         {post.mediaUrls.length > 0 && <p className="sp-faint mt-2 text-[12px]">{post.mediaUrls.length} media attachment{post.mediaUrls.length === 1 ? '' : 's'}</p>}
@@ -140,7 +140,7 @@ function PostPreview({ postId, fallback, rect, pinned, onClose, onPin, onEdit }:
           <StatusBadge status={post.status} />
         </div>
         {post.status === 'failed' && (
-          <div className="mt-3 rounded-lg p-2.5 text-[12.5px]" style={{ background: 'rgba(239,68,68,0.1)', color: '#fca5a5' }}>
+          <div className="mt-3 rounded-lg p-2.5 text-[12.5px]" style={{ background: 'var(--sp-danger-soft)', color: 'var(--sp-danger)' }}>
             {post.failureReason || 'Publishing failed.'}
             <div className="mt-2"><Button size="sm" variant="secondary" icon={<RotateCcw size={14} />} loading={busy} onClick={doRetry}>Retry now</Button></div>
           </div>

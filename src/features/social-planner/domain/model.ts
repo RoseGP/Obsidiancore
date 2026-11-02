@@ -14,6 +14,8 @@ export interface PlatformInfo {
   chip: string;
   /** Solid accent for dots and icons. */
   dot: string;
+  /** Official brand fill for logo tiles (white glyph on top). */
+  brand: string;
   charLimit: number;
   /** Platform rejects text-only posts. */
   requiresMedia: boolean;
@@ -24,16 +26,16 @@ export interface PlatformInfo {
 }
 
 export const PLATFORMS: Record<PlatformId, PlatformInfo> = {
-  instagram: { id: 'instagram', label: 'Instagram', chip: 'linear-gradient(135deg,#b42a6d 0%,#8e2fa8 100%)', dot: '#e1306c', charLimit: 2200, requiresMedia: true, autoPublish: false, primary: true },
-  x: { id: 'x', label: 'X', chip: '#1565a6', dot: '#4aa8ec', charLimit: 280, requiresMedia: false, autoPublish: true, primary: true },
-  linkedin: { id: 'linkedin', label: 'LinkedIn', chip: '#0a5dad', dot: '#3b82f6', charLimit: 3000, requiresMedia: false, autoPublish: true, primary: true },
-  tiktok: { id: 'tiktok', label: 'TikTok', chip: '#c3173f', dot: '#f0445a', charLimit: 2200, requiresMedia: true, autoPublish: false, primary: true },
-  facebook: { id: 'facebook', label: 'Facebook', chip: '#1659bd', dot: '#4b8cf0', charLimit: 63206, requiresMedia: false, autoPublish: false, primary: true },
-  youtube: { id: 'youtube', label: 'YouTube', chip: '#b91c1c', dot: '#ef4444', charLimit: 5000, requiresMedia: true, autoPublish: false, primary: true },
-  pinterest: { id: 'pinterest', label: 'Pinterest', chip: '#991b1b', dot: '#dc2626', charLimit: 500, requiresMedia: true, autoPublish: false, primary: false },
-  threads: { id: 'threads', label: 'Threads', chip: '#18181b', dot: '#71717a', charLimit: 500, requiresMedia: false, autoPublish: false, primary: true },
-  bluesky: { id: 'bluesky', label: 'Bluesky', chip: '#0f62c4', dot: '#3b9cff', charLimit: 300, requiresMedia: false, autoPublish: true, primary: false },
-  mastodon: { id: 'mastodon', label: 'Mastodon', chip: '#5636c7', dot: '#8c6cf5', charLimit: 500, requiresMedia: false, autoPublish: true, primary: false },
+  instagram: { id: 'instagram', label: 'Instagram', chip: 'linear-gradient(135deg,#b42a6d 0%,#8e2fa8 100%)', dot: '#e1306c', brand: 'radial-gradient(circle at 30% 107%,#fdf497 0%,#fdf497 5%,#fd5949 45%,#d6249f 60%,#285aeb 90%)', charLimit: 2200, requiresMedia: true, autoPublish: false, primary: true },
+  x: { id: 'x', label: 'X', chip: '#1565a6', dot: '#4aa8ec', brand: '#0f0f10', charLimit: 280, requiresMedia: false, autoPublish: true, primary: true },
+  linkedin: { id: 'linkedin', label: 'LinkedIn', chip: '#0a5dad', dot: '#3b82f6', brand: '#0a66c2', charLimit: 3000, requiresMedia: false, autoPublish: true, primary: true },
+  tiktok: { id: 'tiktok', label: 'TikTok', chip: '#c3173f', dot: '#f0445a', brand: '#0f0f10', charLimit: 2200, requiresMedia: true, autoPublish: false, primary: true },
+  facebook: { id: 'facebook', label: 'Facebook', chip: '#1659bd', dot: '#4b8cf0', brand: '#1877f2', charLimit: 63206, requiresMedia: false, autoPublish: false, primary: true },
+  youtube: { id: 'youtube', label: 'YouTube', chip: '#b91c1c', dot: '#ef4444', brand: '#ff0000', charLimit: 5000, requiresMedia: true, autoPublish: false, primary: true },
+  pinterest: { id: 'pinterest', label: 'Pinterest', chip: '#991b1b', dot: '#dc2626', brand: '#e60023', charLimit: 500, requiresMedia: true, autoPublish: false, primary: false },
+  threads: { id: 'threads', label: 'Threads', chip: '#18181b', dot: '#71717a', brand: '#0f0f10', charLimit: 500, requiresMedia: false, autoPublish: false, primary: true },
+  bluesky: { id: 'bluesky', label: 'Bluesky', chip: '#0f62c4', dot: '#3b9cff', brand: '#1185fe', charLimit: 300, requiresMedia: false, autoPublish: true, primary: false },
+  mastodon: { id: 'mastodon', label: 'Mastodon', chip: '#5636c7', dot: '#8c6cf5', brand: '#6364ff', charLimit: 500, requiresMedia: false, autoPublish: true, primary: false },
 };
 
 export const PRIMARY_PLATFORMS: PlatformId[] = ['instagram', 'x', 'linkedin', 'tiktok', 'facebook', 'youtube', 'threads'];
@@ -112,6 +114,8 @@ export interface ConnectedAccount {
   rawPlatform: string;
   handle: string;
   instanceUrl?: string;
+  /** Connection health when the accounts API reports it. */
+  health?: 'ok' | 'expired' | 'attention';
 }
 
 export function normalizeAccount(raw: any): ConnectedAccount | null {
@@ -122,6 +126,7 @@ export function normalizeAccount(raw: any): ConnectedAccount | null {
     rawPlatform: String(raw.platform),
     handle: String(raw.handle ?? ''),
     instanceUrl: raw.instanceUrl || undefined,
+    health: raw.health === 'expired' || raw.health === 'attention' || raw.health === 'ok' ? raw.health : undefined,
   };
 }
 

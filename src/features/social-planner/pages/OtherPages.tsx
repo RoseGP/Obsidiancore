@@ -6,17 +6,18 @@ import { usePlanner } from '../state/PlannerStore';
 import { usePrefs, type PlannerPrefs } from '../state/prefs';
 import { usePreview } from '../components/posts';
 import { AgendaList } from './CalendarPage';
-import { Banner, Button, EmptyState, ErrorState, PlatformGlyph, PlatformTile, Segmented, Skeleton, StatusBadge, useToast } from '../ui/kit';
+import { Banner, Button, EmptyState, ErrorState, PlatformGlyph, PlatformLogo, PlatformTile, Segmented, Skeleton, StatusBadge, useToast } from '../ui/kit';
 
 function StatCard({ label, value, hint, icon, tone, loading }: { label: string; value: number; hint: string; icon: React.ReactNode; tone?: 'danger'; loading?: boolean }) {
+  const danger = tone === 'danger' && value > 0;
   return (
-    <div className="sp-card p-4">
-      <div className="flex items-center justify-between">
-        <span className="sp-muted text-[13px] font-medium">{label}</span>
-        <span className="flex h-8 w-8 items-center justify-center rounded-lg" style={{ background: tone === 'danger' && value > 0 ? 'rgba(239,68,68,0.14)' : 'var(--sp-surface-2)', color: tone === 'danger' && value > 0 ? 'var(--sp-danger)' : 'var(--sp-accent-text)' }} aria-hidden>{icon}</span>
+    <div className="sp-card p-3.5 sm:p-4">
+      <div className="flex items-center gap-2">
+        <span className="flex h-7 w-7 flex-none items-center justify-center rounded-lg" style={{ background: danger ? 'var(--sp-danger-soft)' : 'var(--sp-surface-2)', color: danger ? 'var(--sp-danger)' : 'var(--sp-muted)' }} aria-hidden>{icon}</span>
+        <span className="sp-muted text-[12.5px] font-medium leading-tight">{label}</span>
       </div>
-      {loading ? <Skeleton className="mt-3" style={{ height: 30, width: 70 }} /> : <p className="display num mt-2 text-[28px] font-semibold">{value}</p>}
-      <p className="sp-faint mt-1 text-[12px]">{hint}</p>
+      {loading ? <Skeleton className="mt-3" style={{ height: 26, width: 64 }} /> : <p className="display num mt-2.5 text-[24px] font-semibold leading-none">{value}</p>}
+      <p className={danger ? 'sp-danger-text mt-1.5 text-[12px]' : 'sp-faint mt-1.5 text-[12px]'}>{hint}</p>
     </div>
   );
 }
@@ -61,11 +62,11 @@ export function DashboardPage({ onOpenCalendar, onCompose }: { onOpenCalendar: (
           <h2 id="sp-attn" className="display mb-3 text-[15px] font-semibold">Needs attention</h2>
           <ul className="space-y-2">
             {failed.slice(0, 5).map((p) => (
-              <li key={p.id} className="flex flex-wrap items-center gap-3 rounded-xl p-3" style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)' }}>
+              <li key={p.id} className="flex flex-wrap items-center gap-3 rounded-xl p-3" style={{ background: 'var(--sp-danger-soft)', border: '1px solid color-mix(in srgb, var(--sp-danger) 25%, transparent)' }}>
                 {p.platforms[0] && <PlatformTile id={p.platforms[0]} size={22} />}
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-[13.5px] font-medium">{postTitle(p, 80)}</p>
-                  <p className="text-[12px]" style={{ color: '#fca5a5' }}>{p.failureReason || 'Publishing failed.'}</p>
+                  <p className="sp-danger-text text-[12px]">{p.failureReason || 'Publishing failed.'}</p>
                 </div>
                 <Button size="sm" variant="secondary" icon={<RotateCcw size={14} />} loading={isBusy(p.id)} onClick={async () => {
                   try { await retry(p.id); toast({ tone: 'success', title: 'Queued for another try' }); } catch (e: any) { if (e?.code !== 'busy') toast({ tone: 'error', title: 'Retry failed', body: e?.message }); }
@@ -118,8 +119,7 @@ export function AnalyticsPage() {
 
   return (
     <div className="space-y-5 p-4 sm:p-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="sp-muted text-[13.5px]">Publishing activity from your calendar.</p>
+      <div className="flex flex-wrap items-center justify-end gap-3">
         <Segmented<"30" | "90"> label="Period" value={days} onChange={setDays} options={[{ value: '30', label: '30 days' }, { value: '90', label: '90 days' }]} />
       </div>
       {range.status === 'error' ? <div className="sp-card"><ErrorState title="Analytics couldn’t load" message={range.error} onRetry={range.reload} /></div> : (
@@ -127,9 +127,9 @@ export function AnalyticsPage() {
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
             <StatCard label="Published" value={published.length} hint={`Last ${days} days`} icon={<CheckCircle2 size={16} />} loading={loading} />
             <StatCard label="Failed" value={failed.length} hint={`Last ${days} days`} icon={<AlertTriangle size={16} />} tone="danger" loading={loading} />
-            <div className="sp-card col-span-2 p-4 lg:col-span-1">
-              <span className="sp-muted text-[13px] font-medium">Publish success rate</span>
-              {loading ? <Skeleton className="mt-3" style={{ height: 30, width: 90 }} /> : <p className="display num mt-2 text-[28px] font-semibold">{rate === null ? '—' : `${rate}%`}</p>}
+            <div className="sp-card col-span-2 p-3.5 sm:p-4 lg:col-span-1">
+              <span className="sp-muted text-[12.5px] font-medium">Publish success rate</span>
+              {loading ? <Skeleton className="mt-3" style={{ height: 26, width: 90 }} /> : <p className="display num mt-2.5 text-[24px] font-semibold leading-none">{rate === null ? '—' : `${rate}%`}</p>}
               <p className="sp-faint mt-1 text-[12px]">{rate === null ? 'No publish attempts yet' : `${published.length} of ${attempted} attempts`}</p>
             </div>
           </div>
@@ -141,7 +141,7 @@ export function AnalyticsPage() {
                   {weeks.map((w) => (
                     <div key={w.label} className="flex flex-1 flex-col items-center justify-end gap-1.5" title={`Week of ${w.label}: ${w.count}`}>
                       <span className="sp-faint text-[10.5px] num">{w.count || ''}</span>
-                      <div className="w-full rounded-t-md" style={{ height: `${(w.count / maxW) * 120}px`, minHeight: 2, background: 'linear-gradient(180deg,#8b7dff,#5468f2)' }} />
+                      <div className="w-full rounded-t-md" style={{ height: `${(w.count / maxW) * 120}px`, minHeight: 2, background: 'var(--sp-accent)' }} />
                     </div>
                   ))}
                 </div>
@@ -188,11 +188,11 @@ export function AccountsPage({ onManage }: { onManage: () => void }) {
           const acc = accounts?.filter((a) => a.platform === p) ?? [];
           return (
             <div key={p} className="sp-card flex items-start gap-3 p-4">
-              <span className="flex h-10 w-10 flex-none items-center justify-center rounded-xl" style={{ background: PLATFORMS[p].chip }}><PlatformGlyph id={p} size={18} color="#fff" /></span>
+              <PlatformLogo id={p} size={40} />
               <div className="min-w-0 flex-1">
                 <p className="font-semibold">{PLATFORMS[p].label}</p>
                 {accountsState.status === 'loading' ? <Skeleton className="mt-1.5" style={{ height: 14, width: 120 }} />
-                  : acc.length ? acc.map((a) => <p key={a.id} className="truncate text-[13px]" style={{ color: '#6ee7b7' }}>{a.handle || 'Connected'}</p>)
+                  : acc.length ? acc.map((a) => <p key={a.id} className="truncate text-[13px]" style={{ color: 'var(--sp-success)' }}>{a.handle || 'Connected'}</p>)
                   : <p className="sp-faint text-[13px]">Not connected</p>}
                 <p className="sp-faint mt-1.5 text-[12px]">{PLATFORMS[p].autoPublish ? 'Auto-publishing supported' : 'Scheduling only, auto-publishing not available yet'}</p>
               </div>

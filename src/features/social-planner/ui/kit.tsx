@@ -1,6 +1,6 @@
 import React, { createContext, forwardRef, useCallback, useContext, useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertTriangle, CheckCircle2, Clock, Info, Loader2, PencilLine, RefreshCw, X, XCircle } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Clock, Info, Loader2, MoreHorizontal, PencilLine, RefreshCw, Search, X, XCircle } from 'lucide-react';
 import { PLATFORMS, STATUS_LABEL, type PlatformId, type PostStatus } from '../domain/model';
 
 export const cx = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(' ');
@@ -44,6 +44,15 @@ export function PlatformTile({ id, size = 20 }: { id: PlatformId; size?: number 
   return (
     <span className="sp-chip-icon" style={{ width: size, height: size, borderRadius: size * 0.3 }} aria-hidden>
       <PlatformGlyph id={id} size={size * 0.62} color={id === 'instagram' ? '#b42a6d' : PLATFORMS[id].chip.startsWith('#') ? PLATFORMS[id].chip : '#333'} />
+    </span>
+  );
+}
+
+/** Brand-coloured rounded tile with a white glyph: the platform's logo. */
+export function PlatformLogo({ id, size = 36, className, style }: { id: PlatformId; size?: number; className?: string; style?: React.CSSProperties }) {
+  return (
+    <span className={cx('sp-logo', className)} style={{ width: size, height: size, borderRadius: Math.round(size * 0.28), background: PLATFORMS[id].brand, ...style }} aria-hidden>
+      <PlatformGlyph id={id} size={Math.round(size * 0.5)} color="#fff" />
     </span>
   );
 }
@@ -123,8 +132,8 @@ export function Skeleton({ className, style }: { className?: string; style?: Rea
 export function EmptyState({ icon, title, body, action }: { icon?: React.ReactNode; title: string; body?: React.ReactNode; action?: React.ReactNode }) {
   return (
     <div className="flex flex-col items-center justify-center px-6 py-14 text-center">
-      {icon && <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl" style={{ background: 'var(--sp-surface-2)', color: 'var(--sp-accent-text)', border: '1px solid var(--sp-border-strong)' }}>{icon}</div>}
-      <p className="display text-[16px] font-semibold">{title}</p>
+      {icon && <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl" style={{ background: 'var(--sp-surface)', color: 'var(--sp-muted)', border: '1px solid var(--sp-border)', boxShadow: 'var(--sp-shadow-sm)' }}>{icon}</div>}
+      <p className="display text-[15px] font-semibold">{title}</p>
       {body && <p className="sp-muted mt-1.5 max-w-sm text-[13.5px]">{body}</p>}
       {action && <div className="mt-5">{action}</div>}
     </div>
@@ -134,8 +143,8 @@ export function EmptyState({ icon, title, body, action }: { icon?: React.ReactNo
 export function ErrorState({ title = 'Something went wrong', message, onRetry }: { title?: string; message?: string; onRetry?: () => void }) {
   return (
     <div role="alert" className="flex flex-col items-center justify-center px-6 py-14 text-center">
-      <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl" style={{ background: 'rgba(239,68,68,0.12)', color: 'var(--sp-danger)' }}><AlertTriangle size={20} /></div>
-      <p className="display text-[16px] font-semibold">{title}</p>
+      <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl" style={{ background: 'var(--sp-danger-soft)', color: 'var(--sp-danger)' }}><AlertTriangle size={20} /></div>
+      <p className="display text-[15px] font-semibold">{title}</p>
       {message && <p className="sp-muted mt-1.5 max-w-sm text-[13.5px]">{message}</p>}
       {onRetry && <div className="mt-5"><Button icon={<RefreshCw size={15} />} onClick={onRetry}>Try again</Button></div>}
     </div>
@@ -143,13 +152,95 @@ export function ErrorState({ title = 'Something went wrong', message, onRetry }:
 }
 
 export function Banner({ tone, children, action }: { tone: 'info' | 'warning' | 'danger'; children: React.ReactNode; action?: React.ReactNode }) {
-  const c = { info: ['rgba(109,94,245,0.14)', '#c4bcff', Info], warning: ['rgba(251,191,36,0.12)', '#fcd34d', AlertTriangle], danger: ['rgba(239,68,68,0.13)', '#fca5a5', XCircle] }[tone] as [string, string, React.ElementType];
+  const c = { info: ['var(--sp-accent-tint)', 'var(--sp-accent-text)', Info], warning: ['var(--sp-warning-soft)', 'var(--sp-warning)', AlertTriangle], danger: ['var(--sp-danger-soft)', 'var(--sp-danger)', XCircle] }[tone] as [string, string, React.ElementType];
   const Icon = c[2];
   return (
-    <div role={tone === 'danger' ? 'alert' : 'status'} className="flex items-start gap-3 rounded-xl px-3.5 py-3 text-[13px]" style={{ background: c[0] }}>
-      <Icon size={16} style={{ color: c[1], flex: 'none', marginTop: 2 }} aria-hidden />
+    <div role={tone === 'danger' ? 'alert' : 'status'} className="flex items-center gap-3 rounded-[10px] px-3.5 py-2.5 text-[13px]" style={{ background: c[0], border: `1px solid color-mix(in srgb, ${c[1]} 22%, transparent)` }}>
+      <Icon size={16} style={{ color: c[1], flex: 'none' }} aria-hidden />
       <div className="min-w-0 flex-1">{children}</div>
       {action}
+    </div>
+  );
+}
+
+// ---------- Layout ----------
+
+/** Title + description + actions row that opens every planner section. */
+export function SectionHeader({ title, description, actions, id }: { title: React.ReactNode; description?: React.ReactNode; actions?: React.ReactNode; id?: string }) {
+  return (
+    <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+      <div className="min-w-0">
+        <h2 id={id} className="display text-[19px] font-semibold leading-tight">{title}</h2>
+        {description && <p className="sp-muted mt-1 max-w-[62ch] text-[13.5px]">{description}</p>}
+      </div>
+      {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+    </div>
+  );
+}
+
+export function SearchField({ value, onChange, placeholder, label, className, style }: {
+  value: string; onChange: (v: string) => void; placeholder?: string; label: string; className?: string; style?: React.CSSProperties;
+}) {
+  return (
+    <div className={cx('sp-search', className)} style={style}>
+      <Search size={15} aria-hidden />
+      <input className="sp-input" type="search" value={value} placeholder={placeholder} aria-label={label}
+        onChange={(e) => onChange(e.target.value)} onKeyDown={(e) => { if (e.key === 'Escape' && value) { e.stopPropagation(); onChange(''); } }} />
+    </div>
+  );
+}
+
+// ---------- Dropdown menu ----------
+
+export type MenuEntry = 'separator' | { label: string; icon?: React.ReactNode; onSelect: () => void; danger?: boolean; disabled?: boolean };
+
+/** Accessible dropdown menu: arrow keys, Home/End, Escape, outside click. */
+export function Menu({ label, items, trigger, align = 'end', width }: {
+  label: string; items: MenuEntry[]; trigger?: React.ReactNode; align?: 'start' | 'end'; width?: number;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrap = useRef<HTMLDivElement>(null);
+  const btn = useRef<HTMLButtonElement>(null);
+  const list = useRef<HTMLDivElement>(null);
+  const menuId = useId();
+  const focusables = () => [...(list.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)') ?? [])];
+  useEffect(() => {
+    if (!open) return;
+    focusables()[0]?.focus({ preventScroll: true });
+    const close = (e: MouseEvent) => { if (!wrap.current?.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [open]);
+  const onKey = (e: React.KeyboardEvent) => {
+    const f = focusables();
+    const i = f.indexOf(document.activeElement as HTMLButtonElement);
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setOpen(false); btn.current?.focus(); }
+    else if (e.key === 'Tab') setOpen(false);
+    else if (e.key === 'ArrowDown') { e.preventDefault(); f[(i + 1) % f.length]?.focus(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); f[(i - 1 + f.length) % f.length]?.focus(); }
+    else if (e.key === 'Home') { e.preventDefault(); f[0]?.focus(); }
+    else if (e.key === 'End') { e.preventDefault(); f[f.length - 1]?.focus(); }
+  };
+  return (
+    <div ref={wrap} className="relative inline-flex">
+      <button ref={btn} type="button" aria-label={label} title={label} aria-haspopup="menu" aria-expanded={open} aria-controls={open ? menuId : undefined}
+        className="sp-btn sp-icon-btn sm" onClick={() => setOpen((o) => !o)}
+        onKeyDown={(e) => { if (e.key === 'ArrowDown' && !open) { e.preventDefault(); setOpen(true); } }}>
+        {trigger ?? <MoreHorizontal size={17} />}
+      </button>
+      {open && (
+        <div ref={list} id={menuId} role="menu" aria-label={label} onKeyDown={onKey}
+          className={cx('sp-pop sp-menu animate absolute top-[calc(100%+4px)] z-40', align === 'end' ? 'right-0' : 'left-0')} style={width ? { width } : undefined}>
+          {items.map((it, i) => it === 'separator'
+            ? <div key={`s${i}`} role="separator" className="sp-menu-sep" />
+            : (
+              <button key={it.label} type="button" role="menuitem" tabIndex={-1} disabled={it.disabled} className={cx('sp-menu-item', it.danger && 'is-danger')}
+                onClick={() => { setOpen(false); btn.current?.focus({ preventScroll: true }); it.onSelect(); }}>
+                {it.icon}{it.label}
+              </button>
+            ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -184,8 +275,8 @@ export function Dialog({ open, onClose, title, description, children, footer, wi
       <div className="sp-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onClose(); }}>
         <div ref={ref} role="dialog" aria-modal="true" aria-labelledby={titleId} className="sp-dialog" style={{ maxWidth: width }}>
           <div className="flex items-start justify-between gap-4 px-6 pt-5 pb-2">
-            <div>
-              <h2 id={titleId} className="display text-[18px] font-semibold">{title}</h2>
+            <div className="min-w-0">
+              <h2 id={titleId} className="display text-[17px] font-semibold">{title}</h2>
               {description && <p className="sp-muted mt-1 text-[13.5px]">{description}</p>}
             </div>
             <IconButton label="Close" small onClick={onClose} disabled={busy}><X size={16} /></IconButton>

@@ -120,9 +120,9 @@ function MonthView({ anchor, posts, loading, onCreate, width }: {
                 style={{ border: 0, font: 'inherit', color: 'inherit', cursor: 'pointer' }}>
                 <span className="sp-daynum">{d.getDate()}</span>
                 <span className="flex gap-0.5">
-                  {loading && !dayPosts.length && i % 5 === 2 ? <span className="h-1.5 w-1.5 rounded-full" style={{ background: '#2d2e38' }} /> : null}
+                  {loading && !dayPosts.length && i % 5 === 2 ? <span className="h-1.5 w-1.5 rounded-full" style={{ background: 'var(--sp-border-strong)' }} /> : null}
                   {dayPosts.slice(0, 3).map((p) => (
-                    <span key={p.id} className="h-1.5 w-1.5 rounded-full" style={{ background: p.status === 'draft' ? '#6c6e7c' : PLATFORMS[p.platforms[0] ?? 'x'].dot }} />
+                    <span key={p.id} className="h-1.5 w-1.5 rounded-full" style={{ background: p.status === 'draft' ? 'var(--sp-faint)' : PLATFORMS[p.platforms[0] ?? 'x'].dot }} />
                   ))}
                 </span>
               </button>

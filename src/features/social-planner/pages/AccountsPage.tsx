@@ -1,17 +1,21 @@
-import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
-import { AlertTriangle, CheckCircle2, ExternalLink, Link2Off, Loader2, Plug, Plus, RefreshCw, ShieldCheck, Wrench } from 'lucide-react';
+/**
+ * Channels: the social accounts the planner publishes to.
+ * Connection flow (popup / redirect / credentials / workspace consent) talks to /api/accounts.
+ */
+import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { AlertTriangle, Clock, Copy, ExternalLink, Layers, Link2Off, Loader2, Plug, Plus, RefreshCw, RotateCw, ShieldCheck, Users, Wrench, X } from 'lucide-react';
 import type { AccountsApi } from '../../social-accounts/client/accountsApi';
 import { AccountsApiError } from '../../social-accounts/client/accountsApi';
 import type { AccountPlatform, AccountProfile, AccountsOverview, CardStatus, ConnectNext, PlatformCard } from '../../social-accounts/shared/types';
 import { PLATFORMS } from '../domain/model';
 import { usePlanner } from '../state/PlannerStore';
-import { Banner, Button, Dialog, ErrorState, PlatformGlyph, Skeleton, cx, useToast } from '../ui/kit';
+import { Banner, Button, Dialog, EmptyState, ErrorState, IconButton, Menu, PlatformLogo, SearchField, SectionHeader, Skeleton, cx, useToast, type MenuEntry } from '../ui/kit';
 
-const STATUS: Record<CardStatus, { label: string; cls: string; icon: React.ElementType }> = {
-  connected: { label: 'Connected', cls: 'sp-status-published', icon: CheckCircle2 },
-  not_connected: { label: 'Not connected', cls: 'sp-status-draft', icon: Plug },
-  expired: { label: 'Expired', cls: 'sp-status-failed', icon: AlertTriangle },
-  needs_attention: { label: 'Needs attention', cls: 'sp-status-publishing', icon: AlertTriangle },
+const STATUS: Record<CardStatus, { label: string; cls: string }> = {
+  connected: { label: 'Connected', cls: 'sp-status-published' },
+  not_connected: { label: 'Disconnected', cls: 'sp-status-draft' },
+  expired: { label: 'Expired', cls: 'sp-status-failed' },
+  needs_attention: { label: 'Needs attention', cls: 'sp-status-publishing' },
 };
 
 const RETURN_REASONS: Record<string, string> = {
@@ -30,22 +34,51 @@ type Op =
   | { kind: 'finishing' }
   | { kind: 'error'; message: string };
 
-function Avatar({ account, platform }: { account: AccountProfile; platform: AccountPlatform }) {
+/** Profile picture (or initial) with the platform's logo as a corner badge. */
+function AccountAvatar({ account, platform, size = 44 }: { account: AccountProfile; platform: AccountPlatform; size?: number }) {
   const [broken, setBroken] = useState(false);
-  if (account.pictureUrl && !broken) {
-    return <img src={account.pictureUrl} alt="" className="h-9 w-9 flex-none rounded-full object-cover" onError={() => setBroken(true)} referrerPolicy="no-referrer" />;
-  }
+  const badge = Math.round(size * 0.45);
   return (
-    <span className="flex h-9 w-9 flex-none items-center justify-center rounded-full text-[13px] font-bold" style={{ background: 'var(--sp-surface-3)', color: PLATFORMS[platform].dot }} aria-hidden>
-      {account.name.trim().charAt(0).toUpperCase() || '?'}
+    <span className="relative flex-none" style={{ width: size, height: size }}>
+      {account.pictureUrl && !broken
+        ? <img src={account.pictureUrl} alt="" className="h-full w-full rounded-full object-cover" style={{ border: '1px solid var(--sp-border)' }} onError={() => setBroken(true)} referrerPolicy="no-referrer" />
+        : (
+          <span className="flex h-full w-full items-center justify-center rounded-full font-semibold" style={{ background: 'var(--sp-surface-2)', color: 'var(--sp-muted)', border: '1px solid var(--sp-border)', fontSize: size * 0.38 }} aria-hidden>
+            {account.name.trim().charAt(0).toUpperCase() || '?'}
+          </span>
+        )}
+      <PlatformLogo id={platform} size={badge} className="sp-avatar-ring absolute" style={{ right: -3, bottom: -3, borderRadius: 999 }} />
     </span>
   );
 }
 
-function StatusPill({ status }: { status: CardStatus }) {
+/** Connection status badge: Connected · Disconnected · Expired · Needs attention. */
+export function ConnectionBadge({ status }: { status: CardStatus }) {
   const s = STATUS[status];
-  return <span className={`sp-status ${s.cls}`}><s.icon size={12} aria-hidden />{s.label}</span>;
+  return <span className={`sp-status ${s.cls}`}><span className="sp-dot" aria-hidden />{s.label}</span>;
 }
+
+const fmtDate = (iso?: string) => {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? '' : new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' }).format(d);
+};
+
+function relativeTime(iso?: string): string {
+  if (!iso) return '—';
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return '—';
+  const s = Math.round((Date.now() - t) / 1000);
+  if (s < 45) return 'Just now';
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m} min ago`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h} h ago`;
+  return fmtDate(iso);
+}
+
+type StatusFilter = 'all' | 'connected' | 'attention' | 'disconnected';
+const isProblem = (s: CardStatus) => s === 'expired' || s === 'needs_attention';
 
 function useCleanReturnParams(handler: (p: URLSearchParams) => void) {
   const done = useRef(false);
@@ -166,7 +199,7 @@ export function AccountsPage({ api, onOpenAdvanced }: { api: AccountsApi; onOpen
       if (popup) {
         try {
           popup.document.title = `Connect ${card.label}`;
-          popup.document.body.style.cssText = 'margin:0;font:15px system-ui;background:#141519;color:#ececf1;display:flex;align-items:center;justify-content:center;height:100vh';
+          popup.document.body.style.cssText = 'margin:0;font:15px system-ui;background:#f5f5f3;color:#1d1c1b;display:flex;align-items:center;justify-content:center;height:100vh';
           popup.document.body.textContent = `Opening ${card.label}…`;
         } catch { /* ignore */ }
       }
@@ -214,124 +247,258 @@ export function AccountsPage({ api, onOpenAdvanced }: { api: AccountsApi; onOpen
     } finally { setBusyDisconnect(false); }
   };
 
+  // ---------- Derived view state ----------
+
+  const [query, setQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [platformFilter, setPlatformFilter] = useState<AccountPlatform | 'all'>('all');
+  const [picker, setPicker] = useState(false);
+
+  const platforms = data?.platforms ?? [];
+  const rows = useMemo(() => platforms.flatMap((card) => card.accounts.map((account) => ({ card, account }))), [platforms]);
+  const unconnected = useMemo(() => platforms.filter((c) => c.accounts.length === 0), [platforms]);
+  const counts = {
+    all: rows.length + unconnected.length,
+    connected: rows.filter((r) => r.card.status === 'connected').length,
+    attention: rows.filter((r) => isProblem(r.card.status)).length + unconnected.filter((c) => isProblem(c.status)).length,
+    disconnected: unconnected.length,
+  };
+  const term = query.trim().toLowerCase();
+  const matchesCard = (c: PlatformCard) => (platformFilter === 'all' || c.platform === platformFilter);
+  const shownRows = rows.filter(({ card, account }) => matchesCard(card)
+    && (statusFilter === 'all' || (statusFilter === 'connected' && card.status === 'connected') || (statusFilter === 'attention' && isProblem(card.status)))
+    && (!term || [account.name, account.handle, card.label].some((v) => v?.toLowerCase().includes(term))));
+  const shownUnconnected = unconnected.filter((c) => matchesCard(c)
+    && (statusFilter === 'all' || statusFilter === 'disconnected' || (statusFilter === 'attention' && isProblem(c.status)))
+    && (!term || c.label.toLowerCase().includes(term)));
+  const activeOps = platforms.filter((c) => { const k = ops[c.platform]?.kind; return k === 'waiting' || k === 'finishing' || k === 'error'; });
+  const filtered = !!term || statusFilter !== 'all' || platformFilter !== 'all';
+  const clearFilters = () => { setQuery(''); setStatusFilter('all'); setPlatformFilter('all'); };
+  const refreshing = loadState.status === 'loading' && !!data;
+
+  const header = (
+    <SectionHeader id="sp-channels-title" title="Channels"
+      description="Connect the social accounts you publish to and keep every connection healthy."
+      actions={<>
+        <IconButton label="Refresh status" onClick={() => void load(true)} disabled={loadState.status === 'loading'}>
+          <RefreshCw size={16} className={refreshing ? 'sp-spin' : undefined} />
+        </IconButton>
+        <Button variant="primary" icon={<Plus size={16} />} onClick={() => setPicker(true)} disabled={!data}>Connect account</Button>
+      </>} />
+  );
+
   // ---------- Render ----------
 
   if (loadState.status === 'error' && !data) {
     return (
-      <div className="p-4 sm:p-6"><div className="sp-card">
-        <ErrorState
-          title={loadState.code === 'unauthorized' ? 'Sign in to manage accounts' : 'Accounts couldn’t load'}
-          message={loadState.code === 'unauthorized' ? 'Your session couldn’t be verified by the server. Sign in again, then reload this page.' : loadState.error}
-          onRetry={() => void load()}
-        />
-      </div></div>
+      <div className="space-y-5 p-4 sm:p-6">
+        {header}
+        <div className="sp-card">
+          <ErrorState
+            title={loadState.code === 'unauthorized' ? 'Sign in to manage channels' : 'Channels couldn’t load'}
+            message={loadState.code === 'unauthorized' ? 'Your session couldn’t be verified by the server. Sign in again, then reload this page.' : loadState.error}
+            onRetry={() => void load()}
+          />
+        </div>
+      </div>
     );
   }
 
   const pz = data?.postiz;
+  const accountMenu = (card: PlatformCard, a: AccountProfile, busy: boolean): MenuEntry[] => [
+    { label: 'Reconnect', icon: <RotateCw size={15} />, disabled: busy || !card.available, onSelect: () => void connect(card, a.connectionId) },
+    ...(card.method === 'postiz' ? [{ label: `Add another ${card.label} account`, icon: <Plus size={15} />, disabled: busy || !card.available, onSelect: () => void connect(card) }] : []),
+    ...(a.handle ? [{
+      label: 'Copy username', icon: <Copy size={15} />,
+      onSelect: () => { navigator.clipboard?.writeText(a.handle!).then(() => toast({ tone: 'success', title: 'Username copied' }), () => toast({ tone: 'error', title: 'Couldn’t copy' })); },
+    }] : []),
+    { label: 'Refresh status', icon: <RefreshCw size={15} />, onSelect: () => void load(true) },
+    'separator',
+    { label: 'Disconnect', icon: <Link2Off size={15} />, danger: true, disabled: busy, onSelect: () => setDisconnecting({ platform: card.platform, account: a, method: card.method }) },
+  ];
+
   return (
-    <div className="space-y-4 p-4 sm:p-6">
-      {pz?.mode === 'none' && (
-        <Banner tone="warning"><b>Postiz isn’t configured on the server.</b> <span className="sp-muted">Set POSTIZ_CLIENT_ID and POSTIZ_CLIENT_SECRET (or POSTIZ_API_KEY) to connect Instagram, Facebook, LinkedIn, X, TikTok and Mastodon.</span></Banner>
-      )}
-      {pz?.problem && <Banner tone={pz.problem.status === 'expired' ? 'danger' : 'warning'}>{pz.problem.detail}</Banner>}
-      {resume && (
-        <Banner tone="info" action={<Button size="sm" variant="primary" onClick={() => { const c = data?.platforms.find((x) => x.platform === resume); setResume(null); if (c) void connect(c); }}>Continue</Button>}>
-          Continue connecting <b>{PLATFORMS[resume].label}</b>.
-        </Banner>
+    <div className="space-y-6 p-4 sm:p-6" aria-labelledby="sp-channels-title">
+      {header}
+
+      {(pz?.mode === 'none' || pz?.problem || resume) && (
+        <div className="space-y-2.5">
+          {pz?.mode === 'none' && (
+            <Banner tone="warning"><b>Postiz isn’t configured on the server.</b> <span className="sp-muted">Set POSTIZ_CLIENT_ID and POSTIZ_CLIENT_SECRET (or POSTIZ_API_KEY) to connect Instagram, Facebook, LinkedIn, X, TikTok and Mastodon.</span></Banner>
+          )}
+          {pz?.problem && <Banner tone={pz.problem.status === 'expired' ? 'danger' : 'warning'}>{pz.problem.detail}</Banner>}
+          {resume && (
+            <Banner tone="info" action={<Button size="sm" variant="primary" onClick={() => { const c = data?.platforms.find((x) => x.platform === resume); setResume(null); if (c) void connect(c); }}>Continue</Button>}>
+              Continue connecting <b>{PLATFORMS[resume].label}</b>.
+            </Banner>
+          )}
+        </div>
       )}
 
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[13px]">
+      {/* Summary */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <SummaryTile icon={<Users size={16} />} label="Connected accounts" value={data ? String(rows.length) : null} hint={data ? `${counts.connected} active` : ''} />
+        <SummaryTile icon={<Layers size={16} />} label="Platforms in use" value={data ? `${platforms.length - unconnected.length}` : null} hint={data ? `of ${platforms.length} available` : ''} />
+        <SummaryTile icon={<AlertTriangle size={16} />} label="Need attention" value={data ? String(counts.attention) : null} hint={!data ? '' : counts.attention ? 'Reconnect to keep publishing' : 'All connections healthy'} tone={counts.attention ? 'danger' : undefined} />
+        <SummaryTile icon={<Clock size={16} />} label="Last checked" value={data ? relativeTime(data.checkedAt) : null} hint={!data ? '' : pz && pz.mode !== 'none'
+          ? (pz.mode === 'api_key' ? 'Team Postiz workspace' : pz.workspaceAuthorized ? `Postiz${pz.workspaceName ? ` · ${pz.workspaceName}` : ''} authorized` : 'Postiz not yet authorized')
+          : 'Connection status'} />
+      </div>
+
+      {/* In-flight connections */}
+      {activeOps.length > 0 && (
+        <div className="space-y-2.5" aria-live="polite">
+          {activeOps.map((card) => {
+            const op = ops[card.platform]!;
+            return (
+              <div key={card.platform} className="sp-card flex flex-wrap items-center gap-3 p-3.5" style={op.kind === 'error' ? { borderColor: 'color-mix(in srgb, var(--sp-danger) 35%, var(--sp-border))' } : { borderColor: 'color-mix(in srgb, var(--sp-accent) 35%, var(--sp-border))' }}>
+                <PlatformLogo id={card.platform} size={32} />
+                <div className="min-w-0 flex-1">
+                  {op.kind === 'waiting' && <>
+                    <p className="flex items-center gap-2 text-[13.5px] font-semibold"><Loader2 size={14} className="sp-spin" aria-hidden />Waiting for {card.label}…</p>
+                    <p className="sp-muted text-[12.5px]">{op.popup ? 'Finish in the pop-up window. It closes automatically when the account is connected.' : 'Your browser blocked the pop-up. Open the authorization page, then come back here.'}</p>
+                  </>}
+                  {op.kind === 'finishing' && <p className="sp-muted flex items-center gap-2 text-[13.5px]"><Loader2 size={14} className="sp-spin" aria-hidden />Checking the {card.label} connection…</p>}
+                  {op.kind === 'error' && <>
+                    <p className="text-[13.5px] font-semibold">{card.label} wasn’t connected</p>
+                    <p role="alert" className="sp-danger-text text-[12.5px]">{op.message}</p>
+                  </>}
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  {op.kind === 'waiting' && <>
+                    {!op.popup && <a className="sp-btn sp-btn-secondary sp-btn-sm" href={op.url} target="_blank" rel="noopener noreferrer"><ExternalLink size={14} />Open authorization</a>}
+                    {op.popup && <Button size="sm" variant="ghost" onClick={() => { try { op.popup!.focus(); } catch { /* */ } }}>Show window</Button>}
+                    <Button size="sm" variant="secondary" onClick={() => { stopPolling(card.platform); setOp(card.platform, { kind: 'finishing' }); void finish(card.platform, op.attemptId, op.popup, op.reconnect, true); }}>I’ve finished</Button>
+                    <Button size="sm" variant="ghost" onClick={() => void cancel(card.platform, op)}>Cancel</Button>
+                  </>}
+                  {op.kind === 'error' && <>
+                    <Button size="sm" variant="secondary" icon={<RotateCw size={14} />} disabled={!card.available} onClick={() => void connect(card)}>Try again</Button>
+                    <IconButton small label="Dismiss" onClick={() => setOp(card.platform, { kind: 'idle' })}><X size={15} /></IconButton>
+                  </>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Toolbar */}
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+        <div role="tablist" aria-label="Filter by status" className="sp-tabs rounded-[10px] p-1" style={{ background: 'var(--sp-surface-2)', border: '1px solid var(--sp-border)' }}>
+          {([['all', 'All'], ['connected', 'Connected'], ['attention', 'Needs attention'], ['disconnected', 'Not connected']] as [StatusFilter, string][]).map(([id, label]) => (
+            <button key={id} type="button" role="tab" aria-selected={statusFilter === id} className="sp-tab" onClick={() => setStatusFilter(id)} style={{ height: 30 }}>
+              {label}{data && <span className={cx('sp-count', id === 'attention' && counts.attention > 0 && 'is-danger')}>{counts[id]}</span>}
+            </button>
+          ))}
+        </div>
+        <div className="flex flex-1 flex-wrap items-center gap-2 lg:justify-end">
+          <SearchField className="min-w-[180px] flex-1 lg:max-w-[280px]" value={query} onChange={setQuery} placeholder="Search accounts" label="Search accounts" />
+          <select className="sp-input" style={{ width: 'auto', minWidth: 150 }} aria-label="Filter by platform" value={platformFilter} onChange={(e) => setPlatformFilter(e.target.value as AccountPlatform | 'all')}>
+            <option value="all">All platforms</option>
+            {platforms.map((c) => <option key={c.platform} value={c.platform}>{platformName(c)}</option>)}
+          </select>
+        </div>
+      </div>
+
+      {/* Connected accounts */}
+      {statusFilter !== 'disconnected' && (
+        <section aria-labelledby="sp-connected-h" className="space-y-3">
+          <SubHeading id="sp-connected-h" title="Connected accounts" count={data ? shownRows.length : undefined} />
+          {!data ? (
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{Array.from({ length: 3 }).map((_, i) => <AccountCardSkeleton key={i} />)}</div>
+          ) : shownRows.length === 0 ? (
+            rows.length === 0 && !filtered
+              ? <div className="sp-card sp-card-dashed"><EmptyState icon={<Plug size={20} />} title="No channels connected yet" body="Connect Instagram, Facebook, LinkedIn and more to schedule and publish from one place." action={<Button variant="primary" icon={<Plus size={16} />} onClick={() => setPicker(true)}>Connect your first account</Button>} /></div>
+              : <div className="sp-card sp-card-dashed"><EmptyState title="No accounts match" body="Try a different search or filter." action={<Button variant="secondary" onClick={clearFilters}>Clear filters</Button>} /></div>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {shownRows.map(({ card, account: a }) => {
+                const op = ops[card.platform] ?? { kind: 'idle' as const };
+                const busy = op.kind === 'starting' || op.kind === 'waiting' || op.kind === 'finishing';
+                const problem = isProblem(card.status);
+                return (
+                  <article key={a.connectionId} className="sp-card sp-card-interactive flex flex-col" aria-label={`${a.name} on ${card.label}`} aria-busy={busy}>
+                    <div className="flex items-start gap-3 p-4 pb-3">
+                      <AccountAvatar account={a} platform={card.platform} />
+                      <div className="min-w-0 flex-1 pt-0.5">
+                        <p className="truncate text-[14.5px] font-semibold leading-snug">{a.name}</p>
+                        <p className="sp-muted truncate text-[12.5px]">{a.handle ? (a.handle.startsWith('@') ? a.handle : `@${a.handle}`) : platformName(card)}</p>
+                      </div>
+                      <Menu label={`Actions for ${a.name}`} items={accountMenu(card, a, busy)} />
+                    </div>
+                    <dl className="mx-4 mb-3.5 grid grid-cols-3 rounded-lg text-[12.5px]" style={{ background: 'var(--sp-surface-2)' }}>
+                      {[['Platform', platformName(card)], ['Since', fmtDate(a.connectedAt) || '—'], ['Publishing', PLATFORMS[card.platform].autoPublish ? 'Auto' : 'Scheduled']].map(([k, v], i) => (
+                        <div key={k} className="min-w-0 px-3 py-2" style={i ? { borderLeft: '1px solid var(--sp-border)' } : undefined}>
+                          <dt className="sp-faint text-[11px]">{k}</dt><dd className="num truncate font-medium" title={k === 'Publishing' ? (v === 'Auto' ? 'Posts publish automatically' : 'Scheduled with reminders; auto-publishing isn’t available yet') : v}>{v}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                    {problem && card.detail && (
+                      <p className="mx-4 mb-3 rounded-lg px-3 py-2 text-[12.5px]" style={{ background: card.status === 'expired' ? 'var(--sp-danger-soft)' : 'var(--sp-warning-soft)', color: card.status === 'expired' ? 'var(--sp-danger)' : 'var(--sp-warning)' }}>{card.detail}</p>
+                    )}
+                    <div className="mt-auto flex items-center justify-between gap-2 px-4 py-3" style={{ borderTop: '1px solid var(--sp-border)' }}>
+                      {busy ? <span className="sp-status sp-status-scheduled"><Loader2 size={12} className="sp-spin" aria-hidden />Connecting</span> : <ConnectionBadge status={card.status} />}
+                      {problem
+                        ? <Button size="sm" variant="primary" icon={<RotateCw size={14} />} disabled={busy || !card.available} loading={op.kind === 'starting' && op.connectionId === a.connectionId} onClick={() => void connect(card, a.connectionId)}>Reconnect</Button>
+                        : <span className="sp-faint truncate text-[12px]">{[a.lastVerifiedAt && `Verified ${relativeTime(a.lastVerifiedAt)}`, card.method === 'direct' ? 'Direct API' : 'via Postiz'].filter(Boolean).join(' · ')}</span>}
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* Platforms without an account */}
+      {statusFilter !== 'connected' && (data ? shownUnconnected.length > 0 || statusFilter === 'disconnected' : true) && (
+        <section aria-labelledby="sp-available-h" className="space-y-3">
+          <SubHeading id="sp-available-h" title="Available platforms" count={data ? shownUnconnected.length : undefined} description="Platforms you haven’t connected yet." />
+          {!data ? (
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{Array.from({ length: 6 }).map((_, i) => <div key={i} className="sp-card flex items-center gap-3 p-4"><Skeleton style={{ width: 40, height: 40, borderRadius: 11 }} /><div className="flex-1 space-y-2"><Skeleton style={{ height: 13, width: '45%' }} /><Skeleton style={{ height: 11, width: '75%' }} /></div></div>)}</div>
+          ) : shownUnconnected.length === 0 ? (
+            <div className="sp-card sp-card-dashed"><EmptyState title={filtered && unconnected.length ? 'No platforms match' : 'Every platform is connected'} body={filtered && unconnected.length ? 'Try a different search or filter.' : 'Nice — there’s nothing left to connect.'} action={filtered && unconnected.length ? <Button variant="secondary" onClick={clearFilters}>Clear filters</Button> : undefined} /></div>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {shownUnconnected.map((card) => {
+                const op = ops[card.platform] ?? { kind: 'idle' as const };
+                const busy = op.kind === 'starting' || op.kind === 'waiting' || op.kind === 'finishing';
+                const note = !card.available ? card.unavailableReason : (isProblem(card.status) && card.detail) || noteFor(card.platform) || (PLATFORMS[card.platform].autoPublish ? 'Auto-publishing supported.' : 'Scheduling and reminders.');
+                return (
+                  <div key={card.platform} className="sp-card sp-card-interactive flex items-center gap-3 p-4" aria-busy={busy}>
+                    <PlatformLogo id={card.platform} size={40} />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-[14px] font-semibold">{platformName(card)}</p>
+                        {isProblem(card.status) && <ConnectionBadge status={card.status} />}
+                      </div>
+                      <p className={cx('mt-0.5 line-clamp-2 text-[12.5px]', isProblem(card.status) && card.available ? 'sp-danger-text' : 'sp-faint')}>{note}</p>
+                    </div>
+                    <Button size="sm" variant="secondary" icon={<Plus size={14} />} disabled={!card.available || busy} loading={op.kind === 'starting'} onClick={() => void connect(card)} aria-label={`Connect ${card.label}`}>Connect</Button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      )}
+
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 pt-1 text-[12.5px]">
         {pz && pz.mode !== 'none' && (
-          <span className="sp-muted inline-flex items-center gap-1.5">
-            <ShieldCheck size={15} style={{ color: pz.workspaceAuthorized ? 'var(--sp-success)' : 'var(--sp-faint)' }} aria-hidden />
+          <span className="sp-faint inline-flex items-center gap-1.5">
+            <ShieldCheck size={14} style={{ color: pz.workspaceAuthorized ? 'var(--sp-success)' : 'var(--sp-faint)' }} aria-hidden />
             {pz.mode === 'api_key' ? 'Connected through your team’s Postiz workspace'
               : pz.workspaceAuthorized ? `Postiz workspace${pz.workspaceName ? `: ${pz.workspaceName}` : ''} authorized`
               : 'You’ll approve access to your Postiz workspace the first time you connect'}
+            {!pz.returnsToApp && ' · Authorization opens in a pop-up.'}
           </span>
         )}
-        {pz && pz.mode !== 'none' && !pz.returnsToApp && (
-          <span className="sp-faint">Authorization opens in a pop-up and closes when it’s done.</span>
+        {onOpenAdvanced && (
+          <span className="sp-faint inline-flex items-center gap-1.5"><Wrench size={13} aria-hidden />Older integrations live in <button type="button" className="underline" style={{ background: 'none', border: 0, color: 'var(--sp-accent-text)', cursor: 'pointer', font: 'inherit', padding: 0 }} onClick={onOpenAdvanced}>Advanced tools</button>.</span>
         )}
-        <div className="flex-1" />
-        <Button size="sm" variant="ghost" icon={<RefreshCw size={14} className={loadState.status === 'loading' && data ? 'sp-spin' : undefined} />} onClick={() => void load(true)}>Refresh status</Button>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        {!data && Array.from({ length: 6 }).map((_, i) => <div key={i} className="sp-card p-4"><div className="flex gap-3"><Skeleton style={{ width: 40, height: 40, borderRadius: 12 }} /><div className="flex-1 space-y-2"><Skeleton style={{ height: 14, width: '50%' }} /><Skeleton style={{ height: 12, width: '70%' }} /></div></div><Skeleton className="mt-4" style={{ height: 34 }} /></div>)}
-        {data?.platforms.map((card) => {
-          const op = ops[card.platform] ?? { kind: 'idle' as const };
-          const def = PLATFORMS[card.platform];
-          const busy = op.kind === 'starting' || op.kind === 'waiting' || op.kind === 'finishing';
-          const problem = card.status === 'expired' || card.status === 'needs_attention';
-          return (
-            <section key={card.platform} className="sp-card flex flex-col p-4" aria-labelledby={`acc-${card.platform}`} aria-busy={busy}>
-              <div className="flex items-start gap-3">
-                <span className="flex h-10 w-10 flex-none items-center justify-center rounded-xl" style={{ background: def.chip }}><PlatformGlyph id={card.platform} size={18} color="#fff" /></span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
-                    <h2 id={`acc-${card.platform}`} className="font-semibold">{card.label}</h2>
-                    <StatusPill status={card.status} />
-                  </div>
-                  <p className="sp-faint mt-0.5 text-[12px]">{card.method === 'direct' ? 'Direct connection' : 'Via Postiz'}{def.autoPublish ? '' : ' · scheduling only'}</p>
-                </div>
-              </div>
-
-              {card.detail && problem && <p className="mt-3 text-[12.5px]" style={{ color: card.status === 'expired' ? '#fca5a5' : '#fcd34d' }}>{card.detail}</p>}
-              {!card.available && <p className="sp-faint mt-3 text-[12.5px]">{card.unavailableReason}</p>}
-
-              {card.accounts.length > 0 && (
-                <ul className="mt-3 space-y-2">
-                  {card.accounts.map((a) => (
-                    <li key={a.connectionId} className="flex items-center gap-2.5 rounded-xl p-2" style={{ background: 'var(--sp-surface-2)' }}>
-                      <Avatar account={a} platform={card.platform} />
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-[13.5px] font-medium">{a.name}</p>
-                        <p className="sp-faint truncate text-[12px]">{[a.handle, `Since ${new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(a.connectedAt))}`].filter(Boolean).join(' · ')}</p>
-                      </div>
-                      {problem && <Button size="sm" variant="secondary" disabled={busy || !card.available} loading={op.kind === 'starting' && op.connectionId === a.connectionId} onClick={() => void connect(card, a.connectionId)}>Reconnect</Button>}
-                      <button type="button" className="sp-btn sp-icon-btn sm" aria-label={`Disconnect ${a.name}`} title="Disconnect" disabled={busy}
-                        onClick={() => setDisconnecting({ platform: card.platform, account: a, method: card.method })}><Link2Off size={15} /></button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-
-              {card.accounts.length === 0 && card.available && noteFor(card.platform) && <p className="sp-faint mt-3 text-[12px]">{noteFor(card.platform)}</p>}
-
-              <div className="mt-auto pt-4" aria-live="polite">
-                {op.kind === 'waiting' ? (
-                  <div className="rounded-xl p-3 text-[12.5px]" style={{ background: 'var(--sp-accent-tint)' }}>
-                    <p className="flex items-center gap-2 font-semibold"><Loader2 size={14} className="sp-spin" aria-hidden />Waiting for {card.label}…</p>
-                    <p className="sp-muted mt-1">{op.popup ? 'Finish in the pop-up window. It closes automatically when the account is connected.' : 'Your browser blocked the pop-up. Open the authorization page, then come back here.'}</p>
-                    <div className="mt-2.5 flex flex-wrap gap-2">
-                      {!op.popup && <a className="sp-btn sp-btn-secondary sp-btn-sm" href={op.url} target="_blank" rel="noopener noreferrer"><ExternalLink size={14} />Open authorization</a>}
-                      {op.popup && <Button size="sm" variant="ghost" onClick={() => { try { op.popup!.focus(); } catch { /* */ } }}>Show window</Button>}
-                      <Button size="sm" variant="secondary" onClick={() => { stopPolling(card.platform); setOp(card.platform, { kind: 'finishing' }); void finish(card.platform, op.attemptId, op.popup, op.reconnect, true); }}>I’ve finished</Button>
-                      <Button size="sm" variant="ghost" onClick={() => void cancel(card.platform, op)}>Cancel</Button>
-                    </div>
-                  </div>
-                ) : op.kind === 'finishing' ? (
-                  <p className="sp-muted flex items-center gap-2 text-[12.5px]"><Loader2 size={14} className="sp-spin" aria-hidden />Checking the connection…</p>
-                ) : (
-                  <>
-                    {op.kind === 'error' && <p role="alert" className="mb-2 text-[12.5px]" style={{ color: '#fca5a5' }}>{op.message}</p>}
-                    {card.accounts.length === 0 ? (
-                      <Button className="w-full" variant="primary" icon={<Plug size={15} />} disabled={!card.available} loading={op.kind === 'starting'} onClick={() => void connect(card)}>Connect {card.label}</Button>
-                    ) : card.method === 'postiz' ? (
-                      <Button className="w-full" variant="secondary" icon={<Plus size={15} />} disabled={!card.available} loading={op.kind === 'starting' && !op.connectionId} onClick={() => void connect(card)}>Add another</Button>
-                    ) : null}
-                  </>
-                )}
-              </div>
-            </section>
-          );
-        })}
-      </div>
-
-      {onOpenAdvanced && (
-        <p className="sp-faint flex items-center gap-1.5 pt-1 text-[12.5px]"><Wrench size={13} aria-hidden />Older integrations (Postiz panel, worker monitor) are under <button type="button" className="underline" style={{ background: 'none', border: 0, color: 'var(--sp-accent-text)', cursor: 'pointer', font: 'inherit', padding: 0 }} onClick={onOpenAdvanced}>Advanced tools</button>.</p>
-      )}
+      <ConnectPicker open={picker} platforms={platforms} ops={ops} onClose={() => setPicker(false)} onPick={(card) => { setPicker(false); void connect(card); }} />
 
       <Dialog open={!!consent} onClose={() => setConsent(null)} width={480} title="Approve access to Postiz"
         description="Your social accounts connect through Postiz. You’ll approve this app’s access to your Postiz workspace once; after that, connecting accounts happens right here."
@@ -351,6 +518,80 @@ export function AccountsPage({ api, onOpenAdvanced }: { api: AccountsApi; onOpen
         </p>
       </Dialog>
     </div>
+  );
+}
+
+const platformName = (c: { platform: AccountPlatform; label: string }) => (c.platform === 'x' ? 'X (Twitter)' : c.label);
+
+function SummaryTile({ icon, label, value, hint, tone }: { icon: React.ReactNode; label: string; value: string | null; hint: string; tone?: 'danger' }) {
+  const danger = tone === 'danger';
+  return (
+    <div className="sp-card p-3.5 sm:p-4">
+      <div className="flex items-center gap-2">
+        <span className="flex h-7 w-7 flex-none items-center justify-center rounded-lg" style={{ background: danger ? 'var(--sp-danger-soft)' : 'var(--sp-surface-2)', color: danger ? 'var(--sp-danger)' : 'var(--sp-muted)' }} aria-hidden>{icon}</span>
+        <span className="sp-muted text-[12.5px] font-medium leading-tight">{label}</span>
+      </div>
+      {value === null ? <Skeleton className="mt-3" style={{ height: 26, width: 64 }} /> : <p className="display num mt-2.5 truncate text-[24px] font-semibold leading-none">{value}</p>}
+      <p className={cx('mt-1.5 line-clamp-2 text-[12px] leading-snug', danger ? 'sp-danger-text' : 'sp-faint')}>{hint || ' '}</p>
+    </div>
+  );
+}
+
+function SubHeading({ id, title, count, description }: { id: string; title: string; count?: number; description?: string }) {
+  return (
+    <div className="flex items-baseline gap-2">
+      <h3 id={id} className="text-[14px] font-semibold">{title}</h3>
+      {count !== undefined && <span className="sp-count">{count}</span>}
+      {description && <span className="sp-faint hidden text-[12.5px] sm:inline">· {description}</span>}
+    </div>
+  );
+}
+
+function AccountCardSkeleton() {
+  return (
+    <div className="sp-card" aria-hidden>
+      <div className="flex items-center gap-3 p-4"><Skeleton style={{ width: 44, height: 44, borderRadius: 999 }} /><div className="flex-1 space-y-2"><Skeleton style={{ height: 13, width: '55%' }} /><Skeleton style={{ height: 11, width: '35%' }} /></div></div>
+      <div className="grid grid-cols-2 gap-3 px-4 pb-4">{[0, 1, 2, 3].map((i) => <Skeleton key={i} style={{ height: 26 }} />)}</div>
+      <div className="px-4 py-3" style={{ borderTop: '1px solid var(--sp-border)' }}><Skeleton style={{ height: 20, width: 90, borderRadius: 999 }} /></div>
+    </div>
+  );
+}
+
+/** "Connect account" dialog: every platform with its availability and current account count. */
+function ConnectPicker({ open, platforms, ops, onClose, onPick }: {
+  open: boolean; platforms: PlatformCard[]; ops: Partial<Record<AccountPlatform, Op>>; onClose: () => void; onPick: (c: PlatformCard) => void;
+}) {
+  const [q, setQ] = useState('');
+  const term = q.trim().toLowerCase();
+  const list = platforms.filter((c) => !term || platformName(c).toLowerCase().includes(term));
+  return (
+    <Dialog open={open} onClose={() => { setQ(''); onClose(); }} width={600} title="Connect an account" description="Choose a platform. You’ll sign in with that platform to authorize publishing.">
+      <SearchField value={q} onChange={setQ} placeholder="Search platforms" label="Search platforms" />
+      <div className="mt-3 grid gap-2 pb-2 sm:grid-cols-2">
+        {list.map((c) => {
+          const k = ops[c.platform]?.kind;
+          const busy = k === 'starting' || k === 'waiting' || k === 'finishing';
+          const blockedAdd = c.accounts.length > 0 && c.method !== 'postiz'; // direct connections hold one account
+          const disabled = !c.available || busy || blockedAdd;
+          return (
+            <button key={c.platform} type="button" disabled={disabled} onClick={() => onPick(c)}
+              title={!c.available ? c.unavailableReason : blockedAdd ? 'Already connected' : undefined}
+              className="sp-card sp-card-interactive flex items-center gap-3 p-3 text-left disabled:cursor-not-allowed disabled:opacity-55"
+              style={{ font: 'inherit', color: 'inherit', cursor: disabled ? undefined : 'pointer' }}>
+              <PlatformLogo id={c.platform} size={36} />
+              <span className="min-w-0 flex-1">
+                <span className="block text-[13.5px] font-semibold">{platformName(c)}</span>
+                <span className="sp-faint block truncate text-[12px]">
+                  {!c.available ? 'Unavailable' : busy ? 'Connecting…' : c.accounts.length ? `${c.accounts.length} connected` : 'Not connected'}
+                </span>
+              </span>
+              {c.accounts.length > 0 && isProblem(c.status) ? <ConnectionBadge status={c.status} /> : c.available && !blockedAdd && !busy ? <Plus size={16} className="sp-faint flex-none" aria-hidden /> : null}
+            </button>
+          );
+        })}
+        {!list.length && <p className="sp-muted col-span-full py-8 text-center text-[13px]">No platforms match “{q.trim()}”.</p>}
+      </div>
+    </Dialog>
   );
 }
 
