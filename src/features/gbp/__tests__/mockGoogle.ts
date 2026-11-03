@@ -8,7 +8,9 @@ export async function startMockGoogle(opts: { clientId: string; clientSecret: st
     codes: new Map<string, { challenge: string; redirect: string; scope: string }>(),
     access: new Map<string, number>(), refresh: new Set<string>(), revoked: [] as string[], refreshCalls: 0, accessTtl: 3600, refreshFails: false,
     replies: new Map<string, any>(), lastPatch: null as any, posts: [] as any[], grantScope: 'https://www.googleapis.com/auth/business.manage openid email',
+    patches: [] as any[], attrPatches: [] as any[], titleOverride: '' as string, googleUpdated: false, verified: true,
   };
+  const LOC_1001 = () => ({ name: 'locations/1001', title: s.titleOverride || 'Acme Dental Downtown', categories: { primaryCategory: { name: 'categories/gcid:dentist', displayName: 'Dentist' }, additionalCategories: [] }, storefrontAddress: { addressLines: ['1 Main St'], locality: 'Austin', administrativeArea: 'TX', postalCode: '78701', regionCode: 'US' }, phoneNumbers: { primaryPhone: '+1 512 555 0100' }, websiteUri: 'https://acme.example', profile: { description: 'Family dentist.' }, regularHours: { periods: [{ openDay: 'MONDAY', openTime: { hours: 9 }, closeDay: 'MONDAY', closeTime: { hours: 17 } }] }, serviceItems: [{ freeFormServiceItem: { category: 'categories/gcid:dentist', label: { displayName: 'Teeth cleaning' } } }], openInfo: { status: 'OPEN' }, metadata: { mapsUri: 'https://maps.example/1001', placeId: 'ChIJacme1001place', hasGoogleUpdated: s.googleUpdated, hasVoiceOfMerchant: s.verified } });
   const reviews = (loc: string) => [5, 2, 4].map((stars, i) => ({
     name: `accounts/111/${loc}/reviews/r${loc.split('/')[1]}${i}`, reviewId: `r${i}`, reviewer: { displayName: ['Maria Lopez', 'Tom Hale', 'Ana Ruiz'][i], profilePhotoUrl: 'https://lh3.example/p.png' },
     starRating: ['FIVE', 'TWO', 'FOUR'][i], comment: ['Friendly staff and fast service!', 'Waited 30 minutes past my appointment.', 'Great quality, a bit pricey.'][i],
@@ -45,11 +47,42 @@ export async function startMockGoogle(opts: { clientId: string; clientSecret: st
     if (!authed(req)) return res.status(401).json({ error: { message: 'unauthenticated' } });
     if (!req.query.readMask) return res.status(400).json({ error: { message: 'readMask is required' } });
     res.json({ locations: [
-      { name: 'locations/1001', title: 'Acme Dental Downtown', categories: { primaryCategory: { displayName: 'Dentist' }, additionalCategories: [] }, storefrontAddress: { addressLines: ['1 Main St'], locality: 'Austin', administrativeArea: 'TX', postalCode: '78701' }, phoneNumbers: { primaryPhone: '+1 512 555 0100' }, websiteUri: 'https://acme.example', profile: { description: 'Family dentist.' }, regularHours: { periods: [{ openDay: 'MONDAY', openTime: { hours: 9 }, closeDay: 'MONDAY', closeTime: { hours: 17 } }] }, metadata: { mapsUri: 'https://maps.example/1001' } },
+      LOC_1001(),
       { name: 'locations/1002', title: 'Acme Dental North', categories: { primaryCategory: { displayName: 'Dentist' } }, storefrontAddress: { addressLines: ['9 North Ave'], locality: 'Austin' } },
     ] });
   });
-  app.patch('/v1/locations/:id', (req, res) => { if (!authed(req)) return res.status(401).end(); s.lastPatch = { id: req.params.id, mask: req.query.updateMask, body: req.body }; res.json({ name: `locations/${req.params.id}` }); });
+  // Growth endpoints (Business Information v1, Verifications v1, Performance v1, v4 media).
+  app.get(/^\/v1\/locations\/(\d+):getGoogleUpdated$/, (req, res) => authed(req) ? res.json({ location: { ...LOC_1001(), phoneNumbers: { primaryPhone: '+1 512 555 0199' } }, diffMask: s.googleUpdated ? 'phoneNumbers.primaryPhone' : '', pendingMask: '' }) : res.status(401).end());
+  app.get(/^\/v1\/locations\/(\d+)\/VoiceOfMerchantState$/, (req, res) => authed(req) ? res.json(s.verified ? { hasVoiceOfMerchant: true, hasBusinessAuthority: true } : { verify: { hasPendingVerification: false } }) : res.status(401).end());
+  app.get(/^\/v1\/locations\/(\d+)\/attributes$/, (req, res) => authed(req) ? res.json({ name: `locations/${(req.params as any)[0]}/attributes`, attributes: [{ name: 'attributes/has_wheelchair_accessible_entrance', valueType: 'BOOL', values: [true] }] }) : res.status(401).end());
+  app.patch(/^\/v1\/locations\/(\d+)\/attributes$/, (req, res) => { if (!authed(req)) return res.status(401).end(); s.attrPatches.push({ mask: req.query.attributeMask, body: req.body }); res.json(req.body); });
+  app.get(/^\/v1\/locations\/(\d+)\/searchkeywords\/impressions\/monthly$/, (req, res) => {
+    if (!authed(req)) return res.status(401).end();
+    if (!req.query['monthlyRange.startMonth.year']) return res.status(400).json({ error: { message: 'monthlyRange required' } });
+    res.json({ searchKeywordsCounts: [{ searchKeyword: 'dentist austin', insightsValue: { value: '120' } }, { searchKeyword: 'emergency dentist', insightsValue: { threshold: '15' } }] });
+  });
+  app.get(/^\/v1\/locations\/(\d+)$/, (req, res) => {
+    if (!authed(req)) return res.status(401).end();
+    if (!req.query.readMask) return res.status(400).json({ error: { message: 'readMask is required' } });
+    res.json((req.params as any)[0] === '1001' ? LOC_1001() : { name: `locations/${(req.params as any)[0]}`, title: 'Acme Dental North', categories: { primaryCategory: { displayName: 'Dentist' } } });
+  });
+  app.get('/v1/attributes', (req, res) => authed(req) && req.query.parent ? res.json({ attributeMetadata: [
+    { parent: 'attributes/has_wheelchair_accessible_entrance', displayName: 'Wheelchair accessible entrance', groupDisplayName: 'Accessibility', valueType: 'BOOL' },
+    { parent: 'attributes/pay_credit_card_types_accepted', displayName: 'Credit cards', groupDisplayName: 'Payments', valueType: 'REPEATED_ENUM' },
+    { parent: 'attributes/has_restroom', displayName: 'Restroom', groupDisplayName: 'Amenities', valueType: 'BOOL' },
+    { parent: 'attributes/old_thing', displayName: 'Old', valueType: 'BOOL', deprecated: true },
+  ] }) : res.status(400).end());
+  app.get('/v1/categories', (req, res) => {
+    if (!authed(req)) return res.status(401).end();
+    const q = String(req.query.filter || '').replace(/^displayName=/, '').toLowerCase();
+    const all = [{ name: 'categories/gcid:dentist', displayName: 'Dentist' }, { name: 'categories/gcid:cosmetic_dentist', displayName: 'Cosmetic dentist' }, { name: 'categories/gcid:emergency_dental_service', displayName: 'Emergency dental service' }];
+    res.json({ categories: all.filter((c) => c.displayName.toLowerCase().includes(q)) });
+  });
+  app.get(/^\/v4\/accounts\/111\/locations\/(\d+)\/media$/, (req, res) => authed(req) ? res.json({ mediaItems: [
+    { name: 'm1', mediaFormat: 'PHOTO', locationAssociation: { category: 'LOGO' }, createTime: new Date(Date.now() - 200 * 86_400_000).toISOString(), thumbnailUrl: 'https://lh3.example/m1.jpg' },
+    { name: 'm2', mediaFormat: 'PHOTO', locationAssociation: { category: 'EXTERIOR' }, createTime: new Date(Date.now() - 150 * 86_400_000).toISOString(), thumbnailUrl: 'https://lh3.example/m2.jpg' },
+  ] }) : res.status(401).end());
+  app.patch('/v1/locations/:id', (req, res) => { if (!authed(req)) return res.status(401).end(); s.lastPatch = { id: req.params.id, mask: req.query.updateMask, validateOnly: req.query.validateOnly === 'true', body: req.body }; s.patches.push(s.lastPatch); res.json({ name: `locations/${req.params.id}` }); });
   app.get(/^\/v1\/locations\/(\d+):fetchMultiDailyMetricsTimeSeries$/, (req, res) => {
     if (!authed(req)) return res.status(401).end();
     const metrics = ([] as string[]).concat(req.query.dailyMetrics as any);

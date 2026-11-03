@@ -399,7 +399,11 @@ export function createGbpService(deps: { cfg: SocialAccountsConfig; google: Goog
     return store.update(userId, (d) => { d.settings = { ...d.settings, ...s }; return d.settings; });
   }
 
-  return { startConnect, callback, connection, disconnect, discoverLocations, listLocations, selectLocations, sync, reviews, draftReply, publishReply, deleteReply, overview, performance, listPosts, createPost, updateProfile, draftDescription, saveSettings };
+  return {
+    startConnect, callback, connection, disconnect, discoverLocations, listLocations, selectLocations, sync, reviews, draftReply, publishReply, deleteReply, overview, performance, listPosts, createPost, updateProfile, draftDescription, saveSettings,
+    /** Shared with the growth service (growth.ts); not exposed over HTTP. */
+    internal: { accessToken, mapErr, call, ownLocation, log, requireConfigured, viewReview },
+  };
 }
 
 export type GbpService = ReturnType<typeof createGbpService>;

@@ -15,7 +15,7 @@
     "test:video": "npx tsx src/tests/videoMeetingIntegration.test.ts && npx tsx src/tests/meetingPolicy.test.ts && npx tsx src/tests/meetingCollab.test.ts",
     "test:invoicing": "npx tsx src/features/invoicing/__tests__/calc.test.ts && npx tsx src/features/invoicing/__tests__/api.test.ts && npx tsx src/features/invoicing/__tests__/stripeConnect.test.ts",
     "test:social-accounts": "npx tsx src/features/social-accounts/__tests__/api.test.ts oauth && npx tsx src/features/social-accounts/__tests__/api.test.ts shared && npx tsx src/features/social-accounts/__tests__/firestoreStore.test.ts",
-    "test:local-seo": "npx tsx src/features/gbp/__tests__/localSeo.test.ts",
+    "test:local-seo": "npx tsx src/features/gbp/__tests__/localSeo.test.ts && npx tsx src/features/gbp/__tests__/growth.test.ts",
     "test:voice-ivr": "npx tsx src/features/voice/__tests__/ivr.test.ts",
     "test:security": "npx tsx src/server/__tests__/security.test.ts"
   },
