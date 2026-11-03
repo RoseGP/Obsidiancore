@@ -12,7 +12,6 @@ import { LuxuryNotificationToasts } from './components/notifications/LuxuryNotif
 import UnifiedCommandSearchBar from './components/UnifiedCommandSearchBar';
 import DashboardView from './components/DashboardView';
 import VideoWelcomePage from './components/VideoWelcomePage';
-import MessagingView from './components/MessagingView';
 import ProductionMessagingPlatform from './components/messaging/ProductionMessagingPlatform';
 import AnalyticsView from './components/AnalyticsView';
 import SettingsView, { SettingsTab } from './components/SettingsView';
@@ -21,9 +20,7 @@ import ProposalsView from './components/ProposalsView';
 import SocialPlannerTab from './components/SocialPlannerTab';
 import GbpView from './components/GbpView';
 import DealsPipelineView from './components/DealsPipelineView';
-import LeadsView from './components/leads/LeadsView';
 import CRMVoiceDialer from './components/CRMVoiceDialer';
-import CRMCallCanvas from './components/CRMCallCanvas';
 import VideoMeetingWorkspace from './components/greet/VideoMeetingWorkspace';
 import FloatingMeetingHUD from './components/greet/FloatingMeetingHUD';
 import { MeetingSessionProvider, useMeetingSession } from './context/MeetingSessionContext';
@@ -391,15 +388,6 @@ function AppMain() {
           <CRMVoiceDialer
             onAddCalendarEvent={handleAddCalendarEvent}
             onNavigate={(v) => setActiveView(v as SemanticView)}
-          />
-        );
-      case 'call_canvas':
-      case 'video_call':
-        return (
-          <CRMCallCanvas
-            onAddCalendarEvent={handleAddCalendarEvent}
-            onNavigateToDashboard={() => setActiveView('dashboard')}
-            onNavigateToGreet={() => setActiveView('greet')}
           />
         );
       case 'public_scheduling':

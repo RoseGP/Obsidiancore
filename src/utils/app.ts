@@ -11,7 +11,6 @@
 // Import socket.io-client inside standard ESM modules if applicable,
 // or assume global 'io' if loaded via script tags in the browser.
 import { io } from 'socket.io-client';
-import { createFallbackScreenStream } from '../hooks/useMediaStream';
 
 // -----------------------------------------------------------------------------
 // 1. DOM REFERENCES & APP STATE
