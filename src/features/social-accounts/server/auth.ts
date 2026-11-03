@@ -58,7 +58,7 @@ export async function identify(req: Request): Promise<AuthedRequest['accountUser
       }
     }
   }
-  if (process.env.NODE_ENV !== 'production' && process.env.SOCIAL_ACCOUNTS_DEV_AUTH !== 'false') {
+  if (process.env.NODE_ENV !== 'production' && process.env.SOCIAL_ACCOUNTS_DEV_AUTH === 'true') {
     const rawDev = req.headers['x-dev-user-id'];
     if (typeof rawDev === 'string' && rawDev.trim() && /^[A-Za-z0-9_.@-]{1,128}$/.test(rawDev.trim())) {
       return { id: rawDev.trim(), via: 'dev' };
@@ -98,7 +98,7 @@ export async function identifyToken(token: string | undefined, devUserId?: strin
       }
     }
   }
-  if (process.env.NODE_ENV !== 'production' && process.env.SOCIAL_ACCOUNTS_DEV_AUTH !== 'false') {
+  if (process.env.NODE_ENV !== 'production' && process.env.SOCIAL_ACCOUNTS_DEV_AUTH === 'true') {
     if (typeof devUserId === 'string' && devUserId.trim() && /^[A-Za-z0-9_.@-]{1,128}$/.test(devUserId.trim())) {
       return { id: devUserId.trim(), via: 'dev' };
     }
