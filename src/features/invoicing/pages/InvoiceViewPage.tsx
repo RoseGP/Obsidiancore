@@ -10,6 +10,7 @@ import { useBillingData } from '../state/BillingStore';
 import { useNav, useQuickActions } from '../state/navigation';
 import { ScaledPaper } from '../components/InvoicePreview';
 import { SendDialog } from '../components/SendDialog';
+import { StripeCollectPanel } from '../components/StripeCollectPanel';
 import { canEdit, canRecordPayment, canVoid, useInvoiceActions } from '../components/invoiceActions';
 import { ConfirmDialog, Menu, useToast } from '../ui/overlays';
 import { Badge, Button, EmptyState, InlineAlert, StatusBadge } from '../ui/primitives';
@@ -115,6 +116,8 @@ export function InvoiceViewPage({ id }: { id: string }) {
               </div>
             )}
           </section>
+
+          <StripeCollectPanel view={v} />
 
           <Panel title="Payments" count={v.payments.length}>
             {v.payments.length === 0 ? (

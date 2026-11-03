@@ -54,7 +54,7 @@ export default function DynamicSidebar({
     { id: 'greet', label: 'Greet Hub', icon: Video },
     { id: 'messages', label: 'Messaging', icon: MessageSquare },
     { id: 'calendar', label: 'Calendar', icon: Calendar },
-    { id: 'proposals', label: 'Proposals', icon: FileText },
+    { id: 'proposals', label: 'Invoice', icon: FileText },
     { id: 'social_planner', label: 'Social Planner', icon: Share2 },
     { id: 'gbp', label: 'Local GBP', icon: Globe },
     { id: 'voice_dialer', label: 'Voice Dialer', icon: Phone },

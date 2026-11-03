@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeftRight, BarChart3, Bell, ChevronRight, ChevronsLeft, ChevronsRight, FileText, HelpCircle,
-  LayoutDashboard, Menu as MenuIcon, Moon, PiggyBank, Plus, Search, Settings, Users, Wallet, X, Sun,
+  LayoutDashboard, Menu as MenuIcon, Moon, PiggyBank, Plus, Search, Settings, Users, Wallet, X, Sun, Repeat, CreditCard,
 } from 'lucide-react';
 import { formatMoney } from '../domain/money';
 import { formatDate } from '../domain/status';
@@ -18,7 +18,11 @@ const NAV: { group: string; items: { id: SectionName; label: string; icon: React
   ] },
   { group: 'Billing', items: [
     { id: 'invoices', label: 'Invoices', icon: FileText },
+    { id: 'subscriptions', label: 'Subscriptions', icon: Repeat },
     { id: 'clients', label: 'Clients', icon: Users },
+  ] },
+  { group: 'Payments', items: [
+    { id: 'stripe', label: 'Stripe', icon: CreditCard },
   ] },
   { group: 'Planning', items: [
     { id: 'budgeting', label: 'Budgeting', icon: PiggyBank },
@@ -30,8 +34,8 @@ const NAV: { group: string; items: { id: SectionName; label: string; icon: React
 ];
 
 const SECTION_LABEL: Record<SectionName, string> = {
-  dashboard: 'Dashboard', transactions: 'Transactions', wallet: 'Wallet', invoices: 'Invoices',
-  clients: 'Clients', budgeting: 'Budgeting', reports: 'Reports', settings: 'Settings',
+  dashboard: 'Dashboard', transactions: 'Transactions', wallet: 'Wallet', invoices: 'Invoices', subscriptions: 'Subscriptions',
+  clients: 'Clients', stripe: 'Stripe', budgeting: 'Budgeting', reports: 'Reports', settings: 'Settings',
 };
 
 export type LayoutMode = 'desktop' | 'tablet' | 'mobile';

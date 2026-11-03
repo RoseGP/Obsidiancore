@@ -802,6 +802,10 @@ END OF DOCUMENT - CONFIDENTIAL ALPHA BUSINESS PROPOSAL
 
   return (
     <div className="space-y-6" id="proposals-tab-container">
+      <header className="px-1">
+        <h1 className="text-[22px] font-bold tracking-tight text-slate-900 dark:text-white">Advanced Invoice, Billing &amp; Subscription Management</h1>
+        <p className="mt-0.5 text-[13px] text-slate-500">Invoices, subscriptions and payments through your own Stripe account.</p>
+      </header>
       {/* TOP NAVIGATION TABS */}
       <div className="bg-white p-2 rounded-2xl border border-slate-200/80 shadow-xs flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-1.5 overflow-x-auto">
@@ -815,7 +819,7 @@ END OF DOCUMENT - CONFIDENTIAL ALPHA BUSINESS PROPOSAL
             }`}
           >
             <Layers className="w-3.5 h-3.5 text-indigo-400" />
-            <span>Invoicing</span>
+            <span>Invoice</span>
           </button>
 
           <button
@@ -830,7 +834,7 @@ END OF DOCUMENT - CONFIDENTIAL ALPHA BUSINESS PROPOSAL
             <CreditCard className="w-3.5 h-3.5 text-emerald-500" />
             <span>Payment Providers</span>
             <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-100 text-slate-600 font-semibold">
-              Stripe & Square
+              Square · legacy
             </span>
           </button>
 
@@ -872,7 +876,10 @@ END OF DOCUMENT - CONFIDENTIAL ALPHA BUSINESS PROPOSAL
       </div>
 
       {proposalsTabMode === 'invoicing' ? (
-        <InvoicingApp onOpenPaymentProviders={() => setProposalsTabMode('payment_providers')} />
+        <InvoicingApp
+          initialRoute={typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('billing') === 'stripe' ? { name: 'stripe' } : undefined}
+          onOpenPaymentProviders={() => setProposalsTabMode('payment_providers')}
+        />
       ) : proposalsTabMode === 'payment_providers' ? (
         <PaymentProvidersSettings 
           onGoToCreateInvoice={() => setProposalsTabMode('invoicing')} 

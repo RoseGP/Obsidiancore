@@ -145,10 +145,9 @@ export function WalletPage({ onOpenPaymentProviders }: { onOpenPaymentProviders?
       </SectionCard>
       <SectionCard id="inv-wallet-online" title="Online card payments" description="Let clients pay invoices by card through a connected provider.">
         <p className="inv-muted text-[13px]">Card payments are processed by your payment provider, never stored here. An invoice is only marked paid after the provider confirms the charge.</p>
-        <div className="mt-3">
-          {onOpenPaymentProviders
-            ? <Button variant="primary" icon={<CreditCard size={15} />} onClick={onOpenPaymentProviders}>Manage payment providers</Button>
-            : <p className="inv-faint text-[12.5px]">Connect Stripe or Square from the Payment Providers tab.</p>}
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Button variant="primary" icon={<CreditCard size={15} />} onClick={() => navigate({ name: 'stripe' })}>Stripe account</Button>
+          {onOpenPaymentProviders && <Button onClick={onOpenPaymentProviders}>Other providers (Square)</Button>}
         </div>
       </SectionCard>
     </div>

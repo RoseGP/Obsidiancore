@@ -24,6 +24,7 @@ import { buildInvoiceDocument } from '../features/invoicing/services/invoiceDocu
 import { invoicePdfFilename, renderInvoicePdf } from '../features/invoicing/services/pdf';
 import { isEmailConfigured, sendInvoiceEmail } from '../features/invoicing/server/emailTransport';
 import { loadSnapshot, withSnapshot } from '../features/invoicing/server/store';
+import * as stripeConnect from '../features/invoicing/server/stripeConnect';
 import { identify } from '../features/social-accounts/server/auth';
 
 const router = Router();
@@ -265,6 +266,94 @@ router.put('/settings', async (req: AuthedRequest, res) => {
     const saved = await withSnapshot(businessId, (s) => ({ snapshot: { ...s, settings }, result: settings }));
     res.json({ settings: saved });
   } catch (e) { fail(res, e); }
+});
+
+// ---------- Stripe Connect (each business's own Stripe account) ----------
+
+function stripeFail(res: Response, err: unknown) {
+  if (err instanceof stripeConnect.StripeConnectError) return res.status(err.status).json({ code: err.code, error: err.message });
+  return fail(res, err);
+}
+function requireStripeWriter(req: AuthedRequest, owners = false) {
+  const { role } = ctx(req).user;
+  if (role === 'viewer') throw new DomainError('Your role can view billing but not change it.', 'forbidden');
+  if (owners && role !== 'owner' && role !== 'admin') throw new DomainError('Only owners and admins can connect or disconnect Stripe.', 'forbidden');
+}
+const origin = (req: Request) => `${req.headers['x-forwarded-proto'] || req.protocol}://${req.get('host')}`;
+
+router.get('/stripe', async (req: AuthedRequest, res) => {
+  try { res.json(await stripeConnect.getPublicState(ctx(req).businessId)); } catch (e) { stripeFail(res, e); }
+});
+
+router.post('/stripe/connect/oauth', async (req: AuthedRequest, res) => {
+  try {
+    requireStripeWriter(req, true);
+    const { businessId, user } = ctx(req);
+    res.json({ url: stripeConnect.createOAuthUrl(businessId, user.id, origin(req)) });
+  } catch (e) { stripeFail(res, e); }
+});
+
+router.post('/stripe/connect/onboarding', async (req: AuthedRequest, res) => {
+  try {
+    requireStripeWriter(req, true);
+    const email = z.object({ email: z.string().max(254).optional() }).parse(req.body ?? {}).email ?? '';
+    res.json({ url: await stripeConnect.startOnboarding(ctx(req).businessId, email.trim(), origin(req)) });
+  } catch (e) { stripeFail(res, e); }
+});
+
+router.post('/stripe/disconnect', async (req: AuthedRequest, res) => {
+  try {
+    requireStripeWriter(req, true);
+    res.json({ connection: await stripeConnect.disconnect(ctx(req).businessId) });
+  } catch (e) { stripeFail(res, e); }
+});
+
+router.post('/stripe/sync', async (req: AuthedRequest, res) => {
+  try { res.json(await stripeConnect.sync(ctx(req).businessId)); } catch (e) { stripeFail(res, e); }
+});
+
+router.post('/stripe/invoices/:id/collect', async (req: AuthedRequest, res) => {
+  if (replay(req, res)) return;
+  try {
+    requireStripeWriter(req);
+    const { sendEmail } = z.object({ sendEmail: z.boolean().default(false) }).parse(req.body ?? {});
+    const { businessId, user } = ctx(req);
+    const link = await stripeConnect.collectInvoice(businessId, req.params.id, { sendEmail, actor: user.name });
+    const body = { link, snapshot: await loadSnapshot(businessId) };
+    remember(req, 200, body);
+    res.json(body);
+  } catch (e) { stripeFail(res, e); }
+});
+
+router.post('/stripe/invoices/:id/send', async (req: AuthedRequest, res) => {
+  try {
+    requireStripeWriter(req);
+    res.json({ link: await stripeConnect.sendViaStripe(ctx(req).businessId, req.params.id) });
+  } catch (e) { stripeFail(res, e); }
+});
+
+const subscriptionSchema = z.object({
+  clientId: str(64), planName: str(120), amount: dec, currency: invoiceSchema.shape.currency,
+  interval: z.enum(['week', 'month', 'quarter', 'year']), quantity: z.number().int().min(1).max(10_000), trialDays: z.number().int().min(0).max(730),
+});
+
+router.post('/stripe/subscriptions', async (req: AuthedRequest, res) => {
+  if (replay(req, res)) return;
+  try {
+    requireStripeWriter(req);
+    const input = subscriptionSchema.parse(req.body?.subscription);
+    const body = { subscription: await stripeConnect.createSubscription(ctx(req).businessId, input) };
+    remember(req, 201, body);
+    res.status(201).json(body);
+  } catch (e) { stripeFail(res, e); }
+});
+
+router.post('/stripe/subscriptions/:id', async (req: AuthedRequest, res) => {
+  try {
+    requireStripeWriter(req);
+    const { action } = z.object({ action: z.enum(['cancel_at_period_end', 'resume', 'cancel_now']) }).parse(req.body ?? {});
+    res.json({ subscription: await stripeConnect.updateSubscription(ctx(req).businessId, req.params.id, action) });
+  } catch (e) { stripeFail(res, e); }
 });
 
 export default router;

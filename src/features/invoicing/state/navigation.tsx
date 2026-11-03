@@ -12,9 +12,11 @@ export type Route =
   | { name: 'clients'; clientId?: string }
   | { name: 'budgeting' }
   | { name: 'reports' }
+  | { name: 'subscriptions' }
+  | { name: 'stripe' }
   | { name: 'settings' };
 
-export type SectionName = 'dashboard' | 'transactions' | 'wallet' | 'invoices' | 'clients' | 'budgeting' | 'reports' | 'settings';
+export type SectionName = 'dashboard' | 'transactions' | 'wallet' | 'invoices' | 'subscriptions' | 'clients' | 'stripe' | 'budgeting' | 'reports' | 'settings';
 
 export function sectionOf(r: Route): SectionName {
   if (r.name.startsWith('invoice')) return 'invoices';

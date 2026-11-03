@@ -29,6 +29,7 @@ import paymentWebhooksRouter from './src/routes/paymentWebhooks';
 import paymentsRouter, { invoicesRouter } from './src/routes/payments';
 import socialPlannerApiRouter from './src/routes/socialPlannerApi';
 import billingRouter from './src/routes/billing';
+import billingStripeRouter from './src/routes/billingStripe';
 import accountsApiRouter from './src/routes/accountsApi';
 import postsApiRouter from './src/routes/postsApi';
 import analyticsApiRouter from './src/routes/analyticsApi';
@@ -76,6 +77,8 @@ app.use('/api/meetings', guard(PUBLIC.none), meetingsRouter);
 app.use('/api/proposals', guard(PUBLIC.proposals), proposalsRouter);
 app.use('/api/payments', guard(PUBLIC.payments), paymentsRouter);
 app.use('/api/invoices', guard(PUBLIC.none), invoicesRouter);
+// Stripe Connect OAuth return + webhook: no session (signed state / Stripe signature).
+app.use('/api/billing-stripe', billingStripeRouter);
 app.use('/api/billing', billingRouter);
 app.use('/api/accounts', accountsApiRouter);
 app.use('/api/analytics', analyticsApiRouter);

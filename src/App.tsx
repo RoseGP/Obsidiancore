@@ -147,7 +147,7 @@ const SEARCH_NAV_ITEMS = [
   { id: 'greet', label: 'Greet Hub', icon: 'Video' },
   { id: 'messages', label: 'Email & Messaging', icon: 'MessageSquare' },
   { id: 'calendar', label: 'Calendar & Bookings', icon: 'Calendar' },
-  { id: 'proposals', label: 'Enterprise Proposals', icon: 'FileText' },
+  { id: 'proposals', label: 'Invoice', icon: 'FileText' },
   { id: 'social_planner', label: 'Social Planner', icon: 'Share2' },
   { id: 'gbp', label: 'Local GBP & Locations', icon: 'Globe' },
   { id: 'voice_dialer', label: 'Voice Dialer & Softphone', icon: 'Phone' },

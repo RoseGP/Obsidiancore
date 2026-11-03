@@ -18,6 +18,9 @@ import { InvoiceViewPage } from './pages/InvoiceViewPage';
 import { ClientsPage } from './pages/ClientsPage';
 import { BudgetingPage, ReportsPage, TransactionsPage, WalletPage } from './pages/FinancePages';
 import { SettingsPage } from './pages/SettingsPage';
+import { StripePage } from './pages/StripePage';
+import { SubscriptionsPage } from './pages/SubscriptionsPage';
+import { StripeProvider } from './stripe/StripeStore';
 import { ConfirmDialog, ToastProvider } from './ui/overlays';
 import { Button, EmptyState, Skeleton, ThemeContext } from './ui/primitives';
 import type { Client } from './domain/types';
@@ -61,6 +64,8 @@ function Routes({ onOpenPaymentProviders }: { onOpenPaymentProviders?: () => voi
     case 'wallet': return <WalletPage onOpenPaymentProviders={onOpenPaymentProviders} />;
     case 'budgeting': return <BudgetingPage />;
     case 'reports': return <ReportsPage />;
+    case 'subscriptions': return <SubscriptionsPage />;
+    case 'stripe': return <StripePage />;
     case 'settings': return <SettingsPage />;
     default: return null;
   }
@@ -72,6 +77,7 @@ function Ready({ theme, toggleTheme, onOpenPaymentProviders }: { theme: 'light' 
   const [payDlg, setPayDlg] = useState<{ open: boolean; invoiceId?: string }>({ open: false });
 
   return (
+    <StripeProvider>
     <QuickActionsContext.Provider value={{
       openClientDialog: (o) => setClientDlg({ open: true, clientId: o?.clientId, onCreated: o?.onCreated }),
       openPaymentDialog: (o) => setPayDlg({ open: true, invoiceId: o?.invoiceId }),
@@ -86,6 +92,7 @@ function Ready({ theme, toggleTheme, onOpenPaymentProviders }: { theme: 'light' 
         title="Leave without saving?" confirmLabel="Discard changes"
         body="You have unsaved changes on this page. They’ll be lost if you leave now." />
     </QuickActionsContext.Provider>
+    </StripeProvider>
   );
 }
 
