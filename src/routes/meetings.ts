@@ -1,5 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { DateTime } from 'luxon';
+import { GoogleGenAI, Type } from '@google/genai';
+import { summarizeMeeting, type MeetingSummary, type SummaryInputLine } from '../lib/meetingSummary';
 
 const router = Router();
 
@@ -186,6 +188,65 @@ router.post('/create', (req: Request, res: Response) => {
       error: 'Failed to create meeting',
       message: error.message || 'Internal server error'
     });
+  }
+});
+
+/**
+ * POST /api/meetings/summary — AI meeting summary with action items.
+ * Body: { title?: string, lines: { speaker, text, at? }[] }. Uses Gemini when
+ * GEMINI_API_KEY is set, otherwise (or on failure) the on-device extractive summary.
+ */
+let summaryClient: GoogleGenAI | null | undefined;
+function getSummaryClient(): GoogleGenAI | null {
+  if (summaryClient !== undefined) return summaryClient;
+  const key = process.env.GEMINI_API_KEY;
+  summaryClient = key && !key.includes('placeholder') && !key.includes('YOUR_GEMINI_API_KEY') ? new GoogleGenAI({ apiKey: key }) : null;
+  return summaryClient;
+}
+
+router.post('/summary', async (req: Request, res: Response) => {
+  const raw = Array.isArray(req.body?.lines) ? req.body.lines : [];
+  const title = typeof req.body?.title === 'string' ? req.body.title.slice(0, 200) : undefined;
+  const lines: SummaryInputLine[] = raw.slice(0, 2000)
+    .filter((l: any) => l && typeof l.text === 'string')
+    .map((l: any) => ({ speaker: String(l.speaker || 'Unknown').slice(0, 80), text: String(l.text).slice(0, 2000), at: Number(l.at) || undefined }));
+  const fallback = summarizeMeeting(lines, { title });
+
+  const client = getSummaryClient();
+  if (!client || lines.length === 0) return res.json(fallback);
+  try {
+    const transcript = lines.map((l) => `${l.speaker}: ${l.text}`).join('\n').slice(0, 60_000);
+    const result = await client.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: `Meeting: ${title || 'Untitled'}\n\n${transcript}`,
+      config: {
+        systemInstruction: 'Summarize this meeting for the attendees. Be factual; only use what is in the transcript. Keep each point to one sentence.',
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            overview: { type: Type.STRING },
+            keyPoints: { type: Type.ARRAY, items: { type: Type.STRING } },
+            decisions: { type: Type.ARRAY, items: { type: Type.STRING } },
+            actionItems: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { text: { type: Type.STRING }, owner: { type: Type.STRING }, due: { type: Type.STRING } }, required: ['text'] } },
+          },
+          required: ['overview', 'keyPoints', 'actionItems'],
+        },
+      },
+    });
+    const parsed = JSON.parse(result.text || '{}');
+    const summary: MeetingSummary = {
+      overview: String(parsed.overview || fallback.overview),
+      keyPoints: Array.isArray(parsed.keyPoints) ? parsed.keyPoints.map(String).slice(0, 10) : fallback.keyPoints,
+      decisions: Array.isArray(parsed.decisions) ? parsed.decisions.map(String).slice(0, 10) : fallback.decisions,
+      actionItems: Array.isArray(parsed.actionItems) ? parsed.actionItems.filter((a: any) => a?.text).map((a: any) => ({ text: String(a.text), ...(a.owner ? { owner: String(a.owner) } : {}), ...(a.due ? { due: String(a.due) } : {}) })).slice(0, 20) : fallback.actionItems,
+      speakers: fallback.speakers,
+      source: 'ai',
+    };
+    res.json(summary);
+  } catch (err: any) {
+    console.warn('[Meetings] AI summary failed, using on-device summary:', err?.message);
+    res.json(fallback);
   }
 });
 

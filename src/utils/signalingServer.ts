@@ -37,6 +37,8 @@ export function getSocketIO(): SocketIOServer | null {
  * Initializes the Socket.io multiplexed real-time server handler.
  * Handles WebRTC Signaling, Calendar & Schedule Updates, and User Presence over a single connection.
  */
+const MEETING_EVENT_TYPES = new Set(['hand', 'reaction', 'whiteboard:stroke', 'whiteboard:clear', 'poll:create', 'poll:vote', 'poll:close']);
+
 export function initializeSignalingServer(server: HttpServer): SocketIOServer {
   console.log('[Signaling Server] Initializing Unified Socket.io Multiplexed Real-Time Engine...');
 
@@ -607,6 +609,19 @@ export function initializeSignalingServer(server: HttpServer): SocketIOServer {
         console.error(`[Signaling Server] Auth exception in toggle-camera-status:`, err.message);
         socket.emit('error', { message: 'Internal validation error' });
       }
+    });
+
+    // 5.4. meeting:event: small in-meeting UI events (raise hand, reactions, polls, whiteboard),
+    // relayed only to the sender's current room. Unknown types and oversized payloads are dropped.
+    socket.on('meeting:event', (evt: unknown) => {
+      const conn = socketToUserMap.get(socket.id);
+      if (!conn || !evt || typeof evt !== 'object') return;
+      const e = evt as Record<string, unknown>;
+      if (typeof e.id !== 'string' || typeof e.type !== 'string' || !MEETING_EVENT_TYPES.has(e.type)) return;
+      let size = 0;
+      try { size = JSON.stringify(e).length; } catch { return; }
+      if (size > 16_000) return;
+      socket.to(conn.roomId).emit('meeting:event', { ...e, relayedAt: Date.now() });
     });
 
     // 5.5. leave-room: Handles voluntary exit from a WebRTC session room.

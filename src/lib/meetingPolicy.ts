@@ -135,9 +135,10 @@ export interface RoomSessionRecord extends SessionLimits {
 
 export type RoomRegistry = Record<string, RoomSessionRecord>;
 
+// Both members list every field so callers compile without union narrowing (the app builds with strict: false).
 export type OpenRoomResult =
-  | { ok: true; record: RoomSessionRecord; registry: RoomRegistry; resumed: boolean }
-  | { ok: false; reason: 'duration_limit'; message: string; registry: RoomRegistry };
+  | { ok: true; record: RoomSessionRecord; registry: RoomRegistry; resumed: boolean; reason?: undefined; message?: undefined }
+  | { ok: false; reason: 'duration_limit'; message: string; registry: RoomRegistry; record?: undefined; resumed?: undefined };
 
 /**
  * Opens (or resumes) a room's session. A room keeps its first start time and

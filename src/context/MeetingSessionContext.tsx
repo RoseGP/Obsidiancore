@@ -12,6 +12,7 @@ import {
   type SessionLimits,
   type SessionTimeState,
 } from '../lib/meetingPolicy';
+import { applyAudioProcessing, applyVideoQuality } from '../lib/meetingMedia';
 
 export type MeetingActionResult = { ok: boolean; message?: string };
 export type MeetingEndReason = 'duration_limit' | 'host_ended' | 'left';
@@ -266,6 +267,7 @@ interface MeetingSessionContextType {
   // Live Transcripts
   liveTranscript: TranscriptItem[];
   isTranscribing: boolean;
+  setTranscribing: (on: boolean) => void;
   addTranscriptItem: (item: Omit<TranscriptItem, 'id'>) => void;
   saveCurrentMeetingTranscript: () => { success: boolean; message: string; recordId?: string };
 
@@ -989,6 +991,10 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
   // UPDATE MEETING DEVICE SETTINGS (Applies hardware selections without disconnecting)
   const updateMeetingSettings = useCallback(async (updates: Partial<MeetingDeviceSettings>) => {
     setMeetingSettings(prev => ({ ...prev, ...updates }));
+    if (updates.noiseSuppression !== undefined || updates.echoCancellation !== undefined) {
+      applyAudioProcessing(localStreamRef.current, { noiseSuppression: updates.noiseSuppression, echoCancellation: updates.echoCancellation });
+    }
+    if (updates.videoQuality) applyVideoQuality(localStreamRef.current, updates.videoQuality);
 
     if (updates.selectedCameraId || updates.selectedMicrophoneId) {
       if (typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia && localStreamRef.current) {
@@ -1673,6 +1679,7 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
         clearLastCompletedRecording,
         liveTranscript,
         isTranscribing,
+        setTranscribing: setIsTranscribing,
         addTranscriptItem,
         saveCurrentMeetingTranscript,
         meetingSettings,
