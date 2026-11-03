@@ -1,5 +1,6 @@
 import React from 'react';
-import { LocalPilotApp } from './localpilot/LocalPilotApp';
+import { useDatabase } from '../context/DatabaseContext';
+import GrowthApp from '../features/gbp/client/GrowthApp';
 
 export interface GoogleBusinessLocation {
   id: string;
@@ -58,7 +59,8 @@ export interface GooglePost {
 }
 
 export const GbpView: React.FC = () => {
-  return <LocalPilotApp />;
+  const db = useDatabase() as any;
+  return <GrowthApp devUser={db?.userId || 'demo-user-123'} />;
 };
 
 export default GbpView;

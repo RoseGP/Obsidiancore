@@ -289,7 +289,7 @@ export function runAudit(input: AuditInput): AuditResult {
     .sort((a, b) => PRIORITY_RANK[a.issue.priority] - PRIORITY_RANK[b.issue.priority] || b.weight - a.weight);
 
   const notes = ['Products can’t be read through Google’s API. Check them in Google Business Profile.'];
-  if (checks.some((c) => c.status === 'not_checked')) notes.push(`${checks.filter((c) => c.status === 'not_checked').length} checks couldn’t be run and don’t count toward the score.`);
+  { const n = checks.filter((c) => c.status === 'not_checked').length; if (n) notes.push(n === 1 ? '1 check couldn’t be run and doesn’t count toward the score.' : `${n} checks couldn’t be run and don’t count toward the score.`); }
 
   return {
     overall, areas, checks, issues,

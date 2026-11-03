@@ -96,6 +96,15 @@ export function diffPatch(l: GLocation, patch: LocationPatch, categoryNames: Rec
 
 // ---------- Review insights (rule-based; labelled as estimates in the UI) ----------
 
+/** Places types are machine ids ("dental_clinic"); show them readably and without repeating the primary type. */
+export function placeCategories(p: { primaryType: string; types: string[] }): string[] {
+  const generic = new Set(['point_of_interest', 'establishment', 'store', 'food', 'health']);
+  const human = (t: string) => t.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
+  const out: string[] = [];
+  for (const c of [p.primaryType, ...p.types.filter((t) => !generic.has(t)).map(human)]) if (c && !out.some((x) => x.toLowerCase() === c.toLowerCase())) out.push(c);
+  return out.slice(0, 5);
+}
+
 export function reviewInsights(reviews: StoredReview[]) {
   const counts = { Positive: 0, Neutral: 0, Negative: 0 };
   const negTopics = new Map<string, number>(); const posTopics = new Map<string, number>();
@@ -103,7 +112,8 @@ export function reviewInsights(reviews: StoredReview[]) {
     const s = sentimentOf(r.rating); counts[s]++;
     for (const t of topicsOf(r.comment)) {
       if (s === 'Negative') negTopics.set(t, (negTopics.get(t) ?? 0) + 1);
-      else if (s === 'Positive') posTopics.set(t, (posTopics.get(t) ?? 0) + 1);
+      // Praise only from 5-star reviews: 4-star texts often carry a caveat ("great, a bit pricey").
+      else if (r.rating === 5) posTopics.set(t, (posTopics.get(t) ?? 0) + 1);
     }
   }
   const top = (m: Map<string, number>) => [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([topic, count]) => ({ topic, count }));
@@ -115,7 +125,7 @@ export function reviewInsights(reviews: StoredReview[]) {
   return {
     sentiment: counts,
     recurringComplaints: top(negTopics).filter((t) => t.count >= 2),
-    praised: top(posTopics),
+    praised: top(new Map([...posTopics].filter(([t]) => !negTopics.has(t)))),
     unanswered: reviews.filter((r) => !r.reply).length,
     unansweredNegative: reviews.filter((r) => !r.reply && r.rating <= 3).length,
     monthly: [...byMonth.values()].sort((a, b) => a.month.localeCompare(b.month)).slice(-12).map((m) => ({ month: m.month, count: m.count, average: Math.round((m.total / m.count) * 10) / 10 })),
@@ -305,6 +315,26 @@ export function createGrowthService(deps: GrowthDeps) {
         await store.update(userId, (d) => { d.growth.automation.lastError = (e as any)?.message; });
       }
     }
+    // Performance decline: compare the last 28 days with the 28 before, using Google's own numbers only.
+    for (const name of d0.selected) {
+      try {
+        const a = await analytics(userId, name, 28);
+        const cur = a.current.totals; const prev = a.previous?.totals;
+        if (!prev) continue;
+        const drops: string[] = [];
+        const check = (k: 'impressions' | 'calls' | 'websiteClicks' | 'directions', label: string, min: number) => {
+          const p = prev[k] ?? 0; const c = cur[k] ?? 0;
+          if (p >= min && c < p * 0.75) drops.push(`${label} ${Math.round((1 - c / p) * 100)}% lower (${c} vs ${p})`);
+        };
+        check('impressions', 'Profile views', 50); check('calls', 'Calls', 10); check('websiteClicks', 'Website clicks', 10); check('directions', 'Direction requests', 10);
+        if (!drops.length) continue;
+        await store.update(userId, (d) => {
+          const l = d.locations.find((x) => x.name === name);
+          upsertInbox(d, { dedupeKey: `${name}:performance:${a.current.range.to}`, location: name, locationTitle: l?.title ?? '', kind: 'performance', priority: 'medium',
+            title: 'Fewer customers found you on Google', detail: `Last 28 days vs the 28 before, from Google: ${drops.join('; ')}.`, action: { type: 'view_performance', label: 'See performance' } });
+        });
+      } catch { /* performance data is optional (API access, new profiles) */ }
+    }
     // New negative reviews since the last run.
     const items = await store.update(userId, (d) => {
       const since = d.growth.automation.lastRunAt ? Date.parse(d.growth.automation.lastRunAt) : Date.now() - 7 * DAY;
@@ -418,7 +448,7 @@ export function createGrowthService(deps: GrowthDeps) {
 
   const optimizerSchema = z.object({
     summary: z.string().max(1200),
-    keywords: z.array(z.object({ term: z.string().max(80), intent: z.enum(['transactional', 'informational', 'navigational', 'local', 'commercial']), why: z.string().max(300) })).max(20),
+    keywords: z.array(z.object({ term: z.string().max(80), intent: z.string().max(40).transform((v) => { const k = v.toLowerCase().trim(); return (['transactional', 'informational', 'navigational', 'local', 'commercial'] as const).find((x) => x === k) ?? 'local'; }), why: z.string().max(300) })).max(20),
     categories: z.array(z.object({ name: z.string().max(80), why: z.string().max(300) })).max(8),
     description: z.object({ after: z.string().max(750), notes: z.array(z.string().max(200)).max(6) }),
     services: z.array(z.object({ name: z.string().max(80), description: z.string().max(300), why: z.string().max(300) })).max(15),
@@ -617,7 +647,7 @@ export function createGrowthService(deps: GrowthDeps) {
       if (!deps.places?.configured) throw new AccountsError('Google Places isn’t configured on the server.', 503, 'places_not_configured');
       if (d0.growth.competitors.some((x) => x.location === locationName && x.placeId === input.placeId)) throw new AccountsError('That competitor is already added.', 409, 'conflict');
       const p = await deps.places.get(input.placeId).catch((e) => { throw mapErr(e); });
-      c = { id: rid('cmp'), location: locationName, source: 'places', placeId: p.placeId, name: p.name, address: p.address, categories: [p.primaryType, ...p.types.slice(0, 4)].filter(Boolean), rating: p.rating, reviewCount: p.reviewCount,
+      c = { id: rid('cmp'), location: locationName, source: 'places', placeId: p.placeId, name: p.name, address: p.address, categories: placeCategories(p), rating: p.rating, reviewCount: p.reviewCount,
         website: p.website ?? undefined, description: p.summary ?? undefined, services: input.services ?? [], photoCount: p.photoCount, postsPerMonth: input.postsPerMonth ?? null, notes: input.notes ?? '', addedAt: now(), refreshedAt: now(),
         snapshots: [{ at: now(), rating: p.rating, reviewCount: p.reviewCount, photoCount: p.photoCount }] };
     } else {

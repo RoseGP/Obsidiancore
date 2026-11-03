@@ -54,12 +54,22 @@ Object.assign(process.env, {
 const app = express(); app.use(express.json());
 app.use('/api/local-seo', (await import('../../../routes/localSeoApi')).default);
 const { runAudit, nameStuffingSignals, descriptionProblems } = await import('../server/audit');
-const { diffPatch } = await import('../server/growth');
+const { diffPatch, placeCategories, reviewInsights } = await import('../server/growth');
 const { buildLocationPatch } = await import('../server/googleGateway');
 const A = { 'X-Dev-User-Id': 'alice', Origin: APP_URL }; const B = { 'X-Dev-User-Id': 'bob', Origin: APP_URL };
 const L = 'locations/1001';
 const api = (m: 'get' | 'post' | 'put' | 'patch' | 'delete', p: string, who = A) => (request(app) as any)[m](`/api/local-seo${p}`).set(who);
 const waitJob = async (id: string, who = A) => { for (let i = 0; i < 100; i++) { const r = await api('get', `/growth/jobs/${id}`, who); if (r.body.status === 'done' || r.body.status === 'failed') return r.body; await new Promise((x) => setTimeout(x, 50)); } throw new Error('job timeout'); };
+
+console.log('🧩 Helpers (pure)');
+{
+  assert.deepEqual(placeCategories({ primaryType: 'Dentist', types: ['dentist', 'dental_clinic', 'health', 'point_of_interest'] }), ['Dentist', 'Dental clinic']);
+  ok('Places categories are readable and not repeated');
+  const mk = (rating: number, comment: string): any => ({ name: 'r' + Math.random(), locationName: 'l', rating, comment, createTime: '2026-10-01T00:00:00Z', reviewer: 'x' });
+  const ins = reviewInsights([mk(5, 'Friendly staff and fast service!'), mk(2, 'Waited 30 minutes past my appointment.'), mk(4, 'Great quality, a bit pricey.')]);
+  assert.ok(!ins.praised.some((t) => t.topic === 'Price'), 'caveated 4★ text is not praise'); assert.ok(!ins.praised.some((t) => t.topic === 'Wait time'), 'complained-about theme is not praise');
+  ok('praise comes from 5★ reviews and excludes themes customers complain about');
+}
 
 console.log('🧮 Audit engine (pure)');
 {
