@@ -13,10 +13,7 @@ import ReceptionistDirectory from "./voice/ReceptionistDirectory";
 import MessageSlipsInbox from "./voice/MessageSlipsInbox";
 import ReceptionistFAQKnowledge from "./voice/ReceptionistFAQKnowledge";
 import ReceptionistTrainingCenter from "./voice/ReceptionistTrainingCenter";
-import LiveKitIvrConsole from "./voice/LiveKitIvrConsole";
 import DograhIvrConsole from "./voice/DograhIvrConsole";
-import CallMonitoringDashboard from "./voice/CallMonitoringDashboard";
-import SipTrunkRedundancyManager, { SipTrunkConfig } from "./voice/SipTrunkRedundancyManager";
 import { copyToClipboard } from "../utils/clipboard";
 
 interface LeadItem {
@@ -181,7 +178,7 @@ interface CRMVoiceDialerProps {
   onNavigate?: (view: any) => void;
 }
 
-export type AppMode = "unified" | "livekit_ivr" | "monitoring" | "sip_trunks" | "twilio_ivr";
+export type AppMode = "unified" | "twilio_ivr";
 
 export default function CRMVoiceDialer({ onAddCalendarEvent, onNavigate }: CRMVoiceDialerProps) {
   // Mode: Unified Dialer & IVR vs LiveKit IVR vs Analytics vs SIP Trunks
@@ -481,12 +478,6 @@ export default function CRMVoiceDialer({ onAddCalendarEvent, onNavigate }: CRMVo
           <div className="h-10 w-10 rounded-2xl bg-blue-50 border border-blue-200 flex items-center justify-center text-blue-600 shadow-sm">
             {appMode === "twilio_ivr" ? (
               <Workflow className="h-5 w-5 text-blue-600" />
-            ) : appMode === "livekit_ivr" ? (
-              <Server className="h-5 w-5 animate-pulse" />
-            ) : appMode === "monitoring" ? (
-              <BarChart3 className="h-5 w-5 text-indigo-600" />
-            ) : appMode === "sip_trunks" ? (
-              <Network className="h-5 w-5 text-emerald-600" />
             ) : (
               <Radio className="h-5 w-5 text-blue-600" />
             )}
@@ -496,26 +487,14 @@ export default function CRMVoiceDialer({ onAddCalendarEvent, onNavigate }: CRMVo
               <h1 className="text-base md:text-lg font-bold text-slate-900 tracking-tight">
                 {appMode === "twilio_ivr"
                   ? "Twilio IVR & Dograh Voice AI"
-                  : appMode === "livekit_ivr"
-                  ? "LiveKit SIP IVR & Telephony Gateway"
-                  : appMode === "monitoring"
-                  ? "LiveKit Call Monitoring & Real-Time Analytics"
-                  : appMode === "sip_trunks"
-                  ? "Multi-SIP Trunk Redundancy & Carrier Fallback"
-                  : "Alex AI Unified Voice Dialer & IVR Gateway"}
+                  : "Voice Dialer & IVR"}
               </h1>
               <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
-                {appMode === "twilio_ivr" ? "Programmable Voice" : appMode === "livekit_ivr" ? "LiveKit + Failover" : appMode === "monitoring" ? "Real-time Telemetry" : appMode === "sip_trunks" ? "Zero-Downtime SIP" : "Dialer + IVR + WebRTC"}
+                {appMode === "twilio_ivr" ? "Programmable Voice" : "Dialer + IVR"}
               </span>
             </div>
             <p className="text-xs text-slate-500">
-              {appMode === "livekit_ivr"
-                ? "Inbound SIP trunking, automatic LLM/TTS provider failovers, and blind transfer to office extensions"
-                : appMode === "monitoring"
-                ? "Live telemetry, hourly call volume distribution, average handle time (AHT), and concurrency loads"
-                : appMode === "sip_trunks"
-                ? "Manage secondary and tertiary carrier routing rules, health checks, and automatic sub-second failover"
-                : "Autonomous conversational outbound telephony, inbound IVR auto-attendant, DTMF keypad & CRM sync"}
+              {appMode === "twilio_ivr" ? "Phone menus and AI call handling through Twilio" : "Outbound calls, inbound IVR, keypad and CRM call notes"}
             </p>
           </div>
         </div>
@@ -534,39 +513,6 @@ export default function CRMVoiceDialer({ onAddCalendarEvent, onNavigate }: CRMVo
             >
               <Radio className="h-3.5 w-3.5" />
               <span>Unified Dialer & IVR</span>
-            </button>
-            <button
-              onClick={() => handleSwitchMode("livekit_ivr")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
-                appMode === "livekit_ivr"
-                  ? "bg-white text-blue-600 shadow-sm border border-slate-200"
-                  : "text-slate-600 hover:text-slate-900"
-              }`}
-            >
-              <Server className="h-3.5 w-3.5" />
-              <span>LiveKit IVR</span>
-            </button>
-            <button
-              onClick={() => handleSwitchMode("monitoring")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
-                appMode === "monitoring"
-                  ? "bg-white text-blue-600 shadow-sm border border-slate-200"
-                  : "text-slate-600 hover:text-slate-900"
-              }`}
-            >
-              <BarChart3 className="h-3.5 w-3.5" />
-              <span>Live Monitoring</span>
-            </button>
-            <button
-              onClick={() => handleSwitchMode("sip_trunks")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
-                appMode === "sip_trunks"
-                  ? "bg-white text-blue-600 shadow-sm border border-slate-200"
-                  : "text-slate-600 hover:text-slate-900"
-              }`}
-            >
-              <Network className="h-3.5 w-3.5" />
-              <span>SIP Trunks</span>
             </button>
             <button
               onClick={() => handleSwitchMode("twilio_ivr")}
@@ -1235,33 +1181,8 @@ export default function CRMVoiceDialer({ onAddCalendarEvent, onNavigate }: CRMVo
           </div>
 
           {/* Mode-Specific Telephony Extensions below Visualizer */}
-          {appMode === "livekit_ivr" && (
-            <LiveKitIvrConsole 
-              onSimulateTransfer={(ext, dept) => triggerDepartmentTransfer(ext, dept)} 
-            />
-          )}
 
-          {appMode === "monitoring" && (
-            <div className="space-y-4">
-              <CallMonitoringDashboard 
-                activeCallsCount={status === "active" ? 1 : 0}
-                totalCallsToday={435 + callHistory.length}
-                avgHandleTimeSeconds={174}
-                primaryTrunkName="Telnyx Inbound (Primary)"
-              />
-            </div>
-          )}
 
-          {appMode === "sip_trunks" && (
-            <div className="space-y-4">
-              <SipTrunkRedundancyManager 
-                onTrunkChange={(newPrimaryId, trunks) => {
-                  const target = trunks.find(t => t.id === newPrimaryId);
-                  showToast(`⚡ SIP Trunk Switched to ${target?.name || newPrimaryId}`);
-                }}
-              />
-            </div>
-          )}
         </div>
 
         {/* ========================================================================= */}

@@ -2000,23 +2000,4 @@ Generate the post-call summary and next action items.`;
   }
 });
 
-/**
- * POST /trigger-outbound
- * LiveKit Outbound SIP Telephony Trigger
- * Executes createSipParticipant to call a phone number and assign the participant directly to an active voice agent room.
- */
-router.post('/trigger-outbound', async (req: Request, res: Response) => {
-  try {
-    const { livekitOutboundWorker } = await import('../workers/livekitOutboundWorker');
-    const result = await livekitOutboundWorker.triggerOutbound(req.body);
-    return res.status(200).json(result);
-  } catch (error: any) {
-    console.error('[Communication /trigger-outbound Error]', error);
-    return res.status(500).json({
-      success: false,
-      error: error.message || 'Failed to trigger outbound SIP participant via LiveKit worker.'
-    });
-  }
-});
-
 export default router;

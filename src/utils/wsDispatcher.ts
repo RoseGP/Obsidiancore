@@ -1,56 +1,19 @@
-import { WebSocket } from 'ws';
-
 /**
- * Senior Communications Architect real-time WS transmission dispatcher.
- * Safely aggregates live active browser frames to stream push alerts about WhatsApp & Twilio updates.
+ * Server-side event hook for communication routes (WhatsApp, SMS, Twilio).
+ *
+ * No browser ever subscribed to the old raw-WebSocket pool, so these events
+ * were never delivered. Broadcasting them to every connected socket would leak
+ * one account's messages to other accounts, so this stays a log-only hook
+ * until events are routed per user (e.g. socket.io rooms keyed by user id).
  */
-class WebSocketDispatcher {
-  private activeClients: Set<WebSocket> = new Set();
-
-  /**
-   * Register a new active client WebSocket connection when the browser client completes connection handshakes.
-   */
-  public registerClient(ws: WebSocket): void {
-    this.activeClients.add(ws);
-    console.log(`[WS Registry] Active browser client registered. Pool count: ${this.activeClients.size}`);
-
-    // Simple ping-pong keeps socket alive automatically
-    ws.on('close', () => {
-      this.activeClients.delete(ws);
-      console.log(`[WS Registry] Browser client disconnected. Remaining: ${this.activeClients.size}`);
-    });
-
-    ws.on('error', (err) => {
-      console.error(`[WS Registry] Client socket error:`, err.message);
-      this.activeClients.delete(ws);
-    });
+class EventDispatcher {
+  public broadcast(event: string, _payload: unknown): void {
+    if (process.env.NODE_ENV !== 'production') console.log(`[events] ${event}`);
   }
 
-  /**
-   * Broadcast structured telemetry and message inputs safely to all active view frames.
-   */
-  public broadcast(event: string, payload: any): void {
-    const rawPayload = JSON.stringify({ event, payload, timestamp: new Date().toISOString() });
-    console.log(`[WS Broadcast] Transmitting event: ${event} to ${this.activeClients.size} clients.`);
-
-    this.activeClients.forEach((client) => {
-      if (client.readyState === WebSocket.OPEN) {
-        try {
-          client.send(rawPayload);
-        } catch (e: any) {
-          console.error('[WS Broadcast] Failed to send payload to a client', e.message);
-        }
-      }
-    });
-  }
-
-  /**
-   * Returns current active client pool size
-   */
   public getClientCount(): number {
-    return this.activeClients.size;
+    return 0;
   }
 }
 
-// Global process-wide singleton for the communication worker & routes
-export const wsDispatcher = new WebSocketDispatcher();
+export const wsDispatcher = new EventDispatcher();

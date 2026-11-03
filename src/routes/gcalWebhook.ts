@@ -15,17 +15,9 @@ const router = Router();
  */
 router.get('/auth-url', (req: Request, res: Response) => {
   try {
-    const host = req.get('host');
-    const protocol = req.protocol === 'https' || req.get('x-forwarded-proto') === 'https' ? 'https' : 'http';
-    const redirectUri = `${protocol}://${host}/api/gcal/oauth2callback`;
-
-    const authUrl = generateAuthUrl('host_primary', redirectUri);
-
-    return res.json({
-      success: true,
-      authUrl,
-      redirectUri,
-    });
+    // The redirect URI comes from server config (APP_URL / GOOGLE_REDIRECT_URI), never from the Host header.
+    const authUrl = generateAuthUrl('host_primary');
+    return res.json({ success: true, authUrl });
   } catch (error: any) {
     return res.status(500).json({ success: false, error: error.message });
   }
@@ -59,15 +51,11 @@ router.get('/oauth2callback', async (req: Request, res: Response) => {
     // 1. Exchange auth code for tokens and encrypt them
     const { userId } = await handleOAuthCallback(code, 'host_primary');
 
-    // 2. Register Webhook Watch Channel with Google Calendar
-    const host = req.get('host');
-    const protocol = req.protocol === 'https' || req.get('x-forwarded-proto') === 'https' ? 'https' : 'http';
-    const baseUrl = `${protocol}://${host}`;
+    // 2. Push notifications need a public https APP_URL; without one, sync on demand only.
+    const watchChannel = await registerWatchChannel(userId).catch((e) => { console.warn('[gcal] push notifications not registered:', e.message); return null; });
 
-    const watchChannel = await registerWatchChannel(userId, baseUrl);
-
-    // 3. Perform initial Google Calendar event synchronization
-    const syncResult = await syncGoogleCalendarEvents(userId, watchChannel.channelId);
+    // 3. Initial synchronization
+    const syncResult = await syncGoogleCalendarEvents(userId, watchChannel?.channelId);
 
     // Return clean user feedback page and automatically redirect back to the app UI
     return res.send(`
