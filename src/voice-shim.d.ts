@@ -1,47 +1,4 @@
-declare interface DurableObjectNamespace {
-  idFromName(name: string): any;
-  get(id: any): any;
-}
-
-interface RealtimeInfra {
-  generateTurnCredentials(options?: { ttl?: number }): Promise<{ iceServers: RTCIceServer[] }>;
-}
-
-declare module "agents" {
-  export class Agent {
-    constructor(state: any, environment: any);
-    state: any;
-    env: any;
-  }
-}
-
-declare module "@cloudflare/voice" {
-  import { Agent } from "agents";
-
-  export interface VoiceAgentConfig {
-    stt?: any;
-    tts?: any;
-    voice?: string;
-  }
-
-  export function withVoice<T extends new (...args: any[]) => Agent>(
-    Base: T,
-    config?: VoiceAgentConfig
-  ): T & {
-    new (...args: any[]): {
-      onTurn(transcript: string, context: any): Promise<void>;
-    };
-  };
-
-  export class WorkersAIFluxSTT {
-    constructor();
-  }
-
-  export class WorkersAITTS {
-    constructor(options?: { voice?: string });
-  }
-}
-
+// Types for the local voice shim (src/lib/cloudflare-voice-react.ts), aliased as '@cloudflare/voice/react' in vite.config.ts.
 declare module "@cloudflare/voice/react" {
   export interface VoiceTranscript {
     id: string;

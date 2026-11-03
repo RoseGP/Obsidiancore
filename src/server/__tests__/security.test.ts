@@ -16,19 +16,19 @@ const secrets = await import('../../utils/secrets');
 // ---- Route guard ----
 const app = express(); app.use(express.json());
 const echo = (req: any, res: any) => res.json({ userId: req.body?.userId ?? req.query.userId ?? null, user: req.user?.id ?? null });
-app.use('/api/mail', guard(PUBLIC.mail), express.Router().post('/send', echo).post('/inbound-webhook', echo).post('/simulate/x', echo));
+app.use('/api/sample', guard([/^\/provider-webhook$/]), express.Router().post('/send', echo).post('/provider-webhook', echo).post('/simulate/x', echo));
 app.use('/api/messaging', guard(PUBLIC.messaging), express.Router().post('/visitor-init', echo).get('/conversations', echo));
-assert.equal((await request(app).post('/api/mail/send').send({})).status, 401); ok('protected route rejects anonymous requests');
-assert.equal((await request(app).post('/api/mail/inbound-webhook').send({})).status, 200); ok('provider webhook path stays public');
+assert.equal((await request(app).post('/api/sample/send').send({})).status, 401); ok('protected route rejects anonymous requests');
+assert.equal((await request(app).post('/api/sample/provider-webhook').send({})).status, 200); ok('provider webhook path stays public');
 assert.equal((await request(app).post('/api/messaging/visitor-init').send({})).status, 200); ok('website widget visitor endpoint stays public');
 assert.equal((await request(app).get('/api/messaging/conversations')).status, 401); ok('agent inbox requires sign-in');
-let r = await request(app).post('/api/mail/send').set('X-Dev-User-Id', 'alice').send({ userId: 'mallory' });
+let r = await request(app).post('/api/sample/send').set('X-Dev-User-Id', 'alice').send({ userId: 'mallory' });
 assert.equal(r.body.userId, 'alice'); assert.equal(r.body.user, 'alice'); ok('verified identity overwrites a client-supplied userId');
 r = await request(app).get('/api/messaging/conversations?userId=mallory').set('X-Dev-User-Id', 'alice');
 assert.equal(r.body.userId, 'alice'); ok('…including userId in the query string');
 process.env.NODE_ENV = 'production';
-assert.equal((await request(app).post('/api/mail/simulate/x').set('X-Dev-User-Id', 'alice').send({})).status, 404); ok('simulation endpoints are disabled in production');
-assert.equal((await request(app).post('/api/mail/send').set('X-Dev-User-Id', 'alice').send({})).status, 401); ok('dev identity header is ignored in production');
+assert.equal((await request(app).post('/api/sample/simulate/x').set('X-Dev-User-Id', 'alice').send({})).status, 404); ok('simulation endpoints are disabled in production');
+assert.equal((await request(app).post('/api/sample/send').set('X-Dev-User-Id', 'alice').send({})).status, 401); ok('dev identity header is ignored in production');
 process.env.NODE_ENV = 'test';
 
 // ---- Bypass tokens are gone ----

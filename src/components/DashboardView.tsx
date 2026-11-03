@@ -104,7 +104,6 @@ export default function DashboardView({ contacts, onSelectContact, onNavigate }:
   const dayGreeting = now.getHours() < 12 ? 'Good morning' : now.getHours() < 18 ? 'Good afternoon' : 'Good evening';
   const todayLabel = now.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
   const { handleUserCommand, isProcessingCommand, isVoiceAssistantActive } = useCommand();
-  const { simulateEvent, autoStreamActive, setAutoStreamActive } = useNotifications();
   const [commandText, setCommandText] = useState('');
   const isSubmitting = isProcessingCommand;
   const [assistantReply, setAssistantReply] = useState<string | null>(null);
@@ -785,45 +784,6 @@ export default function DashboardView({ contacts, onSelectContact, onNavigate }:
             )}
           </button>
 
-          {/* Alert simulator (development builds only): injects test notifications, never in production. */}
-          {(import.meta as any).env?.DEV && (
-          <div className="hidden lg:flex items-center gap-1.5 bg-[#0B0C12]/90 border border-white/10 px-2.5 py-1 rounded-full text-xs text-neutral-300 shadow-xs">
-            <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
-            <span className="text-[10px] text-neutral-400 font-medium">Live Alerts:</span>
-            <button 
-              type="button"
-              onClick={() => simulateEvent('lead')}
-              className="px-2 py-0.5 rounded-md bg-white/5 hover:bg-emerald-500/20 text-emerald-400 font-mono text-[10px] transition cursor-pointer"
-              title="Trigger instant incoming lead toast"
-            >
-              + Lead
-            </button>
-            <button 
-              type="button"
-              onClick={() => simulateEvent('message')}
-              className="px-2 py-0.5 rounded-md bg-white/5 hover:bg-indigo-500/20 text-indigo-400 font-mono text-[10px] transition cursor-pointer"
-              title="Trigger instant new message toast"
-            >
-              + Message
-            </button>
-            <button 
-              type="button"
-              onClick={() => simulateEvent('task')}
-              className="px-2 py-0.5 rounded-md bg-white/5 hover:bg-amber-500/20 text-amber-400 font-mono text-[10px] transition cursor-pointer"
-              title="Trigger instant assigned task toast"
-            >
-              + Task
-            </button>
-            <button 
-              type="button"
-              onClick={() => simulateEvent('interaction')}
-              className="px-2 py-0.5 rounded-md bg-white/5 hover:bg-cyan-500/20 text-cyan-400 font-mono text-[10px] transition cursor-pointer"
-              title="Trigger customer interaction alert"
-            >
-              + Interaction
-            </button>
-          </div>
-          )}
         </div>
         
         <div className="flex flex-wrap items-center gap-2 sm:gap-3">

@@ -99,12 +99,11 @@ export function SettingsPage() {
         <div className="space-y-3">
           {repo.mode === 'local' ? (
             <InlineAlert tone="warning" title="Prototype mode">
-              {repo.modeReason} Connect the billing server to store invoices securely and send email.
+              {repo.modeReason} Connect the billing server to store invoices securely.
             </InlineAlert>
           ) : (
             <InlineAlert tone="success" title="Connected to the billing server">Invoices, clients, payments and settings are saved to your workspace.</InlineAlert>
           )}
-          <p className="inv-muted text-[13px]">Email delivery: <b>{repo.emailConfigured ? 'configured' : 'not configured'}</b>. SMTP credentials are set on the server and are never sent to the browser.</p>
           {repo.resetPrototypeData && (
             <Button size="sm" icon={<RotateCcw size={14} />} onClick={() => setResetOpen(true)}>Reset sample data</Button>
           )}

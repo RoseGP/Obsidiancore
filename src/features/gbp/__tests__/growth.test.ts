@@ -44,9 +44,6 @@ const prompts: string[] = [];
   return 'not json';
 };
 
-const mails: { to: string; subject: string; text: string }[] = []; let mailOn = false;
-(globalThis as any).__gbpTestMailer = { configured: () => mailOn, send: async (m: any) => { if (!mailOn) return { result: 'not_configured', detail: 'off' }; mails.push(m); return { result: 'delivered', detail: 'ok' }; } };
-
 const dataDir = mkdtempSync(path.join(tmpdir(), 'gbp-growth-'));
 Object.assign(process.env, {
   NODE_ENV: 'test', SOCIAL_ACCOUNTS_DEV_AUTH: 'true', SOCIAL_ACCOUNTS_STORE: 'file', SOCIAL_ACCOUNTS_DATA_DIR: dataDir, SOCIAL_ACCOUNTS_ENCRYPTION_KEY: 'k'.repeat(40),
@@ -230,23 +227,12 @@ r = await api('post', `/growth/inbox/${item.id}`).send({ status: 'dismissed' });
 r = await api('post', '/growth/automation/run').send({});
 r = await api('get', '/growth/inbox'); assert.equal(r.body.find((i: any) => i.dedupeKey === item.dedupeKey)?.status, 'dismissed'); ok('dismissed items don’t reappear on the next run');
 
-// Email digests
-r = await api('get', '/growth/automation');
-assert.equal(r.body.email.configured, false); assert.equal(r.body.email.to, 'owner@biz.example'); ok('settings report email delivery status and the default address (the Google account)');
-r = await api('post', '/growth/automation/test-email').send({}); assert.equal(r.status, 503); assert.equal(r.body.code, 'email_not_configured'); ok('without SMTP, a test email says so instead of pretending');
-r = await api('put', '/growth/automation').send({ notifications: { email: true, emailTo: 'not-an-email' } }); assert.equal(r.status, 400);
-r = await api('put', '/growth/automation').send({ notifications: { email: true, emailTo: 'alerts@biz.example' } }); assert.equal(r.status, 200); assert.equal(r.body.notifications.emailTo, 'alerts@biz.example');
-mailOn = true;
-r = await api('post', '/growth/automation/test-email').send({}); assert.equal(r.status, 200); assert.equal(mails.at(-1)?.to, 'alerts@biz.example'); ok('test email goes to the chosen address');
-const mailsBefore = mails.length;
-r = await api('post', '/growth/automation/run').send({});
-assert.equal(mails.length, mailsBefore + 1); const digest = mails.at(-1)!;
-assert.match(digest.subject, /new Business Profile recommendation/); assert.match(digest.text, /Nothing has been changed on Google/); assert.doesNotMatch(digest.text, /ya29\.|1\/\//);
-ok('a check emails one digest of new recommendations, with no tokens in it');
-r = await api('post', '/growth/automation/run').send({}); assert.equal(mails.length, mailsBefore + 1); ok('the same recommendations aren’t emailed twice');
-r = await api('get', '/growth/automation'); assert.equal(r.body.automation.lastEmail.result, 'delivered'); assert.equal(r.body.notifications.email, true); ok('last delivery result and saved preferences are readable');
-r = await api('get', '/growth/automation', B); assert.equal(r.body.notifications.email, false); ok('notification settings are per account');
-mailOn = false;
+// Notification settings
+r = await api('put', '/growth/automation').send({ notifications: { kinds: { content: false } } }); assert.equal(r.status, 200);
+r = await api('get', '/growth/automation'); assert.equal(r.body.notifications.kinds.content, false); assert.equal(r.body.email, undefined); ok('saved notification preferences are readable (in-app only, no email)');
+r = await api('put', '/growth/automation').send({ notifications: { email: true } }); assert.equal(r.status, 400); ok('email notification settings are no longer accepted');
+r = await api('get', '/growth/automation', B); assert.notEqual(r.body.notifications.kinds.content, false); ok('notification settings are per account');
+r = await api('post', '/growth/automation/test-email').send({}); assert.equal(r.status, 404); ok('no email endpoint');
 r = await api('get', '/growth/dashboard');
 assert.equal(r.body.locations[0].growthAudit.topIssues.length, 5); assert.ok(r.body.security.status); ok('dashboard has health, top 5 recommendations and security status');
 

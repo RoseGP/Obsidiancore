@@ -34,23 +34,6 @@ function generateContextualCrmReply(incoming: string, leadContext?: any): { repl
   const leadName = leadContext?.name || 'Active Lead';
   const company = leadContext?.company || 'Enterprise Account';
 
-  if (query.includes('email') || query.includes('draft') || query.includes('follow up') || query.includes('write')) {
-    return {
-      intent: 'email_generation',
-      sentiment: 'positive',
-      action: 'draft_email',
-      reply: `### Personalized Email Draft for **${leadName}** (${company})\n\n` +
-        `**Subject:** Accelerated Implementation & Workflow Alignment - ${company}\n\n` +
-        `Hi ${leadName.split(' ')[0]},\n\n` +
-        `Thank you for taking the time to review our platform capabilities. Based on our latest discussion regarding your team's omnichannel communication requirements and low-latency workflows, I have prepared a customized proposal covering:\n\n` +
-        `1. **Real-time Voice & Video Consultation Hubs** with automatic transcriptions\n` +
-        `2. **Multi-model AI Studio** for marketing, scripts, and personalized outreach\n` +
-        `3. **Unified Inbox Synchronization** across Email, SMS, WhatsApp, and Telegram\n\n` +
-        `Would tomorrow afternoon or Thursday at 2:00 PM work for a 15-minute alignment walkthrough?\n\n` +
-        `Best regards,\n**Executive CRM Director**`
-    };
-  }
-
   if (query.includes('proposal') || query.includes('deal') || query.includes('sla') || query.includes('pricing') || query.includes('quote')) {
     return {
       intent: 'proposal_analysis',

@@ -142,7 +142,7 @@ const SEARCH_NAV_ITEMS = [
   // 'chat' previously appeared here as "AI Chat Studio" but opened the messaging platform (duplicate of
   // Email & Messaging). The AI assistant now lives on the Dashboard; the 'chat' route still resolves.
   { id: 'greet', label: 'Greet Hub', icon: 'Video' },
-  { id: 'messages', label: 'Email & Messaging', icon: 'MessageSquare' },
+  { id: 'messages', label: 'Messaging', icon: 'MessageSquare' },
   { id: 'calendar', label: 'Calendar & Bookings', icon: 'Calendar' },
   { id: 'proposals', label: 'Invoice', icon: 'FileText' },
   { id: 'social_planner', label: 'Social Planner', icon: 'Share2' },
@@ -310,7 +310,7 @@ function AppMain() {
   // Map semantic active view to sidebar id
   const sidebarActiveId = (() => {
     if (['greet', 'welcome', 'meet_and_greet'].includes(activeView)) return 'greet';
-    if (['messages', 'email_assistant'].includes(activeView)) return 'messages';
+    if (activeView === 'messages') return 'messages';
     if (['voice_dialer', 'voice_hub'].includes(activeView)) return 'voice_dialer';
     if (['proposals', 'enterprise_proposals'].includes(activeView)) return 'proposals';
     if (['deals', 'sales_pipelines', 'pipeline', 'leads'].includes(activeView)) return 'deals';
@@ -332,9 +332,7 @@ function AppMain() {
       case 'deals':
       case 'sales_pipelines':
         return <DealsPipelineView initialTab={activeView === 'leads' ? 'leads' : 'board'} />;
-      case 'chat':
       case 'messages':
-      case 'email_assistant':
         return <ProductionMessagingPlatform />;
       case 'greet':
       case 'welcome':

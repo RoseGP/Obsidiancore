@@ -530,8 +530,8 @@ export default function UnifiedCommandSearchBar({
                           <Sparkles className="h-4 w-4 text-purple-400" />
                         </div>
                         <div className="truncate">
-                          <span className="text-[10.5px] font-bold text-neutral-200 block truncate">Email, Chat AI</span>
-                          <span className="text-[8.5px] text-neutral-500 block">Process Inbox</span>
+                          <span className="text-[10.5px] font-bold text-neutral-200 block truncate">Messaging</span>
+                          <span className="text-[8.5px] text-neutral-500 block">Open conversations</span>
                         </div>
                       </button>
                     </div>

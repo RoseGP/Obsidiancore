@@ -154,15 +154,6 @@ export interface GrowthDeps {
   places: PlacesClient | null;
   /** Third-party rank tracking (geo-grid). None is built in; see visibility(). */
   rankProvider: null;
-  /** Outbound email for notification digests; null when not wired. */
-  mailer?: Mailer | null;
-  /** Used for the link in emails. */
-  appUrl?: string;
-}
-
-export interface Mailer {
-  configured(): boolean;
-  send(msg: { to: string; subject: string; text: string }): Promise<{ result: 'delivered' | 'failed' | 'not_configured'; detail: string }>;
 }
 
 type JobStatus = { id: string; userId: string; kind: 'audit'; location: string; status: 'queued' | 'running' | 'done' | 'failed'; step: string; progress: number; startedAt: string; finishedAt?: string; error?: string };
@@ -369,54 +360,19 @@ export function createGrowthService(deps: GrowthDeps) {
       d.growth.automation.lastRunAt = now();
       return d.growth.inbox.filter((i) => i.status === 'open').length;
     });
-    await emailDigest(userId).catch(() => undefined);
     return { locations: done, items };
-  }
-
-  function emailStatus(d: GbpDoc) {
-    return { configured: !!deps.mailer?.configured(), to: d.growth.notifications.emailTo || d.google?.email || null, last: d.growth.automation.lastEmail ?? null };
-  }
-
-  /** One email per run with new open items the user wants to hear about. Never includes tokens or review text beyond a short excerpt. */
-  async function emailDigest(userId: string, opts: { test?: boolean } = {}) {
-    const d = await store.get(userId);
-    const st = emailStatus(d);
-    if (!opts.test && !d.growth.notifications.email) return { sent: false, reason: 'off' as const };
-    if (!st.to) throw new AccountsError('Add an email address for notifications first.', 400, 'no_email');
-    const fresh = opts.test ? [] : d.growth.inbox.filter((i) => (i.status === 'open' || i.status === 'prepared') && !i.emailedAt && d.growth.notifications.kinds[i.kind] !== false);
-    if (!opts.test && !fresh.length) return { sent: false, reason: 'nothing_new' as const };
-    const order = { critical: 0, high: 1, medium: 2, low: 3 } as const;
-    const list = [...fresh].sort((a, b) => order[a.priority] - order[b.priority]).slice(0, 20);
-    const link = deps.appUrl ? `${deps.appUrl.replace(/\/$/, '')}/?view=gbp` : '';
-    const text = opts.test
-      ? ['This is a test email from your Local Growth notifications.', '', 'If you received it, email notifications are working.', link && `\nOpen the app: ${link}`].filter(Boolean).join('\n')
-      : [
-        `You have ${fresh.length} new recommendation${fresh.length === 1 ? '' : 's'} for your Google Business Profile:`, '',
-        ...list.map((i) => `• [${i.priority}] ${i.title}${i.locationTitle ? ` (${i.locationTitle})` : ''}\n  ${i.detail.slice(0, 160)}`),
-        fresh.length > list.length ? `\n…and ${fresh.length - list.length} more.` : '',
-        '', 'Nothing has been changed on Google. Open the app to review and approve.', link && `Open: ${link}`,
-        '', 'You can turn these emails off in Recommendations → Settings. This app isn’t made or endorsed by Google.',
-      ].filter((x) => x !== '').join('\n');
-    const subject = opts.test ? 'Test: Local Growth notifications' : `${fresh.length} new Business Profile recommendation${fresh.length === 1 ? '' : 's'}`;
-    const out = deps.mailer ? await deps.mailer.send({ to: st.to, subject, text }) : { result: 'not_configured' as const, detail: 'Email delivery isn’t configured on the server.' };
-    await store.update(userId, (x) => {
-      x.growth.automation.lastEmail = { at: now(), result: out.result, detail: out.detail, items: fresh.length };
-      if (out.result === 'delivered') for (const i of x.growth.inbox) if (fresh.some((f) => f.id === i.id)) i.emailedAt = now();
-    });
-    if (opts.test && out.result !== 'delivered') throw new AccountsError(out.result === 'not_configured' ? 'Email delivery isn’t configured on the server (SMTP_HOST / SMTP_FROM).' : out.detail, out.result === 'not_configured' ? 503 : 502, out.result === 'not_configured' ? 'email_not_configured' : 'email_failed');
-    return { sent: out.result === 'delivered', reason: out.result, items: fresh.length };
   }
 
   async function getAutomation(userId: string) {
     const d = await store.get(userId);
-    return { automation: d.growth.automation, notifications: d.growth.notifications, email: emailStatus(d) };
+    return { automation: d.growth.automation, notifications: d.growth.notifications };
   }
 
-  async function saveAutomation(userId: string, s: { enabled?: boolean; notifications?: { inApp?: boolean; email?: boolean; emailTo?: string; kinds?: Partial<Record<InboxItem['kind'], boolean>> } }) {
+  async function saveAutomation(userId: string, s: { enabled?: boolean; notifications?: { inApp?: boolean; kinds?: Partial<Record<InboxItem['kind'], boolean>> } }) {
     return store.update(userId, (d) => {
       if (s.enabled !== undefined) d.growth.automation.enabled = s.enabled;
       if (s.notifications) d.growth.notifications = { ...d.growth.notifications, ...s.notifications, kinds: { ...d.growth.notifications.kinds, ...(s.notifications.kinds ?? {}) } };
-      return { automation: d.growth.automation, notifications: d.growth.notifications, email: emailStatus(d) };
+      return { automation: d.growth.automation, notifications: d.growth.notifications };
     });
   }
 
@@ -962,7 +918,7 @@ export function createGrowthService(deps: GrowthDeps) {
     refreshProfile, startAudit, jobStatus, getAudit, executeAudit,
     inbox, setInboxStatus, runAutomation, saveAutomation,
     proposeChange, listChanges, validateChange, publishChange, discardChange, searchCategories, availableAttributes,
-    uploadPhoto, deletePhoto, getAutomation, emailDigest,
+    uploadPhoto, deletePhoto, getAutomation,
     optimize, generatePost, generateCalendar, listPlannedPosts, savePlannedPost, schedulePost, publishPlannedPost, discardPlannedPost, publishDuePosts,
     reviewSummary, listCompetitors, searchPlaces, addCompetitor, updateCompetitor, refreshCompetitors, removeCompetitor, competitorReport,
     searchKeywords, visibility, saveVisibility, analytics, assistant, assistantHistory, clearAssistant,

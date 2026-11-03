@@ -46,8 +46,6 @@ export function guard(publicPaths: RegExp[] = []) {
 /** Public paths per router (relative to its mount point). Keep these minimal. */
 export const PUBLIC = {
   none: [] as RegExp[],
-  // Inbound mail webhook from the mail provider. TO COMPLETE: verify the provider's signature in the handler.
-  mail: [/^\/inbound-webhook$/],
   // Public booking page (PublicSchedulingPage): read event types and book a slot.
   availability: [/^\/event-types$/, /^\/[A-Za-z0-9_-]+$/, /^\/book$/],
   salesIntel: [/^\/health$/],

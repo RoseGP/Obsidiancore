@@ -401,21 +401,6 @@ service cloud.firestore {
       }
     }
 
-    // 11. IMAP Sync Checkpoints
-    match /imap_sync_checkpoints/{mailboxId} {
-      allow read, write: if isSignedIn();
-    }
-
-    // 12. Email Conversation Threads
-    match /email_threads/{threadId} {
-      allow read, write: if isSignedIn();
-    }
-
-    // 13. Scheduled Emails Collection
-    match /scheduled_emails/{emailId} {
-      allow read, write: if isSignedIn();
-    }
-
     // 14. Messaging Platform Conversations & Messages
     match /conversations/{convId} {
       // Allow authenticated agents and public widgets with valid session

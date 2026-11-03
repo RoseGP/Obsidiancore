@@ -1,78 +1,52 @@
 import React, { useEffect, useState } from 'react';
-import { Paperclip } from 'lucide-react';
+import { CheckCheck, Download } from 'lucide-react';
 import type { InvoiceView } from '../domain/status';
-import { hasErrors, isValidEmail, type FieldErrors } from '../domain/validation';
-import { defaultEmail } from '../services/emailDelivery';
-import { invoicePdfFilename } from '../services/pdf';
+import { downloadInvoicePdf, invoicePdfFilename } from '../services/pdf';
 import { buildInvoiceDocument } from '../services/invoiceDocument';
-import { BillingError, type SendResult } from '../services/repository';
+import { BillingError } from '../services/repository';
 import { useBillingData } from '../state/BillingStore';
 import { Dialog, useToast } from '../ui/overlays';
-import { Button, InlineAlert, Input, Textarea } from '../ui/primitives';
+import { Button, InlineAlert } from '../ui/primitives';
 
+/**
+ * Deliver an invoice to the client. The CRM doesn't send email: download the
+ * PDF (or share the Stripe payment link from the invoice page), deliver it
+ * yourself, then mark the invoice as sent so it counts toward your balance.
+ */
 export function SendDialog({ open, view, onClose, onResult }: {
-  open: boolean; view: InvoiceView | null; onClose: () => void; onResult?: (r: SendResult) => void;
+  open: boolean; view: InvoiceView | null; onClose: () => void; onResult?: () => void;
 }) {
-  const { sendInvoice, isPending, repo } = useBillingData();
+  const { markSent, isPending } = useBillingData();
   const toast = useToast();
-  const [to, setTo] = useState('');
-  const [cc, setCc] = useState('');
-  const [subject, setSubject] = useState('');
-  const [message, setMessage] = useState('');
-  const [confirmed, setConfirmed] = useState(false);
-  const [submitted, setSubmitted] = useState(false);
-  const [serverErrors, setServerErrors] = useState<FieldErrors>({});
+  const [downloaded, setDownloaded] = useState(false);
   const [formError, setFormError] = useState('');
 
-  useEffect(() => {
-    if (!open || !view) return;
-    const d = defaultEmail(view.invoice, view.totals);
-    setTo(view.invoice.billTo.email);
-    setCc('');
-    setSubject(d.subject);
-    setMessage(d.message);
-    setConfirmed(false);
-    setSubmitted(false);
-    setServerErrors({});
-    setFormError('');
-  }, [open, view?.invoice.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (open) { setDownloaded(false); setFormError(''); } }, [open, view?.invoice.id]);
 
   if (!view) return null;
-  const sending = isPending(`send:${view.invoice.id}`);
-  const ccList = cc.split(',').map((s) => s.trim()).filter(Boolean);
-  const local: FieldErrors = {};
-  if (!to.trim()) local.to = 'Enter the recipient’s email.';
-  else if (!isValidEmail(to)) local.to = 'Enter a valid email, like name@company.com.';
-  if (ccList.some((e) => !isValidEmail(e))) local.cc = 'Separate addresses with commas, and check each one.';
-  if (!subject.trim()) local.subject = 'Add a subject line.';
-  if (!confirmed) local.confirm = 'Confirm the recipient before sending.';
-  const errors = submitted ? { ...local, ...serverErrors } : {};
-  const filename = invoicePdfFilename(buildInvoiceDocument(view.invoice, view.totals));
-  const changedRecipient = to.trim().toLowerCase() !== view.invoice.billTo.email.trim().toLowerCase();
+  const inv = view.invoice;
+  const doc = buildInvoiceDocument(inv, view.totals);
+  const filename = invoicePdfFilename(doc);
+  const marking = isPending(`marksent:${inv.id}`);
+  const isDraft = inv.lifecycle === 'draft';
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSubmitted(true);
-    if (hasErrors(local) || sending) return;
+  const download = async () => {
     try {
-      const r = await sendInvoice(view.invoice, view.totals, { to: to.trim(), cc: ccList.join(', '), subject: subject.trim(), message });
-      if (r.delivery.result === 'delivered') {
-        toast({ tone: 'success', title: `${view.invoice.number} sent`, body: `Emailed to ${r.delivery.to}. It stays unpaid until you record a payment.` });
-      } else if (r.delivery.result === 'not_configured') {
-        toast({ tone: 'warning', title: 'Invoice not emailed', body: 'Email isn’t set up. Download the PDF to send it yourself, then mark it as sent.' });
-      } else {
-        toast({ tone: 'error', title: 'Email failed', body: r.delivery.detail });
-      }
-      onResult?.(r);
+      if ((await downloadInvoicePdf(doc)) === 'declined') return;
+      setDownloaded(true);
+    } catch { setFormError('The PDF couldn’t be created. Try again.'); }
+  };
+
+  const confirm = async () => {
+    if (!isDraft) { onResult?.(); onClose(); return; }
+    try {
+      await markSent(inv.id);
+      toast({ tone: 'success', title: `${inv.number} marked as sent`, body: 'It now counts toward your outstanding balance.' });
+      onResult?.();
       onClose();
     } catch (err) {
       if ((err as any)?.code === 'duplicate') return;
-      if (err instanceof BillingError) {
-        setServerErrors(err.fieldErrors);
-        setFormError(hasErrors(err.fieldErrors)
-          ? `${err.message} ${Object.values(err.fieldErrors).filter((_, i) => i < 3).join(' ')}`
-          : err.message);
-      } else setFormError('The invoice couldn’t be sent. Try again.');
+      setFormError(err instanceof BillingError ? err.message : 'The invoice couldn’t be marked as sent. Try again.');
     }
   };
 
@@ -80,36 +54,40 @@ export function SendDialog({ open, view, onClose, onResult }: {
     <Dialog
       open={open}
       onClose={onClose}
-      width={580}
-      dismissible={!sending}
-      title={view.invoice.lifecycle === 'draft' ? `Send ${view.invoice.number}` : `Resend ${view.invoice.number}`}
-      description="The PDF is attached exactly as it appears in the preview."
+      width={520}
+      dismissible={!marking}
+      title={isDraft ? `Send ${inv.number}` : `Resend ${inv.number}`}
+      description={`Deliver the invoice to ${inv.billTo.company || inv.billTo.name || 'your client'} yourself, then confirm.`}
       footer={<>
-        <Button onClick={onClose} disabled={sending}>Cancel</Button>
-        <Button variant="primary" type="submit" form="inv-send-form" loading={sending}>Send invoice</Button>
+        <Button onClick={onClose} disabled={marking}>Cancel</Button>
+        <Button variant="primary" icon={<CheckCheck size={15} />} onClick={confirm} loading={marking}>
+          {isDraft ? 'Mark as sent' : 'Done'}
+        </Button>
       </>}
     >
-      <form id="inv-send-form" noValidate onSubmit={submit} className="space-y-4">
-        {!repo.emailConfigured && (
-          <InlineAlert tone="warning" title="Email delivery isn’t set up">
-            Sending will be logged as not delivered. Ask an admin to add SMTP settings on the server, or download the PDF and mark the invoice as sent.
-          </InlineAlert>
-        )}
+      <div className="space-y-4">
         {formError && <InlineAlert tone="danger">{formError}</InlineAlert>}
-        <Input label="To" required type="email" value={to} onChange={(e) => { setTo(e.target.value); setConfirmed(false); }} error={errors.to}
-          hint={changedRecipient && isValidEmail(to) ? 'This is different from the email on the invoice.' : undefined} data-autofocus />
-        <Input label="Cc" placeholder="Optional, comma separated" value={cc} onChange={(e) => setCc(e.target.value)} error={errors.cc} />
-        <Input label="Subject" required value={subject} onChange={(e) => setSubject(e.target.value)} error={errors.subject} />
-        <Textarea label="Message" rows={6} value={message} onChange={(e) => setMessage(e.target.value)} />
-        <p className="inv-muted flex items-center gap-2 text-[12.5px]"><Paperclip size={14} aria-hidden /> {filename}</p>
-        <div>
-          <label className="flex cursor-pointer items-start gap-2.5 rounded-xl p-3 text-[13px]" style={{ background: 'var(--inv-surface-2)', border: `1px solid ${errors.confirm ? 'var(--inv-danger)' : 'var(--inv-border)'}` }}>
-            <input type="checkbox" className="inv-check mt-0.5" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} aria-invalid={!!errors.confirm} />
-            <span>I’ve checked that <b>{to.trim() || 'the recipient'}</b> is the right address for {view.invoice.billTo.company || view.invoice.billTo.name || 'this client'}.</span>
-          </label>
-          {errors.confirm && <p className="inv-error" role="alert">{errors.confirm}</p>}
-        </div>
-      </form>
+        <ol className="space-y-3 text-[13.5px]">
+          <li className="rounded-xl p-3" style={{ background: 'var(--inv-surface-2)', border: '1px solid var(--inv-border)' }}>
+            <p className="font-semibold">1. Download the PDF</p>
+            <p className="inv-muted mt-0.5 text-[12.5px]">{filename}</p>
+            <div className="mt-2"><Button size="sm" icon={<Download size={14} />} onClick={download}>{downloaded ? 'Download again' : 'Download PDF'}</Button></div>
+          </li>
+          <li className="rounded-xl p-3" style={{ background: 'var(--inv-surface-2)', border: '1px solid var(--inv-border)' }}>
+            <p className="font-semibold">2. Send it to your client</p>
+            <p className="inv-muted mt-0.5 text-[12.5px]">
+              Attach it in your usual email or messaging app{inv.billTo.email ? <> (client email: <b>{inv.billTo.email}</b>)</> : null}.
+              To let them pay by card, create a Stripe payment link from the invoice page and share it.
+            </p>
+          </li>
+          <li className="rounded-xl p-3" style={{ background: 'var(--inv-surface-2)', border: '1px solid var(--inv-border)' }}>
+            <p className="font-semibold">3. {isDraft ? 'Mark it as sent' : 'You’re done'}</p>
+            <p className="inv-muted mt-0.5 text-[12.5px]">
+              {isDraft ? 'The invoice then counts toward your outstanding balance. It stays unpaid until you record a payment.' : 'This invoice is already marked as sent.'}
+            </p>
+          </li>
+        </ol>
+      </div>
     </Dialog>
   );
 }

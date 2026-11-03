@@ -126,7 +126,6 @@ export default function SettingsView({ defaultTab = 'account' }: SettingsViewPro
   const [channels, setChannels] = useState({
     whatsapp: true,
     telegram: true,
-    email: true,
     sms: false,
     instagram: true,
   });

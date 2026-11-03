@@ -696,7 +696,7 @@ export const ProductionMessagingPlatform: React.FC = () => {
 
   const handleCreateNewConversation = async (payload: {
     type: ConversationType;
-    channel: 'internal' | 'crm' | 'widget' | 'email';
+    channel: 'internal' | 'crm' | 'widget';
     title: string;
     participantIds: string[];
     priority: 'low' | 'medium' | 'high' | 'urgent';

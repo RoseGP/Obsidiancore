@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { 
   Bell, 
-  Mail, 
   Smartphone, 
   Volume2, 
   VolumeX, 
@@ -45,20 +44,18 @@ export default function NotificationPreferencesModal({
     resetPreferences,
     pushPermission,
     requestPushPermission,
-    emailDispatches,
-    clearEmailDispatches,
     sendTestNotification,
     soundEnabled,
     setSoundEnabled,
   } = useNotifications();
 
-  const [activeTab, setActiveTab] = useState<'matrix' | 'channels' | 'quiet_hours' | 'email_logs'>('matrix');
+  const [activeTab, setActiveTab] = useState<'matrix' | 'channels' | 'quiet_hours'>('matrix');
   const [testStatus, setTestStatus] = useState<string | null>(null);
   const [requestingPush, setRequestingPush] = useState(false);
 
   if (!isOpen && !inline) return null;
 
-  const handleTest = (channel: 'inApp' | 'email' | 'push', type: 'lead' | 'task' | 'system') => {
+  const handleTest = (channel: 'inApp' | 'push', type: 'lead' | 'task' | 'system') => {
     sendTestNotification(channel, type);
     setTestStatus(`Dispatched test ${type} notification via ${channel.toUpperCase()}!`);
     setTimeout(() => setTestStatus(null), 3500);
@@ -92,7 +89,7 @@ export default function NotificationPreferencesModal({
               </span>
             </h2>
             <p className="text-xs text-neutral-400">
-              Customize real-time alerts across In-App, Browser Push, and Email channels with granular priority thresholds.
+              Customize real-time alerts across in-app and browser push channels with granular priority thresholds.
             </p>
           </div>
         </div>
@@ -153,17 +150,6 @@ export default function NotificationPreferencesModal({
           <span>Quiet Hours &amp; Priority Filters</span>
         </button>
 
-        <button
-          onClick={() => setActiveTab('email_logs')}
-          className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 cursor-pointer ${
-            activeTab === 'email_logs'
-              ? 'bg-blue-600 text-white shadow-md'
-              : 'text-neutral-400 hover:text-neutral-200 hover:bg-white/5'
-          }`}
-        >
-          <Mail className="w-3.5 h-3.5" />
-          <span>Email Queue &amp; Audit Log ({emailDispatches.length})</span>
-        </button>
       </div>
 
       {/* Main body area */}
@@ -212,12 +198,6 @@ export default function NotificationPreferencesModal({
                           Web Push
                         </span>
                       </th>
-                      <th className="py-3 px-3 text-center">
-                        <span className="flex items-center justify-center gap-1.5">
-                          <Mail className="w-3.5 h-3.5 text-amber-400" />
-                          Email Digest
-                        </span>
-                      </th>
                       <th className="py-3 px-4 text-right">Instant Test</th>
                     </tr>
                   </thead>
@@ -250,14 +230,6 @@ export default function NotificationPreferencesModal({
                           type="checkbox"
                           checked={preferences.events.newLeadAlerts.push}
                           onChange={(e) => updateEventPreference('newLeadAlerts', 'push', e.target.checked)}
-                          className="w-4 h-4 rounded border-neutral-700 bg-neutral-900 text-blue-600 focus:ring-0 cursor-pointer"
-                        />
-                      </td>
-                      <td className="py-3.5 px-3 text-center">
-                        <input
-                          type="checkbox"
-                          checked={preferences.events.newLeadAlerts.email}
-                          onChange={(e) => updateEventPreference('newLeadAlerts', 'email', e.target.checked)}
                           className="w-4 h-4 rounded border-neutral-700 bg-neutral-900 text-blue-600 focus:ring-0 cursor-pointer"
                         />
                       </td>
@@ -302,14 +274,6 @@ export default function NotificationPreferencesModal({
                           className="w-4 h-4 rounded border-neutral-700 bg-neutral-900 text-blue-600 focus:ring-0 cursor-pointer"
                         />
                       </td>
-                      <td className="py-3.5 px-3 text-center">
-                        <input
-                          type="checkbox"
-                          checked={preferences.events.taskReminders.email}
-                          onChange={(e) => updateEventPreference('taskReminders', 'email', e.target.checked)}
-                          className="w-4 h-4 rounded border-neutral-700 bg-neutral-900 text-blue-600 focus:ring-0 cursor-pointer"
-                        />
-                      </td>
                       <td className="py-3.5 px-4 text-right">
                         <button
                           onClick={() => handleTest('inApp', 'task')}
@@ -348,14 +312,6 @@ export default function NotificationPreferencesModal({
                           type="checkbox"
                           checked={preferences.events.systemUpdates.push}
                           onChange={(e) => updateEventPreference('systemUpdates', 'push', e.target.checked)}
-                          className="w-4 h-4 rounded border-neutral-700 bg-neutral-900 text-blue-600 focus:ring-0 cursor-pointer"
-                        />
-                      </td>
-                      <td className="py-3.5 px-3 text-center">
-                        <input
-                          type="checkbox"
-                          checked={preferences.events.systemUpdates.email}
-                          onChange={(e) => updateEventPreference('systemUpdates', 'email', e.target.checked)}
                           className="w-4 h-4 rounded border-neutral-700 bg-neutral-900 text-blue-600 focus:ring-0 cursor-pointer"
                         />
                       </td>
@@ -400,14 +356,6 @@ export default function NotificationPreferencesModal({
                           className="w-4 h-4 rounded border-neutral-700 bg-neutral-900 text-blue-600 focus:ring-0 cursor-pointer"
                         />
                       </td>
-                      <td className="py-3.5 px-3 text-center">
-                        <input
-                          type="checkbox"
-                          checked={preferences.events.clientMessages.email}
-                          onChange={(e) => updateEventPreference('clientMessages', 'email', e.target.checked)}
-                          className="w-4 h-4 rounded border-neutral-700 bg-neutral-900 text-blue-600 focus:ring-0 cursor-pointer"
-                        />
-                      </td>
                       <td className="py-3.5 px-4 text-right">
                         <span className="text-[11px] text-neutral-500 font-mono">Real-Time</span>
                       </td>
@@ -441,14 +389,6 @@ export default function NotificationPreferencesModal({
                           type="checkbox"
                           checked={preferences.events.slaEscalations.push}
                           onChange={(e) => updateEventPreference('slaEscalations', 'push', e.target.checked)}
-                          className="w-4 h-4 rounded border-neutral-700 bg-neutral-900 text-blue-600 focus:ring-0 cursor-pointer"
-                        />
-                      </td>
-                      <td className="py-3.5 px-3 text-center">
-                        <input
-                          type="checkbox"
-                          checked={preferences.events.slaEscalations.email}
-                          onChange={(e) => updateEventPreference('slaEscalations', 'email', e.target.checked)}
                           className="w-4 h-4 rounded border-neutral-700 bg-neutral-900 text-blue-600 focus:ring-0 cursor-pointer"
                         />
                       </td>
@@ -567,56 +507,6 @@ export default function NotificationPreferencesModal({
               </div>
             </div>
 
-            {/* Channel 3: Email Alerts */}
-            <div className="rounded-xl border border-white/5 bg-neutral-900/30 p-5 space-y-4 md:col-span-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
-                    <Mail className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h4 className="text-sm font-bold text-white">Email Dispatch Gateway</h4>
-                    <p className="text-xs text-neutral-400">Automated executive summaries and lead dispatches</p>
-                  </div>
-                </div>
-
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={preferences.channels.email}
-                    onChange={(e) => updatePreferences({ channels: { ...preferences.channels, email: e.target.checked } })}
-                    className="sr-only peer"
-                  />
-                  <div className="w-11 h-6 bg-neutral-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-neutral-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-600" />
-                </label>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-neutral-300">Executive Recipient Email</label>
-                  <input
-                    type="email"
-                    value={preferences.emailRecipient}
-                    onChange={(e) => updatePreferences({ emailRecipient: e.target.value })}
-                    placeholder="executive@domain.com"
-                    className="w-full text-xs font-mono bg-neutral-950/80 border border-white/10 rounded-lg p-2.5 text-white outline-none focus:border-amber-500/40"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-neutral-300">Delivery Cadence</label>
-                  <select
-                    value={preferences.deliveryFrequency}
-                    onChange={(e) => updatePreferences({ deliveryFrequency: e.target.value as any })}
-                    className="w-full text-xs font-semibold bg-neutral-950/80 border border-white/10 rounded-lg p-2.5 text-white outline-none focus:border-amber-500/40 cursor-pointer"
-                  >
-                    <option value="instant">Instant Real-Time (Immediate per event)</option>
-                    <option value="hourly_digest">Hourly Digest Summary</option>
-                    <option value="daily_summary">Daily Executive Briefing (08:00 AM)</option>
-                  </select>
-                </div>
-              </div>
-            </div>
           </div>
         )}
 
@@ -751,61 +641,6 @@ export default function NotificationPreferencesModal({
           </div>
         )}
 
-        {/* TAB 4: EMAIL QUEUE & AUDIT LOG */}
-        {activeTab === 'email_logs' && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                  <Mail className="w-4 h-4 text-amber-400" />
-                  Simulated Outbound Email Notification Log
-                </h4>
-                <p className="text-xs text-neutral-400 mt-0.5">
-                  Verified outbound emails generated by the CRM's notification engine according to user preferences.
-                </p>
-              </div>
-
-              {emailDispatches.length > 0 && (
-                <button
-                  onClick={clearEmailDispatches}
-                  className="px-2.5 py-1 rounded-md text-xs font-semibold text-neutral-400 hover:text-white bg-white/5 hover:bg-white/10 transition-colors cursor-pointer"
-                >
-                  Clear Queue
-                </button>
-              )}
-            </div>
-
-            {emailDispatches.length === 0 ? (
-              <div className="rounded-xl border border-white/5 bg-neutral-900/30 p-12 text-center text-neutral-500 text-xs">
-                No email alerts dispatched yet. Turn on email alerts for leads or tasks to populate the audit log.
-              </div>
-            ) : (
-              <div className="space-y-2.5">
-                {emailDispatches.map((item) => (
-                  <div
-                    key={item.id}
-                    className="p-3.5 rounded-xl border border-white/5 bg-neutral-950/60 hover:border-white/10 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
-                  >
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold text-white">{item.subject}</span>
-                        <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-500/20 text-emerald-300 font-bold">
-                          {item.status.toUpperCase()}
-                        </span>
-                      </div>
-                      <p className="text-neutral-400 text-[11px] leading-relaxed line-clamp-1">{item.preview}</p>
-                    </div>
-
-                    <div className="text-right shrink-0">
-                      <div className="text-[11px] font-mono text-neutral-400">To: {item.recipient}</div>
-                      <div className="text-[10px] text-neutral-500">{item.timestamp}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
       </div>
 
       {/* Footer bar */}

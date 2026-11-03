@@ -11,7 +11,6 @@ import request from 'supertest';
 process.env.BILLING_DATA_DIR = mkdtempSync(path.join(tmpdir(), 'billing-'));
 process.env.BILLING_JWT_SECRET = 'test-secret';
 process.env.BILLING_SEED_DEMO = 'true';
-delete process.env.SMTP_HOST; delete process.env.BILLING_SMTP_HOST;
 
 const { signJwt } = await import('../../../utils/verifyJwt');
 const billingRouter = (await import('../../../routes/billing')).default;
@@ -32,7 +31,7 @@ r = await request(app).get('/api/billing/session').set('Authorization', 'Bearer 
 assert.equal(r.status, 401); ok('rejects dev bypass token');
 
 r = await request(app).get('/api/billing/session').set('Authorization', owner);
-assert.equal(r.status, 200); assert.equal(r.body.emailConfigured, false); ok('session for owner');
+assert.equal(r.status, 200); assert.equal(r.body.emailConfigured, undefined); ok('session for owner (no email settings exposed)');
 
 r = await request(app).get('/api/billing/snapshot').set('Authorization', owner);
 const snap = r.body; assert.ok(snap.invoices.length > 10); ok('loads tenant snapshot');
@@ -57,8 +56,9 @@ r = await request(app).get('/api/billing/snapshot').set('Authorization', other);
 assert.ok(!r.body.invoices.some((i: any) => i.id === saved.id && i.version === saved.version)); ok('tenants are isolated');
 
 r = await request(app).post(`/api/billing/invoices/${saved.id}/send`).set('Authorization', owner).send({ to: saved.billTo.email, cc: '', subject: 'Invoice', message: 'hi' });
-assert.equal(r.status, 503); assert.equal(r.body.delivery.result, 'not_configured'); assert.equal(r.body.invoice.lifecycle, 'draft');
-ok('no SMTP → attempt recorded as not configured, invoice not marked sent');
+assert.equal(r.status, 404); ok('the CRM no longer sends invoice email');
+r = await request(app).get('/api/billing/snapshot').set('Authorization', owner);
+assert.equal(r.body.invoices.find((i: any) => i.id === saved.id).lifecycle, 'draft'); ok('invoice stays a draft until marked as sent');
 
 r = await request(app).post(`/api/billing/invoices/${saved.id}/payments`).set('Authorization', owner).send({ payment: { invoiceId: saved.id, amount: '10', currency: 'USD', date: '2026-01-01', method: 'cash', reference: '', note: '', status: 'confirmed' } });
 assert.equal(r.status, 409); ok('cannot record payment on unsent draft');

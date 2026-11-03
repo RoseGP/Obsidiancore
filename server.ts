@@ -37,7 +37,6 @@ import localSeoApiRouter from './src/routes/localSeoApi';
 import voiceIvrRouter from './src/routes/voiceIvr';
 import dashboardApiRouter from './src/routes/dashboardApi';
 import leadsApiRouter from './src/routes/leadsApi';
-import marketingApiRouter from './src/routes/marketingApi';
 import { requireUser } from './src/features/social-accounts/server/auth';
 import { guard, PUBLIC } from './src/server/routeGuards';
 
@@ -86,8 +85,6 @@ app.use('/api/local-seo', localSeoApiRouter);
 app.use('/api/voice', voiceIvrRouter);
 app.use('/api/dashboard', dashboardApiRouter);
 app.use('/api/leads', leadsApiRouter);
-app.use('/api/marketing', marketingApiRouter);
-app.use('/api/v1/marketing', marketingApiRouter);
 // New application routes first; remaining legacy paths (/queue, /schedule, /retry, /accounts) require a verified user too.
 app.use('/api/posts', postsApiRouter);
 app.use('/api/media', postsApiRouter);

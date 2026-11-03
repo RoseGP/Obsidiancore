@@ -9,7 +9,7 @@ interface NewConversationModalProps {
   availableCrmRecords: CrmRecordReference[];
   onCreateConversation: (payload: {
     type: ConversationType;
-    channel: 'internal' | 'crm' | 'widget' | 'email';
+    channel: 'internal' | 'crm' | 'widget';
     title: string;
     participantIds: string[];
     priority: 'low' | 'medium' | 'high' | 'urgent';
@@ -48,7 +48,7 @@ export const NewConversationModal: React.FC<NewConversationModalProps> = ({
     e.preventDefault();
 
     let convType: ConversationType = 'crm_linked';
-    let channel: 'internal' | 'crm' | 'widget' | 'email' = 'crm';
+    let channel: 'internal' | 'crm' | 'widget' = 'crm';
     let convTitle = title.trim();
     let participantIds = selectedParticipantIds;
     let chosenRecord: CrmRecordReference | undefined;

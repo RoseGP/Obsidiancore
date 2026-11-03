@@ -103,8 +103,6 @@ export interface InboxItem {
   /** Something the user can approve in one step (a change set, a post or a reply draft). */
   prepared?: { type: 'change' | 'post' | 'reply'; refId: string; label: string };
   action?: { type: string; label: string };
-  /** When this item was included in an email digest. */
-  emailedAt?: string;
 }
 
 export interface SecurityEvent {
@@ -129,8 +127,8 @@ export interface GrowthData {
   inbox: InboxItem[];
   security: SecurityEvent[];
   access: AccessEntry[];
-  automation: { enabled: boolean; lastRunAt?: string; lastError?: string; lastEmail?: { at: string; result: 'delivered' | 'failed' | 'not_configured'; detail: string; items: number } };
-  notifications: { inApp: boolean; email: boolean; emailTo?: string; kinds: Partial<Record<InboxKind, boolean>> };
+  automation: { enabled: boolean; lastRunAt?: string; lastError?: string };
+  notifications: { inApp: boolean; kinds: Partial<Record<InboxKind, boolean>> };
   keywords: Record<string, { at: string; from: string; to: string; rows: { keyword: string; value: number | null; threshold: number | null }[] }>;
   assistant: { role: 'user' | 'assistant'; content: string; at: string }[];
   onboarding: { completedAt?: string; dismissedAt?: string };
@@ -138,7 +136,7 @@ export interface GrowthData {
 
 export const emptyGrowth = (): GrowthData => ({
   profiles: {}, audits: {}, auditHistory: {}, changes: [], posts: [], competitors: [], visibility: { keywords: [], areas: [] },
-  inbox: [], security: [], access: [], automation: { enabled: true }, notifications: { inApp: true, email: false, kinds: {} },
+  inbox: [], security: [], access: [], automation: { enabled: true }, notifications: { inApp: true, kinds: {} },
   keywords: {}, assistant: [], onboarding: {},
 });
 

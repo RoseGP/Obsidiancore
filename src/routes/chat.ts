@@ -183,18 +183,10 @@ router.post('/', async (req: Request, res: Response) => {
     // 7. Parse CRM command metadata for dashboard integration
     const lower = userMessageText.toLowerCase();
     let type: 'text' | 'command' = 'text';
-    let action: 'email_draft' | 'initialize_video_call' | 'voice_hub' | 'enterprise_proposals' | 'home' | 'none' = 'none';
+    let action: 'initialize_video_call' | 'voice_hub' | 'enterprise_proposals' | 'home' | 'none' = 'none';
     let params: any = {};
 
-    if (lower.includes('email') || lower.includes('draft') || lower.includes('mail')) {
-      type = 'command';
-      action = 'email_draft';
-      params = {
-        recipient: leadContextToUse?.name || 'Marcus Chen',
-        subject: 'Omnichannel CRM Platform Alignment & SLA Scope',
-        body: `Hi,\n\nFollowing up on our CRM review, I wanted to share our latest workflow analytics and proposal details.\n\nBest regards,\nCRM Lead`,
-      };
-    } else if (lower.includes('video') || lower.includes('call') || lower.includes('webrtc')) {
+    if (lower.includes('video') || lower.includes('call') || lower.includes('webrtc')) {
       type = 'command';
       action = 'initialize_video_call';
       params = { contactId: '1' };

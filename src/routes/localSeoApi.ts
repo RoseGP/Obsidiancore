@@ -219,10 +219,9 @@ router.get('/growth/inbox', handle('inbox', (req) => growth.inbox(uid(req))));
 router.post('/growth/inbox/:id', handle('inbox status', (req) => growth.setInboxStatus(uid(req), id.parse(req.params.id), z.object({ status: z.enum(['done', 'dismissed', 'open']) }).strict().parse(req.body ?? {}).status)));
 router.post('/growth/automation/run', heavy, handle('run automation', (req) => growth.runAutomation(uid(req))));
 router.get('/growth/automation', handle('automation settings', (req) => growth.getAutomation(uid(req))));
-router.post('/growth/automation/test-email', rateLimit({ name: 'gbp-test-email', windowMs: 10 * 60_000, max: 5, key: userKey }), handle('test email', (req) => growth.emailDigest(uid(req), { test: true })));
 router.put('/growth/automation', handle('automation settings', (req) => growth.saveAutomation(uid(req), z.object({
   enabled: z.boolean().optional(),
-  notifications: z.object({ inApp: z.boolean().optional(), email: z.boolean().optional(), emailTo: z.union([z.string().trim().email('Enter a valid email address.').max(254), z.literal('')]).optional(), kinds: z.record(z.enum(['missing_info', 'unanswered_review', 'negative_review', 'outdated_hours', 'services', 'content', 'performance', 'security', 'audit']), z.boolean()).optional() }).strict().optional(),
+  notifications: z.object({ inApp: z.boolean().optional(), kinds: z.partialRecord(z.enum(['missing_info', 'unanswered_review', 'negative_review', 'outdated_hours', 'services', 'content', 'performance', 'security', 'audit']), z.boolean()).optional() }).strict().optional(),
 }).strict().parse(req.body ?? {}))));
 
 router.get('/growth/security', handle('security', (req) => growth.security(uid(req))));

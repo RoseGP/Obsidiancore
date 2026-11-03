@@ -35,7 +35,7 @@ const DEFAULT_MODELS = [
 const SUGGESTIONS = [
   { label: 'Pipeline Summary', prompt: 'Give me a live pipeline summary: total ARR, active deals, and lead conversion rate.' },
   { label: 'Search Top Leads', prompt: 'Search our CRM for qualified leads with score above 80 and summarize their needs.' },
-  { label: 'Draft Outreach', prompt: 'Draft a personalized enterprise follow-up email to Marcus Chen at AlphaTech Global citing our 99.99% SLA guarantee.' },
+  { label: 'Follow-ups due', prompt: 'Which of my leads need a follow-up this week, and what should I say to each?' },
   { label: 'Create Social Draft', prompt: 'Create a LinkedIn and Twitter social post draft highlighting our new WebRTC Call Canvas consultation feature.' },
 ];
 const TEXT_TYPES = /\.(txt|md|markdown|csv|tsv|json|log|xml|html?|ya?ml|js|jsx|ts|tsx|py|sql|css)$/i;

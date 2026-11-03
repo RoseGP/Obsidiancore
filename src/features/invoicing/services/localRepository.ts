@@ -5,7 +5,7 @@
  */
 import { generateMockSnapshot } from '../data/mockData';
 import {
-  DomainError, opArchiveClient, opAssertSendable, opMarkSent, opRecordDelivery, opRecordPayment,
+  DomainError, opArchiveClient, opMarkSent, opRecordPayment,
   opSaveClient, opSaveInvoice, opVoidInvoice,
 } from '../domain/operations';
 import type { BillingSnapshot, CurrentUser } from '../domain/types';
@@ -59,7 +59,6 @@ export function createLocalRepository(reason: string): BillingRepository {
   return {
     mode: 'local',
     modeReason: reason,
-    emailConfigured: false,
     user,
 
     async load() {
@@ -80,20 +79,6 @@ export function createLocalRepository(reason: string): BillingRepository {
     async markInvoiceSent(id) {
       await delay();
       return wrap(() => { const r = opMarkSent(state, id, user); commit(r.snapshot); return r.invoice; });
-    },
-    sendInvoice(id, req, { idempotencyKey }) {
-      return once(idempotencyKey, () => {
-        opAssertSendable(state, id, req.to);
-        // No email service in prototype mode: record the attempt honestly.
-        const r = opRecordDelivery(state, id, {
-          at: new Date().toISOString(), to: req.to.trim(), cc: req.cc.trim(), subject: req.subject,
-          result: 'not_configured',
-          detail: 'Email delivery isn’t configured. Connect the billing backend with SMTP settings to send.',
-          provider: 'none',
-        }, user);
-        commit(r.snapshot);
-        return { invoice: r.invoice, delivery: r.delivery };
-      });
     },
     recordPayment(payment, { idempotencyKey }) {
       return once(idempotencyKey, () => {

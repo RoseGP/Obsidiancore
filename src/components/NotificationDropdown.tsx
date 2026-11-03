@@ -32,13 +32,10 @@ export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({
     unreadCount, 
     soundEnabled, 
     setSoundEnabled,
-    autoStreamActive,
-    setAutoStreamActive,
     markAsRead, 
     markAllAsRead, 
     deleteNotification, 
-    clearAllNotifications, 
-    simulateEvent 
+    clearAllNotifications,
   } = useNotifications();
 
   const [isOpen, setIsOpen] = useState<boolean>(false);
@@ -212,49 +209,6 @@ export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({
                     <CheckCheck className="h-3.5 w-3.5" />
                   </button>
                 )}
-              </div>
-            </div>
-
-            {/* 2. Simulation Trigger Bar (Allows user to test live alerts immediately) */}
-            <div className="px-3 py-2 bg-white/[0.02] border-b border-white/5 flex items-center justify-between text-xs">
-              <span className="text-[10px] font-mono text-neutral-400 flex items-center gap-1.5">
-                <Radio className={`h-3 w-3 ${autoStreamActive ? 'text-emerald-400 animate-pulse' : 'text-neutral-500'}`} />
-                <span>Simulate Event:</span>
-              </span>
-
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => simulateEvent('lead')}
-                  className="px-2 py-0.5 rounded-md bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 text-[10px] font-mono border border-emerald-500/20 transition-colors cursor-pointer"
-                  title="Simulate incoming lead"
-                >
-                  + Lead
-                </button>
-                <button
-                  type="button"
-                  onClick={() => simulateEvent('message')}
-                  className="px-2 py-0.5 rounded-md bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 text-[10px] font-mono border border-indigo-500/20 transition-colors cursor-pointer"
-                  title="Simulate new message"
-                >
-                  + Message
-                </button>
-                <button
-                  type="button"
-                  onClick={() => simulateEvent('task')}
-                  className="px-2 py-0.5 rounded-md bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 text-[10px] font-mono border border-amber-500/20 transition-colors cursor-pointer"
-                  title="Simulate assigned task"
-                >
-                  + Task
-                </button>
-                <button
-                  type="button"
-                  onClick={() => simulateEvent('interaction')}
-                  className="px-2 py-0.5 rounded-md bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 text-[10px] font-mono border border-cyan-500/20 transition-colors cursor-pointer"
-                  title="Simulate customer interaction"
-                >
-                  + Interaction
-                </button>
               </div>
             </div>
 

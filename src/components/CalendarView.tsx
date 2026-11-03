@@ -147,26 +147,6 @@ export default function CalendarView({ events, onAddEvent, onRemoveEvent }: Cale
       invitees: inviteEmails.trim() || undefined
     });
 
-    // SMTP invitation dispatch
-    if (generateLink && inviteEmails.trim()) {
-      const emails = inviteEmails.split(',').map(email => email.trim()).filter(Boolean);
-      for (const email of emails) {
-        try {
-          await fetch('/api/communication/send-email', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              to: email,
-              subject: `Scheduled Appointment: ${newTitle.trim()}`,
-              body: `Hello,\n\nYou have been invited to a scheduled appointment.\n\nTitle: ${newTitle.trim()}\nContact: ${newContact.trim()}\nDate & Time: ${newDate} at ${newTime}\n\nVirtual Access Link: ${finalMeetLink}\n\nBest regards,\nCalendar Scheduling Team`
-            })
-          });
-        } catch (err) {
-          console.error('[Inviter] SMTP send failed:', err);
-        }
-      }
-    }
-
     setNewTitle('');
     setNewContact('');
     setInviteEmails('');

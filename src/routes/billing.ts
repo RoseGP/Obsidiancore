@@ -15,14 +15,11 @@ import { z } from 'zod';
 import { verifyJwt } from '../utils/verifyJwt';
 import { serializeTotals } from '../features/invoicing/domain/calc';
 import {
-  DomainError, opArchiveClient, opAssertSendable, opMarkSent, opRecordDelivery, opRecordPayment,
+  DomainError, opArchiveClient, opMarkSent, opRecordPayment,
   opSaveClient, opSaveInvoice, opVoidInvoice,
 } from '../features/invoicing/domain/operations';
 import { buildInvoiceView, todayISO } from '../features/invoicing/domain/status';
 import type { BillingSnapshot, CurrentUser } from '../features/invoicing/domain/types';
-import { buildInvoiceDocument } from '../features/invoicing/services/invoiceDocument';
-import { invoicePdfFilename, renderInvoicePdf } from '../features/invoicing/services/pdf';
-import { isEmailConfigured, sendInvoiceEmail } from '../features/invoicing/server/emailTransport';
 import { loadSnapshot, withSnapshot } from '../features/invoicing/server/store';
 import * as stripeConnect from '../features/invoicing/server/stripeConnect';
 import { identify } from '../features/social-accounts/server/auth';
@@ -144,14 +141,13 @@ const settingsSchema = z.object({
   signature: invoiceSchema.shape.signature,
 });
 
-const sendSchema = z.object({ to: str(254), cc: str(1000), subject: str(200).min(1), message: str(5000) }).passthrough();
 
 const ctx = (req: AuthedRequest) => req.billing!;
 
 // ---------- Routes ----------
 
 router.get('/session', (req: AuthedRequest, res) => {
-  res.json({ user: ctx(req).user, emailConfigured: isEmailConfigured() });
+  res.json({ user: ctx(req).user });
 });
 
 router.get('/snapshot', async (req: AuthedRequest, res) => {
@@ -187,38 +183,6 @@ router.post('/invoices/:id/mark-sent', async (req: AuthedRequest, res) => {
     const { businessId, user } = ctx(req);
     const invoice = await withSnapshot(businessId, (s) => { const r = opMarkSent(s, req.params.id, user); return { snapshot: r.snapshot, result: r.invoice }; });
     res.json({ invoice });
-  } catch (e) { fail(res, e); }
-});
-
-router.post('/invoices/:id/send', async (req: AuthedRequest, res) => {
-  if (replay(req, res)) return;
-  try {
-    const input = sendSchema.parse(req.body);
-    const { businessId, user } = ctx(req);
-    if (user.role === 'viewer') throw new DomainError('Your role can view billing but not send invoices.', 'forbidden');
-    const ccList = input.cc.split(',').map((s) => s.trim()).filter(Boolean);
-    if (ccList.some((e) => !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e))) {
-      throw new DomainError('Check the Cc addresses.', 'validation', { cc: 'Separate addresses with commas, and check each one.' });
-    }
-    const out = await withSnapshot(businessId, async (s: BillingSnapshot) => {
-      const inv = opAssertSendable(s, req.params.id, input.to);
-      // Render the PDF from the authoritative stored invoice, not from the client.
-      const view = buildInvoiceView(inv, s.payments, todayISO());
-      const doc = buildInvoiceDocument(inv, view.totals);
-      const pdf = Buffer.from(renderInvoicePdf(doc).output('arraybuffer'));
-      const outcome = await sendInvoiceEmail({
-        to: input.to.trim(), cc: ccList.join(', '), replyTo: inv.issuer.email,
-        subject: input.subject.trim(), text: input.message, pdf, filename: invoicePdfFilename(doc),
-      });
-      const r = opRecordDelivery(s, inv.id, {
-        at: new Date().toISOString(), to: input.to.trim(), cc: ccList.join(', '), subject: input.subject.trim(), ...outcome,
-      }, user);
-      return { snapshot: r.snapshot, result: { invoice: r.invoice, delivery: r.delivery } };
-    });
-    const status = out.delivery.result === 'delivered' ? 200 : out.delivery.result === 'not_configured' ? 503 : 502;
-    const body = status === 200 ? out : { ...out, code: out.delivery.result === 'not_configured' ? 'not_configured' : 'server', error: out.delivery.detail };
-    remember(req, status, body);
-    res.status(status).json(body);
   } catch (e) { fail(res, e); }
 });
 

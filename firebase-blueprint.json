@@ -32,7 +32,12 @@
           "description": "Firebase server timestamp representing last update time."
         }
       },
-      "required": ["uid", "email", "createdAt", "updatedAt"]
+      "required": [
+        "uid",
+        "email",
+        "createdAt",
+        "updatedAt"
+      ]
     },
     "Channel": {
       "title": "Channel",
@@ -45,7 +50,14 @@
         },
         "platform": {
           "type": "string",
-          "enum": ["facebook", "instagram", "linkedin", "tiktok", "x", "youtube"],
+          "enum": [
+            "facebook",
+            "instagram",
+            "linkedin",
+            "tiktok",
+            "x",
+            "youtube"
+          ],
           "description": "The target social network platform."
         },
         "connected": {
@@ -83,7 +95,13 @@
           "description": "Firebase server timestamp representing last sync time."
         }
       },
-      "required": ["id", "platform", "connected", "accessToken", "updatedAt"]
+      "required": [
+        "id",
+        "platform",
+        "connected",
+        "accessToken",
+        "updatedAt"
+      ]
     },
     "Post": {
       "title": "Post",
@@ -126,7 +144,15 @@
         },
         "status": {
           "type": "string",
-          "enum": ["pending", "published", "failed", "processing", "draft", "scheduled", "partial_success"],
+          "enum": [
+            "pending",
+            "published",
+            "failed",
+            "processing",
+            "draft",
+            "scheduled",
+            "partial_success"
+          ],
           "description": "Current publication lifecycle status."
         },
         "failure_reason": {
@@ -153,7 +179,13 @@
           "description": "Last modified timestamp."
         }
       },
-      "required": ["userId", "caption", "status", "createdAt", "updatedAt"]
+      "required": [
+        "userId",
+        "caption",
+        "status",
+        "createdAt",
+        "updatedAt"
+      ]
     },
     "SocialAccount": {
       "title": "SocialAccount",
@@ -170,7 +202,15 @@
         },
         "platform": {
           "type": "string",
-          "enum": ["x", "twitter", "linkedin", "bluesky", "mastodon", "facebook", "instagram"],
+          "enum": [
+            "x",
+            "twitter",
+            "linkedin",
+            "bluesky",
+            "mastodon",
+            "facebook",
+            "instagram"
+          ],
           "description": "Target social media platform."
         },
         "handle": {
@@ -203,7 +243,16 @@
           "description": "Last synchronization timestamp."
         }
       },
-      "required": ["id", "userId", "platform", "handle", "encryptedToken", "iv", "authTag", "updatedAt"]
+      "required": [
+        "id",
+        "userId",
+        "platform",
+        "handle",
+        "encryptedToken",
+        "iv",
+        "authTag",
+        "updatedAt"
+      ]
     },
     "Draft": {
       "title": "Draft",
@@ -245,7 +294,12 @@
           "description": "Draft last modified timestamp."
         }
       },
-      "required": ["userId", "caption", "createdAt", "updatedAt"]
+      "required": [
+        "userId",
+        "caption",
+        "createdAt",
+        "updatedAt"
+      ]
     },
     "LinkedInScheduledPost": {
       "title": "LinkedInScheduledPost",
@@ -296,7 +350,13 @@
         },
         "status": {
           "type": "string",
-          "enum": ["DRAFT", "SCHEDULED", "PROCESSING", "PUBLISHED", "FAILED"],
+          "enum": [
+            "DRAFT",
+            "SCHEDULED",
+            "PROCESSING",
+            "PUBLISHED",
+            "FAILED"
+          ],
           "description": "Current lifecycle status of the LinkedIn post publication."
         },
         "createdAt": {
@@ -310,7 +370,16 @@
           "description": "Document last updated timestamp."
         }
       },
-      "required": ["user_id", "linkedin_member_urn", "encrypted_access_token", "post_content", "scheduled_publish_time", "status", "createdAt", "updatedAt"]
+      "required": [
+        "user_id",
+        "linkedin_member_urn",
+        "encrypted_access_token",
+        "post_content",
+        "scheduled_publish_time",
+        "status",
+        "createdAt",
+        "updatedAt"
+      ]
     },
     "LinkedInAccount": {
       "title": "LinkedInAccount",
@@ -362,7 +431,14 @@
           "description": "Document last updated timestamp."
         }
       },
-      "required": ["user_id", "provider_account_id", "access_token", "expires_at", "createdAt", "updatedAt"]
+      "required": [
+        "user_id",
+        "provider_account_id",
+        "access_token",
+        "expires_at",
+        "createdAt",
+        "updatedAt"
+      ]
     },
     "ScheduledPost": {
       "title": "ScheduledPost",
@@ -392,7 +468,11 @@
         },
         "status": {
           "type": "string",
-          "enum": ["PENDING", "PUBLISHED", "FAILED"],
+          "enum": [
+            "PENDING",
+            "PUBLISHED",
+            "FAILED"
+          ],
           "description": "Lifecycle status of the scheduled post."
         },
         "failure_reason": {
@@ -410,289 +490,585 @@
           "description": "Document last updated timestamp."
         }
       },
-      "required": ["user_id", "provider_account_id", "commentary", "scheduled_at", "status", "createdAt", "updatedAt"]
-    },
-    "ImapSyncCheckpoint": {
-      "title": "ImapSyncCheckpoint",
-      "description": "Maintains persistent, thread-safe high-water mark sequence numbers (highestModseq) for stateful IMAP synchronization.",
-      "type": "object",
-      "properties": {
-        "mailboxName": {
-          "type": "string",
-          "description": "Name of the synchronized folder, e.g. INBOX"
-        },
-        "highestModseq": {
-          "type": "string",
-          "description": "The highest modseq string parsed from IMAP CONDSTORE."
-        },
-        "lastSyncTime": {
-          "type": "string",
-          "format": "date-time",
-          "description": "ISO timestamp indicating when the synchronization occurred."
-        },
-        "syncType": {
-          "type": "string",
-          "description": "Type of synchronization performed, e.g. FULL or INCREMENTAL_CONDSTORE"
-        },
-        "syncedMessagesCount": {
-          "type": "integer",
-          "description": "Total number of email documents synced in this session."
-        },
-        "changesFetchedCount": {
-          "type": "integer",
-          "description": "Total number of flag or state delta modifications retrieved."
-        }
-      },
-      "required": ["mailboxName", "highestModseq", "lastSyncTime"]
-    },
-    "EmailThread": {
-      "title": "EmailThread",
-      "description": "Enterprise conversation thread tree generated and updated using the Jamie Zawinski (JWZ) algorithm.",
-      "type": "object",
-      "properties": {
-        "id": {
-          "type": "string",
-          "description": "The unique thread ID."
-        },
-        "messageId": {
-          "type": "string",
-          "description": "Primary Message-ID header identifying the head node of this branch."
-        },
-        "subject": {
-          "type": "string",
-          "description": "The conversation subject title, normalized."
-        },
-        "date": {
-          "type": "string",
-          "format": "date-time",
-          "description": "Timestamp indicating the temporal start of the conversation thread."
-        },
-        "isPlaceholder": {
-          "type": "boolean",
-          "description": "Indicates if this thread represents a ghost or placeholder parent in an incomplete conversation."
-        },
-        "emailDetails": {
-          "type": "object",
-          "description": "Key-value partial payload of the head email metadata."
-        },
-        "children": {
-          "type": "array",
-          "description": "Recursive collection of child JWZ thread trees."
-        },
-        "updatedAt": {
-          "type": "string",
-          "format": "date-time",
-          "description": "The exact date-time when the thread was last synchronized."
-        }
-      },
-      "required": ["id", "messageId", "subject", "isPlaceholder", "updatedAt"]
+      "required": [
+        "user_id",
+        "provider_account_id",
+        "commentary",
+        "scheduled_at",
+        "status",
+        "createdAt",
+        "updatedAt"
+      ]
     },
     "CRMDeal": {
       "title": "CRMDeal",
       "description": "Sales pipeline deal tracking value, stage, probability, and ownership.",
       "type": "object",
       "properties": {
-        "id": { "type": "string", "description": "Unique deal ID" },
-        "name": { "type": "string", "description": "Deal or opportunity title" },
-        "client": { "type": "string", "description": "Client company or account name" },
-        "value": { "type": "number", "description": "Monetary value of the deal in USD" },
+        "id": {
+          "type": "string",
+          "description": "Unique deal ID"
+        },
+        "name": {
+          "type": "string",
+          "description": "Deal or opportunity title"
+        },
+        "client": {
+          "type": "string",
+          "description": "Client company or account name"
+        },
+        "value": {
+          "type": "number",
+          "description": "Monetary value of the deal in USD"
+        },
         "stage": {
           "type": "string",
-          "enum": ["discovery", "qualified", "proposal", "negotiation", "closing", "won", "lost"],
+          "enum": [
+            "discovery",
+            "qualified",
+            "proposal",
+            "negotiation",
+            "closing",
+            "won",
+            "lost"
+          ],
           "description": "Sales stage in the pipeline"
         },
-        "probability": { "type": "number", "description": "Win probability percentage 0-100" },
-        "expectedClose": { "type": "string", "description": "Target closing timeline string or date" },
-        "momentum": { "type": "string", "enum": ["hot", "steady", "stagnant"], "description": "Deal velocity indicator" },
-        "channelOrigin": { "type": "string", "description": "Originating channel e.g. whatsapp, web, phone, email" },
-        "owner": { "type": "string", "description": "Responsible sales executive or closer" },
-        "createdAt": { "type": "string", "format": "date-time" },
-        "updatedAt": { "type": "string", "format": "date-time" }
+        "probability": {
+          "type": "number",
+          "description": "Win probability percentage 0-100"
+        },
+        "expectedClose": {
+          "type": "string",
+          "description": "Target closing timeline string or date"
+        },
+        "momentum": {
+          "type": "string",
+          "enum": [
+            "hot",
+            "steady",
+            "stagnant"
+          ],
+          "description": "Deal velocity indicator"
+        },
+        "channelOrigin": {
+          "type": "string",
+          "description": "Originating channel e.g. whatsapp, web, phone, email"
+        },
+        "owner": {
+          "type": "string",
+          "description": "Responsible sales executive or closer"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
       },
-      "required": ["id", "name", "client", "value", "stage", "createdAt", "updatedAt"]
+      "required": [
+        "id",
+        "name",
+        "client",
+        "value",
+        "stage",
+        "createdAt",
+        "updatedAt"
+      ]
     },
     "CRMSupportTicket": {
       "title": "CRMSupportTicket",
       "description": "Customer support and SLA tracking ticket across omnichannel communications.",
       "type": "object",
       "properties": {
-        "id": { "type": "string", "description": "Unique ticket ID" },
-        "customerName": { "type": "string", "description": "Contact or customer name" },
-        "company": { "type": "string", "description": "Customer company" },
-        "channel": { "type": "string", "enum": ["whatsapp", "email", "web", "phone", "sms"], "description": "Channel of origin" },
-        "subject": { "type": "string", "description": "Ticket issue summary" },
-        "priority": { "type": "string", "enum": ["critical", "high", "normal"], "description": "SLA priority level" },
-        "slaMinutesRemaining": { "type": "number", "description": "Minutes before SLA breach" },
-        "status": { "type": "string", "enum": ["open", "in_progress", "resolved"], "description": "Ticket lifecycle status" },
-        "sentiment": { "type": "string", "enum": ["urgent", "neutral", "positive"], "description": "Detected customer sentiment" },
-        "createdAt": { "type": "string", "format": "date-time" },
-        "updatedAt": { "type": "string", "format": "date-time" }
+        "id": {
+          "type": "string",
+          "description": "Unique ticket ID"
+        },
+        "customerName": {
+          "type": "string",
+          "description": "Contact or customer name"
+        },
+        "company": {
+          "type": "string",
+          "description": "Customer company"
+        },
+        "channel": {
+          "type": "string",
+          "enum": [
+            "whatsapp",
+            "email",
+            "web",
+            "phone",
+            "sms"
+          ],
+          "description": "Channel of origin"
+        },
+        "subject": {
+          "type": "string",
+          "description": "Ticket issue summary"
+        },
+        "priority": {
+          "type": "string",
+          "enum": [
+            "critical",
+            "high",
+            "normal"
+          ],
+          "description": "SLA priority level"
+        },
+        "slaMinutesRemaining": {
+          "type": "number",
+          "description": "Minutes before SLA breach"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "open",
+            "in_progress",
+            "resolved"
+          ],
+          "description": "Ticket lifecycle status"
+        },
+        "sentiment": {
+          "type": "string",
+          "enum": [
+            "urgent",
+            "neutral",
+            "positive"
+          ],
+          "description": "Detected customer sentiment"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
       },
-      "required": ["id", "customerName", "channel", "subject", "priority", "status", "createdAt", "updatedAt"]
+      "required": [
+        "id",
+        "customerName",
+        "channel",
+        "subject",
+        "priority",
+        "status",
+        "createdAt",
+        "updatedAt"
+      ]
     },
     "CRMActivity": {
       "title": "CRMActivity",
       "description": "Audit trail log tracking actions across the omnichannel CRM.",
       "type": "object",
       "properties": {
-        "id": { "type": "string", "description": "Unique activity ID" },
-        "type": { "type": "string", "enum": ["deal_created", "stage_advanced", "ticket_resolved", "message_sent", "call_logged"], "description": "Action type" },
-        "title": { "type": "string", "description": "Short action headline" },
-        "description": { "type": "string", "description": "Detailed explanation of the action" },
-        "actor": { "type": "string", "description": "Name or ID of user who executed action" },
-        "targetId": { "type": "string", "description": "Referenced entity ID" },
-        "timestamp": { "type": "string", "format": "date-time" }
+        "id": {
+          "type": "string",
+          "description": "Unique activity ID"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "deal_created",
+            "stage_advanced",
+            "ticket_resolved",
+            "message_sent",
+            "call_logged"
+          ],
+          "description": "Action type"
+        },
+        "title": {
+          "type": "string",
+          "description": "Short action headline"
+        },
+        "description": {
+          "type": "string",
+          "description": "Detailed explanation of the action"
+        },
+        "actor": {
+          "type": "string",
+          "description": "Name or ID of user who executed action"
+        },
+        "targetId": {
+          "type": "string",
+          "description": "Referenced entity ID"
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time"
+        }
       },
-      "required": ["id", "type", "title", "timestamp"]
+      "required": [
+        "id",
+        "type",
+        "title",
+        "timestamp"
+      ]
     },
     "CRMLead": {
       "title": "CRMLead",
       "description": "Full lifecycle omnichannel CRM Lead with qualification, source tracking, and scoring.",
       "type": "object",
       "properties": {
-        "id": { "type": "string", "description": "Unique lead ID" },
-        "name": { "type": "string", "description": "Lead full name" },
-        "email": { "type": "string", "description": "Lead contact email" },
-        "phone": { "type": "string", "description": "Lead phone number" },
-        "company": { "type": "string", "description": "Lead company / organization" },
-        "title": { "type": "string", "description": "Job title or role" },
-        "source": { "type": "string", "description": "Channel of origin e.g. whatsapp, email, voice, linkedin, website" },
-        "status": { "type": "string", "enum": ["new", "contacted", "qualifying", "qualified", "unqualified", "converted"], "description": "Lead lifecycle stage" },
-        "owner": { "type": "string", "description": "Assigned sales rep name" },
-        "ownerId": { "type": "string", "description": "Assigned sales rep user ID" },
-        "score": { "type": "number", "description": "Lead quality score 0-100" },
-        "notes": { "type": "string", "description": "Lead contextual notes and summaries" },
-        "channel": { "type": "string", "description": "Preferred communication channel" },
-        "isConverted": { "type": "boolean", "description": "Flag indicating if converted" },
-        "convertedAt": { "type": "string", "format": "date-time" },
-        "convertedContactId": { "type": "string" },
-        "convertedCompanyId": { "type": "string" },
-        "convertedDealId": { "type": "string" },
-        "createdAt": { "type": "string", "format": "date-time" },
-        "updatedAt": { "type": "string", "format": "date-time" }
+        "id": {
+          "type": "string",
+          "description": "Unique lead ID"
+        },
+        "name": {
+          "type": "string",
+          "description": "Lead full name"
+        },
+        "email": {
+          "type": "string",
+          "description": "Lead contact email"
+        },
+        "phone": {
+          "type": "string",
+          "description": "Lead phone number"
+        },
+        "company": {
+          "type": "string",
+          "description": "Lead company / organization"
+        },
+        "title": {
+          "type": "string",
+          "description": "Job title or role"
+        },
+        "source": {
+          "type": "string",
+          "description": "Channel of origin e.g. whatsapp, email, voice, linkedin, website"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "new",
+            "contacted",
+            "qualifying",
+            "qualified",
+            "unqualified",
+            "converted"
+          ],
+          "description": "Lead lifecycle stage"
+        },
+        "owner": {
+          "type": "string",
+          "description": "Assigned sales rep name"
+        },
+        "ownerId": {
+          "type": "string",
+          "description": "Assigned sales rep user ID"
+        },
+        "score": {
+          "type": "number",
+          "description": "Lead quality score 0-100"
+        },
+        "notes": {
+          "type": "string",
+          "description": "Lead contextual notes and summaries"
+        },
+        "channel": {
+          "type": "string",
+          "description": "Preferred communication channel"
+        },
+        "isConverted": {
+          "type": "boolean",
+          "description": "Flag indicating if converted"
+        },
+        "convertedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "convertedContactId": {
+          "type": "string"
+        },
+        "convertedCompanyId": {
+          "type": "string"
+        },
+        "convertedDealId": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
       },
-      "required": ["id", "name", "email", "status", "source", "createdAt", "updatedAt"]
+      "required": [
+        "id",
+        "name",
+        "email",
+        "status",
+        "source",
+        "createdAt",
+        "updatedAt"
+      ]
     },
     "CRMCompany": {
       "title": "CRMCompany",
       "description": "Company / Account organization record created during lead conversion or direct ingestion.",
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
-        "name": { "type": "string" },
-        "domain": { "type": "string" },
-        "industry": { "type": "string" },
-        "tier": { "type": "string" },
-        "primaryContactId": { "type": "string" },
-        "createdAt": { "type": "string", "format": "date-time" },
-        "updatedAt": { "type": "string", "format": "date-time" }
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "domain": {
+          "type": "string"
+        },
+        "industry": {
+          "type": "string"
+        },
+        "tier": {
+          "type": "string"
+        },
+        "primaryContactId": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
       },
-      "required": ["id", "name", "createdAt", "updatedAt"]
+      "required": [
+        "id",
+        "name",
+        "createdAt",
+        "updatedAt"
+      ]
     },
     "CRMTask": {
       "title": "CRMTask",
       "description": "Follow-up task associated with a lead, contact, or deal.",
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
-        "leadId": { "type": "string" },
-        "title": { "type": "string" },
-        "dueDate": { "type": "string" },
-        "completed": { "type": "boolean" },
-        "assignedTo": { "type": "string" },
-        "priority": { "type": "string", "enum": ["urgent", "high", "medium", "low"] },
-        "createdAt": { "type": "string", "format": "date-time" }
+        "id": {
+          "type": "string"
+        },
+        "leadId": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "dueDate": {
+          "type": "string"
+        },
+        "completed": {
+          "type": "boolean"
+        },
+        "assignedTo": {
+          "type": "string"
+        },
+        "priority": {
+          "type": "string",
+          "enum": [
+            "urgent",
+            "high",
+            "medium",
+            "low"
+          ]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
       },
-      "required": ["id", "title", "completed", "createdAt"]
+      "required": [
+        "id",
+        "title",
+        "completed",
+        "createdAt"
+      ]
     },
     "CRMProposal": {
       "title": "CRMProposal",
       "description": "Customer proposal with auto-saved drafts, scope items, approval workflow, and signatures.",
       "type": "object",
       "properties": {
-        "id": { "type": "string", "description": "Unique proposal ID" },
-        "contactId": { "type": "string", "description": "Associated contact ID" },
-        "clientName": { "type": "string", "description": "Name of recipient" },
-        "title": { "type": "string", "description": "Title of the proposal document" },
+        "id": {
+          "type": "string",
+          "description": "Unique proposal ID"
+        },
+        "contactId": {
+          "type": "string",
+          "description": "Associated contact ID"
+        },
+        "clientName": {
+          "type": "string",
+          "description": "Name of recipient"
+        },
+        "title": {
+          "type": "string",
+          "description": "Title of the proposal document"
+        },
         "status": {
           "type": "string",
-          "enum": ["draft", "under_review", "sent", "accepted"],
+          "enum": [
+            "draft",
+            "under_review",
+            "sent",
+            "accepted"
+          ],
           "description": "Lifecycle state of the proposal"
         },
-        "industry": { "type": "string", "description": "Client industry" },
-        "bottlenecks": { "type": "string", "description": "Discovery bottlenecks" },
-        "scopeRequirements": { "type": "string", "description": "Technical scope" },
-        "pricingTier": { "type": "string", "description": "Standard, Premium Enterprise, Emergency Fast-Track" },
-        "deliverySpeed": { "type": "string", "description": "Normal, Accelerated, Express" },
-        "total": { "type": "number", "description": "Total value of proposal items" },
-        "signatureName": { "type": "string", "description": "Name of authorized signer" },
-        "signedAt": { "type": "string", "format": "date-time", "description": "Signing timestamp" },
-        "autoSavedAt": { "type": "string", "format": "date-time", "description": "Local/cloud autosave timestamp" },
-        "createdAt": { "type": "string", "format": "date-time" },
-        "updatedAt": { "type": "string", "format": "date-time" }
+        "industry": {
+          "type": "string",
+          "description": "Client industry"
+        },
+        "bottlenecks": {
+          "type": "string",
+          "description": "Discovery bottlenecks"
+        },
+        "scopeRequirements": {
+          "type": "string",
+          "description": "Technical scope"
+        },
+        "pricingTier": {
+          "type": "string",
+          "description": "Standard, Premium Enterprise, Emergency Fast-Track"
+        },
+        "deliverySpeed": {
+          "type": "string",
+          "description": "Normal, Accelerated, Express"
+        },
+        "total": {
+          "type": "number",
+          "description": "Total value of proposal items"
+        },
+        "signatureName": {
+          "type": "string",
+          "description": "Name of authorized signer"
+        },
+        "signedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Signing timestamp"
+        },
+        "autoSavedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Local/cloud autosave timestamp"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
       },
-      "required": ["id", "title", "status", "createdAt", "updatedAt"]
+      "required": [
+        "id",
+        "title",
+        "status",
+        "createdAt",
+        "updatedAt"
+      ]
     }
   },
   "firestore": {
     "/users/{userId}": {
-      "schema": { "$ref": "#/entities/User" },
+      "schema": {
+        "$ref": "#/entities/User"
+      },
       "description": "Primary user directory."
     },
     "/users/{userId}/channels/{channelId}": {
-      "schema": { "$ref": "#/entities/Channel" },
+      "schema": {
+        "$ref": "#/entities/Channel"
+      },
       "description": "Nested sub-collection containing authorization tokens for connected accounts."
     },
     "/posts/{postId}": {
-      "schema": { "$ref": "#/entities/Post" },
+      "schema": {
+        "$ref": "#/entities/Post"
+      },
       "description": "Root collection holding cross-platform posts."
     },
     "/drafts/{draftId}": {
-      "schema": { "$ref": "#/entities/Draft" },
+      "schema": {
+        "$ref": "#/entities/Draft"
+      },
       "description": "Root collection holding user-authored drafts."
     },
     "/linkedin_scheduled_posts/{postId}": {
-      "schema": { "$ref": "#/entities/LinkedInScheduledPost" },
+      "schema": {
+        "$ref": "#/entities/LinkedInScheduledPost"
+      },
       "description": "Root collection holding LinkedIn specific scheduled posts."
     },
     "/linkedin_accounts/{accountId}": {
-      "schema": { "$ref": "#/entities/LinkedInAccount" },
+      "schema": {
+        "$ref": "#/entities/LinkedInAccount"
+      },
       "description": "Root collection managing LinkedIn connected account OAuth tokens and profile details."
     },
     "/scheduled_posts/{postId}": {
-      "schema": { "$ref": "#/entities/ScheduledPost" },
+      "schema": {
+        "$ref": "#/entities/ScheduledPost"
+      },
       "description": "Root collection holding generic scheduled social posts."
     },
     "/social_accounts/{accountId}": {
-      "schema": { "$ref": "#/entities/SocialAccount" },
+      "schema": {
+        "$ref": "#/entities/SocialAccount"
+      },
       "description": "Root collection managing multi-platform connected accounts with encrypted credentials."
     },
     "/crm_proposals/{proposalId}": {
-      "schema": { "$ref": "#/entities/CRMProposal" },
+      "schema": {
+        "$ref": "#/entities/CRMProposal"
+      },
       "description": "Root collection holding customer proposals, auto-saved drafts, and signature data."
     },
     "/crm_deals/{dealId}": {
-      "schema": { "$ref": "#/entities/CRMDeal" },
+      "schema": {
+        "$ref": "#/entities/CRMDeal"
+      },
       "description": "Root collection holding sales pipeline opportunities."
     },
     "/crm_tickets/{ticketId}": {
-      "schema": { "$ref": "#/entities/CRMSupportTicket" },
+      "schema": {
+        "$ref": "#/entities/CRMSupportTicket"
+      },
       "description": "Root collection holding omnichannel support tickets and SLA queues."
     },
     "/crm_activities/{activityId}": {
-      "schema": { "$ref": "#/entities/CRMActivity" },
+      "schema": {
+        "$ref": "#/entities/CRMActivity"
+      },
       "description": "Root collection holding historical audit logs and recent activities."
     },
     "/crm_leads/{leadId}": {
-      "schema": { "$ref": "#/entities/CRMLead" },
+      "schema": {
+        "$ref": "#/entities/CRMLead"
+      },
       "description": "Root collection holding omnichannel sales leads throughout their qualification lifecycle."
     },
     "/crm_companies/{companyId}": {
-      "schema": { "$ref": "#/entities/CRMCompany" },
+      "schema": {
+        "$ref": "#/entities/CRMCompany"
+      },
       "description": "Root collection holding business organizations and accounts."
     },
     "/crm_tasks/{taskId}": {
-      "schema": { "$ref": "#/entities/CRMTask" },
+      "schema": {
+        "$ref": "#/entities/CRMTask"
+      },
       "description": "Root collection holding lead and deal follow-up tasks."
     }
   }

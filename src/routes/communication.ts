@@ -197,8 +197,8 @@ router.post('/whatsapp-webhook', verifyMetaSignature, async (req: Request, res: 
 
                 // Trigger Polymorphic Linker & Gemini Classification for Inbound WhatsApp
                 try {
-                  const { onNewEmailIngested } = await import('../utils/crmActivityLinker');
-                  await onNewEmailIngested({
+                  const { onInboundMessage } = await import('../utils/crmActivityLinker');
+                  await onInboundMessage({
                     id: `wa-${messageRecord.id}`,
                     messageId: msg.id || `wa-msg-${Date.now()}`,
                     threadId: `thread-wa-${fromPhoneNumber}`,
@@ -300,8 +300,8 @@ router.post('/twilio-sms', async (req: Request, res: Response) => {
 
     // Trigger Polymorphic Linker & Gemini Classification for Inbound SMS
     try {
-      const { onNewEmailIngested } = await import('../utils/crmActivityLinker');
-      await onNewEmailIngested({
+      const { onInboundMessage } = await import('../utils/crmActivityLinker');
+      await onInboundMessage({
         id: `sms-${messageRecord.id}`,
         messageId: twilioId,
         threadId: `thread-sms-${fromPhoneNumber}`,
@@ -657,182 +657,6 @@ Provide your assessment, response, and qualify/classify this lead.`;
 });
 
 /**
- * 5. REPLYZEN SMART EMAIL CO-PILOT ASSISTANT (POST)
- * Dynamically queries Gemini to analyze threads, summarize content, or draft replies.
- */
-router.post('/replyzen-assistant', async (req: Request, res: Response) => {
-  try {
-    const { prompt: userPrompt, threads } = req.body;
-
-    if (!userPrompt) {
-      res.status(400).json({ error: 'Please provide a prompt.' });
-      return;
-    }
-
-    const key = process.env.GEMINI_API_KEY;
-    const hasApiKey = key && !key.includes('placeholder') && !key.includes('YOUR_GEMINI_API_KEY');
-
-    if (hasApiKey) {
-      try {
-        const client = getGeminiClient();
-        
-        const systemInstruction = `You are ReplyZen, a state-of-the-art AI email assistant designed to compose polished replies, summarize threads, or analyze communication streams instantly.
-        
-        You have direct access to the user's active email threads.
-        Analyze the client's query against these threads and provide:
-        1. An intelligent and highly polished advisor response (use clean markdown).
-        2. Suggested context-specific actions (e.g., matching a thread to select, drafting a response, or highlighting an issue) if applicable.
-        
-        Guidelines:
-        - Be concise, helpful, and ultra-professional.
-        - Treat user requests with high intelligence. If they want a draft, output a beautiful email draft in the 'draftResult' parameter.
-        - If they refer to a contact name or company (e.g. "Hannah Morgan" or "Dappr Design"), inspect the active threads list to match 'targetThreadId' automatically.`;
-
-        const threadListSummary = Array.isArray(threads) ? threads.map((t: any) => ({
-          threadId: t.id,
-          subject: t.subject,
-          contactName: t.contactName,
-          company: t.company,
-          unread: t.unread,
-          starred: t.starred,
-          folder: t.folder,
-          messages: t.messages?.map((m: any) => ({
-            sender: m.sender,
-            senderName: m.senderName,
-            text: m.text,
-            date: m.date
-          }))
-        })) : [];
-
-        const prompt = `User Request: "${userPrompt}"
-        
-        Available Email Threads:
-        ${JSON.stringify(threadListSummary, null, 2)}
-        
-        Respond with your assessment, matching active target threads if needed, or creating high-fidelity drafts.`;
-
-        const result = await client.models.generateContent({
-          model: 'gemini-2.5-flash',
-          contents: prompt,
-          config: {
-            systemInstruction,
-            responseMimeType: 'application/json',
-            responseSchema: {
-              type: Type.OBJECT,
-              properties: {
-                replyText: {
-                  type: Type.STRING,
-                  description: "Text response back to the user explaining what you found, summarized, or drafted. Use clean markdown formatting."
-                },
-                targetThreadId: {
-                  type: Type.STRING,
-                  description: "Thread ID of the matched active conversation related to the request, if any. Else null."
-                },
-                draftResult: {
-                  type: Type.STRING,
-                  description: "Drafted email message body if the user requested a reply or compose template. Else null."
-                },
-                suggestedAction: {
-                  type: Type.STRING,
-                  description: "Brief label of suggested action like 'REPLY_DRAFT', 'SELECT_THREAD', 'NONE'."
-                }
-              },
-              required: ['replyText', 'targetThreadId', 'draftResult', 'suggestedAction']
-            }
-          }
-        });
-
-        const parsedContent = JSON.parse(result.text || '{}');
-        res.json({
-          success: true,
-          aiUsed: true,
-          ...parsedContent
-        });
-        return;
-      } catch (gemIniErr: any) {
-        console.warn('[ReplyZen Gemini Fail] Falling back to intelligence simulator:', gemIniErr.message);
-      }
-    }
-
-    // Default Intelligence Mock/Rule Fallback if Gemini Key is unavailable
-    const q = userPrompt.toLowerCase();
-    let replyText = "";
-    let targetThreadId = null;
-    let draftResult = null;
-    let suggestedAction = "NONE";
-
-    if (q.includes('hannah') || q.includes('morgan') || q.includes('meeting')) {
-      targetThreadId = "thread-hannah";
-      suggestedAction = "SELECT_THREAD";
-      replyText = "### Hannah Morgan: Meeting Scheduled\n\nI located a thread with **Hannah Morgan** regarding \"Meeting scheduled\". She is waiting to go over the design details.\n\nWould you like me to draft a confirmation?";
-    } else if (q.includes('megan') || q.includes('campaign') || q.includes('marketing')) {
-      targetThreadId = "thread-megan";
-      suggestedAction = "SELECT_THREAD";
-      replyText = "### Megan Clark: Marketing Campaign Update\n\nI identified a thread from **Megan Clark** at Dappr Ads. She sent an update on the marketing campaign progress.\n\nWould you like to draft a feedback reply?";
-    } else if (q.includes('draft') || q.includes('reply') || q.includes('write')) {
-      replyText = "### Draft Email Assistant\n\nI created a high-fidelity onboarding response draft. You can apply it to your compose area:\n\n*\"Hi there, happy to align on our collaboration details. Please let us know if next Tuesday works for a quick 15-minute briefing session!\"*";
-      draftResult = "Hi there, happy to align on our collaboration details. Please let us know if next Tuesday works for a quick 15-minute briefing session!";
-      suggestedAction = "REPLY_DRAFT";
-    } else if (q.includes('summarize') || q.includes('summary')) {
-      replyText = "### Email Inbox Summary\n\nHere is a quick breakdown of your active inbox:\n\n1. **Hannah Morgan**: High priority design team sync scheduled.\n2. **Megan Clark**: Marketing campaign update pending feedbacl.\n3. **Elena Rostova**: Pilot deployment contract adjustments.\n\nWould you like to compose a reply to any of them?";
-    } else {
-      replyText = `### ReplyZen Assistant\n\nI evaluated your inquiry: *"${userPrompt}"*.\n\nWe are ready to draft responses, summarize active message flows, or search specific logs dynamically. Type a request or click a command to begin!`;
-    }
-
-    res.json({
-      success: true,
-      aiUsed: false,
-      replyText,
-      targetThreadId,
-      draftResult,
-      suggestedAction
-    });
-
-  } catch (error: any) {
-    console.error('[ReplyZen Assistant Exception]', error.message);
-    res.status(500).json({ error: 'Failed to process AI assistant inquiry.' });
-  }
-});
-
-/**
- * 6. SEND EMAIL COMPOSER OUTBOX (POST)
- * Accepts To, CC, BCC, Subject, and Body and handles outgoing SMTP/IMAP simulations.
- */
-router.post('/send-email', (req: Request, res: Response) => {
-  try {
-    const { to, cc, bcc, subject, body } = req.body;
-
-    if (!to) {
-      res.status(400).json({ error: 'Required parameter "to" is missing.' });
-      return;
-    }
-
-    console.log('[SMTP Outbox] Dispaching Outgoing Secure Email Transmission:');
-    console.log(` - TO: ${to}`);
-    if (cc) console.log(` - CC: ${cc}`);
-    if (bcc) console.log(` - BCC: ${bcc}`);
-    console.log(` - SUBJECT: ${subject || '(No Subject)'}`);
-    console.log(` - BODY CHARACTER LENGTH: ${body ? body.length : 0}`);
-
-    // Broadcast through wsDispatcher to simulate real-time updates if any
-    wsDispatcher.broadcast('SMTP_DISPATCHED', {
-      to, cc, bcc, subject, timestamp: new Date().toISOString()
-    });
-
-    res.json({
-      success: true,
-      message: 'SMTP email dispatched successfully!',
-      dispatchId: `smtp-${crypto.randomBytes(8).toString('hex')}`,
-      dispatchedAt: new Date().toISOString(),
-      details: { to, cc, bcc, subject }
-    });
-  } catch (err: any) {
-    console.error('[SMTP Outbox Dispatch Exception]', err.message);
-    res.status(500).json({ error: 'Failed to dispatch email transaction through secure outbox gateway.' });
-  }
-});
-
-/**
  * 7. CRM DASHBOARD INTEGRATED COMMAND ASSISTANT (POST)
  * Processes queries directly from the Seto-inspired dashboard's smart command bar.
  */
@@ -855,7 +679,7 @@ router.post('/dashboard-assistant', async (req: Request, res: Response) => {
       try {
         const client = getGeminiClient();
         const systemInstruction = `You are Obsidian AI, a helpful, extremely intelligent, and highly professional CRM virtual assistant embedded in the Obsidian customer relationship management cockpit.
-        The user is a senior Lead Account Director managing enterprise customer channels (WhatsApp, Telegram, email, GBP, SMS, and proposals).
+        The user is a senior Lead Account Director managing enterprise customer channels (WhatsApp, Telegram, GBP, SMS, and proposals).
         
         Answer their inquiry precisely, using beautiful and polished markdown format with elegant spacing.
         You can suggest ideas, draft messages, or explain metrics, but keep it concise and action-oriented.`;
@@ -881,16 +705,7 @@ router.post('/dashboard-assistant', async (req: Request, res: Response) => {
     if (!aiUsed) {
       // High-fidelity local rule/knowledge engine for the Seto cockpit
       const q = userPrompt.toLowerCase();
-      if (q.includes('email') || q.includes('campaign') || q.includes('draft')) {
-        replyText = `### ✉️ AI Email Assistant Recommendation
-
-Based on your inquiry, I recommend launching the **AI Email Assistant**. Our active template library contains high-converting onboarding and SLA campaigns.
-
-**Suggested Template (SLA Draft):**
-*"Hello there, happy to align on our collaboration details. Please let us know if next Tuesday works for a quick 15-minute briefing session!"*
-
-Would you like to navigate to the **Omnichannel Inbox** to draft a response?`;
-      } else if (q.includes('voice') || q.includes('call') || q.includes('dialer') || q.includes('phone')) {
+      if (q.includes('voice') || q.includes('call') || q.includes('dialer') || q.includes('phone')) {
         replyText = `### 📞 Voice Interaction Hub Analysis
 
 Active channels are healthy. You can configure AI dialers and analyze call transcripts in the **Voice Interaction Hub**.

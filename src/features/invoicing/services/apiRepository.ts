@@ -1,7 +1,7 @@
 /**
  * HTTP client for the billing backend (src/routes/billing.ts).
  * No secrets live here: the browser only holds the user's session token;
- * SMTP and payment-provider credentials stay on the server.
+ * Payment-provider credentials stay on the server.
  */
 import type { CurrentUser } from '../domain/types';
 import { createLocalRepository } from './localRepository';
@@ -46,28 +46,18 @@ async function request<T>(path: string, init: RequestInit & { idempotencyKey?: s
   return body as T;
 }
 
-interface SessionResponse { user: CurrentUser; emailConfigured: boolean }
+interface SessionResponse { user: CurrentUser }
 
 function createApiRepository(session: SessionResponse): BillingRepository {
   return {
     mode: 'remote',
     modeReason: '',
-    emailConfigured: session.emailConfigured,
     user: session.user,
     load: () => request('/snapshot'),
     saveInvoice: (invoice, { idempotencyKey }) =>
       request<{ invoice: any }>(`/invoices/${encodeURIComponent(invoice.id)}`, { method: 'PUT', body: JSON.stringify({ invoice }), idempotencyKey }).then((r) => r.invoice),
     voidInvoice: (id) => request<{ invoice: any }>(`/invoices/${encodeURIComponent(id)}/void`, { method: 'POST' }).then((r) => r.invoice),
     markInvoiceSent: (id) => request<{ invoice: any }>(`/invoices/${encodeURIComponent(id)}/mark-sent`, { method: 'POST' }).then((r) => r.invoice),
-    async sendInvoice(id, req, { idempotencyKey }) {
-      try {
-        return await request(`/invoices/${encodeURIComponent(id)}/send`, { method: 'POST', body: JSON.stringify(req), idempotencyKey });
-      } catch (err: any) {
-        // Failed / unconfigured deliveries are still recorded server-side; surface them.
-        if (err?.body?.invoice && err?.body?.delivery) return { invoice: err.body.invoice, delivery: err.body.delivery };
-        throw err;
-      }
-    },
     recordPayment: (payment, { idempotencyKey }) =>
       request(`/invoices/${encodeURIComponent(payment.invoiceId)}/payments`, { method: 'POST', body: JSON.stringify({ payment }), idempotencyKey }),
     saveClient: (client) =>

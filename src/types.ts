@@ -62,7 +62,6 @@ export type ActiveView =
   | 'greet'
   | 'welcome'
   | 'messages'
-  | 'email_assistant'
   | 'analytics'
   | 'settings'
   | 'calendar'
@@ -175,19 +174,6 @@ export interface ChatSessionData {
   messages: ChatMessageItem[];
   createdAt?: string | Date;
   updatedAt?: string | Date;
-}
-
-export interface ThreadableEmail {
-  id: string;
-  messageId?: string;
-  subject: string;
-  date: string | Date;
-  inReplyTo?: string | null;
-  references?: string | string[] | null;
-  from?: string;
-  to?: string;
-  body?: string;
-  threadId?: string | null;
 }
 
 export interface ChatMessage {

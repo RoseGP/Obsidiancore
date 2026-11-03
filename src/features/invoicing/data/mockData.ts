@@ -137,10 +137,7 @@ export function generateMockSnapshot(): BillingSnapshot {
       paymentInstructions: MOCK_SETTINGS.paymentInstructions,
       notes: MOCK_SETTINGS.defaultNotes,
       signature: { ...MOCK_SETTINGS.signature, enabled: false },
-      deliveries: lifecycle === 'draft' ? [] : [{
-        id: `dl_seed_${k}`, at: created, to: client.email, cc: '', subject: `Invoice ${number} from Obsidian Digital Ltd`,
-        result: 'delivered', detail: 'Accepted by recipient mail server', provider: 'SMTP',
-      }],
+      deliveries: [],
       activity: [{ id: `act_seed_${k}`, at: created, type: 'created', message: 'Invoice created' }],
       createdAt: created, updatedAt: created,
       sentAt: lifecycle === 'draft' ? null : created,

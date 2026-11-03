@@ -5,8 +5,7 @@ import { log } from '../../social-accounts/server/http';
 import { createGoogleGateway, GOOGLE_BASES, type GoogleBases } from './googleGateway';
 import { createGbpService, type AiDraft } from './service';
 import { createGbpStore } from './store';
-import { createGrowthService, type Mailer } from './growth';
-import { isEmailConfigured, sendTextEmail } from '../../invoicing/server/emailTransport';
+import { createGrowthService } from './growth';
 import { createPlacesClient } from './places';
 
 const clientId = process.env.GOOGLE_CLIENT_ID?.trim() || '';
@@ -36,9 +35,7 @@ export const gbp = createGbpService({ cfg: config, google, store: gbpStore, conf
 
 const placesKey = process.env.GOOGLE_PLACES_API_KEY?.trim() || '';
 const placesBase = process.env.NODE_ENV === 'test' && process.env.GBP_TEST_PLACES_BASE ? process.env.GBP_TEST_PLACES_BASE : undefined;
-// Notification email uses the same SMTP settings as invoices. Tests can substitute a recorder.
-const mailer: Mailer = process.env.NODE_ENV === 'test' && (globalThis as any).__gbpTestMailer ? (globalThis as any).__gbpTestMailer : { configured: isEmailConfigured, send: sendTextEmail };
-export const growth = createGrowthService({ mailer, appUrl: config.appUrl, store: gbpStore, google, core: gbp, ai, places: placesKey ? createPlacesClient(placesKey, placesBase) : null, rankProvider: null });
+export const growth = createGrowthService({ store: gbpStore, google, core: gbp, ai, places: placesKey ? createPlacesClient(placesKey, placesBase) : null, rankProvider: null });
 
 // Publishes posts the user scheduled, and runs periodic analysis (prepare-only). Off in tests.
 if (process.env.NODE_ENV !== 'test' && process.env.GBP_SCHEDULER !== 'off' && configured) {

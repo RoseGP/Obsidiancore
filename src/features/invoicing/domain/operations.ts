@@ -10,7 +10,7 @@ import { minorToDecimalString, toMinor } from './money';
 import { buildInvoiceView, todayISO } from './status';
 import { uid } from './factories';
 import type {
-  BillingSnapshot, Client, CurrentUser, DeliveryAttempt, Invoice, Payment,
+  BillingSnapshot, Client, CurrentUser, Invoice, Payment,
 } from './types';
 import { hasErrors, validateClient, validateInvoice, validatePayment, type FieldErrors } from './validation';
 
@@ -95,40 +95,18 @@ export function opVoidInvoice(s: BillingSnapshot, id: string, user: CurrentUser,
 }
 
 /** Prepares an invoice for sending: strict validation. Returns the invoice or throws. */
-export function opAssertSendable(s: BillingSnapshot, id: string, to: string) {
+export function opAssertSendable(s: BillingSnapshot, id: string) {
   const inv = findInvoice(s, id);
   if (inv.lifecycle === 'void') throw new DomainError('Void invoices can’t be sent.', 'conflict');
   const errors = validateInvoice(inv, { takenNumbers: otherNumbers(s, id), mode: 'send' });
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(to.trim())) errors.to = 'Enter a valid recipient email.';
   if (hasErrors(errors)) throw new DomainError('This invoice is missing details required to send it.', 'validation', errors);
   return inv;
-}
-
-/** Records a delivery attempt. Only a delivered attempt moves a draft to "sent". */
-export function opRecordDelivery(s: BillingSnapshot, id: string, attempt: Omit<DeliveryAttempt, 'id'>, user: CurrentUser) {
-  const inv = findInvoice(s, id);
-  const delivery: DeliveryAttempt = { ...attempt, id: uid('dl') };
-  const delivered = delivery.result === 'delivered';
-  const invoice: Invoice = {
-    ...inv,
-    lifecycle: delivered && inv.lifecycle === 'draft' ? 'sent' : inv.lifecycle,
-    sentAt: delivered ? (inv.sentAt ?? delivery.at) : inv.sentAt,
-    deliveries: [...inv.deliveries, delivery],
-    updatedAt: delivery.at,
-    version: inv.version + 1,
-    activity: [...inv.activity, {
-      id: uid('act'), at: delivery.at,
-      type: delivered ? 'sent' : 'delivery_failed',
-      message: delivered ? `Emailed to ${delivery.to} by ${user.name}` : `Email to ${delivery.to} not sent: ${delivery.detail}`,
-    }],
-  };
-  return { snapshot: { ...s, invoices: s.invoices.map((i) => (i.id === id ? invoice : i)) }, invoice, delivery };
 }
 
 /** User confirms they delivered the invoice themselves (e.g. downloaded PDF and emailed it). */
 export function opMarkSent(s: BillingSnapshot, id: string, user: CurrentUser, now = new Date()) {
   assertWriter(user);
-  const inv = opAssertSendable(s, id, findInvoice(s, id).billTo.email);
+  const inv = opAssertSendable(s, id);
   if (inv.lifecycle !== 'draft') return { snapshot: s, invoice: inv };
   const at = now.toISOString();
   const invoice: Invoice = {

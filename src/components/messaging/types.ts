@@ -1,7 +1,7 @@
 export type UserRole = 'admin' | 'agent' | 'visitor';
 export type UserStatus = 'online' | 'busy' | 'away' | 'offline';
 export type ConversationType = 'direct' | 'group' | 'crm_linked' | 'internal' | 'widget' | 'support';
-export type ConversationChannel = 'widget' | 'internal' | 'email' | 'sms' | 'crm';
+export type ConversationChannel = 'widget' | 'internal' | 'sms' | 'crm';
 export type ConversationStatus = 'open' | 'pending' | 'resolved' | 'closed';
 export type ConversationPriority = 'low' | 'medium' | 'high' | 'urgent';
 

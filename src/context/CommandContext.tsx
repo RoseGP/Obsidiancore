@@ -6,7 +6,6 @@ export type SemanticView =
   | 'welcome'
   | 'meet_and_greet'
   | 'home' 
-  | 'email_assistant' 
   | 'voice_hub' 
   | 'video_call' 
   | 'enterprise_proposals'
@@ -25,12 +24,6 @@ export type SemanticView =
   | 'sales_pipelines'
   | 'public_scheduling';
 
-export interface EmailDraft {
-  recipient?: string;
-  subject?: string;
-  body?: string;
-}
-
 export interface NotificationMessage {
   id: string;
   type: 'text' | 'command';
@@ -44,9 +37,6 @@ interface CommandContextType {
   notifications: NotificationMessage[];
   addNotification: (text: string, type?: 'text' | 'command') => void;
   isProcessingCommand: boolean;
-  currentDraft: EmailDraft | null;
-  setCurrentDraft: (draft: EmailDraft | null) => void;
-  clearDraft: () => void;
   isVoiceAssistantActive: boolean;
   setIsVoiceAssistantActive: (active: boolean) => void;
   handleUserCommand: (textInput: string, activeLead?: any) => Promise<{ success: boolean; data?: any; error?: string }>;
@@ -66,8 +56,6 @@ export function mapSemanticToView(view: SemanticView): string {
       return 'greet';
     case 'home':
       return 'dashboard';
-    case 'email_assistant':
-      return 'messages';
     case 'voice_hub':
       return 'voice_dialer';
     case 'video_call':
@@ -101,7 +89,6 @@ export function CommandProvider({ children }: { children: ReactNode }) {
   ]);
 
   const [isProcessingCommand, setIsProcessingCommand] = useState(false);
-  const [currentDraft, setCurrentDraft] = useState<EmailDraft | null>(null);
   const [isVoiceAssistantActive, setIsVoiceAssistantActive] = useState<boolean>(true);
   const [activeVideoCallContactId, setActiveVideoCallContactId] = useState<string | null>(null);
 
@@ -123,10 +110,6 @@ export function CommandProvider({ children }: { children: ReactNode }) {
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     };
     setNotifications(prev => [newNotif, ...prev].slice(0, 50));
-  };
-
-  const clearDraft = () => {
-    setCurrentDraft(null);
   };
 
   const speakText = (text: string) => {
@@ -184,18 +167,6 @@ export function CommandProvider({ children }: { children: ReactNode }) {
         // 3. Handle specific action routines
         if (type === 'command' && action) {
           switch (action) {
-            case 'email_draft':
-              if (params) {
-                setCurrentDraft({
-                  recipient: params.recipient || '',
-                  subject: params.subject || '',
-                  body: params.body || ''
-                });
-              }
-              setActiveView('messages');
-              addNotification('Transitioning active workspace to AI Email Assistant Composer.', 'command');
-              break;
-
             case 'initialize_video_call':
               if (params && params.contactId) {
                 setActiveVideoCallContactId(params.contactId);
@@ -262,9 +233,6 @@ export function CommandProvider({ children }: { children: ReactNode }) {
       notifications,
       addNotification,
       isProcessingCommand,
-      currentDraft,
-      setCurrentDraft,
-      clearDraft,
       isVoiceAssistantActive,
       setIsVoiceAssistantActive,
       handleUserCommand,

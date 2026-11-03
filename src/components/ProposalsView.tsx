@@ -3,7 +3,7 @@ import useDebounce from '../hooks/useDebounce';
 import { 
   FileText, Shield, Calendar, DollarSign, Download, Send, 
   CheckCircle2, RefreshCw, AlertCircle, Sparkles, Building, 
-  User, Mail, Globe, Clock, Layers, ChevronRight, PenSquare, 
+  User, Globe, Clock, Layers, ChevronRight, PenSquare, 
   Check, Copy, FileCode, CheckSquare, Settings, UserCheck, ShieldCheck,
   PenTool, CreditCard, Eraser, ExternalLink, Upload
 } from 'lucide-react';
@@ -121,8 +121,7 @@ export default function ProposalsView({ contacts = [], onNavigate }: ProposalsVi
   // Active inputs state
   const [proposalsTabMode, setProposalsTabMode] = useState<'invoicing' | 'payment_providers' | 'proposals_hub'>('invoicing');
   const [selectedContactId, setSelectedContactId] = useState<string>('1');
-  const [activeSubTab, setActiveSubTab] = useState<'document' | 'email' | 'msa'>('document');
-  const [emailTone, setEmailTone] = useState<'ceo-warm' | 'ceo-formal' | 'ceo-urgent'>('ceo-warm');
+  const [activeSubTab, setActiveSubTab] = useState<'document' | 'msa'>('document');
   const [industry, setIndustry] = useState<'Fintech' | 'Cloud SaaS' | 'Healthcare' | 'Enterprise Logistics' | 'E-commerce'>('Cloud SaaS');
   const [msaSignedName, setMsaSignedName] = useState<string>('');
   const [msaSignedTitle, setMsaSignedTitle] = useState<string>('');
@@ -699,39 +698,6 @@ export default function ProposalsView({ contacts = [], onNavigate }: ProposalsVi
     }
   ];
 
-  const getEmailContent = () => {
-    const firstName = activeContact.name.split(' ')[0];
-    const companyName = activeContact.company;
-    const refId = `PROP-0${selectedContactId}94`;
-    const docUrl = `https://proposals.obsidian.io/sign/${refId}`;
-    
-    let valueProp = "modernizing and optimizing your core operational flows";
-    if (industry === 'Cloud SaaS') {
-      valueProp = "resolving support routing silos and unifying WhatsApp, Telegram, and e-mail leads into a GDPR-secure cockpit";
-    } else if (industry === 'Enterprise Logistics') {
-      valueProp = "mitigating legacy backend webhook failures and implementing dual circuit-breaker routing configurations";
-    } else if (industry === 'Fintech') {
-      valueProp = "remediating transaction ledger audit trail gaps and deploying immutable PostgreSQL database parameters";
-    }
-
-    if (emailTone === 'ceo-formal') {
-      return {
-        subject: `Proposal: Workflow Modernization & SLA Framework for ${companyName}`,
-        body: `Dear ${firstName},\n\nThank you for your valuable time during our recent discovery technical review. We thoroughly appreciated the opportunity to analyze your requirements at ${companyName}.\n\nOur tailored technical proposal specifically addresses your milestones regarding ${valueProp}. This framework establishes resilient processing loops and rigorous compliance configurations targeting your primary operating parameters.\n\nYou may access the complete scope of work, technical architecture, and legal terms at the secure corporate link listed below, which supports digital signatures to authorize the initiation phase:\n\n${docUrl}\n\nPlease let me know if you would like to arrange a brief call to align on these phases. I personally guarantee that our team will deliver an exceptional standard of performance.\n\nSincerely,\n\nRene Pierrette\nCEO, Obsidian Enterprise Solutions`
-      };
-    } else if (emailTone === 'ceo-urgent') {
-      return {
-        subject: `Priority Draft: Technical SOW & Modernization Proposal for ${companyName}`,
-        body: `Hi ${firstName},\n\nFollowing our discovery session, I wanted to expedite our tailored strategy directly to your attention.\n\nOur core engineering team has designed a modernization roadmap to address your immediate bottlenecks. This tailored proposal specifically targets ${valueProp}, eliminating operating friction before it impacts performance thresholds.\n\nGiven the time-sensitive nature of your upcoming deployment timeline, we are prepared to allocate technical resources immediately upon authorization. Please review the digital SOW and sign to lock in our current delivery speed:\n\n${docUrl}\n\nI stand behind this implementation and look forward to partnering to deliver a highly robust platform for ${companyName}.\n\nBest regards,\n\nRene Pierrette\nCEO, Obsidian Enterprise Solutions`
-      };
-    } else {
-      return {
-        subject: `Tailored Proposal & Workflow Roadmap for ${companyName}`,
-        body: `Hi ${firstName},\n\nIt was a pleasure speaking with you during our discovery session. I thoroughly enjoyed learning more about ${companyName} and your operational objectives.\n\nAs discussed, we have synthesized your requirements into a high-resilience architecture. This tailored proposal specifically addresses ${valueProp} to eliminate representative friction, maximize processing speed, and guarantee strict standard compliance.\n\nYou can review the full architecture, itemized phases, and SLA terms directly at the secure link below, where you can also digitally sign to initiate our kickoff:\n\n${docUrl}\n\nI am personally committed to this partnership and look forward to building a bulletproof engineering foundation for your team.\n\nWarm regards,\n\nRene Pierrette\nCEO, Obsidian Enterprise Solutions`
-      };
-    }
-  };
-
   const triggerExport = async (method: 'markdown' | 'clipboard' | 'download_pdf') => {
     const documentRef = `PROP-0${selectedContactId}94-${Date.now().toString().slice(-4)}`;
     const proposalContent = `========================================================================
@@ -1062,17 +1028,6 @@ END OF DOCUMENT - CONFIDENTIAL ALPHA BUSINESS PROPOSAL
                     >
                       <FileText className="h-3.5 w-3.5" />
                       <span>SOW Agreement</span>
-                    </button>
-                    <button
-                      onClick={() => setActiveSubTab('email')}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${
-                        activeSubTab === 'email'
-                          ? 'bg-white text-slate-800 shadow-sm'
-                          : 'text-slate-500 hover:text-slate-800'
-                      }`}
-                    >
-                      <Mail className="h-3.5 w-3.5" />
-                      <span>CEO Cover Mail</span>
                     </button>
                     <button
                       onClick={() => setActiveSubTab('msa')}
@@ -1489,60 +1444,6 @@ END OF DOCUMENT - CONFIDENTIAL ALPHA BUSINESS PROPOSAL
                         </table>
                       </div>
 
-                    </div>
-
-                  </div>
-                )}
-
-                {/* TAB 2: CEO COVER EMAIL LETTER */}
-                {activeSubTab === 'email' && (
-                  <div className="bg-white rounded-xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-6" id="sow-cover-email-pane">
-                    
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
-                      <div className="space-y-0.5">
-                        <h3 className="font-sans font-bold text-sm text-slate-800">CEO Private Transmission Link</h3>
-                        <p className="text-[9px] font-mono uppercase tracking-wider text-slate-400">Secure SMTP Pipeline Delivery</p>
-                      </div>
-
-                      {/* Tone Switcher */}
-                      <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200 text-xs">
-                        <button
-                          onClick={() => setEmailTone('ceo-warm')}
-                          className={`px-2.5 py-1 rounded font-semibold transition-all cursor-pointer ${
-                            emailTone === 'ceo-warm' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-800'
-                          }`}
-                        >
-                          🌟 Warm
-                        </button>
-                        <button
-                          onClick={() => setEmailTone('ceo-formal')}
-                          className={`ml-1 px-2.5 py-1 rounded font-semibold transition-all cursor-pointer ${
-                            emailTone === 'ceo-formal' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-800'
-                          }`}
-                        >
-                          👔 Formal
-                        </button>
-                        <button
-                          onClick={() => setEmailTone('ceo-urgent')}
-                          className={`ml-1 px-2.5 py-1 rounded font-semibold transition-all cursor-pointer ${
-                            emailTone === 'ceo-urgent' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-800'
-                          }`}
-                        >
-                          ⚡ Priority
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Email Headers layout */}
-                    <div className="rounded-xl bg-slate-50 p-4 border border-slate-200 text-xs font-mono space-y-2 text-slate-600">
-                      <div><strong className="text-slate-400">FROM:</strong> Rene Pierrette <span className="text-slate-500">&lt;rene.pierrette@obsidian.io&gt;</span></div>
-                      <div className="border-t border-slate-150 pt-2"><strong className="text-slate-400">TO:</strong> {activeContact.name} <span className="text-slate-500">&lt;{activeContact.email}&gt;</span></div>
-                      <div className="border-t border-slate-150 pt-2"><strong className="text-slate-400">SUBJECT:</strong> <span className="text-slate-800 font-bold">{getEmailContent().subject}</span></div>
-                    </div>
-
-                    {/* Email Body */}
-                    <div className="bg-slate-50 border border-slate-200 p-6 rounded-xl font-sans text-xs text-slate-700 leading-relaxed whitespace-pre-wrap select-text">
-                      {getEmailContent().body}
                     </div>
 
                   </div>

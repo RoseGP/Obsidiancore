@@ -1,11 +1,9 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import type { InvoiceTotals } from '../domain/calc';
 import { uid } from '../domain/factories';
 import { buildInvoiceView, todayISO, type InvoiceView } from '../domain/status';
 import type { BillingSnapshot, BusinessSettings, Client, Invoice, Payment } from '../domain/types';
 import { connectBillingRepository } from '../services/apiRepository';
-import { sendInvoiceEmail } from '../services/emailDelivery';
-import type { BillingRepository, SendRequest, SendResult } from '../services/repository';
+import type { BillingRepository } from '../services/repository';
 
 type NewPayment = Omit<Payment, 'id' | 'receiptNumber' | 'createdAt' | 'recordedBy' | 'source'>;
 
@@ -22,7 +20,6 @@ interface BillingContextValue {
   saveInvoice(inv: Invoice): Promise<Invoice>;
   voidInvoice(id: string): Promise<Invoice>;
   markSent(id: string): Promise<Invoice>;
-  sendInvoice(inv: Invoice, totals: InvoiceTotals, fields: Pick<SendRequest, 'to' | 'cc' | 'subject' | 'message'>): Promise<SendResult>;
   recordPayment(p: NewPayment): Promise<{ payment: Payment; invoice: Invoice }>;
   saveClient(c: Client): Promise<Client>;
   archiveClient(id: string, archived: boolean): Promise<Client>;
@@ -111,11 +108,6 @@ export function BillingProvider({ children, repository }: { children: React.Reac
     }),
     voidInvoice: (id) => guarded(`void:${id}`, async () => { const r = await repo!.voidInvoice(id); upsertInvoice(r); return r; }),
     markSent: (id) => guarded(`marksent:${id}`, async () => { const r = await repo!.markInvoiceSent(id); upsertInvoice(r); return r; }),
-    sendInvoice: (inv, totals, fields) => guarded(`send:${inv.id}`, async (idempotencyKey) => {
-      const r = await sendInvoiceEmail(repo!, inv, totals, fields, idempotencyKey);
-      upsertInvoice(r.invoice);
-      return r;
-    }),
     recordPayment: (p) => guarded(`pay:${p.invoiceId}`, async (idempotencyKey) => {
       const r = await repo!.recordPayment(p, { idempotencyKey });
       setData((d) => d && ({ ...d, payments: [...d.payments, r.payment], invoices: d.invoices.map((i) => (i.id === r.invoice.id ? r.invoice : i)) }));

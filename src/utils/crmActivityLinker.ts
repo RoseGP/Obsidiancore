@@ -304,10 +304,10 @@ fallbackActivityLinks.set('link-3', {
   updatedAt: new Date().toISOString()
 });
 
-export interface InboundEmail {
+export interface InboundMessage {
   id: string;
   messageId: string;
-  threadId: string; // The calculated JWZ thread_id
+  threadId: string; // conversation id (e.g. the WhatsApp/SMS sender)
   subject: string;
   from: string;
   to: string;
@@ -316,10 +316,10 @@ export interface InboundEmail {
 }
 
 /**
- * Event Listener Trigger: Called whenever an IMAP or webhook parser ingests a new email message.
- * Calculates JWZ associations and automatically updates linked CRM tasks/tickets/deals.
+ * Called when an inbound WhatsApp or SMS message arrives. Classifies it and
+ * updates linked CRM tasks/tickets/deals.
  */
-export async function onNewEmailIngested(email: InboundEmail): Promise<{
+export async function onInboundMessage(email: InboundMessage): Promise<{
   success: boolean;
   updatesCount: number;
   updatedTargets: Array<{ id: string; type: string; newStatus?: string }>;
@@ -329,7 +329,7 @@ export async function onNewEmailIngested(email: InboundEmail): Promise<{
 
   // 1. DYNAMIC CLASSIFICATION VIA GEMINI
   const classifiedType = await classifyIntentWithGemini(subject, body);
-  console.log(`[CRM Linker] onNewEmailIngested: Classified intent as '${classifiedType}' on thread '${threadId}'.`);
+  console.log(`[CRM Linker] onInboundMessage: Classified intent as '${classifiedType}' on thread '${threadId}'.`);
 
   const excerpt = body.length > 250 ? body.substring(0, 250) + '...' : body;
   // Prefix the log with the classification type to make it clear in UI timelines

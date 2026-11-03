@@ -625,27 +625,11 @@ CRITICAL BEHAVIORAL DIRECTIVES:
         return { reply, toolCallsExecuted };
       }
 
-      if (q.includes('email') || q.includes('outreach') || q.includes('draft') || q.includes('marcus')) {
-        const outreach = await executeCrmTool('draft_sales_outreach', {
-          recipientName: 'Marcus Chen',
-          company: 'AlphaTech Global',
-          channel: 'email',
-          keyPoints: '99.99% SLA uptime guarantee and WebRTC failover architecture'
-        }, context);
-        toolCallsExecuted.push('draft_sales_outreach');
-
-        const reply = `### ✉️ Personalized Sales Outreach Draft\n\n` +
-          `**Subject:** ${outreach.draftSubject}\n\n` +
-          `\`\`\`text\n${outreach.draftBody}\n\`\`\`\n\n` +
-          `*Recipient:* ${outreach.recipient} (${outreach.company}) via ${outreach.channel}.`;
-        if (onChunk) onChunk(reply);
-        return { reply, toolCallsExecuted };
-      }
     } catch (fallbackErr: any) {
       console.error('[Resilience Fallback Error]:', fallbackErr);
     }
 
-    const errText = `I am ready to assist with your CRM workflows. You can ask for a **pipeline summary**, **top qualified leads**, **sales email drafts**, or **social media scheduling**.`;
+    const errText = `I am ready to assist with your CRM workflows. You can ask for a **pipeline summary**, **top qualified leads**, or **social media scheduling**.`;
     if (onChunk) onChunk(errText);
     return { reply: errText, toolCallsExecuted };
   }

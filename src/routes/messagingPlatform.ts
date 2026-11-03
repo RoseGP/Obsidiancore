@@ -131,7 +131,7 @@ export interface MessageRecord {
 export interface ConversationRecord {
   id: string;
   type: 'direct' | 'group' | 'crm_linked' | 'internal' | 'widget' | 'support';
-  channel: 'widget' | 'internal' | 'email' | 'sms' | 'crm';
+  channel: 'widget' | 'internal' | 'sms' | 'crm';
   title: string;
   participantIds: string[];
   participants: UserRecord[];

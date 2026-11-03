@@ -115,7 +115,7 @@ router.post('/book', async (req: Request, res: Response) => {
 
     const endDt = startDt.plus({ minutes: eventType.durationMinutes });
 
-    // In a production system, this creates a record in Firestore/SQL and dispatches a Google/Outlook Calendar API invite & Nodemailer confirmation
+    // In a production system, this creates a record in Firestore/SQL and dispatches a Google/Outlook Calendar API invite
     const newAppointment = {
       id: `booking_${Date.now()}`,
       eventTypeSlug,
