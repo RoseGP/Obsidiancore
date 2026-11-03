@@ -22,12 +22,15 @@
  *   PUT    /settings                      brand voice, sign-off                      (auth, CSRF)
  */
 import { Router, type Request, type Response } from 'express';
+import multer from 'multer';
 import { z } from 'zod';
 import { requireUser, type AuthedRequest } from '../features/social-accounts/server/auth';
 import { csrfGuard, ipKey, rateLimit, sendError, userKey } from '../features/social-accounts/server/http';
 import { config } from '../features/social-accounts/server/instance';
 import { gbp, growth } from '../features/gbp/server/instance';
 import { GBP_STATE_COOKIE } from '../features/gbp/server/service';
+import { PHOTO_CATEGORIES, PHOTO_MAX_BYTES } from '../features/gbp/server/growth';
+import { AccountsError } from '../features/social-accounts/server/service';
 
 const router = Router();
 router.use((_req, res, next) => { res.setHeader('Cache-Control', 'no-store'); res.setHeader('Referrer-Policy', 'no-referrer'); next(); });
@@ -49,7 +52,7 @@ router.get('/callback', rateLimit({ name: 'gbp-cb', windowMs: 60_000, max: 30, k
   res.redirect(302, target);
 });
 
-router.use(requireUser, csrfGuard(config.appUrl), rateLimit({ name: 'gbp', windowMs: 60_000, max: 120, key: userKey }));
+router.use(requireUser, csrfGuard(config.appUrl, { multipartPaths: ['/growth/photos'] }), rateLimit({ name: 'gbp', windowMs: 60_000, max: 120, key: userKey }));
 // Google quota-sensitive. Google's default Business Profile quota is per project (hundreds of requests/min); this caps one user.
 const heavy = rateLimit({ name: 'gbp-heavy', windowMs: 60_000, max: Number(process.env.GBP_HEAVY_RATE_LIMIT) || 30, key: userKey });
 const aiLimit = rateLimit({ name: 'gbp-ai', windowMs: 60_000, max: 20, key: userKey });
@@ -174,6 +177,24 @@ router.post('/growth/posts/:id/schedule', handle('schedule post', (req) => growt
 router.post('/growth/posts/:id/publish', heavy, handle('publish post', (req) => { z.object({ confirm: z.literal(true) }).strict().parse(req.body ?? {}); return growth.publishPlannedPost(uid(req), id.parse(req.params.id)); }));
 router.post('/growth/posts/:id/discard', handle('discard post', (req) => growth.discardPlannedPost(uid(req), id.parse(req.params.id))));
 
+// Photos: held in memory only for the length of the request, then sent to Google. Never written to disk.
+const photoUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: PHOTO_MAX_BYTES, files: 1, fields: 5 } }).single('file');
+const readPhoto = (req: Request, res: Response) => new Promise<void>((resolve, reject) => photoUpload(req, res, (err: any) => {
+  if (!err) return resolve();
+  reject(err?.code === 'LIMIT_FILE_SIZE' ? new AccountsError('That image is too large. Google accepts up to 5 MB.', 413, 'invalid_file') : new AccountsError('The upload couldn’t be read.', 400, 'invalid_file'));
+}));
+router.post('/growth/photos', heavy, handle('upload photo', async (req, res) => {
+  await readPhoto(req, res);
+  const f = z.object({ location: locName, category: z.enum(PHOTO_CATEGORIES), confirm: z.literal('true') }).strict().parse(req.body ?? {});
+  const file = (req as any).file as { buffer: Buffer; size: number } | undefined;
+  if (!file) throw new AccountsError('Choose an image to upload.', 400, 'invalid_file');
+  return growth.uploadPhoto(uid(req), f.location, file, f.category, true);
+}));
+router.delete('/growth/photos', heavy, handle('delete photo', (req) => {
+  const b = z.object({ location: locName, media: z.string().max(300), confirm: z.literal(true) }).strict().parse(req.body ?? {});
+  return growth.deletePhoto(uid(req), b.location, b.media, b.confirm);
+}));
+
 router.get('/growth/reviews/summary', handle('review summary', (req) => growth.reviewSummary(uid(req), z.object({ location: locName.optional() }).parse(req.query).location)));
 
 router.get('/growth/competitors', handle('competitors', (req) => growth.listCompetitors(uid(req), z.object({ location: locName }).parse(req.query).location)));
@@ -197,9 +218,11 @@ router.delete('/growth/assistant', handle('clear assistant', (req) => growth.cle
 router.get('/growth/inbox', handle('inbox', (req) => growth.inbox(uid(req))));
 router.post('/growth/inbox/:id', handle('inbox status', (req) => growth.setInboxStatus(uid(req), id.parse(req.params.id), z.object({ status: z.enum(['done', 'dismissed', 'open']) }).strict().parse(req.body ?? {}).status)));
 router.post('/growth/automation/run', heavy, handle('run automation', (req) => growth.runAutomation(uid(req))));
+router.get('/growth/automation', handle('automation settings', (req) => growth.getAutomation(uid(req))));
+router.post('/growth/automation/test-email', rateLimit({ name: 'gbp-test-email', windowMs: 10 * 60_000, max: 5, key: userKey }), handle('test email', (req) => growth.emailDigest(uid(req), { test: true })));
 router.put('/growth/automation', handle('automation settings', (req) => growth.saveAutomation(uid(req), z.object({
   enabled: z.boolean().optional(),
-  notifications: z.object({ inApp: z.boolean().optional(), email: z.boolean().optional(), kinds: z.record(z.enum(['missing_info', 'unanswered_review', 'negative_review', 'outdated_hours', 'services', 'content', 'performance', 'security', 'audit']), z.boolean()).optional() }).strict().optional(),
+  notifications: z.object({ inApp: z.boolean().optional(), email: z.boolean().optional(), emailTo: z.union([z.string().trim().email('Enter a valid email address.').max(254), z.literal('')]).optional(), kinds: z.record(z.enum(['missing_info', 'unanswered_review', 'negative_review', 'outdated_hours', 'services', 'content', 'performance', 'security', 'audit']), z.boolean()).optional() }).strict().optional(),
 }).strict().parse(req.body ?? {}))));
 
 router.get('/growth/security', handle('security', (req) => growth.security(uid(req))));

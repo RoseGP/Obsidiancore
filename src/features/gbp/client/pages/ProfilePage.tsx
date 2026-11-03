@@ -95,7 +95,7 @@ export default function ProfilePage() {
           {tab === 'categories' && <Categories l={l} onPropose={propose} />}
           {tab === 'services' && <Services l={l} onPropose={propose} />}
           {tab === 'attributes' && <Attributes l={l} p={p ?? null} onPropose={propose} />}
-          {tab === 'photos' && <Photos l={l} p={p ?? null} />}
+          {tab === 'photos' && <Photos l={l} p={p ?? null} onChanged={() => data.reload()} />}
           {tab === 'history' && <HistoryList items={changes.data ?? []} onOpen={setReview} />}
         </>
       )}
@@ -290,18 +290,82 @@ function Attributes({ l, p, onPropose }: { l: GLocation; p: ProfileSnapshot | nu
   );
 }
 
-function Photos({ l, p }: { l: GLocation; p: ProfileSnapshot | null }) {
+const PHOTO_CATS: [string, string][] = [['EXTERIOR', 'Exterior'], ['INTERIOR', 'Interior'], ['AT_WORK', 'At work'], ['TEAMS', 'Team'], ['PRODUCT', 'Product'], ['FOOD_AND_DRINK', 'Food and drink'], ['MENU', 'Menu'], ['COMMON_AREA', 'Common area'], ['ROOMS', 'Rooms'], ['COVER', 'Cover photo'], ['LOGO', 'Logo'], ['PROFILE', 'Profile'], ['ADDITIONAL', 'Other']];
+const catLabel = (c: string) => PHOTO_CATS.find(([v]) => v === c)?.[1] ?? c.toLowerCase().replace(/_/g, ' ');
+
+function Photos({ l, p, onChanged }: { l: GLocation; p: ProfileSnapshot | null; onChanged: () => void }) {
+  const { api } = useGrowth();
+  const toast = useToast();
+  const [open, setOpen] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
+  const [preview, setPreview] = useState<string | null>(null);
+  const [dims, setDims] = useState<{ w: number; h: number } | null>(null);
+  const [cat, setCat] = useState('EXTERIOR');
+  const [ok, setOk] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [del, setDel] = useState<{ name: string; url: string } | null>(null);
+  const [delOk, setDelOk] = useState(false);
+
+  useEffect(() => { if (!file) { setPreview(null); setDims(null); return; } const u = URL.createObjectURL(file); setPreview(u); const im = new window.Image(); im.onload = () => setDims({ w: im.naturalWidth, h: im.naturalHeight }); im.src = u; return () => URL.revokeObjectURL(u); }, [file]);
+  const problem = !file ? null : !/^image\/(jpeg|png)$/.test(file.type) ? 'Use a JPG or PNG image.' : file.size < 10 * 1024 ? 'Google needs at least 10 KB.' : file.size > 5 * 1024 * 1024 ? 'Google accepts up to 5 MB.' : dims && (dims.w < 250 || dims.h < 250) ? 'Google needs at least 250 × 250 pixels.' : null;
+  const reset = () => { setOpen(false); setFile(null); setOk(false); setCat('EXTERIOR'); };
+
+  const upload = async () => {
+    if (!file) return;
+    setBusy(true);
+    try {
+      const f = new FormData(); f.append('location', l.name); f.append('category', cat); f.append('confirm', 'true'); f.append('file', file);
+      const r = await api<{ note: string }>('/growth/photos', { method: 'POST', form: f });
+      toast('ok', `Uploaded. ${r.note}`); reset(); onChanged();
+    } catch (e: any) { toast('danger', e.message); }
+    finally { setBusy(false); }
+  };
+  const remove = async () => {
+    if (!del) return;
+    setBusy(true);
+    try { await api('/growth/photos', { method: 'DELETE', json: { location: l.name, media: del.name, confirm: true } }); toast('ok', 'Photo removed from Google.'); setDel(null); setDelOk(false); onChanged(); }
+    catch (e: any) { toast('danger', e.message); }
+    finally { setBusy(false); }
+  };
+
   return (
-    <Card title="Photos and videos" description="Read from Google. Upload new photos in Google Business Profile; Google’s API only accepts photos from a public URL, so uploads here aren’t supported yet."
-      actions={<Button size="sm" icon={<ExternalLink size={14} />} onClick={() => window.open('https://business.google.com/', '_blank', 'noopener')}>Add photos in Google</Button>}>
+    <Card title="Photos" description="Read from Google. Uploads go straight to your Business Profile after you confirm; Google may review them before they appear."
+      actions={<Button size="sm" variant="primary" icon={<Plus size={14} />} onClick={() => setOpen(true)}>Upload photo</Button>}>
       {!p?.media ? <Alert tone="warn" title="Photos couldn’t be read">Run an audit to refresh profile data.</Alert> : (
         <>
           <p className="g-muted mb-3 text-[13.5px]">{p.media.photos} photos · {p.media.videos} videos · {p.media.hasLogo ? 'logo set' : 'no logo'} · {p.media.hasCover ? 'cover set' : 'no cover photo'}</p>
           {p.media.samples.length ? (
-            <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-6">{p.media.samples.map((m) => <img key={m.url} src={m.url} alt={`${m.category.toLowerCase()} photo`} className="aspect-square w-full rounded-lg object-cover" loading="lazy" referrerPolicy="no-referrer" />)}</div>
-          ) : <Empty icon={<ImageIcon size={20} />} title="No photos yet" />}
+            <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-6">{p.media.samples.map((m) => (
+              <figure key={m.name ?? m.url} className="group relative">
+                <img src={m.url} alt={`${catLabel(m.category)} photo`} className="aspect-square w-full rounded-lg object-cover" loading="lazy" referrerPolicy="no-referrer" style={{ background: 'var(--g-raised)' }} />
+                <figcaption className="g-faint mt-1 text-[11.5px]">{catLabel(m.category)}</figcaption>
+                {m.name && <button type="button" aria-label={`Remove ${catLabel(m.category)} photo`} onClick={() => setDel({ name: m.name!, url: m.url })} className="g-icon-btn absolute right-1 top-1 opacity-90 sm:opacity-0 sm:group-hover:opacity-100 sm:focus:opacity-100" style={{ background: 'var(--g-surface)' }}><Trash2 size={14} /></button>}
+              </figure>
+            ))}</div>
+          ) : <Empty icon={<ImageIcon size={20} />} title="No photos yet" body="Profiles with recent photos of the outside, inside and team tend to get more engagement (estimate)." action={<Button variant="primary" onClick={() => setOpen(true)}>Upload a photo</Button>} />}
         </>
       )}
+
+      <Dialog open={open} onClose={reset} title="Upload a photo" description={`For ${l.title}. JPG or PNG, 10 KB to 5 MB, at least 250 × 250 pixels.`}
+        footer={<><Button onClick={reset}>Cancel</Button><Button variant="primary" icon={<Send size={15} />} loading={busy} disabled={!file || !!problem || !ok} onClick={upload}>Publish to Google</Button></>}>
+        <div className="space-y-3">
+          <Field label="Image">{(id) => <input id={id} type="file" accept="image/jpeg,image/png" className="g-input" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />}</Field>
+          {preview && <img src={preview} alt="Selected photo preview" className="max-h-56 rounded-lg object-contain" />}
+          {file && <p className="g-faint text-[12px]">{file.name} · {Math.round(file.size / 1024)} KB{dims ? ` · ${dims.w} × ${dims.h}` : ''}</p>}
+          {problem && <Alert tone="danger" title={problem} />}
+          <Field label="What does it show?">{(id) => <select id={id} className="g-input" value={cat} onChange={(e) => setCat(e.target.value)}>{PHOTO_CATS.map(([v, t]) => <option key={v} value={v}>{t}</option>)}</select>}</Field>
+          <label className="flex items-start gap-2.5 rounded-lg p-3 text-[13px]" style={{ background: 'var(--g-raised)' }}>
+            <input type="checkbox" className="mt-0.5" checked={ok} onChange={(e) => setOk(e.target.checked)} />
+            <span>This is a real photo of my business that I have the right to use, and I want to publish it on my Google Business Profile.</span>
+          </label>
+        </div>
+      </Dialog>
+
+      <Dialog open={!!del} onClose={() => { setDel(null); setDelOk(false); }} title="Remove this photo from Google?" description="It will be deleted from your Business Profile. This can’t be undone here."
+        footer={<><Button onClick={() => { setDel(null); setDelOk(false); }}>Cancel</Button><Button variant="danger" icon={<Trash2 size={15} />} loading={busy} disabled={!delOk} onClick={remove}>Remove from Google</Button></>}>
+        {del && <img src={del.url} alt="Photo to remove" className="max-h-48 rounded-lg object-contain" referrerPolicy="no-referrer" />}
+        <label className="mt-3 flex items-center gap-2.5 text-[13px]"><input type="checkbox" checked={delOk} onChange={(e) => setDelOk(e.target.checked)} />I want to remove this photo from Google.</label>
+      </Dialog>
       <p className="g-faint mt-3 text-[12px]">{l.title}</p>
     </Card>
   );

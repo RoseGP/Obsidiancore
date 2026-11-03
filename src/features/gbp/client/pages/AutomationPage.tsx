@@ -1,6 +1,6 @@
 /** Recommendations inbox from periodic analysis (prepare-only) and notification settings. */
-import React, { useState } from 'react';
-import { Bell, CheckCircle2, Play, X } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Bell, CheckCircle2, Mail, Play, X } from 'lucide-react';
 import type { InboxItem } from '../api';
 import { routeForAction, useGrowth, useLoad } from '../GrowthStore';
 import { Alert, Badge, Button, Card, Empty, PageHeader, PRIORITY_TONE, Skeleton, fmtDateTime, useToast } from '../ui';
@@ -14,6 +14,23 @@ export default function AutomationPage() {
   const [filter, setFilter] = useState<'open' | 'all'>('open');
   const [running, setRunning] = useState(false);
   const [settings, setSettings] = useState<{ enabled: boolean; kinds: Record<string, boolean> }>({ enabled: dash?.automation.enabled ?? true, kinds: {} });
+  type Auto = { automation: { enabled: boolean; lastRunAt?: string; lastEmail?: { at: string; result: string; detail: string; items: number } }; notifications: { email: boolean; emailTo?: string; kinds: Record<string, boolean> }; email: { configured: boolean; to: string | null } };
+  const cfg = useLoad(() => api<Auto>('/growth/automation'), []);
+  const [emailOn, setEmailOn] = useState(false);
+  const [emailTo, setEmailTo] = useState('');
+  const [testing, setTesting] = useState(false);
+  useEffect(() => {
+    if (!cfg.data) return;
+    setSettings({ enabled: cfg.data.automation.enabled, kinds: cfg.data.notifications.kinds ?? {} });
+    setEmailOn(cfg.data.notifications.email); setEmailTo(cfg.data.notifications.emailTo ?? '');
+  }, [cfg.data]);
+  const saveEmail = async (next: { email?: boolean; emailTo?: string }) => {
+    try { await api('/growth/automation', { method: 'PUT', json: { notifications: next } }); cfg.reload(); if (next.emailTo !== undefined) toast('ok', 'Notification address saved.'); }
+    catch (e: any) { toast('danger', e.message); cfg.reload(); }
+  };
+  const testEmail = async () => { setTesting(true); try { await api('/growth/automation/test-email', { method: 'POST', json: {} }); toast('ok', 'Test email sent. Check your inbox.'); cfg.reload(); } catch (e: any) { toast('danger', e.message); } finally { setTesting(false); } };
+  const em = cfg.data?.email;
+  const last = cfg.data?.automation.lastEmail;
 
   const run = async () => { setRunning(true); try { const r = await api<any>('/growth/automation/run', { method: 'POST', json: {} }); toast('ok', `Checked ${r.locations} location${r.locations === 1 ? '' : 's'}. ${r.items} open recommendation${r.items === 1 ? '' : 's'}.`); q.reload(); reload(); } catch (e: any) { toast('danger', e.message); } finally { setRunning(false); } };
   const setStatus = async (i: InboxItem, status: 'done' | 'dismissed') => { try { await api(`/growth/inbox/${i.id}`, { method: 'POST', json: { status } }); q.reload(); reload(); } catch (e: any) { toast('danger', e.message); } };
@@ -50,6 +67,24 @@ export default function AutomationPage() {
             <li key={k}><label className="flex items-center gap-2.5 text-[13.5px]"><input type="checkbox" checked={settings.kinds[k] !== false} onChange={(e) => save({ ...settings, kinds: { ...settings.kinds, [k]: e.target.checked } })} />{label}</label></li>
           ))}</ul>
           <p className="g-faint mt-3 text-[12px]">Notifications appear in this inbox. {dash?.automation.lastRunAt ? `Last check ${fmtDateTime(dash.automation.lastRunAt)}.` : 'No automatic check yet.'}</p>
+          <div className="mt-4 border-t pt-4" style={{ borderColor: 'var(--g-line)' }}>
+            <p className="g-label flex items-center gap-1.5" style={{ display: 'flex' }}><Mail size={14} aria-hidden />Email</p>
+            {!em ? <Skeleton h={60} /> : (
+              <>
+                {!em.configured && <Alert tone="info" title="Email isn’t set up on the server">An administrator can add SMTP settings (SMTP_HOST, SMTP_FROM) to send these emails. Until then, recommendations stay in this inbox.</Alert>}
+                <label className="mt-2 flex items-center gap-2.5 text-[13.5px] font-medium"><input type="checkbox" checked={emailOn} disabled={!em.configured} onChange={(e) => { setEmailOn(e.target.checked); saveEmail({ email: e.target.checked }); }} />Email me new recommendations</label>
+                <form className="mt-2 flex gap-2" onSubmit={(e) => { e.preventDefault(); saveEmail({ emailTo: emailTo.trim() }); }}>
+                  <input className="g-input" type="email" aria-label="Notification email address" placeholder={em.to ?? 'you@example.com'} value={emailTo} onChange={(e) => setEmailTo(e.target.value)} />
+                  <Button type="submit" size="sm">Save</Button>
+                </form>
+                <p className="g-faint mt-1 text-[12px]">Sends to {emailTo.trim() || em.to || 'no address yet'}. Leave empty to use your Google account email. One email per check, only for new items.</p>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <Button size="sm" loading={testing} disabled={!em.configured || !em.to} onClick={testEmail}>Send test email</Button>
+                  {last && <span className="text-[12px]" style={{ color: last.result === 'delivered' ? 'var(--g-ok)' : 'var(--g-danger)' }}>Last email {fmtDateTime(last.at)}: {last.result === 'delivered' ? 'accepted by the mail server' : last.detail}</span>}
+                </div>
+              </>
+            )}
+          </div>
         </Card>
       </div>
     </div>

@@ -105,6 +105,18 @@ export function placeCategories(p: { primaryType: string; types: string[] }): st
   return out.slice(0, 5);
 }
 
+export const PHOTO_CATEGORIES = ['COVER', 'PROFILE', 'LOGO', 'EXTERIOR', 'INTERIOR', 'PRODUCT', 'AT_WORK', 'FOOD_AND_DRINK', 'MENU', 'COMMON_AREA', 'ROOMS', 'TEAMS', 'ADDITIONAL'] as const;
+export type PhotoCategory = typeof PHOTO_CATEGORIES[number];
+export const PHOTO_CATEGORY_LABEL: Record<PhotoCategory, string> = { COVER: 'Cover', PROFILE: 'Profile', LOGO: 'Logo', EXTERIOR: 'Exterior', INTERIOR: 'Interior', PRODUCT: 'Product', AT_WORK: 'At work', FOOD_AND_DRINK: 'Food and drink', MENU: 'Menu', COMMON_AREA: 'Common area', ROOMS: 'Rooms', TEAMS: 'Team', ADDITIONAL: 'Additional' };
+export const PHOTO_MIN_BYTES = 10 * 1024;
+export const PHOTO_MAX_BYTES = 5 * 1024 * 1024;
+/** Detects the real file type from its first bytes (never trusts the browser's MIME type). */
+export function photoType(b: Buffer): 'image/jpeg' | 'image/png' | null {
+  if (b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'image/jpeg';
+  if (b.length >= 8 && b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'image/png';
+  return null;
+}
+
 export function reviewInsights(reviews: StoredReview[]) {
   const counts = { Positive: 0, Neutral: 0, Negative: 0 };
   const negTopics = new Map<string, number>(); const posTopics = new Map<string, number>();
@@ -142,6 +154,15 @@ export interface GrowthDeps {
   places: PlacesClient | null;
   /** Third-party rank tracking (geo-grid). None is built in; see visibility(). */
   rankProvider: null;
+  /** Outbound email for notification digests; null when not wired. */
+  mailer?: Mailer | null;
+  /** Used for the link in emails. */
+  appUrl?: string;
+}
+
+export interface Mailer {
+  configured(): boolean;
+  send(msg: { to: string; subject: string; text: string }): Promise<{ result: 'delivered' | 'failed' | 'not_configured'; detail: string }>;
 }
 
 type JobStatus = { id: string; userId: string; kind: 'audit'; location: string; status: 'queued' | 'running' | 'done' | 'failed'; step: string; progress: number; startedAt: string; finishedAt?: string; error?: string };
@@ -181,7 +202,7 @@ export function createGrowthService(deps: GrowthDeps) {
         photos: photos.length, videos: media.filter((m) => m.format === 'VIDEO').length,
         latestAt: media.reduce<string | null>((a, m) => (!a || m.createTime > a ? m.createTime : a), null),
         hasLogo: media.some((m) => m.category === 'LOGO'), hasCover: media.some((m) => m.category === 'COVER'),
-        samples: photos.slice(0, 12).flatMap((m) => (m.thumbnailUrl || m.googleUrl ? [{ url: (m.thumbnailUrl || m.googleUrl)!, category: m.category, createTime: m.createTime }] : [])),
+        samples: [...photos].sort((a, b) => b.createTime.localeCompare(a.createTime)).slice(0, 24).flatMap((m) => (m.thumbnailUrl || m.googleUrl ? [{ url: (m.thumbnailUrl || m.googleUrl)!, category: m.category, createTime: m.createTime, name: m.name }] : [])),
       } : null,
       posts: posts ? { total: posts.length, last30: posts.filter((p: any) => Date.parse(p.createTime ?? 0) >= cutoff).length, latestAt: posts.reduce<string | null>((a, p: any) => (!a || (p.createTime ?? '') > a ? p.createTime ?? a : a), null) } : null,
       verification: verification ? { state: verification.state, hasBusinessAuthority: verification.hasBusinessAuthority } : null,
@@ -348,15 +369,85 @@ export function createGrowthService(deps: GrowthDeps) {
       d.growth.automation.lastRunAt = now();
       return d.growth.inbox.filter((i) => i.status === 'open').length;
     });
+    await emailDigest(userId).catch(() => undefined);
     return { locations: done, items };
   }
 
-  async function saveAutomation(userId: string, s: { enabled?: boolean; notifications?: { inApp?: boolean; email?: boolean; kinds?: Partial<Record<InboxItem['kind'], boolean>> } }) {
+  function emailStatus(d: GbpDoc) {
+    return { configured: !!deps.mailer?.configured(), to: d.growth.notifications.emailTo || d.google?.email || null, last: d.growth.automation.lastEmail ?? null };
+  }
+
+  /** One email per run with new open items the user wants to hear about. Never includes tokens or review text beyond a short excerpt. */
+  async function emailDigest(userId: string, opts: { test?: boolean } = {}) {
+    const d = await store.get(userId);
+    const st = emailStatus(d);
+    if (!opts.test && !d.growth.notifications.email) return { sent: false, reason: 'off' as const };
+    if (!st.to) throw new AccountsError('Add an email address for notifications first.', 400, 'no_email');
+    const fresh = opts.test ? [] : d.growth.inbox.filter((i) => (i.status === 'open' || i.status === 'prepared') && !i.emailedAt && d.growth.notifications.kinds[i.kind] !== false);
+    if (!opts.test && !fresh.length) return { sent: false, reason: 'nothing_new' as const };
+    const order = { critical: 0, high: 1, medium: 2, low: 3 } as const;
+    const list = [...fresh].sort((a, b) => order[a.priority] - order[b.priority]).slice(0, 20);
+    const link = deps.appUrl ? `${deps.appUrl.replace(/\/$/, '')}/?view=gbp` : '';
+    const text = opts.test
+      ? ['This is a test email from your Local Growth notifications.', '', 'If you received it, email notifications are working.', link && `\nOpen the app: ${link}`].filter(Boolean).join('\n')
+      : [
+        `You have ${fresh.length} new recommendation${fresh.length === 1 ? '' : 's'} for your Google Business Profile:`, '',
+        ...list.map((i) => `• [${i.priority}] ${i.title}${i.locationTitle ? ` (${i.locationTitle})` : ''}\n  ${i.detail.slice(0, 160)}`),
+        fresh.length > list.length ? `\n…and ${fresh.length - list.length} more.` : '',
+        '', 'Nothing has been changed on Google. Open the app to review and approve.', link && `Open: ${link}`,
+        '', 'You can turn these emails off in Recommendations → Settings. This app isn’t made or endorsed by Google.',
+      ].filter((x) => x !== '').join('\n');
+    const subject = opts.test ? 'Test: Local Growth notifications' : `${fresh.length} new Business Profile recommendation${fresh.length === 1 ? '' : 's'}`;
+    const out = deps.mailer ? await deps.mailer.send({ to: st.to, subject, text }) : { result: 'not_configured' as const, detail: 'Email delivery isn’t configured on the server.' };
+    await store.update(userId, (x) => {
+      x.growth.automation.lastEmail = { at: now(), result: out.result, detail: out.detail, items: fresh.length };
+      if (out.result === 'delivered') for (const i of x.growth.inbox) if (fresh.some((f) => f.id === i.id)) i.emailedAt = now();
+    });
+    if (opts.test && out.result !== 'delivered') throw new AccountsError(out.result === 'not_configured' ? 'Email delivery isn’t configured on the server (SMTP_HOST / SMTP_FROM).' : out.detail, out.result === 'not_configured' ? 503 : 502, out.result === 'not_configured' ? 'email_not_configured' : 'email_failed');
+    return { sent: out.result === 'delivered', reason: out.result, items: fresh.length };
+  }
+
+  async function getAutomation(userId: string) {
+    const d = await store.get(userId);
+    return { automation: d.growth.automation, notifications: d.growth.notifications, email: emailStatus(d) };
+  }
+
+  async function saveAutomation(userId: string, s: { enabled?: boolean; notifications?: { inApp?: boolean; email?: boolean; emailTo?: string; kinds?: Partial<Record<InboxItem['kind'], boolean>> } }) {
     return store.update(userId, (d) => {
       if (s.enabled !== undefined) d.growth.automation.enabled = s.enabled;
       if (s.notifications) d.growth.notifications = { ...d.growth.notifications, ...s.notifications, kinds: { ...d.growth.notifications.kinds, ...(s.notifications.kinds ?? {}) } };
-      return { automation: d.growth.automation, notifications: d.growth.notifications };
+      return { automation: d.growth.automation, notifications: d.growth.notifications, email: emailStatus(d) };
     });
+  }
+
+  // ---- Photos (uploaded from bytes; Google may review them before they appear) ----
+
+  async function uploadPhoto(userId: string, locationName: string, file: { buffer: Buffer; size: number }, category: PhotoCategory, confirmed: boolean) {
+    if (!confirmed) throw new AccountsError('Confirm that you want to publish this photo to Google.', 400, 'confirmation_required');
+    const type = photoType(file.buffer);
+    if (!type) throw new AccountsError('Use a JPG or PNG image.', 400, 'invalid_file');
+    if (file.size < PHOTO_MIN_BYTES) throw new AccountsError('That image is too small. Google requires at least 10 KB.', 400, 'invalid_file');
+    if (file.size > PHOTO_MAX_BYTES) throw new AccountsError('That image is too large. Google accepts up to 5 MB.', 400, 'invalid_file');
+    const d = await store.get(userId);
+    const l = ownLocation(d, locationName);
+    const token = await accessToken(userId);
+    const media = await call(() => google.uploadPhoto(token, v4Location(l.accountName, locationName), file.buffer, type, category));
+    await store.update(userId, (x) => { log(x, 'photo', `Uploaded a ${PHOTO_CATEGORY_LABEL[category].toLowerCase()} photo to ${l.title}`); });
+    await refreshProfile(userId, locationName).catch(() => undefined);
+    return { media, note: 'Google may review new photos before they appear on your profile.' };
+  }
+
+  async function deletePhoto(userId: string, locationName: string, mediaName: string, confirmed: boolean) {
+    if (!confirmed) throw new AccountsError('Confirm that you want to remove this photo from Google.', 400, 'confirmation_required');
+    const d = await store.get(userId);
+    const l = ownLocation(d, locationName);
+    const prefix = `${v4Location(l.accountName, locationName)}/media/`;
+    if (!mediaName.startsWith(prefix) || !/^[A-Za-z0-9_-]+$/.test(mediaName.slice(prefix.length))) throw new AccountsError('That photo doesn’t belong to this location.', 400, 'invalid_media');
+    const token = await accessToken(userId);
+    await call(() => google.deleteMedia(token, mediaName));
+    await store.update(userId, (x) => { log(x, 'photo', `Removed a photo from ${l.title}`); });
+    await refreshProfile(userId, locationName).catch(() => undefined);
+    return { ok: true };
   }
 
   // ---- Change sets (approval before anything reaches Google) ----
@@ -871,6 +962,7 @@ export function createGrowthService(deps: GrowthDeps) {
     refreshProfile, startAudit, jobStatus, getAudit, executeAudit,
     inbox, setInboxStatus, runAutomation, saveAutomation,
     proposeChange, listChanges, validateChange, publishChange, discardChange, searchCategories, availableAttributes,
+    uploadPhoto, deletePhoto, getAutomation, emailDigest,
     optimize, generatePost, generateCalendar, listPlannedPosts, savePlannedPost, schedulePost, publishPlannedPost, discardPlannedPost, publishDuePosts,
     reviewSummary, listCompetitors, searchPlaces, addCompetitor, updateCompetitor, refreshCompetitors, removeCompetitor, competitorReport,
     searchKeywords, visibility, saveVisibility, analytics, assistant, assistantHistory, clearAssistant,

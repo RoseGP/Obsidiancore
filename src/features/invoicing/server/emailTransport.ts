@@ -66,3 +66,16 @@ export async function sendInvoiceEmail(msg: OutboundInvoiceEmail): Promise<SendO
     return { result: 'failed', detail: `Mail server error: ${String(err?.message ?? err).slice(0, 200)}`, provider: 'SMTP' };
   }
 }
+
+/** Plain-text notification email (no attachments). Same SMTP settings and honesty rules as invoices. */
+export async function sendTextEmail(msg: { to: string; subject: string; text: string }): Promise<SendOutcome> {
+  if (!isEmailConfigured()) return { result: 'not_configured', detail: 'Email delivery isn’t configured on the server (SMTP_HOST / SMTP_FROM).', provider: 'none' };
+  try {
+    const info = await getTransport().sendMail({ from: env('FROM'), to: msg.to, subject: msg.subject, text: msg.text });
+    const accepted = (info.accepted ?? []).map(String);
+    if (!accepted.length) return { result: 'failed', detail: 'Rejected by the mail server.', provider: 'SMTP' };
+    return { result: 'delivered', detail: 'Accepted by the mail server', provider: 'SMTP' };
+  } catch (err: any) {
+    return { result: 'failed', detail: `Mail server error: ${String(err?.message ?? err).slice(0, 200)}`, provider: 'SMTP' };
+  }
+}

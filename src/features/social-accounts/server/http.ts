@@ -61,7 +61,8 @@ export const ipKey = (req: Request) => req.ip || 'anon';
  * Authorization header (never sent automatically by browsers), and this check
  * adds defence in depth for any cookie that might be present.
  */
-export function csrfGuard(appUrl: string) {
+/** `multipartPaths`: exact paths (relative to the router) that may also accept multipart/form-data uploads. */
+export function csrfGuard(appUrl: string, opts: { multipartPaths?: string[] } = {}) {
   const allowed = new Set<string>();
   try { if (appUrl) allowed.add(new URL(appUrl).origin); } catch { /* ignore */ }
   return (req: Request, res: Response, next: NextFunction) => {
@@ -73,7 +74,8 @@ export function csrfGuard(appUrl: string) {
       return;
     }
     const hasBody = Number(req.get('content-length') || 0) > 0;
-    if (hasBody && !req.is('application/json')) {
+    const multipartOk = !!opts.multipartPaths?.includes(req.path) && !!req.is('multipart/form-data');
+    if (hasBody && !req.is('application/json') && !multipartOk) {
       res.status(415).json({ code: 'unsupported_media_type', error: 'Send JSON.' });
       return;
     }

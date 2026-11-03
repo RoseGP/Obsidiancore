@@ -160,11 +160,11 @@ export function runAudit(input: AuditInput): AuditResult {
   add({ id: 'photos', area: 'completeness', label: 'Photos', weight: 5, passed: input.media ? input.media.photos > 0 : null, note: input.media ? undefined : 'Photos couldn’t be read from Google.', issue: {
     title: 'Add photos', description: 'There are no photos on the profile.', whyItMatters: 'Photos are often the first thing people look at when choosing between businesses.',
     solution: 'Add a logo, a cover photo, and real photos of your work, team and premises.', priority: 'high', effort: 'moderate', effortMinutes: 20,
-    expectedBenefit: est('more people engaging with your profile.'), action: { type: 'add_photos', label: 'Add photos in Google' } } });
+    expectedBenefit: est('more people engaging with your profile.'), action: { type: 'add_photos', label: 'Upload photos' } } });
   add({ id: 'logo_cover', area: 'completeness', label: 'Logo and cover photo', weight: 2, passed: input.media ? input.media.hasLogo && input.media.hasCover : null, note: input.media ? undefined : 'Photos couldn’t be read from Google.', issue: {
     title: 'Add a logo and cover photo', description: `Missing: ${[!input.media?.hasLogo && 'logo', !input.media?.hasCover && 'cover photo'].filter(Boolean).join(' and ')}.`, whyItMatters: 'A recognisable logo and a strong cover photo make your profile look established and trustworthy.',
     solution: 'Upload a square logo and a landscape cover photo.', priority: 'low', effort: 'quick', effortMinutes: 5,
-    expectedBenefit: est('a more professional-looking profile.'), action: { type: 'add_photos', label: 'Add in Google' } } });
+    expectedBenefit: est('a more professional-looking profile.'), action: { type: 'add_photos', label: 'Upload logo or cover' } } });
 
   // ---------- Local SEO ----------
   const stuffing = nameStuffingSignals(l.title, city, l.primaryCategory);
@@ -247,13 +247,13 @@ export function runAudit(input: AuditInput): AuditResult {
     solution: 'Publish a short update, offer or event every week or two.', priority: 'medium', effort: 'quick', effortMinutes: 10, expectedBenefit: est('more reasons for people to engage with your profile.'), action: { type: 'create_post', label: 'Create post' } } });
   add({ id: 'photo_count', area: 'content', label: 'At least 10 photos', weight: 3, passed: input.media ? input.media.photos >= 10 : null, note: input.media ? undefined : 'Photos couldn’t be read from Google.', issue: {
     title: 'Add more photos', description: `${input.media?.photos ?? 0} photos on the profile.`, whyItMatters: 'A range of real photos helps customers picture the experience.',
-    solution: 'Add photos of your work, interior, exterior and team.', priority: 'low', effort: 'moderate', effortMinutes: 20, expectedBenefit: est('more profile engagement.'), action: { type: 'add_photos', label: 'Add in Google' } } });
+    solution: 'Add photos of your work, interior, exterior and team.', priority: 'low', effort: 'moderate', effortMinutes: 20, expectedBenefit: est('more profile engagement.'), action: { type: 'add_photos', label: 'Upload logo or cover' } } });
   add({ id: 'photo_recent', area: 'content', label: 'A new photo in the last 90 days', weight: 2, passed: input.media ? !!input.media.latestAt && now.getTime() - Date.parse(input.media.latestAt) <= 90 * DAY : null, note: input.media ? undefined : 'Photos couldn’t be read from Google.', issue: {
     title: 'Add a recent photo', description: input.media?.latestAt ? `Newest photo is ${Math.round((now.getTime() - Date.parse(input.media.latestAt)) / DAY)} days old.` : 'No photos yet.', whyItMatters: 'Fresh photos show the business as it is today.',
-    solution: 'Add a few current photos.', priority: 'low', effort: 'quick', effortMinutes: 10, expectedBenefit: est('a more current-looking profile.'), action: { type: 'add_photos', label: 'Add in Google' } } });
+    solution: 'Add a few current photos.', priority: 'low', effort: 'quick', effortMinutes: 10, expectedBenefit: est('a more current-looking profile.'), action: { type: 'add_photos', label: 'Upload logo or cover' } } });
   add({ id: 'video', area: 'content', label: 'At least one video', weight: 1, passed: input.media ? input.media.videos > 0 : null, note: input.media ? undefined : 'Media couldn’t be read from Google.', issue: {
     title: 'Add a short video', description: 'No videos on the profile.', whyItMatters: 'A short video can show your space or work better than photos.',
-    solution: 'Upload a 30-second clip of your premises or work.', priority: 'low', effort: 'moderate', effortMinutes: 20, expectedBenefit: est('richer profile content.'), action: { type: 'add_photos', label: 'Add in Google' } } });
+    solution: 'Upload a 30-second clip of your premises or work.', priority: 'low', effort: 'moderate', effortMinutes: 20, expectedBenefit: est('richer profile content.'), action: { type: 'add_photos', label: 'Upload logo or cover' } } });
   const described = services.filter((s) => (s.description ?? '').trim().length >= 20).length;
   add({ id: 'service_descriptions', area: 'content', label: 'Services have descriptions', weight: 2, passed: services.length === 0 ? null : described / services.length >= 0.5, note: services.length === 0 ? 'No services yet.' : undefined, issue: {
     title: 'Describe your services', description: `${described} of ${services.length} services have a description.`, whyItMatters: 'Descriptions answer customers’ questions before they call.',

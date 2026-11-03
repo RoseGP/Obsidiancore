@@ -15,6 +15,10 @@
  *   DELETE mybusiness.googleapis.com/v4/{…/reviews/{r}}/reply
  *   GET    mybusiness.googleapis.com/v4/{accounts/{a}/locations/{l}}/localPosts
  *   POST   mybusiness.googleapis.com/v4/{accounts/{a}/locations/{l}}/localPosts
+ *   POST   mybusiness.googleapis.com/v4/{…/locations/{l}}/media:startUpload  → MediaItemDataRef { resourceName }
+ *   POST   mybusiness.googleapis.com/upload/v1/media/{resourceName}?upload_type=media   (raw bytes)
+ *   POST   mybusiness.googleapis.com/v4/{…/locations/{l}}/media  { mediaFormat, locationAssociation: { category }, dataRef: { resourceName } }
+ *   DELETE mybusiness.googleapis.com/v4/{…/locations/{l}/media/{m}}
  *
  * OAuth 2.0 (Google Identity): accounts.google.com/o/oauth2/v2/auth,
  * oauth2.googleapis.com/token, oauth2.googleapis.com/revoke.
@@ -356,6 +360,23 @@ export function createGoogleGateway(cfg: { clientId: string; clientSecret: strin
         pageToken = b?.nextPageToken || '';
       } while (pageToken && out.length < 500);
       return out;
+    },
+
+    /** v4 three-step upload from bytes: start → upload bytes → create the media item. */
+    async uploadPhoto(token: string, v4Location: string, bytes: Buffer, contentType: 'image/jpeg' | 'image/png', category: string): Promise<GMedia> {
+      const ref = await http(`${B.v4}/v4/${v4Location}/media:startUpload`, { method: 'POST', headers: { ...bearer(token), 'Content-Type': 'application/json' }, body: '{}' });
+      const rn = String(ref?.resourceName ?? '');
+      if (!rn || !/^[A-Za-z0-9._~\-/]+$/.test(rn)) throw new GatewayError('Google didn’t start the upload.', 502, 'unavailable');
+      await http(`${B.v4}/upload/v1/media/${rn}?upload_type=media`, { method: 'POST', headers: { ...bearer(token), 'Content-Type': contentType }, body: new Uint8Array(bytes) });
+      const m = await http(`${B.v4}/v4/${v4Location}/media`, { method: 'POST', headers: { ...bearer(token), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mediaFormat: 'PHOTO', locationAssociation: { category }, dataRef: { resourceName: rn } }) });
+      return { name: String(m?.name ?? ''), format: String(m?.mediaFormat ?? 'PHOTO'), category: String(m?.locationAssociation?.category ?? category), createTime: String(m?.createTime ?? new Date().toISOString()),
+        googleUrl: typeof m?.googleUrl === 'string' && m.googleUrl.startsWith('https://') ? m.googleUrl : undefined, thumbnailUrl: typeof m?.thumbnailUrl === 'string' && m.thumbnailUrl.startsWith('https://') ? m.thumbnailUrl : undefined };
+    },
+
+    /** v4: accounts/{a}/locations/{l}/media/{m} */
+    async deleteMedia(token: string, mediaName: string): Promise<void> {
+      await http(`${B.v4}/v4/${mediaName}`, { method: 'DELETE', headers: bearer(token) });
     },
 
     /** v4: accounts/{a}/locations/{l} */

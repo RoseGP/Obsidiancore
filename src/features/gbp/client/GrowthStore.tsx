@@ -5,7 +5,7 @@ import { call, type Dashboard, type GLocation } from './api';
 export type Route = 'dashboard' | 'audit' | 'optimize' | 'profile' | 'reviews' | 'posts' | 'competitors' | 'visibility' | 'analytics' | 'assistant' | 'automation' | 'security' | 'settings';
 
 interface Ctx {
-  api: <T>(path: string, init?: RequestInit & { json?: unknown }) => Promise<T>;
+  api: <T>(path: string, init?: RequestInit & { json?: unknown; form?: FormData }) => Promise<T>;
   dash: Dashboard | null;
   status: 'loading' | 'ready' | 'error';
   error: string | null;
@@ -22,7 +22,7 @@ const C = createContext<Ctx | null>(null);
 const KEY = 'gp_location';
 
 export function GrowthProvider({ devUser, children }: { devUser: string; children: React.ReactNode }) {
-  const api = useCallback(<T,>(p: string, i?: RequestInit & { json?: unknown }) => call<T>(devUser, p, i), [devUser]);
+  const api = useCallback(<T,>(p: string, i?: RequestInit & { json?: unknown; form?: FormData }) => call<T>(devUser, p, i), [devUser]);
   const [dash, setDash] = useState<Dashboard | null>(null);
   const [status, setStatus] = useState<Ctx['status']>('loading');
   const [error, setError] = useState<string | null>(null);

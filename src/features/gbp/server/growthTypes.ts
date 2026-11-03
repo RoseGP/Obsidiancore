@@ -9,7 +9,7 @@ export interface ProfileSnapshot {
   fetchedAt: string;
   attributes: GAttribute[] | null;
   availableAttributes: number | null;
-  media: { photos: number; videos: number; latestAt: string | null; hasLogo: boolean; hasCover: boolean; samples: { url: string; category: string; createTime: string }[] } | null;
+  media: { photos: number; videos: number; latestAt: string | null; hasLogo: boolean; hasCover: boolean; samples: { url: string; category: string; createTime: string; name?: string }[] } | null;
   posts: { last30: number; latestAt: string | null; total: number } | null;
   verification: { state: string; hasBusinessAuthority: boolean } | null;
   googleUpdated: { diffMask: string[]; pendingMask: string[]; checkedAt: string } | null;
@@ -103,6 +103,8 @@ export interface InboxItem {
   /** Something the user can approve in one step (a change set, a post or a reply draft). */
   prepared?: { type: 'change' | 'post' | 'reply'; refId: string; label: string };
   action?: { type: string; label: string };
+  /** When this item was included in an email digest. */
+  emailedAt?: string;
 }
 
 export interface SecurityEvent {
@@ -127,8 +129,8 @@ export interface GrowthData {
   inbox: InboxItem[];
   security: SecurityEvent[];
   access: AccessEntry[];
-  automation: { enabled: boolean; lastRunAt?: string; lastError?: string };
-  notifications: { inApp: boolean; email: boolean; kinds: Partial<Record<InboxKind, boolean>> };
+  automation: { enabled: boolean; lastRunAt?: string; lastError?: string; lastEmail?: { at: string; result: 'delivered' | 'failed' | 'not_configured'; detail: string; items: number } };
+  notifications: { inApp: boolean; email: boolean; emailTo?: string; kinds: Partial<Record<InboxKind, boolean>> };
   keywords: Record<string, { at: string; from: string; to: string; rows: { keyword: string; value: number | null; threshold: number | null }[] }>;
   assistant: { role: 'user' | 'assistant'; content: string; at: string }[];
   onboarding: { completedAt?: string; dismissedAt?: string };

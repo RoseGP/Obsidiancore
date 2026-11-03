@@ -5,14 +5,15 @@ export class GrowthError extends Error {
   constructor(message: string, public status: number, public code: string, public field?: string) { super(message); }
 }
 
-export async function call<T>(devUser: string, path: string, init: RequestInit & { json?: unknown } = {}): Promise<T> {
-  const { json, ...rest } = init;
+export async function call<T>(devUser: string, path: string, init: RequestInit & { json?: unknown; form?: FormData } = {}): Promise<T> {
+  const { json, form, ...rest } = init;
   let res: Response;
   try {
     res = await fetch(`/api/local-seo${path}`, {
       ...rest, credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json', ...(await getApiAuthHeaders(devUser)), ...(rest.headers || {}) },
-      ...(json !== undefined ? { body: JSON.stringify(json) } : {}),
+      // For uploads the browser sets the multipart boundary itself, so no Content-Type here.
+      headers: { ...(form ? {} : { 'Content-Type': 'application/json' }), ...(await getApiAuthHeaders(devUser)), ...(rest.headers || {}) },
+      ...(form ? { body: form } : json !== undefined ? { body: JSON.stringify(json) } : {}),
     });
   } catch { throw new GrowthError('Can’t reach the server. Check your connection.', 0, 'network'); }
   let body: any = null; try { body = await res.json(); } catch { /* empty */ }
@@ -39,7 +40,7 @@ export type Area = 'completeness' | 'localSeo' | 'infoQuality' | 'reputation' | 
 export interface AuditIssue { title: string; description: string; whyItMatters: string; solution: string; priority: Priority; effort: 'quick' | 'moderate' | 'involved'; effortMinutes: number; expectedBenefit: string; action: { type: string; label: string } }
 export interface AuditCheck { id: string; area: Area; label: string; weight: number; status: 'passed' | 'failed' | 'not_checked'; issue?: AuditIssue; note?: string }
 export interface AuditResult { overall: number; areas: Record<Area, number | null>; checks: AuditCheck[]; issues: (AuditCheck & { issue: AuditIssue })[]; stats: { reviewCount: number; averageRating: number | null; responseRate: number | null; unanswered: number; unansweredNegative: number; medianReplyHours: number | null; photos: number | null; servicesCount: number; descriptionLength: number }; notes: string[]; generatedAt: string }
-export interface ProfileSnapshot { fetchedAt: string; attributes: { name: string; valueType: string; values: any[] }[] | null; availableAttributes: number | null; media: { photos: number; videos: number; latestAt: string | null; hasLogo: boolean; hasCover: boolean; samples: { url: string; category: string; createTime: string }[] } | null; posts: { last30: number; latestAt: string | null; total: number } | null; verification: { state: string } | null; googleUpdated: { diffMask: string[]; pendingMask: string[] } | null; errors: string[] }
+export interface ProfileSnapshot { fetchedAt: string; attributes: { name: string; valueType: string; values: any[] }[] | null; availableAttributes: number | null; media: { photos: number; videos: number; latestAt: string | null; hasLogo: boolean; hasCover: boolean; samples: { url: string; category: string; createTime: string; name?: string }[] } | null; posts: { last30: number; latestAt: string | null; total: number } | null; verification: { state: string } | null; googleUpdated: { diffMask: string[]; pendingMask: string[] } | null; errors: string[] }
 
 export interface DashboardLocation { location: GLocation; reviewCount: number; unanswered: number; averageRating: number | null; growthAudit: { overall: number; areas: Record<Area, number | null>; generatedAt: string; topIssues: (AuditCheck & { issue: AuditIssue })[] } | null; profile: { fetchedAt: string; verification: { state: string } | null } | null }
 export interface Dashboard { connection: Connection; locations: DashboardLocation[]; activity: { at: string; type: string; message: string }[]; security: { status: string; alerts: number }; inboxOpen: number; onboarding: { completedAt?: string; dismissedAt?: string }; automation: { enabled: boolean; lastRunAt?: string }; aiConfigured: boolean; placesConfigured: boolean }

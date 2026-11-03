@@ -44,6 +44,9 @@ const prompts: string[] = [];
   return 'not json';
 };
 
+const mails: { to: string; subject: string; text: string }[] = []; let mailOn = false;
+(globalThis as any).__gbpTestMailer = { configured: () => mailOn, send: async (m: any) => { if (!mailOn) return { result: 'not_configured', detail: 'off' }; mails.push(m); return { result: 'delivered', detail: 'ok' }; } };
+
 const dataDir = mkdtempSync(path.join(tmpdir(), 'gbp-growth-'));
 Object.assign(process.env, {
   NODE_ENV: 'test', SOCIAL_ACCOUNTS_DEV_AUTH: 'true', SOCIAL_ACCOUNTS_STORE: 'file', SOCIAL_ACCOUNTS_DATA_DIR: dataDir, SOCIAL_ACCOUNTS_ENCRYPTION_KEY: 'k'.repeat(40),
@@ -141,6 +144,35 @@ assert.equal(g.state.attrPatches[0].mask, 'attributes/has_restroom'); ok('confir
 r = await api('post', `/growth/changes/${chg.id}/publish`).send({ confirm: true }); assert.equal(r.status, 409); ok('a change can’t be published twice');
 r = await api('get', '/growth/categories?q=dent'); assert.ok(r.body.some((c: any) => c.name === 'categories/gcid:cosmetic_dentist')); ok('category search uses Google’s category list');
 
+console.log('\n🖼️  Photos');
+{
+  const jpg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(20 * 1024, 1)]);
+  const up = (buf: Buffer, fields: Record<string, string>, who = A, name = 'shop.jpg') => { let r = (request(app) as any).post('/api/local-seo/growth/photos').set(who); for (const [k, v] of Object.entries(fields)) r = r.field(k, v); return r.attach('file', buf, { filename: name, contentType: 'image/jpeg' }); };
+  let r = await up(jpg, { location: L, category: 'EXTERIOR' });
+  assert.equal(r.status, 400); assert.equal(g.state.created.length, 0); ok('upload without explicit confirmation is refused and nothing reaches Google');
+  r = await up(Buffer.concat([Buffer.from('<?php '), Buffer.alloc(20 * 1024, 1)]), { location: L, category: 'EXTERIOR', confirm: 'true' }, A, 'x.jpg');
+  assert.equal(r.status, 400); assert.equal(r.body.code, 'invalid_file'); ok('file type is checked from its bytes, not its name or MIME type');
+  r = await up(Buffer.concat([Buffer.from([0xff, 0xd8, 0xff]), Buffer.alloc(100)]), { location: L, category: 'EXTERIOR', confirm: 'true' });
+  assert.equal(r.status, 400); assert.match(r.body.error, /10 KB/);
+  r = await up(Buffer.concat([Buffer.from([0xff, 0xd8, 0xff]), Buffer.alloc(5 * 1024 * 1024 + 10)]), { location: L, category: 'EXTERIOR', confirm: 'true' });
+  assert.equal(r.status, 413); ok('Google size limits (10 KB to 5 MB) are enforced before upload');
+  r = await up(jpg, { location: 'locations/9999', category: 'EXTERIOR', confirm: 'true' }, B);
+  assert.ok(r.status >= 400); assert.equal(g.state.created.length, 0); ok('cannot upload to a location you don’t manage');
+  r = await up(jpg, { location: L, category: 'INTERIOR', confirm: 'true' });
+  assert.equal(r.status, 200, JSON.stringify(r.body)); assert.equal(g.state.created.length, 1);
+  assert.equal(g.state.created[0].locationAssociation.category, 'INTERIOR'); assert.equal(g.state.created[0].upload.bytes, jpg.length); assert.equal(g.state.created[0].upload.type, 'image/jpeg');
+  ok('confirmed upload runs start → bytes → create at Google with the chosen category');
+  const prof = await api('get', `/growth/audit?location=${encodeURIComponent(L)}`);
+  const created = g.state.created[0].name as string;
+  r = await api('delete', '/growth/photos').send({ location: L, media: created });
+  assert.equal(r.status, 400); ok('delete needs confirmation');
+  r = await api('delete', '/growth/photos').send({ location: L, media: 'accounts/222/locations/5/media/m1', confirm: true });
+  assert.equal(r.status, 400); assert.equal(r.body.code, 'invalid_media'); ok('cannot delete media from another location');
+  r = await api('delete', '/growth/photos').send({ location: L, media: created, confirm: true });
+  assert.equal(r.status, 200); assert.ok(!(g.state.media.get('1001') ?? []).some((m: any) => m.name === created)); ok('confirmed delete removes the photo at Google');
+  void prof;
+}
+
 console.log('\n🤖 AI optimizer, posts, assistant');
 await api('get', `/growth/visibility?location=${L}`);
 r = await api('post', '/growth/optimize').send({ location: L });
@@ -197,6 +229,24 @@ const item = r.body[0];
 r = await api('post', `/growth/inbox/${item.id}`).send({ status: 'dismissed' }); assert.equal(r.body.status, 'dismissed');
 r = await api('post', '/growth/automation/run').send({});
 r = await api('get', '/growth/inbox'); assert.equal(r.body.find((i: any) => i.dedupeKey === item.dedupeKey)?.status, 'dismissed'); ok('dismissed items don’t reappear on the next run');
+
+// Email digests
+r = await api('get', '/growth/automation');
+assert.equal(r.body.email.configured, false); assert.equal(r.body.email.to, 'owner@biz.example'); ok('settings report email delivery status and the default address (the Google account)');
+r = await api('post', '/growth/automation/test-email').send({}); assert.equal(r.status, 503); assert.equal(r.body.code, 'email_not_configured'); ok('without SMTP, a test email says so instead of pretending');
+r = await api('put', '/growth/automation').send({ notifications: { email: true, emailTo: 'not-an-email' } }); assert.equal(r.status, 400);
+r = await api('put', '/growth/automation').send({ notifications: { email: true, emailTo: 'alerts@biz.example' } }); assert.equal(r.status, 200); assert.equal(r.body.notifications.emailTo, 'alerts@biz.example');
+mailOn = true;
+r = await api('post', '/growth/automation/test-email').send({}); assert.equal(r.status, 200); assert.equal(mails.at(-1)?.to, 'alerts@biz.example'); ok('test email goes to the chosen address');
+const mailsBefore = mails.length;
+r = await api('post', '/growth/automation/run').send({});
+assert.equal(mails.length, mailsBefore + 1); const digest = mails.at(-1)!;
+assert.match(digest.subject, /new Business Profile recommendation/); assert.match(digest.text, /Nothing has been changed on Google/); assert.doesNotMatch(digest.text, /ya29\.|1\/\//);
+ok('a check emails one digest of new recommendations, with no tokens in it');
+r = await api('post', '/growth/automation/run').send({}); assert.equal(mails.length, mailsBefore + 1); ok('the same recommendations aren’t emailed twice');
+r = await api('get', '/growth/automation'); assert.equal(r.body.automation.lastEmail.result, 'delivered'); assert.equal(r.body.notifications.email, true); ok('last delivery result and saved preferences are readable');
+r = await api('get', '/growth/automation', B); assert.equal(r.body.notifications.email, false); ok('notification settings are per account');
+mailOn = false;
 r = await api('get', '/growth/dashboard');
 assert.equal(r.body.locations[0].growthAudit.topIssues.length, 5); assert.ok(r.body.security.status); ok('dashboard has health, top 5 recommendations and security status');
 

@@ -9,6 +9,7 @@ export async function startMockGoogle(opts: { clientId: string; clientSecret: st
     access: new Map<string, number>(), refresh: new Set<string>(), revoked: [] as string[], refreshCalls: 0, accessTtl: 3600, refreshFails: false,
     replies: new Map<string, any>(), lastPatch: null as any, posts: [] as any[], grantScope: 'https://www.googleapis.com/auth/business.manage openid email',
     patches: [] as any[], attrPatches: [] as any[], titleOverride: '' as string, googleUpdated: false, verified: true,
+    media: new Map<string, any[]>(), uploads: new Map<string, { bytes: number; type: string } | null>(), created: [] as any[],
   };
   const LOC_1001 = () => ({ name: 'locations/1001', title: s.titleOverride || 'Acme Dental Downtown', categories: { primaryCategory: { name: 'categories/gcid:dentist', displayName: 'Dentist' }, additionalCategories: [] }, storefrontAddress: { addressLines: ['1 Main St'], locality: 'Austin', administrativeArea: 'TX', postalCode: '78701', regionCode: 'US' }, phoneNumbers: { primaryPhone: '+1 512 555 0100' }, websiteUri: 'https://acme.example', profile: { description: 'Family dentist.' }, regularHours: { periods: [{ openDay: 'MONDAY', openTime: { hours: 9 }, closeDay: 'MONDAY', closeTime: { hours: 17 } }] }, serviceItems: [{ freeFormServiceItem: { category: 'categories/gcid:dentist', label: { displayName: 'Teeth cleaning' } } }], openInfo: { status: 'OPEN' }, metadata: { mapsUri: 'https://maps.example/1001', placeId: 'ChIJacme1001place', hasGoogleUpdated: s.googleUpdated, hasVoiceOfMerchant: s.verified } });
   const reviews = (loc: string) => [5, 2, 4].map((stars, i) => ({
@@ -78,10 +79,38 @@ export async function startMockGoogle(opts: { clientId: string; clientSecret: st
     const all = [{ name: 'categories/gcid:dentist', displayName: 'Dentist' }, { name: 'categories/gcid:cosmetic_dentist', displayName: 'Cosmetic dentist' }, { name: 'categories/gcid:emergency_dental_service', displayName: 'Emergency dental service' }];
     res.json({ categories: all.filter((c) => c.displayName.toLowerCase().includes(q)) });
   });
-  app.get(/^\/v4\/accounts\/111\/locations\/(\d+)\/media$/, (req, res) => authed(req) ? res.json({ mediaItems: [
-    { name: 'm1', mediaFormat: 'PHOTO', locationAssociation: { category: 'LOGO' }, createTime: new Date(Date.now() - 200 * 86_400_000).toISOString(), thumbnailUrl: 'https://lh3.example/m1.jpg' },
-    { name: 'm2', mediaFormat: 'PHOTO', locationAssociation: { category: 'EXTERIOR' }, createTime: new Date(Date.now() - 150 * 86_400_000).toISOString(), thumbnailUrl: 'https://lh3.example/m2.jpg' },
-  ] }) : res.status(401).end());
+  const mediaOf = (loc: string) => {
+    if (!s.media.has(loc)) s.media.set(loc, [
+      { name: `accounts/111/locations/${loc}/media/m1`, mediaFormat: 'PHOTO', locationAssociation: { category: 'LOGO' }, createTime: new Date(Date.now() - 200 * 86_400_000).toISOString(), thumbnailUrl: 'https://lh3.example/m1.jpg' },
+      { name: `accounts/111/locations/${loc}/media/m2`, mediaFormat: 'PHOTO', locationAssociation: { category: 'EXTERIOR' }, createTime: new Date(Date.now() - 150 * 86_400_000).toISOString(), thumbnailUrl: 'https://lh3.example/m2.jpg' },
+    ]);
+    return s.media.get(loc)!;
+  };
+  app.get(/^\/v4\/accounts\/111\/locations\/(\d+)\/media$/, (req, res) => authed(req) ? res.json({ mediaItems: mediaOf((req.params as any)[0]) }) : res.status(401).end());
+  app.post(/^\/v4\/accounts\/111\/locations\/(\d+)\/media:startUpload$/, (req, res) => {
+    if (!authed(req)) return res.status(401).end();
+    const rn = 'AF1Qip' + crypto.randomBytes(9).toString('hex'); s.uploads.set(rn, null); res.json({ resourceName: rn });
+  });
+  app.post(/^\/upload\/v1\/media\/([A-Za-z0-9]+)$/, express.raw({ type: '*/*', limit: '6mb' }), (req, res) => {
+    const rn = (req.params as any)[0];
+    if (!authed(req)) return res.status(401).end();
+    if (req.query.upload_type !== 'media' || !s.uploads.has(rn)) return res.status(400).json({ error: { message: 'bad upload' } });
+    s.uploads.set(rn, { bytes: (req.body as Buffer).length, type: String(req.headers['content-type']) }); res.json({});
+  });
+  app.post(/^\/v4\/accounts\/111\/locations\/(\d+)\/media$/, (req, res) => {
+    if (!authed(req)) return res.status(401).end();
+    const loc = (req.params as any)[0]; const rn = req.body?.dataRef?.resourceName;
+    if (!s.uploads.get(rn)) return res.status(400).json({ error: { message: 'Upload the bytes first.' } });
+    if (req.body.mediaFormat !== 'PHOTO' || !req.body.locationAssociation?.category) return res.status(400).json({ error: { message: 'mediaFormat and category required' } });
+    const m = { name: `accounts/111/locations/${loc}/media/n${crypto.randomBytes(4).toString('hex')}`, mediaFormat: 'PHOTO', locationAssociation: { category: req.body.locationAssociation.category }, createTime: new Date().toISOString(), thumbnailUrl: 'https://lh3.example/new.jpg' };
+    mediaOf(loc).push(m); s.created.push({ ...m, upload: s.uploads.get(rn) }); res.json(m);
+  });
+  app.delete(/^\/v4\/accounts\/111\/locations\/(\d+)\/media\/([A-Za-z0-9_-]+)$/, (req, res) => {
+    if (!authed(req)) return res.status(401).end();
+    const list = mediaOf((req.params as any)[0]); const i = list.findIndex((m) => m.name.endsWith('/' + (req.params as any)[1]));
+    if (i < 0) return res.status(404).json({ error: { message: 'Not found' } });
+    list.splice(i, 1); res.json({});
+  });
   app.patch('/v1/locations/:id', (req, res) => { if (!authed(req)) return res.status(401).end(); s.lastPatch = { id: req.params.id, mask: req.query.updateMask, validateOnly: req.query.validateOnly === 'true', body: req.body }; s.patches.push(s.lastPatch); res.json({ name: `locations/${req.params.id}` }); });
   app.get(/^\/v1\/locations\/(\d+):fetchMultiDailyMetricsTimeSeries$/, (req, res) => {
     if (!authed(req)) return res.status(401).end();
