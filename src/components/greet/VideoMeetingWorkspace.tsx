@@ -7,7 +7,7 @@ import {
   Radio, Volume2, VolumeX, UserCheck, Edit3, ArrowRight, Home, Share2,
   Trash2, UserPlus, Info, CheckSquare, Square, Download, ExternalLink,
   Laptop, ShieldAlert, Award, Pause, Play, Disc, Settings, FileText,
-  SlidersHorizontal, CheckCircle, RotateCw, Printer
+  SlidersHorizontal, CheckCircle, RotateCw, Printer, MoreHorizontal, Save, Activity
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { jsPDF } from 'jspdf';
@@ -98,7 +98,8 @@ export default function VideoMeetingWorkspace({
 
   // Sidebar Tab state ('chat' | 'greet' | 'participants' | 'crm' | 'transcript')
   const [activeSidebarTab, setActiveSidebarTab] = useState<'chat' | 'greet' | 'participants' | 'crm' | 'transcript'>('greet');
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  // Docked open on desktop; on tablet/mobile the panel overlays the video, so start closed.
+  const [isSidebarOpen, setIsSidebarOpen] = useState(() => typeof window === 'undefined' || window.innerWidth >= 1024);
   const [transcriptSaveNotice, setTranscriptSaveNotice] = useState<string | null>(null);
 
   // Fullscreen browser state
@@ -111,7 +112,30 @@ export default function VideoMeetingWorkspace({
   // Chat state
   const [chatInput, setChatInput] = useState('');
   const [chatRecipient, setChatRecipient] = useState<string>('everyone');
-  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+
+  // Centralized "More" menu (all secondary features live here)
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const moreMenuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!showMoreMenu) return;
+    const handlePointerDown = (e: MouseEvent | TouchEvent) => {
+      if (moreMenuRef.current && !moreMenuRef.current.contains(e.target as Node)) {
+        setShowMoreMenu(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowMoreMenu(false);
+    };
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('touchstart', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('touchstart', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [showMoreMenu]);
   const [showFileAttachedNotice, setShowFileAttachedNotice] = useState<string | null>(null);
 
   // CRM tab contact state
@@ -451,6 +475,34 @@ export default function VideoMeetingWorkspace({
     }
   };
 
+  type SidebarTab = 'chat' | 'greet' | 'participants' | 'crm' | 'transcript';
+
+  // Toolbar buttons toggle their panel; More-menu items always open it.
+  const toggleSidebarPanel = (tab: SidebarTab) => {
+    if (activeSidebarTab === tab && isSidebarOpen) {
+      setIsSidebarOpen(false);
+    } else {
+      setActiveSidebarTab(tab);
+      setIsSidebarOpen(true);
+    }
+  };
+
+  const openSidebarPanel = (tab: SidebarTab) => {
+    setActiveSidebarTab(tab);
+    setIsSidebarOpen(true);
+    setShowMoreMenu(false);
+  };
+
+  // Host terminate: stop any active recording, then show the meeting summary.
+  const handleEndMeetingForEveryone = async () => {
+    setShowMoreMenu(false);
+    setShowLeaveConfirmModal(false);
+    if (isRecording) {
+      await stopRecording();
+    }
+    setShowEndMeetingSummaryModal(true);
+  };
+
   const participantsList = activeMeeting?.participants || [];
   const currentDuration = activeMeeting?.durationSeconds || 0;
 
@@ -611,64 +663,23 @@ export default function VideoMeetingWorkspace({
           </div>
         </div>
 
-        {/* Right: Primary Navigation Controls */}
-        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-          
-          {/* Invite Button */}
-          <button
-            onClick={() => setShowInviteModal(true)}
-            className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/40 text-indigo-300 hover:text-white text-xs font-semibold transition-all cursor-pointer"
-          >
-            <UserPlus className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Invite</span>
-          </button>
-
-          {/* Copy Link Button */}
-          <button
-            onClick={handleCopyMeetingLink}
-            className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 border border-white/10 text-neutral-300 text-xs font-semibold transition-all cursor-pointer"
-            title="Copy meeting invitation link"
-          >
-            {copiedLinkNotice ? (
-              <>
-                <Check className="h-3.5 w-3.5 text-emerald-400" />
-                <span className="text-emerald-400 text-xs">Copied</span>
-              </>
-            ) : (
-              <>
-                <Share2 className="h-3.5 w-3.5 text-neutral-400" />
-                <span className="hidden md:inline">Share</span>
-              </>
-            )}
-          </button>
-
-          {/* Return to Dashboard (Preserves Meeting Session) */}
-          <button
-            onClick={handleReturnToDashboard}
-            className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 border border-white/10 text-neutral-200 text-xs font-semibold transition-all cursor-pointer"
-            title="Return to CRM dashboard while keeping this meeting active in the background"
-          >
-            <Home className="h-3.5 w-3.5 text-blue-400" />
-            <span className="hidden sm:inline">Dashboard</span>
-          </button>
-
-          {/* Fullscreen Toggle */}
-          <button
-            onClick={handleToggleFullscreen}
-            className="p-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 border border-white/10 text-neutral-300 hover:text-white transition-all cursor-pointer"
-            title={isFullscreen ? "Exit Full Screen" : "Enter Full Screen"}
-          >
-            {isFullscreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
-          </button>
-
-          {/* Leave / End Call Button */}
-          <button
-            onClick={() => setShowLeaveConfirmModal(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 active:scale-95 text-white text-xs font-bold transition-all shadow-md shadow-rose-950/40 cursor-pointer"
-          >
-            <PhoneOff className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Leave</span>
-          </button>
+        {/* Right: compact status. Invite, Share, Dashboard, Full Screen and Leave
+            now live in the bottom toolbar's More menu / Leave button. */}
+        <div className="flex items-center gap-2 shrink-0">
+          <div className={`lg:hidden flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-mono ${
+            isDurationLimitReached ? 'bg-rose-950/60 border-rose-500/50 text-rose-300' :
+            isDurationWarning ? 'bg-amber-950/60 border-amber-500/50 text-amber-300' :
+            'bg-white/5 border-white/10 text-neutral-300'
+          }`}>
+            <Clock className="h-3 w-3 text-indigo-400" />
+            <span>{formatDuration(currentDuration)}</span>
+          </div>
+          {isRecording && (
+            <span className="md:hidden flex items-center gap-1 px-2 py-1 rounded-full bg-rose-600/15 border border-rose-500/40 text-[10px] font-bold text-rose-300">
+              <span className={`h-1.5 w-1.5 rounded-full bg-rose-500 ${isRecordingPaused ? '' : 'animate-pulse'}`} />
+              REC
+            </span>
+          )}
         </div>
       </header>
 
@@ -1118,333 +1129,283 @@ export default function VideoMeetingWorkspace({
           </div>
 
           {/* =========================================================================
-              3. BOTTOM MEETING CONTROLS TOOLBAR
+              3. BOTTOM MEETING CONTROLS TOOLBAR (minimal)
+              Essentials only: Mic, Camera, Screen Share, Participants, Chat, More, Leave.
+              Every secondary feature lives in the centralized "More" menu.
               ========================================================================= */}
-          <footer className="h-16 px-4 rounded-2xl bg-slate-900/95 border border-white/10 backdrop-blur-xl flex items-center justify-between shrink-0 z-30 shadow-2xl">
-            
-            {/* Left Controls: Audio, Video, Screen Share, Recording, Settings */}
-            <div className="flex items-center gap-1.5 sm:gap-2">
-              
-              {/* Mic Toggle */}
-              <button
-                id="btn-toggle-mic"
-                onClick={toggleMic}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer active:scale-95 shadow-md ${
-                  isMicMuted
-                    ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-rose-950/40'
-                    : 'bg-neutral-800 hover:bg-neutral-700 text-white'
-                }`}
-                title={isMicMuted ? "Unmute Microphone" : "Mute Microphone"}
-              >
-                {isMicMuted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4 text-emerald-400" />}
-                <span className="hidden sm:inline">{isMicMuted ? "Unmute" : "Mute"}</span>
-              </button>
-
-              {/* Camera Toggle */}
-              <button
-                id="btn-toggle-cam"
-                onClick={toggleCam}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer active:scale-95 shadow-md ${
-                  isCamOff
-                    ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-rose-950/40'
-                    : 'bg-neutral-800 hover:bg-neutral-700 text-white'
-                }`}
-                title={isCamOff ? "Turn On Camera" : "Turn Off Camera"}
-              >
-                {isCamOff ? <VideoOff className="h-4 w-4" /> : <Video className="h-4 w-4 text-indigo-400" />}
-                <span className="hidden sm:inline">{isCamOff ? "Start Video" : "Stop Video"}</span>
-              </button>
-
-              {/* Pause Video Toggle */}
-              <button
-                id="btn-pause-video"
-                onClick={togglePauseVideo}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer active:scale-95 shadow-md ${
-                  isVideoPaused
-                    ? 'bg-amber-600 hover:bg-amber-500 text-white shadow-amber-950/40 ring-2 ring-amber-400'
-                    : 'bg-neutral-800 hover:bg-neutral-700 text-neutral-300'
-                }`}
-                title={isVideoPaused ? "Resume Video Stream" : "Pause Video Stream"}
-              >
-                {isVideoPaused ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
-                <span className="hidden md:inline">{isVideoPaused ? "Resume Video" : "Pause Video"}</span>
-              </button>
-
-              {/* Share Screen Toggle */}
-              <button
-                id="btn-share-screen"
-                onClick={isScreenSharing ? stopScreenShare : startScreenShare}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer active:scale-95 shadow-md ${
-                  isScreenSharing
-                    ? 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-950/40 ring-2 ring-indigo-400'
-                    : 'bg-neutral-800 hover:bg-neutral-700 text-neutral-200'
-                }`}
-                title="Share your window, tab, or entire screen"
-              >
-                {isScreenSharing ? <MonitorOff className="h-4 w-4" /> : <MonitorUp className="h-4 w-4 text-indigo-400" />}
-                <span className="hidden md:inline">{isScreenSharing ? "Stop Share" : "Share Screen"}</span>
-              </button>
-
-              {/* Record Meeting Button */}
-              {isRecording ? (
-                <div className="relative flex items-center">
-                  <button
-                    id="btn-record-active"
-                    onClick={() => setShowRecordingActionsMenu(!showRecordingActionsMenu)}
-                    className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white shadow-lg shadow-rose-950/50 transition-all cursor-pointer active:scale-95"
-                    title="Meeting Recording is Active"
-                  >
-                    <span className="relative flex h-2.5 w-2.5">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-white"></span>
-                    </span>
-                    <span className="font-mono">{formatDuration(recordingDurationSeconds)}</span>
-                    <span className="text-[10px] hidden sm:inline bg-black/30 px-1.5 py-0.5 rounded">
-                      {isRecordingPaused ? 'PAUSED' : 'REC'}
-                    </span>
-                  </button>
-
-                  {/* Recording dropdown actions */}
-                  {showRecordingActionsMenu && (
-                    <div className="obsidian absolute bottom-12 left-0 w-48 p-2 rounded-2xl bg-[var(--obsidian-1)] border border-white/15 shadow-2xl space-y-1.5 z-50 animate-in fade-in zoom-in-95">
-                      <button
-                        onClick={() => {
-                          if (isRecordingPaused) resumeRecording();
-                          else pauseRecording();
-                          setShowRecordingActionsMenu(false);
-                        }}
-                        className="w-full flex items-center gap-2 px-3 py-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-xs text-neutral-200 transition-colors cursor-pointer"
-                      >
-                        {isRecordingPaused ? <Play className="h-3.5 w-3.5 text-emerald-400" /> : <Pause className="h-3.5 w-3.5 text-amber-400" />}
-                        <span>{isRecordingPaused ? 'Resume Recording' : 'Pause Recording'}</span>
-                      </button>
-
-                      <button
-                        onClick={async () => {
-                          setShowRecordingActionsMenu(false);
-                          const saved = await stopRecording();
-                          if (saved) {
-                            showToast(`✓ Meeting recording stopped and saved to Greet Hub Vault (${saved.fileSizeFormatted}).`, 'success');
-                          }
-                        }}
-                        className="w-full flex items-center gap-2 px-3 py-2 rounded-xl bg-rose-600/30 hover:bg-rose-600 text-xs text-rose-200 hover:text-white transition-colors cursor-pointer"
-                      >
-                        <Disc className="h-3.5 w-3.5 text-rose-400" />
-                        <span>Stop & Save to Vault</span>
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <button
-                  id="btn-record-start"
-                  onClick={() => setShowRecordingConsentModal(true)}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-neutral-800 hover:bg-neutral-700 text-neutral-200 transition-all cursor-pointer active:scale-95 shadow-md"
-                  title="Record Meeting"
+          <footer
+            role="toolbar"
+            aria-label="Meeting controls"
+            className="relative h-16 sm:h-[72px] px-2 sm:px-4 rounded-2xl bg-slate-900/90 border border-white/10 backdrop-blur-xl flex items-center justify-between gap-2 shrink-0 z-30 shadow-[0_12px_40px_-12px_rgba(0,0,0,0.7)]"
+          >
+            {/* Left: meeting status (timer + recording indicator) — desktop/tablet only */}
+            <div className="hidden md:flex items-center gap-2 min-w-[140px]">
+              <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/5 border border-white/10 text-[11px] font-mono text-neutral-300">
+                <Clock className="h-3 w-3 text-indigo-400" />
+                {formatDuration(currentDuration)}
+              </span>
+              {isRecording && (
+                <span
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-rose-600/15 border border-rose-500/40 text-[11px] font-mono text-rose-300"
+                  title={isRecordingPaused ? 'Recording paused — manage it from More' : 'Recording in progress — manage it from More'}
                 >
-                  <Disc className="h-4 w-4 text-rose-500" />
-                  <span className="hidden md:inline">Record Meeting</span>
-                </button>
-              )}
-
-              {/* In-Meeting Settings Button */}
-              <button
-                id="btn-meeting-settings"
-                onClick={() => setShowSettingsModal(true)}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-neutral-800 hover:bg-neutral-700 text-neutral-300 transition-all cursor-pointer active:scale-95 shadow-md"
-                title="Configure microphone, camera, speaker, and video quality"
-              >
-                <Settings className="h-4 w-4" />
-                <span className="hidden lg:inline">Settings</span>
-              </button>
-            </div>
-
-            {/* Center Controls: Interactive Sidebar Tabs (Chat, Meet & Greet, People, Transcript, CRM) */}
-            <div className="flex items-center gap-1.5 sm:gap-2">
-              
-              {/* Chat Button */}
-              <button
-                id="btn-tab-chat"
-                onClick={() => {
-                  if (activeSidebarTab === 'chat' && isSidebarOpen) {
-                    setIsSidebarOpen(false);
-                  } else {
-                    setActiveSidebarTab('chat');
-                    setIsSidebarOpen(true);
-                  }
-                }}
-                className={`relative flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                  isSidebarOpen && activeSidebarTab === 'chat'
-                    ? 'bg-indigo-600 text-white shadow-md'
-                    : 'bg-neutral-800 hover:bg-neutral-700 text-neutral-300'
-                }`}
-                title="Open Meeting Chat"
-              >
-                <MessageSquare className="h-4 w-4" />
-                <span className="hidden sm:inline">Chat</span>
-                {activeMeeting && activeMeeting.messages.length > 0 && (
-                  <span className="text-[10px] font-bold px-1 rounded-full bg-indigo-400 text-neutral-950 font-mono">
-                    {activeMeeting.messages.length}
-                  </span>
-                )}
-              </button>
-
-              {/* Meet & Greet Button */}
-              <button
-                id="btn-tab-greet"
-                onClick={() => {
-                  if (activeSidebarTab === 'greet' && isSidebarOpen) {
-                    setIsSidebarOpen(false);
-                  } else {
-                    setActiveSidebarTab('greet');
-                    setIsSidebarOpen(true);
-                  }
-                }}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                  isSidebarOpen && activeSidebarTab === 'greet'
-                    ? 'bg-indigo-600 text-white shadow-md'
-                    : 'bg-neutral-800 hover:bg-neutral-700 text-neutral-300'
-                }`}
-                title="Meet & Greet Introductions"
-              >
-                <Sparkles className="h-4 w-4 text-amber-300" />
-                <span className="hidden sm:inline">Meet & Greet</span>
-              </button>
-
-              {/* Participants Button */}
-              <button
-                id="btn-tab-people"
-                onClick={() => {
-                  if (activeSidebarTab === 'participants' && isSidebarOpen) {
-                    setIsSidebarOpen(false);
-                  } else {
-                    setActiveSidebarTab('participants');
-                    setIsSidebarOpen(true);
-                  }
-                }}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                  isSidebarOpen && activeSidebarTab === 'participants'
-                    ? 'bg-indigo-600 text-white shadow-md'
-                    : 'bg-neutral-800 hover:bg-neutral-700 text-neutral-300'
-                }`}
-                title="View Participants"
-              >
-                <Users className="h-4 w-4" />
-                <span className="hidden sm:inline">People</span>
-                <span className="text-[10px] font-bold px-1 rounded bg-neutral-700 text-neutral-300 font-mono">
-                  {participantsList.length + 1}
+                  <span className={`h-2 w-2 rounded-full bg-rose-500 ${isRecordingPaused ? '' : 'animate-pulse'}`} />
+                  {isRecordingPaused ? 'PAUSED' : 'REC'} {formatDuration(recordingDurationSeconds)}
                 </span>
-              </button>
-
-              {/* Transcript Button */}
-              <button
-                id="btn-tab-transcript"
-                onClick={() => {
-                  if (activeSidebarTab === 'transcript' && isSidebarOpen) {
-                    setIsSidebarOpen(false);
-                  } else {
-                    setActiveSidebarTab('transcript');
-                    setIsSidebarOpen(true);
-                  }
-                }}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                  isSidebarOpen && activeSidebarTab === 'transcript'
-                    ? 'bg-indigo-600 text-white shadow-md'
-                    : 'bg-neutral-800 hover:bg-neutral-700 text-neutral-300'
-                }`}
-                title="View Meeting Transcripts & Save to Greet Hub Tabs"
-              >
-                <FileText className="h-4 w-4 text-emerald-400" />
-                <span className="hidden sm:inline">Transcript</span>
-              </button>
-
-              {/* CRM Dossier Button */}
-              <button
-                id="btn-tab-crm"
-                onClick={() => {
-                  if (activeSidebarTab === 'crm' && isSidebarOpen) {
-                    setIsSidebarOpen(false);
-                  } else {
-                    setActiveSidebarTab('crm');
-                    setIsSidebarOpen(true);
-                  }
-                }}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                  isSidebarOpen && activeSidebarTab === 'crm'
-                    ? 'bg-indigo-600 text-white shadow-md'
-                    : 'bg-neutral-800 hover:bg-neutral-700 text-neutral-300'
-                }`}
-                title="Access CRM records during meeting"
-              >
-                <Briefcase className="h-4 w-4 text-blue-400" />
-                <span className="hidden sm:inline">CRM</span>
-              </button>
+              )}
             </div>
 
-            {/* Right Controls: Reactions, Layout & End Meeting */}
-            <div className="flex items-center gap-2">
-              
-              {/* Quick Reactions Bar */}
-              <div className="relative">
-                <button
-                  onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                  className="p-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-200 transition-colors cursor-pointer"
-                  title="Send Live Reaction"
+            {/* Center: essential controls */}
+            <div className="flex-1 md:flex-none flex items-center justify-center gap-1.5 sm:gap-2.5">
+              <ToolbarButton
+                id="btn-toggle-mic"
+                label={isMicMuted ? 'Unmute' : 'Mute'}
+                tooltip={isMicMuted ? 'Unmute microphone' : 'Mute microphone'}
+                onClick={toggleMic}
+                variant={isMicMuted ? 'danger' : 'default'}
+                pressed={!isMicMuted}
+              >
+                {isMicMuted ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
+              </ToolbarButton>
+
+              <ToolbarButton
+                id="btn-toggle-cam"
+                label={isCamOff ? 'Start video' : 'Stop video'}
+                tooltip={isCamOff ? 'Turn camera on' : 'Turn camera off'}
+                onClick={toggleCam}
+                variant={isCamOff ? 'danger' : 'default'}
+                pressed={!isCamOff}
+              >
+                {isCamOff ? <VideoOff className="h-5 w-5" /> : <Video className="h-5 w-5" />}
+              </ToolbarButton>
+
+              <ToolbarButton
+                id="btn-share-screen"
+                label={isScreenSharing ? 'Stop share' : 'Share'}
+                tooltip={isScreenSharing ? 'Stop sharing your screen' : 'Share your window, tab, or entire screen'}
+                onClick={isScreenSharing ? stopScreenShare : () => startScreenShare()}
+                variant={isScreenSharing ? 'active' : 'default'}
+                pressed={isScreenSharing}
+              >
+                {isScreenSharing ? <MonitorOff className="h-5 w-5" /> : <MonitorUp className="h-5 w-5" />}
+              </ToolbarButton>
+
+              <span className="hidden sm:block w-px h-8 bg-white/10 mx-0.5" aria-hidden="true" />
+
+              <ToolbarButton
+                id="btn-tab-people"
+                label="People"
+                tooltip="View participants"
+                onClick={() => toggleSidebarPanel('participants')}
+                variant={isSidebarOpen && activeSidebarTab === 'participants' ? 'active' : 'default'}
+                pressed={isSidebarOpen && activeSidebarTab === 'participants'}
+                badge={participantsList.length + 1}
+              >
+                <Users className="h-5 w-5" />
+              </ToolbarButton>
+
+              <ToolbarButton
+                id="btn-tab-chat"
+                label="Chat"
+                tooltip="Open meeting chat"
+                onClick={() => toggleSidebarPanel('chat')}
+                variant={isSidebarOpen && activeSidebarTab === 'chat' ? 'active' : 'default'}
+                pressed={isSidebarOpen && activeSidebarTab === 'chat'}
+                badge={activeMeeting && activeMeeting.messages.length > 0 ? activeMeeting.messages.length : undefined}
+              >
+                <MessageSquare className="h-5 w-5" />
+              </ToolbarButton>
+
+              {/* MORE MENU */}
+              <div className="relative" ref={moreMenuRef}>
+                <ToolbarButton
+                  id="btn-more-menu"
+                  label="More"
+                  tooltip="More options"
+                  onClick={() => setShowMoreMenu(v => !v)}
+                  variant={showMoreMenu ? 'active' : 'default'}
+                  pressed={showMoreMenu}
+                  ariaHasPopup
+                  dot={isRecording}
                 >
-                  <Smile className="h-4 w-4 text-amber-300" />
-                </button>
+                  <MoreHorizontal className="h-5 w-5" />
+                </ToolbarButton>
 
-                {showEmojiPicker && (
-                  <div className="absolute bottom-12 right-0 p-2 rounded-2xl bg-neutral-900 border border-white/10 shadow-2xl flex items-center gap-2 z-50">
-                    {['👏', '👍', '❤️', '🎉', '💡', '🚀', '🔥'].map(emoji => (
-                      <button
-                        key={emoji}
-                        onClick={() => {
-                          broadcastReaction(emoji);
-                          setShowEmojiPicker(false);
-                        }}
-                        className="text-xl p-1.5 hover:scale-125 transition-transform cursor-pointer"
-                      >
-                        {emoji}
-                      </button>
-                    ))}
-                  </div>
-                )}
+                <AnimatePresence>
+                  {showMoreMenu && (
+                    <motion.div
+                      role="menu"
+                      aria-label="More meeting options"
+                      initial={{ opacity: 0, y: 8, scale: 0.98 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 8, scale: 0.98 }}
+                      transition={{ duration: 0.15, ease: 'easeOut' }}
+                      className="obsidian fixed inset-x-2 bottom-24 sm:absolute sm:inset-x-auto sm:bottom-16 sm:left-1/2 sm:-translate-x-1/2 sm:w-[340px] max-h-[70vh] overflow-y-auto p-2 rounded-2xl bg-[var(--obsidian-1)] border border-white/10 shadow-[0_24px_60px_-12px_rgba(0,0,0,0.8)] z-50"
+                    >
+                      {/* Reactions */}
+                      <MoreMenuSection title="Reactions">
+                        <div className="flex items-center justify-between px-1.5 py-1">
+                          {['👏', '👍', '❤️', '🎉', '💡', '🚀', '🔥'].map(emoji => (
+                            <button
+                              key={emoji}
+                              type="button"
+                              onClick={() => {
+                                broadcastReaction(emoji);
+                                setShowMoreMenu(false);
+                              }}
+                              className="text-xl h-9 w-9 flex items-center justify-center rounded-xl hover:bg-white/10 hover:scale-110 transition-all cursor-pointer"
+                              title={`Send ${emoji} reaction`}
+                              aria-label={`Send ${emoji} reaction`}
+                            >
+                              {emoji}
+                            </button>
+                          ))}
+                        </div>
+                      </MoreMenuSection>
+
+                      {/* Meeting panels */}
+                      <MoreMenuSection title="Meeting">
+                        <MoreMenuItem
+                          icon={<Sparkles className="h-4 w-4 text-amber-300" />}
+                          label="Meet & Greet"
+                          hint="Introductions"
+                          active={isSidebarOpen && activeSidebarTab === 'greet'}
+                          onClick={() => openSidebarPanel('greet')}
+                        />
+                        <MoreMenuItem
+                          icon={<FileText className="h-4 w-4 text-emerald-400" />}
+                          label="Transcript"
+                          hint="View & save"
+                          active={isSidebarOpen && activeSidebarTab === 'transcript'}
+                          onClick={() => openSidebarPanel('transcript')}
+                        />
+                        <MoreMenuItem
+                          icon={<Briefcase className="h-4 w-4 text-blue-400" />}
+                          label="CRM records"
+                          hint="Contact dossier"
+                          active={isSidebarOpen && activeSidebarTab === 'crm'}
+                          onClick={() => openSidebarPanel('crm')}
+                        />
+                        <MoreMenuItem
+                          icon={<UserPlus className="h-4 w-4 text-indigo-300" />}
+                          label="Invite people"
+                          onClick={() => { setShowMoreMenu(false); setShowInviteModal(true); }}
+                        />
+                        <MoreMenuItem
+                          icon={copiedLinkNotice ? <Check className="h-4 w-4 text-emerald-400" /> : <Share2 className="h-4 w-4 text-neutral-300" />}
+                          label={copiedLinkNotice ? 'Link copied' : 'Copy invite link'}
+                          onClick={handleCopyMeetingLink}
+                        />
+                        <MoreMenuItem
+                          icon={copiedMeetingIdNotice ? <Check className="h-4 w-4 text-emerald-400" /> : <Copy className="h-4 w-4 text-neutral-300" />}
+                          label={copiedMeetingIdNotice ? 'Meeting ID copied' : 'Copy meeting ID'}
+                          hint={activeMeeting?.roomId || 'omni-room'}
+                          onClick={handleCopyMeetingId}
+                        />
+                      </MoreMenuSection>
+
+                      {/* Recording */}
+                      <MoreMenuSection title="Recording">
+                        {isRecording ? (
+                          <>
+                            <MoreMenuItem
+                              icon={isRecordingPaused ? <Play className="h-4 w-4 text-emerald-400" /> : <Pause className="h-4 w-4 text-amber-400" />}
+                              label={isRecordingPaused ? 'Resume recording' : 'Pause recording'}
+                              hint={formatDuration(recordingDurationSeconds)}
+                              onClick={() => {
+                                if (isRecordingPaused) resumeRecording();
+                                else pauseRecording();
+                                setShowMoreMenu(false);
+                              }}
+                            />
+                            <MoreMenuItem
+                              icon={<Disc className="h-4 w-4 text-rose-400" />}
+                              label="Stop & save to Vault"
+                              onClick={async () => {
+                                setShowMoreMenu(false);
+                                const saved = await stopRecording();
+                                if (saved) {
+                                  showToast(`✓ Meeting recording stopped and saved to Greet Hub Vault (${saved.fileSizeFormatted}).`, 'success');
+                                }
+                              }}
+                            />
+                          </>
+                        ) : (
+                          <MoreMenuItem
+                            icon={<Disc className="h-4 w-4 text-rose-500" />}
+                            label="Record meeting"
+                            onClick={() => { setShowMoreMenu(false); setShowRecordingConsentModal(true); }}
+                          />
+                        )}
+                      </MoreMenuSection>
+
+                      {/* View & video */}
+                      <MoreMenuSection title="View">
+                        <MoreMenuItem
+                          icon={isVideoPaused ? <Play className="h-4 w-4 text-amber-400" /> : <Pause className="h-4 w-4 text-neutral-300" />}
+                          label={isVideoPaused ? 'Resume video stream' : 'Pause video stream'}
+                          active={isVideoPaused}
+                          onClick={() => { togglePauseVideo(); setShowMoreMenu(false); }}
+                        />
+                        <MoreMenuItem
+                          icon={<LayoutGrid className="h-4 w-4 text-neutral-300" />}
+                          label={layoutMode === 'grid' ? 'Speaker spotlight view' : 'Grid view'}
+                          hint={layoutMode === 'grid' ? 'Currently: Grid' : 'Currently: Speaker'}
+                          onClick={() => { setLayoutMode(layoutMode === 'grid' ? 'speaker' : 'grid'); setShowMoreMenu(false); }}
+                        />
+                        <MoreMenuItem
+                          icon={isFullscreen ? <Minimize2 className="h-4 w-4 text-neutral-300" /> : <Maximize2 className="h-4 w-4 text-neutral-300" />}
+                          label={isFullscreen ? 'Exit full screen' : 'Full screen'}
+                          onClick={() => { handleToggleFullscreen(); setShowMoreMenu(false); }}
+                        />
+                      </MoreMenuSection>
+
+                      {/* Settings & navigation */}
+                      <MoreMenuSection title="Settings">
+                        <MoreMenuItem
+                          icon={<Settings className="h-4 w-4 text-neutral-300" />}
+                          label="Audio & video settings"
+                          hint="Mic, camera, speaker, quality"
+                          onClick={() => { setShowMoreMenu(false); setShowSettingsModal(true); }}
+                        />
+                        <MoreMenuItem
+                          icon={<Home className="h-4 w-4 text-blue-400" />}
+                          label="Return to dashboard"
+                          hint="Meeting keeps running"
+                          onClick={() => { setShowMoreMenu(false); handleReturnToDashboard(); }}
+                        />
+                      </MoreMenuSection>
+
+                      <div className="pt-1 mt-1 border-t border-white/10">
+                        <MoreMenuItem
+                          id="btn-end-meeting"
+                          icon={<PhoneOff className="h-4 w-4 text-rose-400" />}
+                          label="End meeting for everyone"
+                          danger
+                          onClick={handleEndMeetingForEveryone}
+                        />
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
+            </div>
 
-              {/* Layout Switcher */}
-              <button
-                onClick={() => setLayoutMode(layoutMode === 'grid' ? 'speaker' : 'grid')}
-                className="hidden lg:flex p-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-200 transition-colors cursor-pointer"
-                title={`Switch to ${layoutMode === 'grid' ? 'Speaker Spotlight' : 'Grid'} view`}
-              >
-                <LayoutGrid className="h-4 w-4" />
-              </button>
-
-              {/* Leave Meeting Button */}
-              <button
-                id="btn-leave-meeting"
-                onClick={() => setShowLeaveConfirmModal(true)}
-                className="px-3 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-200 font-bold text-xs transition-all cursor-pointer shadow-md"
-                title="Leave Meeting"
-              >
-                Leave
-              </button>
-
-              {/* End Meeting Button (Host Terminate & Summary) */}
-              <button
-                id="btn-end-meeting"
-                onClick={async () => {
-                  if (isRecording) {
-                    await stopRecording();
-                  }
-                  setShowEndMeetingSummaryModal(true);
-                }}
-                className="px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 active:scale-95 text-white font-bold text-xs transition-all shadow-md shadow-rose-950/40 cursor-pointer"
-                title="End Meeting for Everyone"
-              >
-                End
-              </button>
+            {/* Right: Leave */}
+            <div className="flex items-center justify-end md:min-w-[140px]">
+              <div className="relative group">
+                <button
+                  id="btn-leave-meeting"
+                  type="button"
+                  onClick={() => setShowLeaveConfirmModal(true)}
+                  aria-label="Leave meeting"
+                  className="flex items-center gap-2 h-11 px-3 sm:px-4 rounded-full bg-rose-600 hover:bg-rose-500 active:scale-95 text-white text-xs font-bold shadow-lg shadow-rose-950/40 transition-all duration-200 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-300/70"
+                >
+                  <PhoneOff className="h-5 w-5" />
+                  <span className="hidden lg:inline">Leave</span>
+                </button>
+                <ToolbarTooltip text="Leave or end meeting" align="right" />
+              </div>
             </div>
           </footer>
         </main>
@@ -1455,11 +1416,11 @@ export default function VideoMeetingWorkspace({
         <AnimatePresence>
           {isSidebarOpen && (
             <motion.aside
-              initial={{ width: 0, opacity: 0 }}
-              animate={{ width: 380, opacity: 1 }}
-              exit={{ width: 0, opacity: 0 }}
-              transition={{ duration: 0.22 }}
-              className="obsidian w-[380px] h-full bg-[var(--obsidian-1)] border-l border-white/10 flex flex-col shrink-0 overflow-hidden z-20"
+              initial={{ x: 40, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              exit={{ x: 40, opacity: 0 }}
+              transition={{ duration: 0.22, ease: 'easeOut' }}
+              className="obsidian absolute lg:static inset-y-0 right-0 w-full sm:w-[380px] h-full bg-[var(--obsidian-1)] border-l border-white/10 flex flex-col shrink-0 overflow-hidden z-40 lg:z-20 shadow-2xl lg:shadow-none"
             >
               
               {/* Tab Selector Header */}
@@ -2352,6 +2313,15 @@ export default function VideoMeetingWorkspace({
                 Leave
               </button>
             </div>
+
+            <button
+              type="button"
+              onClick={handleEndMeetingForEveryone}
+              className="w-full flex items-center justify-center gap-2 py-2 rounded-xl border border-rose-500/40 text-rose-300 hover:bg-rose-600/15 hover:text-rose-200 text-xs font-semibold cursor-pointer transition-colors"
+            >
+              <PhoneOff className="h-3.5 w-3.5" />
+              End meeting for everyone
+            </button>
           </div>
         </div>
       )}
@@ -3158,5 +3128,125 @@ export default function VideoMeetingWorkspace({
       </AnimatePresence>
 
     </div>
+  );
+}
+
+/* ===========================================================================
+   TOOLBAR & MORE-MENU PRIMITIVES
+   Consistent rounded controls with clear active/inactive states and tooltips.
+   =========================================================================== */
+
+function ToolbarTooltip({ text, align = 'center' }: { text: string; align?: 'center' | 'right' }) {
+  return (
+    <span
+      role="tooltip"
+      className={`pointer-events-none absolute bottom-full mb-2.5 hidden sm:block whitespace-nowrap px-2.5 py-1 rounded-lg bg-neutral-950/95 border border-white/10 text-[11px] font-medium text-neutral-100 shadow-xl opacity-0 translate-y-1 group-hover:opacity-100 group-hover:translate-y-0 group-focus-within:opacity-100 group-focus-within:translate-y-0 transition-all duration-150 z-50 ${
+        align === 'right' ? 'right-0' : 'left-1/2 -translate-x-1/2'
+      }`}
+    >
+      {text}
+    </span>
+  );
+}
+
+interface ToolbarButtonProps {
+  id?: string;
+  label: string;
+  tooltip: string;
+  onClick: () => void;
+  variant?: 'default' | 'active' | 'danger';
+  pressed?: boolean;
+  badge?: number;
+  dot?: boolean;
+  ariaHasPopup?: boolean;
+  children: React.ReactNode;
+}
+
+function ToolbarButton({
+  id, label, tooltip, onClick, variant = 'default', pressed, badge, dot, ariaHasPopup, children
+}: ToolbarButtonProps) {
+  const variantClass =
+    variant === 'danger'
+      ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-lg shadow-rose-950/40'
+      : variant === 'active'
+        ? 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-950/50'
+        : 'bg-white/[0.06] hover:bg-white/[0.12] text-neutral-100 border border-white/10 shadow-sm';
+
+  return (
+    <div className="relative group flex flex-col items-center">
+      <button
+        id={id}
+        type="button"
+        onClick={onClick}
+        aria-label={tooltip}
+        aria-pressed={ariaHasPopup ? undefined : pressed}
+        aria-haspopup={ariaHasPopup ? 'menu' : undefined}
+        aria-expanded={ariaHasPopup ? pressed : undefined}
+        className={`relative h-10 w-10 sm:h-11 sm:w-11 rounded-full flex items-center justify-center transition-all duration-200 ease-out cursor-pointer active:scale-95 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 ${variantClass}`}
+      >
+        {children}
+        {typeof badge === 'number' && badge > 0 && (
+          <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-indigo-400 text-neutral-950 text-[10px] font-bold font-mono flex items-center justify-center ring-2 ring-slate-900">
+            {badge > 99 ? '99+' : badge}
+          </span>
+        )}
+        {dot && (
+          <span className="absolute top-0 right-0 h-2.5 w-2.5 rounded-full bg-rose-500 ring-2 ring-slate-900 animate-pulse" />
+        )}
+      </button>
+      <span className="hidden lg:block mt-0.5 text-[10px] font-medium text-neutral-400 group-hover:text-neutral-200 transition-colors leading-none">
+        {label}
+      </span>
+      <ToolbarTooltip text={tooltip} />
+    </div>
+  );
+}
+
+function MoreMenuSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="py-1">
+      <div className="px-2.5 pt-1.5 pb-1 text-[10px] uppercase tracking-wider font-bold text-neutral-500">
+        {title}
+      </div>
+      <div className="space-y-0.5">{children}</div>
+    </div>
+  );
+}
+
+interface MoreMenuItemProps {
+  id?: string;
+  icon: React.ReactNode;
+  label: string;
+  hint?: string;
+  active?: boolean;
+  danger?: boolean;
+  onClick: () => void;
+}
+
+function MoreMenuItem({ id, icon, label, hint, active, danger, onClick }: MoreMenuItemProps) {
+  return (
+    <button
+      id={id}
+      type="button"
+      role="menuitem"
+      onClick={onClick}
+      title={hint ? `${label} — ${hint}` : label}
+      className={`w-full flex items-center gap-3 px-2.5 py-2 rounded-xl text-left text-xs transition-colors duration-150 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 ${
+        danger
+          ? 'text-rose-300 hover:bg-rose-600/15 hover:text-rose-200'
+          : active
+            ? 'bg-indigo-600/20 text-white'
+            : 'text-neutral-200 hover:bg-white/[0.07] hover:text-white'
+      }`}
+    >
+      <span className={`h-8 w-8 shrink-0 rounded-lg flex items-center justify-center ${danger ? 'bg-rose-600/15' : 'bg-white/[0.06]'}`}>
+        {icon}
+      </span>
+      <span className="flex-1 min-w-0">
+        <span className="block font-semibold truncate">{label}</span>
+        {hint && <span className="block text-[10px] text-neutral-500 truncate">{hint}</span>}
+      </span>
+      {active && <span className="h-1.5 w-1.5 rounded-full bg-indigo-400 shrink-0" />}
+    </button>
   );
 }
