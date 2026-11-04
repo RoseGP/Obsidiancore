@@ -104,14 +104,6 @@ export default function CalendarView({ events, onAddEvent, onRemoveEvent }: Cale
     }
   }, [selectedEventForRecording]);
 
-  useEffect(() => {
-    if (showAddForm) {
-      const randStr = Math.random().toString(36).substring(2, 5) + '-' + 
-                      Math.random().toString(36).substring(2, 6) + '-' + 
-                      Math.random().toString(36).substring(2, 5);
-      setTempMeetLink(`https://meet.google.com/${randStr}`);
-    }
-  }, [showAddForm]);
 
   // Audio/video playback simulation ticker
   useEffect(() => {
@@ -135,7 +127,7 @@ export default function CalendarView({ events, onAddEvent, onRemoveEvent }: Cale
     e.preventDefault();
     if (!newTitle.trim() || !newContact.trim()) return;
 
-    const finalMeetLink = generateLink ? tempMeetLink : undefined;
+    const finalMeetLink = generateLink && /^https:\/\//.test(tempMeetLink) ? tempMeetLink : undefined;
 
     onAddEvent({
       title: newTitle.trim(),
@@ -790,59 +782,7 @@ export default function CalendarView({ events, onAddEvent, onRemoveEvent }: Cale
                 </div>
               </div>
 
-              {/* Microsoft Outlook / Office 365 Card */}
-              <div className="p-3.5 rounded-2xl bg-sky-50/80 border border-sky-200 space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="p-1.5 rounded-lg bg-white border border-sky-100 shadow-xs text-xs font-black text-sky-600">O</span>
-                    <div>
-                      <p className="font-extrabold text-slate-900">Microsoft Outlook / Office 365</p>
-                      <p className="text-[10.5px] text-sky-700">Sync Graph API enterprise schedule feeds</p>
-                    </div>
-                  </div>
-                  <span className="px-2 py-0.5 rounded-full bg-sky-100 text-sky-800 font-extrabold text-[10px]">
-                    Supported
-                  </span>
-                </div>
 
-                <button
-                  onClick={() => {
-                    alert('Redirecting to Microsoft Graph OAuth authentication...');
-                  }}
-                  className="w-full py-2 px-3 bg-sky-600 hover:bg-sky-700 text-white font-bold rounded-xl shadow-xs transition-all cursor-pointer flex items-center justify-center gap-1.5"
-                >
-                  <LinkIcon className="h-3.5 w-3.5" />
-                  <span>Connect Outlook Account</span>
-                </button>
-              </div>
-
-              {/* Custom iCal / ICS Feed URL */}
-              <div className="p-3.5 rounded-2xl bg-amber-50/80 border border-amber-200 space-y-2">
-                <div className="flex items-center gap-2">
-                  <span className="p-1.5 rounded-lg bg-white border border-amber-100 shadow-xs text-xs font-black text-amber-600">❇</span>
-                  <div>
-                    <p className="font-extrabold text-slate-900">Apple iCal / Custom ICS Feed</p>
-                    <p className="text-[10.5px] text-amber-800">Paste your webcal:// or https:// .ics feed link</p>
-                  </div>
-                </div>
-
-                <div className="flex gap-2">
-                  <input 
-                    type="url"
-                    placeholder="https://calendar.google.com/calendar/ical/.../basic.ics"
-                    className="flex-1 bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-slate-800 outline-none text-xs"
-                  />
-                  <button 
-                    onClick={() => {
-                      alert('ICS Feed subscription saved successfully!');
-                      setGcalStatus(prev => ({ ...prev, activeWatchChannelsCount: prev.activeWatchChannelsCount + 1 }));
-                    }}
-                    className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black rounded-xl text-xs cursor-pointer shadow-xs shrink-0"
-                  >
-                    Subscribe
-                  </button>
-                </div>
-              </div>
 
               {/* Status Summary */}
               <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 space-y-1">
