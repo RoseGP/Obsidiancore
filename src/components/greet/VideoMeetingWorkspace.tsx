@@ -483,6 +483,49 @@ export default function VideoMeetingWorkspace({
   const rosterOrder = [...participantsList].sort((a, b) =>
     (a.isHandRaised ? 0 : 1) - (b.isHandRaised ? 0 : 1) || (a.handRaisedAt ?? 0) - (b.handRaisedAt ?? 0));
   const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
+
+  // AI recap (POST /api/meetings/ai-summary: Gemini or Claude, CRM tools off)
+  type AiRecap = {
+    summary: string; keyPoints: string[]; decisions: string[];
+    actionItems: Array<{ title: string; owner: string; dueInDays: number | null; priority: 'high' | 'medium' | 'low' }>;
+    followUpEmail: { subject: string; body: string }; provider: string; notice?: string;
+  };
+  const [aiRecap, setAiRecap] = useState<AiRecap | null>(null);
+  const [aiRecapLoading, setAiRecapLoading] = useState(false);
+  const [aiRecapError, setAiRecapError] = useState<string | null>(null);
+  const [aiRecapAdded, setAiRecapAdded] = useState<Set<number>>(() => new Set());
+  const generateAiRecap = async () => {
+    if (!activeMeeting || aiRecapLoading) return;
+    setAiRecapLoading(true); setAiRecapError(null);
+    try {
+      const res = await fetch('/api/meetings/ai-summary', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: activeMeeting.title,
+          durationSeconds: currentDuration,
+          participants: ['Camelia Rose (Host)', ...participantsList.map(p => p.name)],
+          notes: activeMeeting.notes || '',
+          transcript: liveTranscript.map(t => ({ speakerName: t.speakerName, text: t.text })),
+          tasks: activeMeeting.tasks.map(t => ({ title: t.title, contactName: t.contactName })),
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) throw new Error(data.error || `The recap couldn't be generated (${res.status}).`);
+      setAiRecap(data); setAiRecapAdded(new Set());
+    } catch (e: any) {
+      setAiRecapError(e?.message || "The recap couldn't be generated.");
+    } finally {
+      setAiRecapLoading(false);
+    }
+  };
+  const addRecapActionItem = (idx: number) => {
+    const a = aiRecap?.actionItems[idx];
+    if (!a || aiRecapAdded.has(idx)) return;
+    const due = new Date(Date.now() + (a.dueInDays ?? 7) * 86400000).toISOString().slice(0, 10);
+    addFollowupTask({ title: a.title, dueDate: due, priority: a.priority, contactName: a.owner });
+    setAiRecapAdded(prev => new Set(prev).add(idx));
+  };
   const currentDuration = activeMeeting?.durationSeconds || 0;
 
   return (
@@ -2925,10 +2968,86 @@ export default function VideoMeetingWorkspace({
             {/* TAB: Meeting Details */}
             {summaryActiveTab === 'details' && (
               <div className="space-y-3">
+                {/* AI recap: summary, decisions, action items and a follow-up email draft */}
+                <div className="p-3 rounded-xl bg-indigo-950/40 border border-indigo-500/30 space-y-2.5" aria-live="polite">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[10px] font-bold text-indigo-300 uppercase tracking-wider flex items-center gap-1.5">
+                      <Sparkles className="h-3.5 w-3.5" /> AI recap
+                    </span>
+                    <button
+                      type="button"
+                      onClick={generateAiRecap}
+                      disabled={aiRecapLoading}
+                      className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white text-[11px] font-bold flex items-center gap-1.5 cursor-pointer"
+                    >
+                      {aiRecapLoading ? <RotateCw className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+                      {aiRecapLoading ? 'Generating…' : aiRecap ? 'Regenerate' : 'Generate recap'}
+                    </button>
+                  </div>
+                  {!aiRecap && !aiRecapError && !aiRecapLoading && (
+                    <p className="text-[11px] text-neutral-400">Summarizes the transcript and your notes into decisions, action items and a follow-up email you can edit before sending.</p>
+                  )}
+                  {aiRecapError && <p role="alert" className="text-[11px] text-rose-300">{aiRecapError}</p>}
+                  {aiRecap && (
+                    <div className="space-y-2.5">
+                      {aiRecap.notice && <p className="text-[10px] text-amber-300">{aiRecap.notice}</p>}
+                      <p className="text-xs text-neutral-200 leading-relaxed">{aiRecap.summary}</p>
+                      {aiRecap.decisions.length > 0 && (
+                        <div>
+                          <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Decisions</span>
+                          <ul className="mt-1 space-y-0.5">{aiRecap.decisions.map((d, i) => <li key={i} className="text-xs text-neutral-300">• {d}</li>)}</ul>
+                        </div>
+                      )}
+                      {aiRecap.actionItems.length > 0 && (
+                        <div>
+                          <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Action items</span>
+                          <ul className="mt-1 space-y-1">
+                            {aiRecap.actionItems.map((a, i) => (
+                              <li key={i} className="flex items-center justify-between gap-2 text-xs text-neutral-200">
+                                <span className="min-w-0">• {a.title} <span className="text-[10px] text-neutral-400">({a.owner}{a.dueInDays != null ? `, ${a.dueInDays}d` : ''})</span></span>
+                                <button
+                                  type="button"
+                                  onClick={() => addRecapActionItem(i)}
+                                  disabled={aiRecapAdded.has(i)}
+                                  className="shrink-0 px-2 py-0.5 rounded-md bg-neutral-800 hover:bg-neutral-700 disabled:bg-emerald-950 disabled:text-emerald-300 text-[10px] font-semibold text-neutral-200 cursor-pointer"
+                                >
+                                  {aiRecapAdded.has(i) ? 'Added' : 'Add to follow-ups'}
+                                </button>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {aiRecap.followUpEmail.body && (
+                        <div className="space-y-1">
+                          <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Follow-up email draft</span>
+                          <p className="text-xs font-semibold text-white">{aiRecap.followUpEmail.subject}</p>
+                          <p className="text-xs text-neutral-300 whitespace-pre-wrap max-h-32 overflow-y-auto">{aiRecap.followUpEmail.body}</p>
+                          <div className="flex gap-1.5 pt-1">
+                            <button
+                              type="button"
+                              onClick={() => { navigator.clipboard?.writeText(`${aiRecap.followUpEmail.subject}\n\n${aiRecap.followUpEmail.body}`).then(() => showToast('Follow-up email copied.', 'success'), () => showToast('Copy failed: select the text instead.', 'warning')); }}
+                              className="px-2 py-1 rounded-md bg-neutral-800 hover:bg-neutral-700 text-[11px] font-semibold text-neutral-200 flex items-center gap-1 cursor-pointer"
+                            >
+                              <Copy className="h-3 w-3" /> Copy
+                            </button>
+                            <a
+                              href={`mailto:${participantsList.map(p => p.email).filter(Boolean).join(',')}?subject=${encodeURIComponent(aiRecap.followUpEmail.subject)}&body=${encodeURIComponent(aiRecap.followUpEmail.body)}`}
+                              className="px-2 py-1 rounded-md bg-neutral-800 hover:bg-neutral-700 text-[11px] font-semibold text-neutral-200 flex items-center gap-1"
+                            >
+                              <Send className="h-3 w-3" /> Open in email
+                            </a>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
                 <div className="p-3 rounded-xl bg-neutral-900 border border-white/5 space-y-1">
                   <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Attendance Roster</span>
                   <p className="text-xs text-neutral-200">
-                    Camelia Rose (Host), {participantsList.map(p => p.name).join(', ')}
+                    {['Camelia Rose (Host)', ...participantsList.map(p => p.name)].join(', ')}
                   </p>
                 </div>
 

@@ -1,5 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { DateTime } from 'luxon';
+import { rateLimit } from '../features/social-accounts/server/http';
+import { requirePermission, requireTenant, tenantOf } from '../server/tenancy/middleware';
+import { generateMeetingSummary, meetingSummaryInputSchema, MeetingSummaryError } from '../services/meetingSummary';
 
 const router = Router();
 
@@ -186,6 +189,29 @@ router.post('/create', (req: Request, res: Response) => {
       error: 'Failed to create meeting',
       message: error.message || 'Internal server error'
     });
+  }
+});
+
+/**
+ * POST /api/meetings/ai-summary
+ * AI recap of a meeting (summary, key points, decisions, action items, follow-up email draft).
+ * Signed-in members who can write records only; CRM tools are off, so nothing is created or changed.
+ */
+const summaryLimiter = rateLimit({ name: 'meeting-summary', windowMs: 60_000, max: 10, key: (req) => tenantOf(req).userId });
+router.post('/ai-summary', requireTenant, requirePermission('write'), summaryLimiter, async (req: Request, res: Response) => {
+  const parsed = meetingSummaryInputSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    const i = parsed.error.issues[0];
+    return res.status(400).json({ success: false, code: 'invalid_input', field: i?.path?.join('.') || undefined, error: i?.message || 'Invalid input.' });
+  }
+  const ctrl = new AbortController();
+  res.on('close', () => { if (!res.writableEnded) ctrl.abort(); });
+  try {
+    const result = await generateMeetingSummary(parsed.data, ctrl.signal);
+    return res.json({ success: true, ...result });
+  } catch (e) {
+    const err = e instanceof MeetingSummaryError ? e : new MeetingSummaryError('The summary could not be generated.', 502, 'ai_error');
+    return res.status(err.status).json({ success: false, code: err.code, error: err.message });
   }
 });
 
