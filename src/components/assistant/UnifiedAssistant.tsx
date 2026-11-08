@@ -27,11 +27,10 @@ type Length = 'concise' | 'standard' | 'detailed';
 type Tone = 'executive' | 'technical' | 'action';
 interface Prefs { model: string; length: Length; tone: Tone; includeCrm: boolean; autoSpeak: boolean }
 
+// Providers the server can answer with; replaced by GET /api/chat/models (only configured ones).
 const DEFAULT_MODELS = [
-  { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash (CRM Operations)' },
-  { id: 'gpt-4o', label: 'GPT-4o (via OmniRoute)' },
-  { id: 'claude-3-5-sonnet', label: 'Claude 3.5 Sonnet (via OmniRoute)' },
-  { id: 'deepseek-r1', label: 'DeepSeek R1 (via OmniRoute)' },
+  { id: 'gemini', label: 'Gemini' },
+  { id: 'claude', label: 'Claude' },
 ];
 const SUGGESTIONS = [
   { label: 'Pipeline Summary', prompt: 'Give me a live pipeline summary: total pipeline value, active deals, and lead conversion rate.' },
@@ -48,8 +47,13 @@ const uid = () => Math.random().toString(36).slice(2, 10);
 const fmtSize = (n: number) => (n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
 
 function loadPrefs(): Prefs {
-  const d: Prefs = { model: 'gemini-3.8-flash', length: 'standard', tone: 'executive', includeCrm: true, autoSpeak: false };
-  try { return { ...d, ...JSON.parse(localStorage.getItem(PREFS_KEY) || '{}') }; } catch { return d; }
+  const d: Prefs = { model: 'gemini', length: 'standard', tone: 'executive', includeCrm: true, autoSpeak: false };
+  try {
+    const p = { ...d, ...JSON.parse(localStorage.getItem(PREFS_KEY) || '{}') };
+    // Older saved choices were model names (e.g. gemini-3.8-flash, gpt-4o): map to a provider.
+    if (p.model !== 'gemini' && p.model !== 'claude') p.model = String(p.model).toLowerCase().startsWith('claude') ? 'claude' : 'gemini';
+    return p;
+  } catch { return d; }
 }
 
 // The assistant's instructions are built on the server (src/services/assistantPrompt.ts). The browser only
@@ -79,7 +83,11 @@ export default function UnifiedAssistant({ contacts = [], onNavigate }: { contac
   useEffect(() => {
     fetch('/api/chat/models').then((r) => (r.ok ? r.json() : null)).then((d) => {
       const list = Array.isArray(d?.models) ? d.models : Array.isArray(d) ? d : null;
-      if (list?.length) setModels(list.map((m: any) => (typeof m === 'string' ? { id: m, label: m } : { id: String(m.id ?? m.model ?? m.name), label: String(m.label ?? m.name ?? m.id) })).filter((m: any) => m.id));
+      if (list?.length) {
+        const ms = list.map((m: any) => (typeof m === 'string' ? { id: m, label: m } : { id: String(m.id ?? m.model ?? m.name), label: String(m.label ?? m.name ?? m.id) })).filter((m: any) => m.id);
+        setModels(ms);
+        setPrefs((p) => (ms.some((m: any) => m.id === p.model) ? p : { ...p, model: ms[0].id }));
+      }
     }).catch(() => undefined);
     return () => { abortRef.current?.abort(); window.speechSynthesis?.cancel(); };
   }, []);
@@ -146,7 +154,7 @@ export default function UnifiedAssistant({ contacts = [], onNavigate }: { contac
       const res = await fetch('/api/chat/completions', {
         method: 'POST', signal: ctrl.signal,
         headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
-        body: JSON.stringify({ messages: apiMessages, model: prefs.model, stream: true, preferences: { length: prefs.length, tone: prefs.tone, includeCrm: prefs.includeCrm, timeZone } }),
+        body: JSON.stringify({ messages: apiMessages, model: prefs.model, provider: prefs.model, stream: true, preferences: { length: prefs.length, tone: prefs.tone, includeCrm: prefs.includeCrm, timeZone } }),
       });
       if (!res.ok || !res.body) {
         const j = await res.json().catch(() => null);
@@ -258,7 +266,7 @@ export default function UnifiedAssistant({ contacts = [], onNavigate }: { contac
               <span><b>Let the assistant look up CRM data</b><span className="block text-neutral-500">Leads, deals, pipeline and tasks in your organization, looked up on the server only when a question needs them.</span></span>
               <input type="checkbox" className="h-4 w-4 accent-indigo-600" checked={prefs.includeCrm} onChange={(e) => setPrefs({ ...prefs, includeCrm: e.target.checked })} />
             </label>
-            <p className="text-[11px] text-neutral-500">Provider: OmniRoute gateway when configured, otherwise Gemini. Settings are saved in this browser. Conversations stay in this tab and aren’t stored.</p>
+            <p className="text-[11px] text-neutral-500">Answers come from the provider you pick; if it’s rate-limited or down, the other configured provider answers and the reply says so. Settings are saved in this browser. Conversations stay in this tab and aren’t stored.</p>
           </div>
         )}
 

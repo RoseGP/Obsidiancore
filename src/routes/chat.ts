@@ -2,6 +2,8 @@ import { Router, Request, Response } from 'express';
 import { assertId, getDocStore } from '../server/data/docStore';
 import { requirePermission, requireReadOrWrite, requireTenant, sendError, tenantOf } from '../server/tenancy/middleware';
 import { ChatMessageItem } from '../types';
+import { AIProviderError, generateAIResponse } from '../services/ai/aiService';
+import { buildAssistantPrompt } from '../services/assistantPrompt';
 import { processCRMBrainChat, CRMBrainChatParams as CRMBrainChatInput, CRMBrainChatResult as CRMBrainChatOutput } from '../services/crmBrain';
 import {
   handleChatCompletions,
@@ -72,6 +74,48 @@ async function sessionIdTakenByOther(req: Request, sessionId: string, userId: st
  * POST /api/chat
  * Main CRM AI assistant endpoint
  */
+/**
+ * POST /api/chat  { message, history?, provider?: 'gemini' | 'claude', preferences? }
+ * Unified, non-streaming answer from the chosen provider (the other one backs it up). Responds
+ * { success, provider, model, reply, finish, notice }. For streaming, use POST /api/chat/completions.
+ * Requests without `provider`/`history` keep the command palette's original behavior below.
+ */
+async function handleUnifiedChat(req: Request, res: Response) {
+  const t = tenantOf(req);
+  const b = req.body || {};
+  const message = typeof b.message === 'string' ? b.message.slice(0, 200_000) : '';
+  if (!message.trim()) return res.status(400).json({ success: false, code: 'bad_request', error: 'Send a message.' });
+  if (b.provider !== undefined && !['gemini', 'claude'].includes(b.provider)) return res.status(400).json({ success: false, code: 'bad_request', error: 'provider must be "gemini" or "claude".' });
+  const history = Array.isArray(b.history) ? b.history.slice(-60) : [];
+  const prefs = b.preferences || {};
+  const ctrl = new AbortController();
+  req.on('close', () => { if (!res.writableEnded) ctrl.abort(); });
+  try {
+    const { getOrg } = await import('../server/tenancy/orgs');
+    const orgName = (await getOrg(t.orgId).catch(() => null))?.name || '';
+    const systemPrompt = buildAssistantPrompt({
+      userName: t.name || t.email, role: t.role, orgName, crmToolsEnabled: prefs.includeCrm !== false,
+      length: ['concise', 'standard', 'detailed'].includes(prefs.length) ? prefs.length : 'standard',
+      tone: ['executive', 'technical', 'action'].includes(prefs.tone) ? prefs.tone : 'executive',
+    });
+    const r = await generateAIResponse(b.provider === 'claude' ? 'claude' : 'gemini', message, history, {
+      systemPrompt, context: { userId: t.userId, orgId: t.orgId, role: t.role, name: t.name || t.email }, useTools: prefs.includeCrm !== false, signal: ctrl.signal,
+    });
+    res.json({ success: true, provider: r.provider, model: r.model, reply: r.reply, finish: r.finish, toolCalls: r.toolCalls, notice: r.notice });
+  } catch (err: any) {
+    if (err instanceof AIProviderError) {
+      const status = err.code === 'ai_not_configured' || err.code === 'model_unavailable' ? 503 : err.code === 'rate_limited' ? 429 : err.code === 'bad_request' ? 400 : 502;
+      return res.status(status).json({ success: false, code: err.code, provider: err.provider, error: err.code === 'bad_request' ? err.message : status === 503 ? err.message : 'The AI provider couldn’t answer right now. Nothing was changed; try again.' });
+    }
+    return sendError(res, err, 'chat.unified');
+  }
+}
+
+router.post('/', async (req: Request, res: Response, next) => {
+  if (req.body && (req.body.provider !== undefined || Array.isArray(req.body.history))) return handleUnifiedChat(req, res);
+  next();
+});
+
 router.post('/', async (req: Request, res: Response) => {
   try {
     const {

@@ -19,9 +19,11 @@
     "test:voice-ivr": "npx tsx src/features/voice/__tests__/ivr.test.ts",
     "test:security": "npx tsx src/server/__tests__/security.test.ts && npx tsx src/server/__tests__/phase0.test.ts && npx tsx src/server/__tests__/tenancy.test.ts",
     "test:meeting-controls": "npx tsx src/components/greet/__tests__/meetingControls.test.tsx",
-    "test:assistant": "npx tsx src/services/__tests__/assistant.test.ts"
+    "test:assistant": "npx tsx src/services/__tests__/assistant.test.ts",
+    "test:ai": "npx tsx src/services/ai/__tests__/aiService.test.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "0.132.1",
     "@google/genai": "^2.4.0",
     "@hookform/resolvers": "^5.9.1",
     "@tailwindcss/vite": "^4.1.14",

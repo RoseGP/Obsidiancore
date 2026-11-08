@@ -5,7 +5,7 @@ import { Request, Response } from 'express';
 import { GoogleGenAI } from '@google/genai';
 import { ChatCompletionPayload, StreamDeltaChunk, GatewayStatusResponse } from '../types';
 import { optionalSecret } from '../utils/secrets';
-import { runCrmAssistantTurn } from '../services/crmAiAssistant';
+import { generateAIResponse, providerStatus, resolveProvider, type AIProvider } from '../services/ai/aiService';
 
 /**
  * ============================================================================
@@ -80,6 +80,8 @@ export async function handleChatCompletions(req: Request, res: Response): Promis
     timeZone: typeof prefs.timeZone === 'string' && /^[A-Za-z_]+(\/[A-Za-z_+-]+){0,2}$/.test(prefs.timeZone) ? prefs.timeZone : 'UTC',
   };
   const max_tokens = Math.max(1024, Number(process.env.GATEWAY_MAX_OUTPUT_TOKENS) || 16384);
+  // 'gemini' | 'claude': explicit `provider`, else inferred from the model id (claude-* → Claude).
+  const chosenProvider: AIProvider = resolveProvider((req.body as any)?.provider ?? requestedModel);
 
   // 1. Validate Input Payload
   if (!messages || !Array.isArray(messages) || messages.length === 0) {
@@ -206,7 +208,7 @@ export async function handleChatCompletions(req: Request, res: Response): Promis
     writeSystemNotice('rate_limit_handled', requestedModel, nextModel, sim.message, sim.status);
 
     // Seamlessly execute secondary fallback without breaking active chat session!
-    await executeFallbackStream({ tenant: (req as any).tenant, systemPrompt, preferences, signal: abortController.signal,
+    await executeFallbackStream({ tenant: (req as any).tenant, systemPrompt, preferences, signal: abortController.signal, provider: chosenProvider,
       res,
       writeSseChunk,
       messages: cleanMessages,
@@ -217,8 +219,10 @@ export async function handleChatCompletions(req: Request, res: Response): Promis
     return;
   }
 
-  if (!OMNIROUTE_GATEWAY_URL) {
-    await executeFallbackStream({ tenant: (req as any).tenant, systemPrompt, preferences, signal: abortController.signal, res, writeSseChunk, messages: cleanMessages, fallbackModel: 'gemini-2.5-flash', userId, reason: 'OmniRoute gateway not configured' });
+  // Direct providers (Gemini/Claude via aiService) unless a gateway is configured AND the client asked for a gateway model.
+  const directProvider = ['gemini', 'claude'].includes(String((req.body as any)?.provider ?? requestedModel).toLowerCase()) || /^(gemini|claude)/i.test(String(requestedModel));
+  if (!OMNIROUTE_GATEWAY_URL || directProvider) {
+    await executeFallbackStream({ tenant: (req as any).tenant, systemPrompt, preferences, signal: abortController.signal, provider: chosenProvider, res, writeSseChunk, messages: cleanMessages, fallbackModel: 'gemini-2.5-flash', userId, reason: 'OmniRoute gateway not configured' });
     return;
   }
   try {
@@ -269,7 +273,7 @@ export async function handleChatCompletions(req: Request, res: Response): Promis
         logGatewayIncident(requestedModel, `HTTP_${errorStatus}`, nextModel);
         writeSystemNotice('fallback_activated', requestedModel, nextModel, reasonText, errorStatus);
 
-        await executeFallbackStream({ tenant: (req as any).tenant, systemPrompt, preferences, signal: abortController.signal,
+        await executeFallbackStream({ tenant: (req as any).tenant, systemPrompt, preferences, signal: abortController.signal, provider: chosenProvider,
           res,
           writeSseChunk,
           messages,
@@ -320,7 +324,7 @@ export async function handleChatCompletions(req: Request, res: Response): Promis
                 console.warn('[OmniRoute Stream Error In-Band]:', parsed.error);
                 const nextModel = getNextFallbackModel(requestedModel, fallbackChain);
                 writeSystemNotice('provider_switch', requestedModel, nextModel, parsed.error.message || 'Stream provider error', 502);
-                await executeFallbackStream({ tenant: (req as any).tenant, systemPrompt, preferences, signal: abortController.signal,
+                await executeFallbackStream({ tenant: (req as any).tenant, systemPrompt, preferences, signal: abortController.signal, provider: chosenProvider,
                   res,
                   writeSseChunk,
                   messages,
@@ -354,7 +358,7 @@ export async function handleChatCompletions(req: Request, res: Response): Promis
     logGatewayIncident(requestedModel, netErr.code || 'CONN_ERR', nextModel);
     writeSystemNotice('fallback_activated', requestedModel, nextModel, reason, 503);
 
-    await executeFallbackStream({ tenant: (req as any).tenant, systemPrompt, preferences, signal: abortController.signal,
+    await executeFallbackStream({ tenant: (req as any).tenant, systemPrompt, preferences, signal: abortController.signal, provider: chosenProvider,
       res,
       writeSseChunk,
       messages: cleanMessages,
@@ -392,8 +396,9 @@ async function executeFallbackStream(opts: {
   systemPrompt: string;
   preferences: { useCrm: boolean };
   signal?: AbortSignal;
+  provider: AIProvider;
 }): Promise<void> {
-  const { res, writeSseChunk, messages, userId, reason, tenant, systemPrompt, preferences, signal } = opts;
+  const { res, writeSseChunk, messages, userId, reason, tenant, systemPrompt, preferences, signal, provider } = opts;
   gatewayTelemetry.fallbackExecutions++;
   const sendEvent = (obj: unknown) => { if (!res.writableEnded) res.write(`data: ${JSON.stringify(obj)}\n\n`); };
   const finish = () => { if (!res.writableEnded) { res.write('data: [DONE]\n\n'); res.end(); } };
@@ -404,22 +409,19 @@ async function executeFallbackStream(opts: {
   }
   const last = messages[messages.length - 1]?.content || '';
   const history = messages.slice(0, -1).map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }));
-  let label = 'gemini';
+  let label: string = provider;
   let sentAny = false;
   try {
-    const result = await runCrmAssistantTurn({
-      incomingMessage: last,
-      conversationHistory: history,
+    const result = await generateAIResponse(provider, last, history, {
+      systemPrompt,
       context: { userId: tenant.userId, orgId: tenant.orgId, role: tenant.role, name: tenant.name || tenant.email || 'there' },
-      systemInstruction: systemPrompt,
       useTools: preferences.useCrm,
       signal,
       onChunk: (delta) => { sentAny = true; writeSseChunk(delta, label, null); },
       onToolCall: (name) => { sendEvent({ tool_activity: { name, label: name.replace(/_/g, ' ') } }); },
     });
     label = result.model;
-    if (result.note) sendEvent({ system_notice: { type: 'provider_switch', message: `${result.note} Answered with ${result.model}.`, fallbackModel: result.model } });
-    if (result.historyDropped) sendEvent({ system_notice: { type: 'context_trimmed', message: `The ${result.historyDropped} oldest messages were left out to fit the model’s context.` } });
+    if (result.notice) sendEvent({ system_notice: { type: 'provider_switch', message: result.notice, fallbackModel: result.model, provider: result.provider } });
     // "length" tells the UI the answer was cut off at the output limit, so it can offer Continue.
     writeSseChunk('', result.model, result.finish === 'length' ? 'length' : result.finish === 'safety' ? 'content_filter' : 'stop');
 
@@ -427,17 +429,19 @@ async function executeFallbackStream(opts: {
       const { getDocStore } = await import('../server/data/docStore');
       await (await getDocStore()).set(`organizations/${tenant.orgId}/chat_sessions/session_${tenant.userId}_default`, {
         id: `session_${tenant.userId}_default`, userId: tenant.userId, orgId: tenant.orgId,
-        lastMessage: result.reply.slice(0, 120), toolCallsCount: result.toolCallsExecuted.length, updatedAt: new Date().toISOString(),
+        lastMessage: result.reply.slice(0, 120), toolCallsCount: result.toolCalls.length, provider: result.provider, updatedAt: new Date().toISOString(),
       });
     } catch (e: any) { console.warn('[chat] could not save session metadata:', e?.message); }
     return finish();
   } catch (err: any) {
     if (signal?.aborted) return finish();
     console.warn('[ai] assistant turn failed:', err?.message || err, '| route note:', reason, '| user:', userId);
-    const code = err?.code === 'ai_not_configured' || err?.code === 'model_unavailable' ? err.code : 'provider_unavailable';
-    const message = code === 'provider_unavailable'
-      ? (sentAny ? 'The AI provider stopped responding partway through. The text above is incomplete; try Continue or Regenerate.' : 'The AI provider didn’t respond. Nothing was changed; please try again.')
-      : err.message;
+    const code = err?.code === 'ai_not_configured' || err?.code === 'model_unavailable' ? err.code : err?.code === 'rate_limited' ? 'rate_limited' : 'provider_unavailable';
+    const message = sentAny
+      ? 'The AI provider stopped responding partway through. The text above is incomplete; try Continue or Regenerate.'
+      : code === 'ai_not_configured' || code === 'model_unavailable' ? err.message
+      : code === 'rate_limited' ? 'The AI provider is rate-limiting requests right now. Nothing was changed; try again in a minute.'
+      : 'The AI provider didn’t respond. Nothing was changed; please try again.';
     sendEvent({ error: { code, message, partial: sentAny } });
     return finish();
   }
@@ -473,16 +477,18 @@ function logGatewayIncident(model: string, errorType: string, fallbackTarget: st
  * Returns available models and current gateway routing configuration
  */
 export function handleGetModels(_req: Request, res: Response) {
+  // Only what this server can actually answer with.
+  const st = providerStatus();
+  const models = [
+    ...(st.gemini.configured ? [{ id: 'gemini', label: `Gemini (${st.gemini.model})`, provider: 'gemini' }] : []),
+    ...(st.claude.configured ? [{ id: 'claude', label: `Claude (${st.claude.model})`, provider: 'claude' }] : []),
+  ];
   res.json({
-    gatewayUrl: OMNIROUTE_GATEWAY_URL,
-    defaultModel: 'gpt-4o',
-    models: [
-      { id: 'gpt-4o', name: 'GPT-4o (Omni)', provider: 'OpenAI', contextWindow: '128k', description: 'Flagship multimodal reasoning model' },
-      { id: 'claude-3-5-sonnet', name: 'Claude 3.5 Sonnet', provider: 'Anthropic', contextWindow: '200k', description: 'High precision analysis and coding' },
-      { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', provider: 'Google', contextWindow: '1M', description: 'Ultra-fast low-latency multi-turn' },
-      { id: 'deepseek-r1', name: 'DeepSeek R1', provider: 'DeepSeek', contextWindow: '64k', description: 'Advanced mathematical & logical reasoning' }
-    ],
-    fallbackChain: DEFAULT_FALLBACK_CHAIN
+    models,
+    providers: st,
+    defaultModel: models[0]?.id ?? null,
+    gateway: OMNIROUTE_GATEWAY_URL ? { configured: true } : { configured: false },
+    fallback: st.gemini.configured && st.claude.configured ? 'Each provider backs up the other.' : 'No backup provider configured.',
   });
 }
 
