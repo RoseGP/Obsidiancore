@@ -6,6 +6,8 @@ import { can, isRole } from '../server/tenancy/orgs';
 
 // Lazy initialize Gemini client
 let geminiClient: GoogleGenAI | null = null;
+/** Tests only: inject a stand-in client (null restores the real one). */
+export function setGeminiClientForTests(client: any | null) { geminiClient = client; resolvedModel = null; }
 function getGemini(): GoogleGenAI | null {
   if (!geminiClient && process.env.GEMINI_API_KEY) {
     try {
@@ -299,196 +301,128 @@ export async function executeCrmTool(
   }
 }
 
+// ---------------------------------------------------------------------------
+// Model selection and output limits
+// ---------------------------------------------------------------------------
+let resolvedModel: { model: string; maxOutputTokens: number; note?: string } | null = null;
+const DEFAULT_MAX_OUTPUT = 8192;
+
 /**
- * Runs the Multi-Turn AI Dashboard Assistant reasoning and tool calling loop.
+ * Picks the model and the output-token limit from the provider itself (models.get → outputTokenLimit),
+ * capped by GEMINI_MAX_OUTPUT_TOKENS (default 32768). GEMINI_MODEL picks the model; if the provider
+ * doesn't know it, gemini-2.5-flash is tried next and the reason is reported.
+ */
+export async function resolveGeminiModel(gemini: any): Promise<{ model: string; maxOutputTokens: number; note?: string }> {
+  if (resolvedModel) return resolvedModel;
+  const cap = Math.max(1024, Number(process.env.GEMINI_MAX_OUTPUT_TOKENS) || 32768);
+  const wanted = (process.env.GEMINI_MODEL || 'gemini-3.8-flash').trim();
+  const candidates = [...new Set([wanted, 'gemini-2.5-flash'])];
+  let note: string | undefined;
+  for (const model of candidates) {
+    try {
+      const info = await gemini.models.get({ model });
+      const limit = Number(info?.outputTokenLimit) || DEFAULT_MAX_OUTPUT;
+      resolvedModel = { model, maxOutputTokens: Math.min(limit, cap), note };
+      return resolvedModel;
+    } catch (err: any) {
+      const status = err?.status ?? err?.code;
+      if (status === 404 || /not found|is not supported|NOT_FOUND/i.test(String(err?.message))) {
+        console.warn(`[ai] model ${model} is not available to this API key`);
+        note = `The configured model (${wanted}) isn’t available to this API key.`;
+        continue;
+      }
+      // Network or permission trouble: don't cache, use the requested model with a safe default limit.
+      return { model, maxOutputTokens: Math.min(DEFAULT_MAX_OUTPUT, cap) };
+    }
+  }
+  throw Object.assign(new Error('None of the configured Gemini models are available to this API key. Set GEMINI_MODEL.'), { code: 'model_unavailable' });
+}
+
+/** Keeps the newest messages within a character budget (oldest dropped first). */
+export function trimHistory<T extends { content: string }>(history: T[], budgetChars = Number(process.env.AI_HISTORY_CHAR_BUDGET) || 120_000): { kept: T[]; dropped: number } {
+  const kept: T[] = []; let used = 0;
+  for (let i = history.length - 1; i >= 0; i--) {
+    const len = history[i].content.length;
+    if (used + len > budgetChars && kept.length) break;
+    kept.unshift(history[i]); used += len;
+  }
+  return { kept, dropped: history.length - kept.length };
+}
+
+export type AssistantFinish = 'stop' | 'length' | 'safety' | 'other' | 'aborted';
+const FINISH: Record<string, AssistantFinish> = { STOP: 'stop', MAX_TOKENS: 'length', SAFETY: 'safety', RECITATION: 'safety', PROHIBITED_CONTENT: 'safety', BLOCKLIST: 'safety', SPII: 'safety' };
+
+/**
+ * One assistant turn with real streaming: text is passed to onChunk as the provider produces it.
+ * Tool calls (CRM data) run between rounds, scoped to the caller's organization and role.
+ * Never invents a reply or performs an action the user didn't ask for: provider errors are thrown.
  */
 export async function runCrmAssistantTurn(params: {
   incomingMessage: string;
   conversationHistory: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>;
   context: { userId: string; orgId: string; role: string; name: string };
+  systemInstruction: string;
+  useTools?: boolean;
+  signal?: AbortSignal;
   onChunk?: (delta: string) => void;
   onToolCall?: (toolName: string, args: any) => void;
   onToolResult?: (toolName: string, result: any) => void;
-}): Promise<{ reply: string; toolCallsExecuted: string[] }> {
-  const { incomingMessage, conversationHistory, context, onChunk, onToolCall, onToolResult } = params;
-
+}): Promise<{ reply: string; toolCallsExecuted: string[]; finish: AssistantFinish; model: string; historyDropped: number; note?: string }> {
+  const { incomingMessage, context, onChunk, onToolCall, onToolResult, signal, systemInstruction } = params;
+  const useTools = params.useTools !== false;
   const gemini = getGemini();
+  if (!gemini) throw Object.assign(new Error('AI isn’t configured on the server. Set GEMINI_API_KEY.'), { code: 'ai_not_configured' });
+
+  const { model, maxOutputTokens, note } = await resolveGeminiModel(gemini);
+  const { kept, dropped } = trimHistory(params.conversationHistory.filter((m) => m.role !== 'system'));
+  const contents: any[] = [
+    ...kept.map((m) => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })),
+    { role: 'user', parts: [{ text: incomingMessage }] },
+  ];
+
   const toolCallsExecuted: string[] = [];
-
-  const systemInstruction = `You are the executive AI Intelligence Assistant embedded in the Obsidian Enterprise CRM.
-Your role is to assist the executive team with customer relations, pipeline intelligence, lead qualification, task scheduling, and marketing workflows.
-Current Authenticated User: ${context.name} (${context.role}) in Organization: ${context.orgId}.
-
-CRITICAL BEHAVIORAL DIRECTIVES:
-1. Always use available tools (search_contacts, search_leads, get_pipeline_summary, create_lead, create_deal, create_followup_task, search_knowledge_base, create_social_draft) whenever the user asks for CRM data, metrics, or record operations.
-2. NEVER invent mock contacts, deals, or numbers. If data is not found in the database, explicitly inform the user.
-3. If an action will modify CRM records (like creating a lead, deal, task, or social draft), execute the appropriate tool and provide clean, formatted confirmation.
-4. Keep responses crisp, professional, and formatted in clean GitHub-flavored markdown.`;
-
-  if (!gemini) {
-    const fallbackText = `I am ready to assist with your CRM operations, but the Google Gemini API key is not currently configured on the server. Please verify GEMINI_API_KEY.`;
-    if (onChunk) onChunk(fallbackText);
-    return { reply: fallbackText, toolCallsExecuted: [] };
-  }
-
-  try {
-    // Format contents for Gemini
-    let currentContents: any[] = [
-      ...conversationHistory
-        .filter(m => m.role !== 'system')
-        .map(m => ({
-          role: m.role === 'assistant' ? 'model' : 'user',
-          parts: [{ text: m.content }]
-        })),
-      { role: 'user', parts: [{ text: incomingMessage }] }
-    ];
-
-    let loopCount = 0;
-    const MAX_TOOL_LOOPS = 5;
-
-    while (loopCount < MAX_TOOL_LOOPS) {
-      loopCount++;
-
-      const response = await gemini.models.generateContent({
-        model: 'gemini-3.8-flash',
-        contents: currentContents,
-        config: {
-          systemInstruction,
-          tools: [{ functionDeclarations: CRM_TOOL_DECLARATIONS as any }],
-          temperature: 0.2
-        }
-      });
-
-      // Check for function calls
-      const functionCalls = response.functionCalls;
-
-      if (functionCalls && functionCalls.length > 0) {
-        // Append model response with function calls
-        currentContents.push({
-          role: 'model',
-          parts: functionCalls.map(fc => ({
-            functionCall: {
-              name: fc.name,
-              args: fc.args
-            }
-          }))
-        });
-
-        const toolResponseParts: any[] = [];
-
-        for (const call of functionCalls) {
-          toolCallsExecuted.push(call.name);
-          if (onToolCall) onToolCall(call.name, call.args);
-
-          const result = await executeCrmTool(call.name, call.args || {}, context);
-          if (onToolResult) onToolResult(call.name, result);
-
-          toolResponseParts.push({
-            functionResponse: {
-              name: call.name,
-              response: { result }
-            }
-          });
-        }
-
-        // Append tool responses
-        currentContents.push({
-          role: 'tool',
-          parts: toolResponseParts
-        });
-
-        // Continue loop to let Gemini generate answer with tool results
-        continue;
+  let reply = '';
+  const MAX_TOOL_ROUNDS = 5;
+  for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
+    const stream = await gemini.models.generateContentStream({
+      model,
+      contents,
+      config: {
+        systemInstruction,
+        ...(useTools && round < MAX_TOOL_ROUNDS ? { tools: [{ functionDeclarations: CRM_TOOL_DECLARATIONS as any }] } : {}),
+        temperature: 0.4,
+        maxOutputTokens,
+        ...(signal ? { abortSignal: signal } : {}),
+      },
+    });
+    const modelParts: any[] = [];
+    const calls: Array<{ name: string; args: any }> = [];
+    let finishRaw = '';
+    for await (const chunk of stream as AsyncIterable<any>) {
+      if (signal?.aborted) return { reply, toolCallsExecuted, finish: 'aborted', model, historyDropped: dropped, note };
+      const cand = chunk?.candidates?.[0];
+      for (const part of cand?.content?.parts ?? []) {
+        modelParts.push(part); // kept verbatim (incl. thought signatures) for the next round
+        if (part.functionCall) calls.push({ name: part.functionCall.name, args: part.functionCall.args || {} });
+        else if (typeof part.text === 'string' && part.text && !part.thought) { reply += part.text; onChunk?.(part.text); }
       }
-
-      // No more function calls: return final text answer
-      const replyText = response.text || 'I processed your request across our CRM database.';
-      if (onChunk) onChunk(replyText);
-      return { reply: replyText, toolCallsExecuted };
+      if (cand?.finishReason) finishRaw = String(cand.finishReason);
     }
-
-    return { reply: 'Completed multi-step CRM operations.', toolCallsExecuted };
-  } catch (err: any) {
-    console.warn('[runCrmAssistantTurn upstream error]:', err?.message || err);
-
-    // Resilient CRM data fallback: directly execute corresponding tool so user gets real CRM data
-    const q = incomingMessage.toLowerCase();
-    try {
-      if (q.includes('pipeline') || q.includes('arr') || q.includes('revenue') || q.includes('summary') || q.includes('deal')) {
-        const summary = await executeCrmTool('get_pipeline_summary', { includeDeals: true }, context);
-        toolCallsExecuted.push('get_pipeline_summary');
-        
-        let reply = `### 📊 Live CRM Pipeline Summary\n\n` +
-          `- **Total Pipeline ARR:** $${(summary.totalPipelineArr || 0).toLocaleString()}\n` +
-          `- **Active Deals Count:** ${summary.activeDealsCount || 0}\n` +
-          `- **Lead Conversion Rate:** ${summary.leadConversionRate || '0%'}\n` +
-          `- **Total Leads Monitored:** ${summary.totalLeads || 0}\n\n` +
-          `#### Active Pipeline Deals:\n`;
-        
-        if (summary.deals && summary.deals.length > 0) {
-          summary.deals.forEach((d: any) => {
-            reply += `- **${d.name}** (${d.client}): $${(d.value || 0).toLocaleString()} ARR · *Stage: ${d.stage}*\n`;
-          });
-        }
-        if (onChunk) onChunk(reply);
-        return { reply, toolCallsExecuted };
+    if (signal?.aborted) return { reply, toolCallsExecuted, finish: 'aborted', model, historyDropped: dropped, note };
+    if (calls.length) {
+      contents.push({ role: 'model', parts: modelParts });
+      const responses: any[] = [];
+      for (const call of calls) {
+        toolCallsExecuted.push(call.name);
+        onToolCall?.(call.name, call.args);
+        const result = await executeCrmTool(call.name, call.args, context);
+        onToolResult?.(call.name, result);
+        responses.push({ functionResponse: { name: call.name, response: { result } } });
       }
-
-      if (q.includes('lead') || q.includes('prospect') || q.includes('top')) {
-        const leadsData = await executeCrmTool('search_leads', { minScore: 60, limit: 5 }, context);
-        toolCallsExecuted.push('search_leads');
-        
-        let reply = `### 🎯 Qualified CRM Inbound Leads\n\n`;
-        if (leadsData.leads && leadsData.leads.length > 0) {
-          leadsData.leads.forEach((l: any) => {
-            reply += `- **${l.name}** (${l.company}) · BANT Score: **${l.score}/100** · Status: *${l.status}* · Channel: *${l.source}*\n  *Need:* ${l.need || 'Enterprise solution'}\n`;
-          });
-        } else {
-          reply += `No qualified leads currently above threshold in CRM database.\n`;
-        }
-        if (onChunk) onChunk(reply);
-        return { reply, toolCallsExecuted };
-      }
-
-      if (q.includes('social') || q.includes('post') || q.includes('tweet') || q.includes('linkedin')) {
-        const draft = await executeCrmTool('create_social_draft', {
-          caption: `🚀 Elevating enterprise communication with Obsidian CRM: sovereign WebRTC Call Canvas consultations, automated BANT pipeline qualification, and multi-channel routing. #CRM #EnterpriseSaaS #Obsidian`,
-          platforms: ['LINKEDIN', 'INSTAGRAM']
-        }, context);
-        toolCallsExecuted.push('create_social_draft');
-        
-        const reply = `### 📱 Social Content Draft Created\n\n` +
-          `I generated and saved a new social draft in the **Social Planner**:\n\n` +
-          `> "${draft.caption}"\n\n` +
-          `- **Target Platforms:** ${draft.platforms.join(', ')}\n` +
-          `- **Status:** Saved as Draft (Draft ID: \`${draft.postId}\`)\n` +
-          `You can schedule or publish it directly from the Social Planner tab.`;
-        if (onChunk) onChunk(reply);
-        return { reply, toolCallsExecuted };
-      }
-
-      if (q.includes('email') || q.includes('outreach') || q.includes('draft') || q.includes('marcus')) {
-        const outreach = await executeCrmTool('draft_sales_outreach', {
-          recipientName: 'Marcus Chen',
-          company: 'AlphaTech Global',
-          channel: 'email',
-          keyPoints: '99.99% SLA uptime guarantee and WebRTC failover architecture'
-        }, context);
-        toolCallsExecuted.push('draft_sales_outreach');
-
-        const reply = `### ✉️ Personalized Sales Outreach Draft\n\n` +
-          `**Subject:** ${outreach.draftSubject}\n\n` +
-          `\`\`\`text\n${outreach.draftBody}\n\`\`\`\n\n` +
-          `*Recipient:* ${outreach.recipient} (${outreach.company}) via ${outreach.channel}.`;
-        if (onChunk) onChunk(reply);
-        return { reply, toolCallsExecuted };
-      }
-    } catch (fallbackErr: any) {
-      console.error('[Resilience Fallback Error]:', fallbackErr);
+      contents.push({ role: 'user', parts: responses });
+      continue;
     }
-
-    const errText = `I am ready to assist with your CRM workflows. You can ask for a **pipeline summary**, **top qualified leads**, **sales email drafts**, or **social media scheduling**.`;
-    if (onChunk) onChunk(errText);
-    return { reply: errText, toolCallsExecuted };
+    return { reply, toolCallsExecuted, finish: FINISH[finishRaw] ?? (finishRaw ? 'other' : 'stop'), model, historyDropped: dropped, note };
   }
+  return { reply, toolCallsExecuted, finish: 'other', model, historyDropped: dropped, note };
 }

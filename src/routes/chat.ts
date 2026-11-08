@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { assertId, getDocStore } from '../server/data/docStore';
-import { requireReadOrWrite, requireTenant, sendError, tenantOf } from '../server/tenancy/middleware';
+import { requirePermission, requireReadOrWrite, requireTenant, sendError, tenantOf } from '../server/tenancy/middleware';
 import { ChatMessageItem } from '../types';
 import { processCRMBrainChat, CRMBrainChatParams as CRMBrainChatInput, CRMBrainChatResult as CRMBrainChatOutput } from '../services/crmBrain';
 import {
@@ -12,7 +12,9 @@ import {
 const router = Router();
 
 // Every chat route acts for a signed-in member of an organization.
-router.use(requireTenant, requireReadOrWrite);
+// Asking the assistant is a read: read-only members can use it (its tools enforce write permission
+// themselves). Other chat routes need write access for anything that changes data.
+router.use(requireTenant, (req, res, next) => (/\/completions$/.test(req.path) ? requirePermission('read')(req, res, next) : requireReadOrWrite(req, res, next)));
 
 // ============================================================================
 // OMNIROUTE AI GATEWAY ENDPOINTS (SSE STREAMING & RESILIENCE)
