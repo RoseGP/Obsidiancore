@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
+import { MEETING_PLANS, durationStatus, isMeetingPlanTier, roomCapacity, planForSize, type MeetingPlanConfig, type MeetingPlanTier } from '../lib/meetingPlans';
 import { CRMContact, CalendarEvent } from '../types';
 
 export interface MeetingParticipant {
@@ -107,35 +108,9 @@ export interface MeetingDeviceSettings {
   notifyOnParticipantJoin: boolean;
 }
 
-export type MeetingPlanTier = 'standard' | 'premium' | 'enterprise';
-
-export interface MeetingPlanConfig {
-  tier: MeetingPlanTier;
-  maxParticipants: number;
-  maxDurationMinutes: number; // 60 for standard, 0 for unlimited
-  label: string;
-}
-
-export const MEETING_PLANS: Record<MeetingPlanTier, MeetingPlanConfig> = {
-  standard: {
-    tier: 'standard',
-    maxParticipants: 100,
-    maxDurationMinutes: 60,
-    label: 'Standard Plan',
-  },
-  premium: {
-    tier: 'premium',
-    maxParticipants: 250,
-    maxDurationMinutes: 0,
-    label: 'Premium Plan',
-  },
-  enterprise: {
-    tier: 'enterprise',
-    maxParticipants: 500,
-    maxDurationMinutes: 0,
-    label: 'Enterprise Plan',
-  },
-};
+// Plans live in src/lib/meetingPlans.ts (shared with the server); re-exported for existing imports.
+export { MEETING_PLANS } from '../lib/meetingPlans';
+export type { MeetingPlanTier, MeetingPlanConfig } from '../lib/meetingPlans';
 
 export interface ActiveMeetingSession {
   id: string;
@@ -152,9 +127,12 @@ export interface ActiveMeetingSession {
   tasks: MeetingFollowupTask[];
   linkedContactId?: string;
   recordingData?: MeetingRecordingData;
+  /** Plan limits locked in when the meeting started. */
   planTier?: MeetingPlanTier;
   maxParticipants?: number;
   maxDurationMinutes?: number;
+  /** Set when the meeting ended because the plan's time limit was reached. */
+  endedReason?: 'time_limit';
 }
 
 interface MeetingSessionContextType {
@@ -163,12 +141,22 @@ interface MeetingSessionContextType {
   meetingViewMode: 'fullscreen' | 'workspace' | 'minimized';
   setMeetingViewMode: (mode: 'fullscreen' | 'workspace' | 'minimized') => void;
 
-  // Plan limits & capacity
+  // Plan limits & capacity. The plan belongs to the organization (GET /api/meetings/plan).
   currentPlanTier: MeetingPlanTier;
-  setPlanTier: (tier: MeetingPlanTier) => void;
+  /** The organization's current plan. */
   planConfig: MeetingPlanConfig;
+  /** Limits that apply right now: the active meeting's locked-in plan, otherwise the organization's. */
+  meetingLimits: MeetingPlanConfig;
+  /** 'organization' once loaded from the server; 'default' (Standard) when it couldn't be loaded. */
+  planSource: 'organization' | 'default';
+  /** Owner/Admin: may change the organization's plan. */
+  canChangePlan: boolean;
+  changeMeetingPlan: (tier: MeetingPlanTier) => Promise<{ success: boolean; message: string }>;
+  refreshMeetingPlan: () => Promise<void>;
   isDurationWarning: boolean;
   isDurationLimitReached: boolean;
+  /** Seconds until the time limit; null when the plan has none. */
+  durationSecondsLeft: number | null;
   
   // Media streams & hardware controls
   localStream: MediaStream | null;
@@ -214,6 +202,8 @@ interface MeetingSessionContextType {
   toggleTaskCompleted: (taskId: string) => void;
   addParticipantToCrm: (participant: MeetingParticipant) => void;
   inviteParticipantByEmail: (email: string) => Promise<{ success: boolean; message: string }>;
+  /** Invite several people at once; seats are counted once for the whole batch. */
+  inviteParticipantsByEmail: (emails: string[]) => Promise<{ added: string[]; waiting: string[]; refused: Array<{ email: string; reason: 'invalid' | 'duplicate' | 'full' }>; message: string }>;
   exchangeContactConsent: (participantId: string) => Promise<{ success: boolean; message: string }>;
   
   // Recording capabilities
@@ -284,29 +274,54 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
   const [activeMeeting, setActiveMeeting] = useState<ActiveMeetingSession | null>(null);
   const [meetingViewMode, setMeetingViewMode] = useState<'fullscreen' | 'workspace' | 'minimized'>('workspace');
   
-  // Plan limits & capacity (Standard 100 max & 60m limit, Premium 250 max, Enterprise 500 max)
-  const [currentPlanTier, setCurrentPlanTier] = useState<MeetingPlanTier>(() => {
-    try {
-      const saved = localStorage.getItem('obsidian_meeting_plan_tier');
-      if (saved === 'standard' || saved === 'premium' || saved === 'enterprise') return saved;
-    } catch (e) {}
-    return 'standard';
-  });
+  // Plan limits & capacity: Standard 100 people / 60 min, Premium 250, Enterprise 500 (src/lib/meetingPlans.ts).
+  const [currentPlanTier, setCurrentPlanTier] = useState<MeetingPlanTier>('standard');
+  const [planSource, setPlanSource] = useState<'organization' | 'default'>('default');
+  const [canChangePlan, setCanChangePlan] = useState(false);
 
-  const setPlanTier = useCallback((tier: MeetingPlanTier) => {
-    setCurrentPlanTier(tier);
+  const refreshMeetingPlan = useCallback(async () => {
     try {
-      localStorage.setItem('obsidian_meeting_plan_tier', tier);
-    } catch (e) {}
+      const res = await fetch('/api/meetings/plan');
+      const data = await res.json().catch(() => null);
+      if (res.ok && data?.success && isMeetingPlanTier(data.plan)) {
+        setCurrentPlanTier(data.plan);
+        setCanChangePlan(!!data.canChange);
+        setPlanSource('organization');
+        return;
+      }
+    } catch { /* offline or no server */ }
+    setPlanSource('default');
+  }, []);
+  useEffect(() => { refreshMeetingPlan(); }, [refreshMeetingPlan]);
+
+  const changeMeetingPlan = useCallback(async (tier: MeetingPlanTier) => {
+    try {
+      const res = await fetch('/api/meetings/plan', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ plan: tier }) });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) return { success: false, message: data.error || `The plan couldn't be changed (${res.status}).` };
+      setCurrentPlanTier(tier); setPlanSource('organization');
+      return { success: true, message: `Meeting plan is now ${MEETING_PLANS[tier].label}. New meetings use it.` };
+    } catch {
+      return { success: false, message: "Couldn't reach the server to change the plan." };
+    }
   }, []);
 
   const planConfig = MEETING_PLANS[currentPlanTier];
-  const isDurationWarning = Boolean(
-    planConfig.maxDurationMinutes === 60 && (activeMeeting?.durationSeconds || 0) >= 55 * 60
-  );
-  const isDurationLimitReached = Boolean(
-    planConfig.maxDurationMinutes === 60 && (activeMeeting?.durationSeconds || 0) >= 60 * 60
-  );
+  const meetingLimits: MeetingPlanConfig = activeMeeting?.planTier ? MEETING_PLANS[activeMeeting.planTier] : planConfig;
+  const durationInfo = durationStatus(meetingLimits, activeMeeting?.durationSeconds || 0);
+  const isDurationWarning = durationInfo.state === 'warning';
+  const isDurationLimitReached = durationInfo.state === 'reached';
+  const durationSecondsLeft = durationInfo.secondsLeft;
+  /** Everyone in the room right now, host included. */
+  const roomCount = (activeMeeting?.participants.length || 0) + 1;
+  /** Never let a participant list exceed the meeting's locked-in plan (host takes one seat). */
+  const capToPlan = (m: ActiveMeetingSession, list: MeetingParticipant[]) =>
+    list.slice(0, Math.max(0, MEETING_PLANS[m.planTier ?? 'standard'].maxParticipants - 1));
+  const fullRoomMessage = () => {
+    const next = planForSize(meetingLimits.maxParticipants + 1);
+    return `This meeting is full: the ${meetingLimits.label} plan allows ${meetingLimits.maxParticipants} participants.` +
+      (next ? ` ${MEETING_PLANS[next].label} allows ${MEETING_PLANS[next].maxParticipants}.` : '');
+  };
 
   // Media streams
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
@@ -1470,56 +1485,64 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
   };
 
 
-  // INVITE PARTICIPANT BY EMAIL
-  const inviteParticipantByEmail = async (email: string): Promise<{ success: boolean; message: string }> => {
-    if (!email || !email.includes('@')) {
-      return { success: false, message: 'Please enter a valid email address.' };
-    }
-
-    if (activeMeeting && (activeMeeting.participants.length + 1) >= planConfig.maxParticipants) {
-      return {
-        success: false,
-        message: `Meeting capacity reached for ${planConfig.label} (${planConfig.maxParticipants} max participants). Upgrade to Premium (250) or Enterprise (500) for more capacity.`
-      };
-    }
-    
-    // Simulate email dispatch
-    await new Promise(r => setTimeout(r, 600));
-
-    // Add guest to the room (or to the waiting room, when the host has it on)
-    const newGuestName = email.split('@')[0].replace('.', ' ');
-    const guestObj: MeetingParticipant = {
-      id: `p-guest-${Date.now()}`,
-      name: newGuestName.charAt(0).toUpperCase() + newGuestName.slice(1),
+  // INVITE PARTICIPANTS BY EMAIL
+  const makeGuest = (email: string): MeetingParticipant => {
+    const local = email.split('@')[0].replace(/[._-]+/g, ' ').trim() || email;
+    return {
+      id: `p-guest-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+      name: local.charAt(0).toUpperCase() + local.slice(1),
       role: 'Invited Guest',
-      title: 'Partner Representative',
-      company: email.split('@')[1] || 'Guest Organization',
+      title: '',
+      company: email.split('@')[1] || '',
       email,
-      avatar: newGuestName.substring(0, 2).toUpperCase(),
+      avatar: local.substring(0, 2).toUpperCase(),
       avatarColor: 'from-purple-600 to-indigo-700',
       isMuted: false,
       isVideoOff: false,
       isSpeaking: false,
       joinedAt: 'Just now',
-      isCrmContact: false
+      isCrmContact: false,
     };
+  };
 
-    if (isWaitingRoomEnabled) {
-      setWaitingRoom(prev => [...prev, { ...guestObj, joinedAt: 'Waiting' }]);
-      playChime('join');
-      return { success: true, message: `Invitation sent to ${email}. They'll wait in the waiting room until you admit them.` };
+  /**
+   * Invite one or many people. Seats are counted once for the whole batch, so a batch can never
+   * overfill the room; with the waiting room on, everyone waits and admitting checks capacity.
+   */
+  const inviteParticipantsByEmail = async (emails: string[]): Promise<{ added: string[]; waiting: string[]; refused: Array<{ email: string; reason: 'invalid' | 'duplicate' | 'full' }>; message: string }> => {
+    const refused: Array<{ email: string; reason: 'invalid' | 'duplicate' | 'full' }> = [];
+    const known = new Set([...(activeMeeting?.participants || []), ...waitingRoom].map(p => (p.email || '').toLowerCase()));
+    const valid: string[] = [];
+    for (const raw of emails) {
+      const email = raw.trim();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { refused.push({ email: raw, reason: 'invalid' }); continue; }
+      if (known.has(email.toLowerCase())) { refused.push({ email, reason: 'duplicate' }); continue; }
+      known.add(email.toLowerCase()); valid.push(email);
     }
 
-    setActiveMeeting(prev => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        participants: [...prev.participants, guestObj]
-      };
-    });
+    if (isWaitingRoomEnabled) {
+      if (valid.length) { setWaitingRoom(prev => [...prev, ...valid.map(e => ({ ...makeGuest(e), joinedAt: 'Waiting' }))]); playChime('join'); }
+      return { added: [], waiting: valid, refused, message: valid.length ? `${valid.length === 1 ? valid[0] + ' is' : valid.length + ' people are'} in the waiting room until you admit them. No emails are sent yet: share the meeting link.` : 'Nobody was invited.' };
+    }
 
-    playChime('join');
-    return { success: true, message: `Invitation dispatched to ${email}. Guest joined room.` };
+    const fits = activeMeeting ? roomCapacity(meetingLimits, roomCount, valid.length).fits : valid.length;
+    const added = valid.slice(0, fits);
+    valid.slice(fits).forEach(email => refused.push({ email, reason: 'full' }));
+    if (added.length) {
+      const guests = added.map(makeGuest);
+      setActiveMeeting(prev => prev ? { ...prev, participants: capToPlan(prev, [...prev.participants, ...guests]) } : prev);
+      playChime('join');
+    }
+    const full = refused.some(r => r.reason === 'full');
+    const message = added.length === 0
+      ? (full ? fullRoomMessage() : refused[0]?.reason === 'duplicate' ? `${refused[0].email} is already invited.` : 'Enter a valid email address.')
+      : `${added.length === 1 ? added[0] + ' was' : added.length + ' people were'} added to the meeting. No emails are sent yet: share the meeting link.` + (full ? ` ${fullRoomMessage()}` : '');
+    return { added, waiting: [], refused, message };
+  };
+
+  const inviteParticipantByEmail = async (email: string): Promise<{ success: boolean; message: string }> => {
+    const r = await inviteParticipantsByEmail([email]);
+    return { success: r.added.length + r.waiting.length > 0, message: r.message };
   };
 
   // ---------------------------------------------------------------------------
@@ -1537,32 +1560,30 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
     try { localStorage.setItem('obsidian_meeting_waiting_room', enabled ? 'on' : 'off'); } catch { /* storage unavailable */ }
   }, []);
 
-  const roomHasSpaceFor = (count: number) =>
-    !activeMeeting || (activeMeeting.participants.length + 1 + count) <= planConfig.maxParticipants;
 
   const admitParticipant = (participantId: string): { success: boolean; message: string } => {
     const guest = waitingRoom.find(p => p.id === participantId);
     if (!guest) return { success: false, message: 'That person is no longer waiting.' };
-    if (!roomHasSpaceFor(1)) {
-      return { success: false, message: `The room is full (${planConfig.maxParticipants} max on ${planConfig.label}).` };
+    if (activeMeeting && roomCapacity(meetingLimits, roomCount).full) {
+      return { success: false, message: fullRoomMessage() };
     }
     setWaitingRoom(prev => prev.filter(p => p.id !== participantId));
-    setActiveMeeting(prev => prev ? { ...prev, participants: [...prev.participants, { ...guest, joinedAt: 'Just now' }] } : prev);
+    setActiveMeeting(prev => prev ? { ...prev, participants: capToPlan(prev, [...prev.participants, { ...guest, joinedAt: 'Just now' }]) } : prev);
     playChime('join');
     return { success: true, message: `${guest.name} joined the meeting.` };
   };
 
   const admitAllWaiting = (): { success: boolean; message: string } => {
     if (waitingRoom.length === 0) return { success: false, message: 'Nobody is waiting.' };
-    const free = activeMeeting ? Math.max(0, planConfig.maxParticipants - (activeMeeting.participants.length + 1)) : waitingRoom.length;
-    const admitted = waitingRoom.slice(0, free);
-    if (admitted.length === 0) return { success: false, message: `The room is full (${planConfig.maxParticipants} max on ${planConfig.label}).` };
+    const fits = activeMeeting ? roomCapacity(meetingLimits, roomCount, waitingRoom.length).fits : waitingRoom.length;
+    const admitted = waitingRoom.slice(0, fits);
+    if (admitted.length === 0) return { success: false, message: fullRoomMessage() };
     const admittedIds = new Set(admitted.map(p => p.id));
     setWaitingRoom(prev => prev.filter(p => !admittedIds.has(p.id)));
-    setActiveMeeting(prev => prev ? { ...prev, participants: [...prev.participants, ...admitted.map(p => ({ ...p, joinedAt: 'Just now' }))] } : prev);
+    setActiveMeeting(prev => prev ? { ...prev, participants: capToPlan(prev, [...prev.participants, ...admitted.map(p => ({ ...p, joinedAt: 'Just now' }))]) } : prev);
     playChime('join');
     const left = waitingRoom.length - admitted.length;
-    return { success: true, message: left > 0 ? `Admitted ${admitted.length}. ${left} still waiting (room is full).` : `Admitted ${admitted.length}.` };
+    return { success: true, message: left > 0 ? `Admitted ${admitted.length}. ${left} still waiting: ${fullRoomMessage()}` : `Admitted ${admitted.length}.` };
   };
 
   const denyParticipant = useCallback((participantId: string) => {
@@ -1607,6 +1628,24 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
     }, 3500);
   };
 
+  // TIME LIMIT: when the plan's limit is reached the meeting ends for everyone. The recording is
+  // saved, camera and microphone are released, and the meeting stays on screen (status 'ended') so
+  // the host sees the summary; leaving or closing it clears the session as usual.
+  const timeLimitHandledRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!activeMeeting || activeMeeting.status !== 'active' || !isDurationLimitReached) return;
+    if (timeLimitHandledRef.current === activeMeeting.id) return;
+    timeLimitHandledRef.current = activeMeeting.id;
+    (async () => {
+      if (isRecording) { try { await stopRecording(); } catch { /* keep ending the meeting */ } }
+      cleanupMediaTracks();
+      setIsHandRaised(false);
+      setWaitingRoom([]);
+      setActiveMeeting(prev => prev && prev.id === activeMeeting.id ? { ...prev, status: 'ended', endedReason: 'time_limit' } : prev);
+      playChime('leave');
+    })();
+  }, [activeMeeting?.id, activeMeeting?.status, isDurationLimitReached]);
+
   return (
     <MeetingSessionContext.Provider
       value={{
@@ -1615,10 +1654,15 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
         meetingViewMode,
         setMeetingViewMode,
         currentPlanTier,
-        setPlanTier,
         planConfig,
+        meetingLimits,
+        planSource,
+        canChangePlan,
+        changeMeetingPlan,
+        refreshMeetingPlan,
         isDurationWarning,
         isDurationLimitReached,
+        durationSecondsLeft,
         localStream,
         screenStream,
         isMicMuted,
@@ -1646,6 +1690,7 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
         toggleTaskCompleted,
         addParticipantToCrm,
         inviteParticipantByEmail,
+        inviteParticipantsByEmail,
         exchangeContactConsent,
         isRecording,
         isRecordingPaused,

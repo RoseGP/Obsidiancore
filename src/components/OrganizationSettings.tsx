@@ -3,6 +3,7 @@
  * the UI only hides actions the signed-in role can't perform.
  */
 import React, { useCallback, useEffect, useState } from 'react';
+import MeetingPlanSettings from './MeetingPlanSettings';
 import { Building2, Copy, KeyRound, Loader2, Mail, RefreshCw, Trash2, UserPlus, Users } from 'lucide-react';
 
 type Role = 'OWNER' | 'ADMIN' | 'MANAGER' | 'SALES_REP' | 'MARKETER' | 'READ_ONLY';
@@ -138,6 +139,8 @@ export default function OrganizationSettings() {
           </div>
         )}
       </section>
+
+      <MeetingPlanSettings />
 
       <section className={card} aria-labelledby="members-heading">
         <h3 id="members-heading" className="flex items-center gap-2 text-base font-semibold text-white"><Users className="h-4 w-4 text-sky-400" />Members ({members.length})</h3>

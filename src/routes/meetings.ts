@@ -1,7 +1,10 @@
 import { Router, Request, Response } from 'express';
 import { DateTime } from 'luxon';
 import { rateLimit } from '../features/social-accounts/server/http';
-import { requirePermission, requireTenant, tenantOf } from '../server/tenancy/middleware';
+import { requirePermission, requireTenant, sendError, tenantOf } from '../server/tenancy/middleware';
+import { can } from '../server/tenancy/orgs';
+import { getDocStore } from '../server/data/docStore';
+import { DEFAULT_MEETING_PLAN, isMeetingPlanTier, MEETING_PLANS, type MeetingPlanTier } from '../lib/meetingPlans';
 import { generateMeetingSummary, meetingSummaryInputSchema, MeetingSummaryError } from '../services/meetingSummary';
 
 const router = Router();
@@ -190,6 +193,41 @@ router.post('/create', (req: Request, res: Response) => {
       message: error.message || 'Internal server error'
     });
   }
+});
+
+/**
+ * Meeting plan of the caller's organization.
+ *   GET /api/meetings/plan   any member: { plan, limits, canChange, updatedAt }
+ *   PUT /api/meetings/plan   Owner/Admin: { plan: 'standard' | 'premium' | 'enterprise' }
+ * Until billing is connected (Phase B), an Owner or Admin sets the plan here; Phase B will set it from the
+ * organization's subscription. Stored at organizations/{orgId}/settings/meetings.
+ */
+const planPath = (orgId: string) => `organizations/${orgId}/settings/meetings`;
+
+export async function getOrgMeetingPlan(orgId: string): Promise<{ plan: MeetingPlanTier; updatedAt: string | null }> {
+  const doc = await (await getDocStore()).get(planPath(orgId));
+  return { plan: isMeetingPlanTier(doc?.plan) ? doc!.plan : DEFAULT_MEETING_PLAN, updatedAt: doc?.updatedAt ?? null };
+}
+
+router.get('/plan', requireTenant, requirePermission('read'), async (req: Request, res: Response) => {
+  try {
+    const t = tenantOf(req);
+    const { plan, updatedAt } = await getOrgMeetingPlan(t.orgId);
+    res.json({ success: true, plan, limits: MEETING_PLANS[plan], canChange: can(t.role, 'manage_org'), updatedAt });
+  } catch (err) { sendError(res, err, 'meetings.plan.get'); }
+});
+
+router.put('/plan', requireTenant, requirePermission('manage_org'), async (req: Request, res: Response) => {
+  try {
+    const plan = req.body?.plan;
+    if (!isMeetingPlanTier(plan)) {
+      return res.status(400).json({ success: false, code: 'invalid_input', field: 'plan', error: 'Choose standard, premium or enterprise.' });
+    }
+    const t = tenantOf(req);
+    const updatedAt = new Date().toISOString();
+    await (await getDocStore()).set(planPath(t.orgId), { plan, updatedAt, updatedBy: t.userId });
+    res.json({ success: true, plan, limits: MEETING_PLANS[plan], canChange: true, updatedAt });
+  } catch (err) { sendError(res, err, 'meetings.plan.put'); }
 });
 
 /**

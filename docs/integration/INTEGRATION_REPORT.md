@@ -68,6 +68,22 @@ One implementation now: `MeetingSessionContext` (state, media, recording) → `V
 
 **Already present, kept as-is:** screen share, recording with consent + pause/resume (MediaRecorder), transcript tab and PDF/TXT export, meeting notes, follow-up tasks, meeting history, chat (group + private), reactions, speaker/grid layouts, device settings (camera/mic/speaker, quality, noise suppression), invite by link/email, scheduling (`CreateMeetingView`, `/api/meetings`), floating mini-HUD when navigating away.
 
+### Meeting plans (group meetings)
+
+| Plan | Participants (host included) | Time limit |
+|---|---|---|
+| Standard | 100 | 60 minutes |
+| Premium | 250 | none |
+| Enterprise | 500 | none |
+
+- The plan belongs to the **organization** (`GET/PUT /api/meetings/plan`, stored at `organizations/{orgId}/settings/meetings`). Every member can see it; only Owners and Admins can change it, in **Settings → Organization & Members → Meeting plan**. The in-meeting plan switcher was removed (anyone could lift the limits with one click). Until billing is connected (Phase B), the plan is set there; Phase B will set it from the subscription.
+- A meeting **locks in** the plan it started with; a plan change applies to the next meeting.
+- **Capacity:** invites (single or pasted lists), admitting from the waiting room and "Admit all" all stop at the limit, and the participant list itself is capped so nothing can overfill it. A full room names the plan that would fit.
+- **60-minute limit (Standard):** a countdown banner for the last 5 minutes, then the meeting ends for everyone: recording saved, camera and microphone released, and the summary opens ("Meeting ended at the 60-minute limit").
+- **Large rooms:** the video grid is paged (4 tiles on phones, 9 / 16 / 25 on wider screens) with screen sharers, speakers and raised hands first; tiles go compact above 9; thumbnail strips show 30 plus "+N more"; the Participants list gets search above 8 people.
+- Fixed along the way: invites waited 600 ms on a fake "email dispatch" and said the email was sent (it isn't; the message now says to share the link); guests invited in the same millisecond got the same id; the invite dialog closed itself 2 s after each invite.
+- Tests: `test:meeting-plans` (19 plan rules + 11 API checks incl. roles and cross-organization isolation); meeting session suite now 26 (100-person cap, batch of 150, simultaneous invites, plan locked per meeting, 60-minute auto-end, Premium running past 60 minutes).
+
 ## 5. Important: what is real vs. simulated in meetings
 
 Your own camera, microphone, screen share and recording are real browser media. **Other participants, their chat replies and invitation emails are simulated in the browser**; there is no signaling/media server behind the meeting workspace yet, so two people on two computers cannot see each other. Live captions are a placeholder awaiting a transcription service. The new raise-hand, waiting-room and host controls work on that same in-browser roster and will carry over once a real media provider is connected. This matches the upload's own roadmap item "E · Real multi-person video (XL)". Recommended provider: **LiveKit** (the repo already contains `ts-livekit-ivr`), which also brings server recording, transcription and true participant permissions.
