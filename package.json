@@ -20,7 +20,8 @@
     "test:security": "npx tsx src/server/__tests__/security.test.ts && npx tsx src/server/__tests__/phase0.test.ts && npx tsx src/server/__tests__/tenancy.test.ts",
     "test:meeting-controls": "npx tsx src/components/greet/__tests__/meetingControls.test.tsx",
     "test:assistant": "npx tsx src/services/__tests__/assistant.test.ts",
-    "test:ai": "npx tsx src/services/ai/__tests__/aiService.test.ts"
+    "test:ai": "npx tsx src/services/ai/__tests__/aiService.test.ts",
+    "test:embed": "npx tsx src/routes/__tests__/embedEvents.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.132.1",

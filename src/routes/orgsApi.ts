@@ -15,6 +15,7 @@
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { rotateLeadCaptureKey } from '../server/crm/crmRepository';
+import { createEmbedKey, listEmbedKeys, revokeEmbedKey } from '../server/embed/embedKeys';
 import { assertId, getDocStore } from '../server/data/docStore';
 import { requirePermission, requireTenant, sendError, tenantOf } from '../server/tenancy/middleware';
 import { acceptInvitation, createInvitation, createOrg, getMembershipIndex, isRole, listMembers, listMyOrgs, removeMember, setMemberRole, TenancyError } from '../server/tenancy/orgs';
@@ -105,6 +106,23 @@ router.post('/current/lead-capture-key', requireTenant, requirePermission('manag
     const key = await rotateLeadCaptureKey(tenantOf(req).orgId);
     res.json({ success: true, key, note: 'Copy this key now; it won’t be shown again. Any previous key stopped working.' });
   } catch (err) { sendError(res, err, 'orgs.leadKey'); }
+});
+
+// ---- Calendar widget keys (Settings → Organization → Website calendar) ----
+router.get('/current/embed-keys', requireTenant, requirePermission('manage_org'), async (req, res) => {
+  try { res.json({ success: true, keys: await listEmbedKeys(tenantOf(req).orgId) }); }
+  catch (err) { sendError(res, err, 'orgs.embedKeys'); }
+});
+router.post('/current/embed-keys', requireTenant, requirePermission('manage_org'), async (req, res) => {
+  try {
+    const t = tenantOf(req);
+    const { key, secret } = await createEmbedKey(t.orgId, t.userId, req.body || {});
+    res.status(201).json({ success: true, key, secret, note: 'Copy this key now; it won’t be shown again.' });
+  } catch (err) { sendError(res, err, 'orgs.createEmbedKey'); }
+});
+router.delete('/current/embed-keys/:id', requireTenant, requirePermission('manage_org'), async (req, res) => {
+  try { await revokeEmbedKey(tenantOf(req).orgId, req.params.id); res.json({ success: true }); }
+  catch (err) { sendError(res, err, 'orgs.revokeEmbedKey'); }
 });
 
 export default router;

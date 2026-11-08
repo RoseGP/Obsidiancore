@@ -17,6 +17,10 @@ export type TenantRequest = Request & { tenant?: Tenant };
 export function sendError(res: Response, err: unknown, tag: string) {
   if (err instanceof TenancyError) return res.status(err.status).json({ success: false, code: err.code, error: err.message });
   if (err instanceof InvalidIdError) return res.status(400).json({ success: false, code: 'invalid_id', error: 'Invalid id.' });
+  if ((err as any)?.name === 'ZodError' && Array.isArray((err as any).issues)) {
+    const i = (err as any).issues[0];
+    return res.status(400).json({ success: false, code: 'invalid_input', field: i?.path?.join('.') || undefined, error: i?.message || 'Invalid input.' });
+  }
   const status = (err as any)?.status;
   if (typeof status === 'number' && status >= 400 && status < 500) {
     return res.status(status).json({ success: false, code: (err as any).code || 'bad_request', error: (err as any).message || 'Bad request.' });

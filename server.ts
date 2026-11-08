@@ -22,6 +22,7 @@ import authRouter from './src/routes/auth';
 import availabilityRouter from './src/routes/availability';
 import gcalWebhookRouter from './src/routes/gcalWebhook';
 import apiV1Router from './src/routes/apiV1Bff';
+import { eventsRouter as embedEventsRouter, embedTokensRouter } from './src/routes/embedEventsApi';
 import salesIntelRouter from './src/routes/salesIntel';
 import postizRouter from './src/routes/postiz';
 import messagingPlatformRouter from './src/routes/messagingPlatform';
@@ -50,7 +51,11 @@ const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 
 // Core Middleware
-app.use(cors());
+// CORS: the app's own pages only (APP_URL plus CORS_ALLOWED_ORIGINS). The embeddable calendar API
+// (/api/v1/events) sets its own per-key CORS headers, so it's skipped here.
+const corsAllowed = new Set([process.env.APP_URL, ...(process.env.CORS_ALLOWED_ORIGINS || '').split(',')].map((o) => (o || '').trim().replace(/\/+$/, '')).filter(Boolean));
+const appCors = cors({ origin: (origin, cb) => cb(null, !origin || corsAllowed.has(origin)) });
+app.use((req, res, next) => (req.path.startsWith('/api/v1/events') || req.path.startsWith('/api/v1/embed-tokens') ? next() : appCors(req, res, next)));
 app.use(express.json({ 
   limit: '10mb',
   verify: (req: any, _res, buf) => {
@@ -108,6 +113,9 @@ app.use('/api/social-planner', guard(PUBLIC.none), socialPlannerApiRouter);
 app.use('/api/auth', guard(PUBLIC.auth), authRouter);
 app.use('/api/availability', guard(PUBLIC.availability), availabilityRouter);
 app.use('/api/gcal', guard(PUBLIC.gcal), gcalWebhookRouter);
+// Embeddable calendar (public, cross-origin): before the /api/v1 gateway router.
+app.use('/api/v1/events', embedEventsRouter);
+app.use('/api/v1/embed-tokens', embedTokensRouter);
 app.use('/api/v1', apiV1Router);
 app.use('/api/sales-intelligence', guard(PUBLIC.salesIntel), salesIntelRouter);
 // Legacy bare '/api' mount of the payments router (catch-all routes such as GET /:invoiceId).

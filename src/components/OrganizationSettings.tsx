@@ -195,6 +195,8 @@ export default function OrganizationSettings() {
         )}
       </section>
 
+      <WebsiteCalendarSettings isAdmin={isAdmin} card={card} field={field} btn={btn} />
+
       <section className={card} aria-labelledby="leadkey-heading">
         <h3 id="leadkey-heading" className="flex items-center gap-2 text-base font-semibold text-white"><KeyRound className="h-4 w-4 text-sky-400" />Website lead form</h3>
         <p className="text-sm text-neutral-400">Website forms send leads to <code className="text-neutral-300">POST /api/leads/capture</code> with the header <code className="text-neutral-300">X-Lead-Capture-Key</code>. The key decides which organization receives the lead.</p>
@@ -216,6 +218,80 @@ export default function OrganizationSettings() {
         )}
       </section>
     </div>
+  );
+}
+
+
+/** Settings → Website calendar: keys for the embeddable calendar (public/widget.js) and the snippet to paste. */
+function WebsiteCalendarSettings({ isAdmin, card, field, btn }: { isAdmin: boolean; card: string; field: string; btn: string }) {
+  const [keys, setKeys] = useState<any[]>([]);
+  const [origins, setOrigins] = useState('');
+  const [allowRequests, setAllowRequests] = useState(false);
+  const [created, setCreated] = useState<{ secret: string; kind: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const base = typeof window !== 'undefined' ? window.location.origin : '';
+  const load = useCallback(async () => { try { setKeys((await api('/current/embed-keys')).keys); } catch (e: any) { setError(e.message); } }, []);
+  useEffect(() => { if (isAdmin) load(); }, [isAdmin, load]);
+  if (!isAdmin) return null;
+
+  const create = async (kind: 'publishable' | 'secret') => {
+    setBusy(true); setError(null); setCreated(null);
+    try {
+      const list = origins.split(/[\s,]+/).map((o) => o.trim()).filter(Boolean);
+      const r = await api('/current/embed-keys', { method: 'POST', body: JSON.stringify({
+        kind, allowedOrigins: list, label: kind === 'secret' ? 'Server key (staff editing)' : allowRequests ? 'Website calendar + requests' : 'Website calendar',
+        scopes: kind === 'secret' ? ['events:read', 'events:write'] : allowRequests ? ['events:read', 'events:write'] : ['events:read'],
+      }) });
+      setCreated({ secret: r.secret, kind }); load();
+    } catch (e: any) { setError(e.message); } finally { setBusy(false); }
+  };
+  const revoke = async (k: any) => {
+    if (!window.confirm(`Revoke “${k.label}” (${k.prefix}…)? Calendars using it stop working immediately.`)) return;
+    try { await api(`/current/embed-keys/${encodeURIComponent(k.id)}`, { method: 'DELETE' }); load(); } catch (e: any) { setError(e.message); }
+  };
+  const snippet = created?.kind === 'publishable'
+    ? `<obsidian-calendar data-api-key="${created.secret}" data-theme="auto"></obsidian-calendar>\n<script src="${base}/widget.js" defer></script>`
+    : '';
+
+  return (
+    <section className={card} aria-labelledby="webcal-heading">
+      <h3 id="webcal-heading" className="text-base font-semibold text-white">Website calendar</h3>
+      <p className="text-sm text-neutral-400">Show this organization’s calendar on your website. A <b>public key</b> is safe to paste into your site’s HTML and only works on the addresses you list. To let your staff edit events from your site, create a <b>server key</b> and keep it on your server (see docs/embed-calendar/README.md).</p>
+      {error && <div role="alert" className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-200">{error}</div>}
+      <label className="block text-sm text-neutral-300" htmlFor="webcal-origins">Website address(es), one per line</label>
+      <textarea id="webcal-origins" rows={2} value={origins} onChange={(e) => setOrigins(e.target.value)} placeholder="https://www.yourshop.com" className={`${field} w-full`} />
+      <label className="flex items-center gap-2 text-sm text-neutral-300">
+        <input type="checkbox" checked={allowRequests} onChange={(e) => setAllowRequests(e.target.checked)} />
+        Let visitors request a time (creates pending requests you confirm; they can’t edit or delete)
+      </label>
+      <div className="flex flex-wrap gap-2">
+        <button type="button" disabled={busy || !origins.trim()} onClick={() => create('publishable')} className={`${btn} bg-sky-600 text-white hover:bg-sky-500`}>Create public key</button>
+        <button type="button" disabled={busy || !origins.trim()} onClick={() => create('secret')} className={`${btn} bg-neutral-800 text-white hover:bg-neutral-700`}>Create server key</button>
+      </div>
+      {created && (
+        <div className="space-y-2">
+          <p className="text-xs text-amber-300">Copy this {created.kind === 'secret' ? 'server key and store it in your server’s environment. Never put it in a web page' : 'now'}: it won’t be shown again.</p>
+          <input readOnly value={created.secret} aria-label="New key" className={`${field} w-full font-mono text-xs`} onFocus={(e) => e.currentTarget.select()} />
+          {snippet && (<>
+            <p className="text-sm text-neutral-300">Paste this where the calendar should appear:</p>
+            <textarea readOnly rows={3} value={snippet} aria-label="Embed code" className={`${field} w-full font-mono text-xs`} onFocus={(e) => e.currentTarget.select()} />
+          </>)}
+        </div>
+      )}
+      {keys.length > 0 && (
+        <ul className="divide-y divide-white/5">
+          {keys.map((k) => (
+            <li key={k.id} className="flex flex-wrap items-center gap-2 py-2 text-sm">
+              <span className="flex-1 min-w-0 text-neutral-200">{k.label} <span className="font-mono text-neutral-500">{k.prefix}…</span>
+                <span className="block text-xs text-neutral-500">{k.kind === 'secret' ? 'Server key' : 'Public key'} · {k.scopes.includes('events:write') ? (k.kind === 'secret' ? 'edit' : 'view + requests') : 'view only'} · {k.allowedOrigins.join(', ')}</span></span>
+              {k.revokedAt ? <span className="text-xs text-neutral-500">Revoked</span>
+                : <button type="button" onClick={() => revoke(k)} className={`${btn} text-rose-300 hover:bg-rose-500/10`}>Revoke</button>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 

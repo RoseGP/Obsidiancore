@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Calendar</title>
+<style>html,body{margin:0;background:transparent}body{padding:0}</style>
+</head>
+<body>
+<!--
+  iFrame fallback for sites whose Content Security Policy blocks third-party scripts:
+  <iframe src="https://YOUR-CRM/embed/calendar.html?key=pk_…&theme=auto&view=month" …></iframe>
+  Publishable keys only (anything in a URL can end up in logs). For staff editing, use the script embed with
+  data-token-url. The key must list YOUR-CRM's own origin too, since requests come from this page.
+-->
+<script>
+(function () {
+  var q = new URLSearchParams(location.search);
+  var key = q.get('key') || '';
+  if (!/^pk_[A-Za-z0-9_-]{30,40}$/.test(key)) { document.body.textContent = 'Calendar not configured: add ?key=pk_… to the iframe URL.'; return; }
+  var cal = document.createElement('obsidian-calendar');
+  cal.dataset.apiKey = key;
+  cal.dataset.endpoint = location.origin;
+  ['theme', 'view', 'locale', 'channels'].forEach(function (k) { var v = q.get(k); if (v) cal.dataset[k] = v.slice(0, 200); });
+  document.body.appendChild(cal);
+  var s = document.createElement('script'); s.src = '/widget.js'; document.body.appendChild(s);
+})();
+</script>
+</body>
+</html>
