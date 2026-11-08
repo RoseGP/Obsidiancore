@@ -88,7 +88,7 @@ export const SupportTicketsWidget: React.FC<{ onNavigate?: (view: any) => void }
       });
       const data = await res.json();
       if (data.success) {
-        setTickets(prev => prev.map(t => t.id === id ? { ...t, status: 'resolved' } : t));
+        // Saving a reply doesn't resolve the ticket; resolving is a separate action.
         setReplyText('');
         setReplyTicketId(null);
       }

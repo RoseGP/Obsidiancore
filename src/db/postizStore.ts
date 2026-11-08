@@ -8,6 +8,7 @@ import fs from 'fs';
 import path from 'path';
 import { initializeApp, getApps } from 'firebase-admin/app';
 import { getFirestore, Timestamp } from 'firebase-admin/firestore';
+import { firestoreEnabled } from '../lib/firestoreMode';
 import firebaseConfigJson from '../../firebase-applet-config.json';
 import { encryptToken, decryptToken, EncryptedPayload } from '../utils/cryptoSecurity';
 import { PostizCredentialRecord, PostizPostResponse, PostizIntegration } from '../types/postiz';
@@ -28,7 +29,7 @@ const resolvedDatabaseId = isValidDatabaseId(envDbId)
 let firestore: any = null;
 let isFirestoreAvailable = false;
 
-try {
+if (firestoreEnabled()) try {
   const adminApp = getApps().length === 0
     ? initializeApp({ projectId: resolvedProjectId })
     : getApps()[0];

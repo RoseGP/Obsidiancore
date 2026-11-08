@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
-import { db } from '../utils/db';
+import { assertId, getDocStore } from '../server/data/docStore';
+import { requireReadOrWrite, requireTenant, sendError, tenantOf } from '../server/tenancy/middleware';
 import { ChatMessageItem } from '../types';
 import { processCRMBrainChat, CRMBrainChatParams as CRMBrainChatInput, CRMBrainChatResult as CRMBrainChatOutput } from '../services/crmBrain';
 import {
@@ -9,6 +10,9 @@ import {
 } from '../controllers/omniRouteChatController';
 
 const router = Router();
+
+// Every chat route acts for a signed-in member of an organization.
+router.use(requireTenant, requireReadOrWrite);
 
 // ============================================================================
 // OMNIROUTE AI GATEWAY ENDPOINTS (SSE STREAMING & RESILIENCE)
@@ -35,44 +39,31 @@ const DEFAULT_LEAD_CONTEXT = {
   notes: 'Looking for multi-channel CRM automation with low-latency failovers. Prefers direct, concise communication.',
 };
 
-// Ensure or retrieve active userId
-async function getOrProvisionUserId(req: Request, fallbackId?: string): Promise<string> {
-  // The verified identity (bound by guard() in server.ts) always wins over anything the client sent.
-  const targetId = String((req as any).user?.id || (req as any).userId || fallbackId || '');
-  if (!targetId) throw Object.assign(new Error('Sign in to continue.'), { status: 401 });
+/** The verified caller. Client-supplied ids are ignored. */
+async function getOrProvisionUserId(req: Request, _ignored?: string): Promise<string> {
+  return tenantOf(req).userId;
+}
 
-  if (db.user) {
-    try {
-      const existing = await db.user.findFirst({ where: { id: targetId } });
-      if (!existing) {
-        await db.user.create({
-          data: {
-            id: targetId,
-            email: `${targetId}@flowforge.studio`,
-            name: 'Executive Director',
-            role: 'ADMIN',
-          },
-        });
-      }
-    } catch (e) {}
-  }
-  return targetId;
+/** organizations/{orgId}/chat_sessions/{sessionId}: sessions are private to their user. */
+function sessionPath(req: Request, sessionId: string) {
+  return `organizations/${tenantOf(req).orgId}/chat_sessions/${assertId(sessionId)}`;
 }
 
 /**
  * Loads a chat session only if it belongs to `userId`. A session owned by someone else is reported
  * exactly like a missing one, so session ids can't be probed.
  */
-async function loadOwnedSession(sessionId: string, userId: string): Promise<any | null> {
-  if (!db.chatSession || !sessionId) return null;
-  const s = await db.chatSession.findFirst({ where: { sessionId } });
-  return s && s.sessionId === sessionId && s.userId === userId ? s : null;
+async function loadOwnedSession(req: Request, sessionId: string, userId: string): Promise<any | null> {
+  if (!sessionId) return null;
+  const st = await getDocStore();
+  const s = await st.get(sessionPath(req, sessionId));
+  return s && s.userId === userId ? s : null;
 }
 
-async function sessionIdTakenByOther(sessionId: string, userId: string): Promise<boolean> {
-  if (!db.chatSession || !sessionId) return false;
-  const s = await db.chatSession.findFirst({ where: { sessionId } });
-  return !!(s && s.sessionId === sessionId && s.userId !== userId);
+async function sessionIdTakenByOther(req: Request, sessionId: string, userId: string): Promise<boolean> {
+  if (!sessionId) return false;
+  const s = await (await getDocStore()).get(sessionPath(req, sessionId));
+  return !!(s && s.userId !== userId);
 }
 
 /**
@@ -103,17 +94,10 @@ router.post('/', async (req: Request, res: Response) => {
     const timestamp = new Date().toISOString();
 
     // 1. Fetch or initialize ChatSession from database
-    let session = null;
-    if (db.chatSession) {
-      try {
-        if (await sessionIdTakenByOther(sessionId, userId)) {
-          return res.status(404).json({ success: false, error: 'Chat session not found.' });
-        }
-        session = await loadOwnedSession(sessionId, userId);
-      } catch (err) {
-        console.warn('[Chat DB Fetch Note]:', (err as any).message);
-      }
+    if (await sessionIdTakenByOther(req, sessionId, userId)) {
+      return res.status(404).json({ success: false, error: 'Chat session not found.' });
     }
+    const session: any = await loadOwnedSession(req, sessionId, userId);
 
     let existingMessages: ChatMessageItem[] = [];
     if (session && session.messages) {
@@ -172,25 +156,11 @@ router.post('/', async (req: Request, res: Response) => {
     const finalMessages: ChatMessageItem[] = [...updatedMessages, newAssistantMessage];
 
     // 6. Save updated ChatSession record
-    let savedSession: any = null;
-    if (db.chatSession) {
-      try {
-        savedSession = await db.chatSession.upsert({
-          where: { sessionId },
-          update: {
-            messages: finalMessages,
-            updatedAt: new Date(),
-          },
-          create: {
-            sessionId,
-            userId,
-            messages: finalMessages,
-          },
-        });
-      } catch (saveErr: any) {
-        console.warn('[ChatSession DB Save Note]:', saveErr.message);
-      }
-    }
+    const savedSession = {
+      sessionId, userId, orgId: tenantOf(req).orgId, messages: finalMessages,
+      createdAt: session?.createdAt || timestamp, updatedAt: new Date().toISOString(),
+    };
+    await (await getDocStore()).set(sessionPath(req, sessionId), savedSession);
 
     // 7. Parse CRM command metadata for dashboard integration
     const lower = userMessageText.toLowerCase();
@@ -233,18 +203,10 @@ router.post('/', async (req: Request, res: Response) => {
       type,
       action,
       params,
-      session: savedSession || {
-        sessionId,
-        userId,
-        messages: finalMessages,
-      },
+      session: savedSession,
     });
   } catch (error: any) {
-    console.error('[POST /api/chat Error]', error);
-    return res.status(500).json({
-      success: false,
-      error: error.message || 'Internal server error processing chat request.',
-    });
+    return sendError(res, error, 'POST /api/chat Error');
   }
 });
 
@@ -273,11 +235,7 @@ router.post('/brain', async (req: Request, res: Response) => {
       ...result,
     });
   } catch (error: any) {
-    console.error('[POST /api/chat/brain Error]', error);
-    return res.status(500).json({
-      success: false,
-      error: error.message || 'Error processing CRM Brain Chat.',
-    });
+    return sendError(res, error, 'POST /api/chat/brain Error');
   }
 });
 
@@ -287,13 +245,7 @@ router.post('/brain', async (req: Request, res: Response) => {
 router.get('/sessions', async (req: Request, res: Response) => {
   try {
     const userId = await getOrProvisionUserId(req);
-    let sessions: any[] = [];
-
-    if (db.chatSession) {
-      sessions = await db.chatSession.findMany({
-        where: { userId },
-      });
-    }
+    const sessions = await (await getDocStore()).list(`organizations/${tenantOf(req).orgId}/chat_sessions`, { where: [['userId', '==', userId]] });
 
     return res.status(200).json({
       success: true,
@@ -301,11 +253,7 @@ router.get('/sessions', async (req: Request, res: Response) => {
       sessions,
     });
   } catch (error: any) {
-    console.error('[GET /api/chat/sessions Error]', error);
-    return res.status(500).json({
-      success: false,
-      error: error.message || 'Failed to list chat sessions.',
-    });
+    return sendError(res, error, 'GET /api/chat/sessions Error');
   }
 });
 
@@ -316,7 +264,7 @@ router.get('/session/:sessionId', async (req: Request, res: Response) => {
   try {
     const { sessionId } = req.params;
     const userId = await getOrProvisionUserId(req);
-    const session = await loadOwnedSession(sessionId, userId);
+    const session = await loadOwnedSession(req, sessionId, userId);
 
     if (!session) {
       return res.status(404).json({ success: false, error: 'Chat session not found.' });
@@ -328,11 +276,7 @@ router.get('/session/:sessionId', async (req: Request, res: Response) => {
       messages: session.messages || [],
     });
   } catch (error: any) {
-    console.error('[GET /api/chat/session/:sessionId Error]', error);
-    return res.status(500).json({
-      success: false,
-      error: error.message || 'Failed to fetch chat session.',
-    });
+    return sendError(res, error, 'GET /api/chat/session/:sessionId Error');
   }
 });
 
@@ -343,29 +287,19 @@ router.delete('/session/:sessionId', async (req: Request, res: Response) => {
   try {
     const { sessionId } = req.params;
     const userId = await getOrProvisionUserId(req);
-    const session = await loadOwnedSession(sessionId, userId);
+    const session = await loadOwnedSession(req, sessionId, userId);
     if (!session) {
       return res.status(404).json({ success: false, error: 'Chat session not found.' });
     }
 
-    if (db.chatSession) {
-      try {
-        await db.chatSession.delete({
-          where: { sessionId },
-        });
-      } catch (e) {}
-    }
+    await (await getDocStore()).deleteRecursive(sessionPath(req, sessionId));
 
     return res.status(200).json({
       success: true,
       message: `Chat session '${sessionId}' cleared.`,
     });
   } catch (error: any) {
-    console.error('[DELETE /api/chat/session/:sessionId Error]', error);
-    return res.status(500).json({
-      success: false,
-      error: error.message || 'Failed to delete chat session.',
-    });
+    return sendError(res, error, 'DELETE /api/chat/session/:sessionId Error');
   }
 });
 

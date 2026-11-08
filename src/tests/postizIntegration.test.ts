@@ -8,6 +8,8 @@ import { PostizService, getPostizConfig } from '../services/postizService';
 import { PostizStore } from '../db/postizStore';
 import { encryptToken, decryptToken } from '../utils/cryptoSecurity';
 import crypto from 'crypto';
+// The webhook check fails closed without a secret (correct); give the test one.
+process.env.POSTIZ_WEBHOOK_SECRET ||= 'postiz-test-webhook-secret';
 
 async function runTests() {
   console.log('🧪 Starting Postiz Integration Automated Tests...\n');

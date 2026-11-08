@@ -15,7 +15,7 @@ import { devIdentityHeaderAllowed } from '../../../server/runtimeEnv';
 import firebaseConfigJson from '../../../../firebase-applet-config.json';
 
 export interface AuthedRequest extends Request {
-  accountUser?: { id: string; via: 'firebase' | 'jwt' | 'dev' };
+  accountUser?: { id: string; via: 'firebase' | 'jwt' | 'dev'; email?: string; emailVerified?: boolean; name?: string };
 }
 
 function firebaseProjectId(): string | undefined {
@@ -31,16 +31,20 @@ export function looksLikeFirebaseToken(token: string): boolean {
   }
 }
 
-async function verifyFirebase(token: string): Promise<string | null> {
+async function verifyFirebaseClaims(token: string): Promise<{ uid: string; email?: string; email_verified?: boolean; name?: string } | null> {
   const projectId = firebaseProjectId();
   if (!projectId) return null;
   try {
     const app = getApps()[0] ?? initializeApp({ projectId });
     const decoded = await getAuth(app).verifyIdToken(token, true);
-    return decoded.uid || null;
+    return decoded.uid ? decoded : null;
   } catch {
     return null;
   }
+}
+
+async function verifyFirebase(token: string): Promise<string | null> {
+  return (await verifyFirebaseClaims(token))?.uid ?? null;
 }
 
 export async function identify(req: Request): Promise<AuthedRequest['accountUser'] | null> {
@@ -48,21 +52,25 @@ export async function identify(req: Request): Promise<AuthedRequest['accountUser
   const token = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
   if (token) {
     if (looksLikeFirebaseToken(token)) {
-      const uid = await verifyFirebase(token);
-      if (uid) return { id: uid, via: 'firebase' };
+      const c = await verifyFirebaseClaims(token);
+      if (c) return { id: c.uid, via: 'firebase', email: c.email, emailVerified: c.email_verified === true, name: c.name };
     } else {
       const secret = process.env.SOCIAL_ACCOUNTS_JWT_SECRET || process.env.JWT_SECRET;
       if (secret) {
         const p: any = await verifyJwt(token, secret);
         const id = p && String(p.userId ?? p.sub ?? p.uid ?? '');
-        if (id) return { id, via: 'jwt' };
+        // Server-issued session JWTs: an email claim is only trusted as verified if the token says so.
+        if (id) return { id, via: 'jwt', email: typeof p.email === 'string' ? p.email : undefined, emailVerified: p.email_verified === true, name: typeof p.name === 'string' ? p.name : undefined };
       }
     }
   }
   if (devIdentityHeaderAllowed()) {
     const rawDev = req.headers['x-dev-user-id'];
     if (typeof rawDev === 'string' && rawDev.trim() && /^[A-Za-z0-9_.@-]{1,128}$/.test(rawDev.trim())) {
-      return { id: rawDev.trim(), via: 'dev' };
+      // Development only: X-Dev-User-Email simulates a verified email (e.g. to test invitations).
+      const rawEmail = req.headers['x-dev-user-email'];
+      const email = typeof rawEmail === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail) ? rawEmail.trim().toLowerCase() : undefined;
+      return { id: rawDev.trim(), via: 'dev', email, emailVerified: !!email };
     }
   }
   return null;

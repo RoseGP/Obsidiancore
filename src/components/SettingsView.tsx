@@ -5,7 +5,7 @@ import { useRealtimeSync } from '../context/RealtimeSyncContext';
 import { initiateLinkedInLogin } from './LinkedInCallbackHandler';
 import IntegrationsSettingsSection from './IntegrationsSettingsSection';
 import NotificationPreferencesModal from './notifications/NotificationPreferencesModal';
-import RolePermissionsManagement from './auth/RolePermissionsManagement';
+import OrganizationSettings from './OrganizationSettings';
 import ConcurrentSessionsManager from './ConcurrentSessionsManager';
 import MurmuraBillingPage from './settings/MurmuraBillingPage';
 import { UnifiedSocketInspector } from './UnifiedSocketInspector';
@@ -760,8 +760,8 @@ export default function SettingsView({ defaultTab = 'account' }: SettingsViewPro
             </div>
           </div>
 
-          {/* Role-Based Access Control (RBAC) */}
-          <RolePermissionsManagement />
+          {/* Organization members & roles (server-enforced via /api/orgs) */}
+          <OrganizationSettings />
         </div>
       )}
 

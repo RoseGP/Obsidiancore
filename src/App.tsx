@@ -38,6 +38,7 @@ import { CRMContact, CRMLead, CalendarEvent, CRMMessage, AppNotification, Active
 import { MessageSquare, X } from 'lucide-react';
 import { useTheme } from './context/ThemeContext';
 import ThemeSwitch from './components/ThemeSwitch';
+import { InvitationAcceptor } from './components/OrganizationSettings';
 
 // TO COMPLETE: load the signed-in user's contacts from your database (e.g. Firestore users/{uid}/contacts with onSnapshot in DatabaseContext, like channels/posts) and persist create/update/delete. Until then the CRM starts empty and changes are lost on reload.
 const INITIAL_CONTACTS: CRMContact[] = [];
@@ -453,6 +454,9 @@ function AppMain() {
 
   return (
     <div className="min-h-screen flex bg-[var(--app-bg)] text-[var(--text)]">
+      {/* Accepts ?invite=<token> links once the user is signed in */}
+      <InvitationAcceptor onResult={showToast} />
+
       {/* Session Lock Screen Overlay */}
       {isSessionLocked && <SessionLockScreen />}
 

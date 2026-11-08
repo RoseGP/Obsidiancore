@@ -1,9 +1,9 @@
+import { isExplicitDevOrTest } from '../server/runtimeEnv';
 import { Request, Response } from 'express';
 import { GoogleGenAI } from '@google/genai';
 import { ChatCompletionPayload, StreamDeltaChunk, GatewayStatusResponse } from '../types';
 import { optionalSecret } from '../utils/secrets';
 import { runCrmAssistantTurn } from '../services/crmAiAssistant';
-import { adminDb } from '../lib/firebaseAdmin';
 
 /**
  * ============================================================================
@@ -160,7 +160,7 @@ export async function handleChatCompletions(req: Request, res: Response): Promis
 
   // Handle explicit error simulation from client UI (for testing 429/quota/503 fallback)
   // Simulated outages exist for local QA only; ignored in production.
-  if (process.env.NODE_ENV !== 'production' && simulateError && simulateError !== 'none') {
+  if (isExplicitDevOrTest() && simulateError && simulateError !== 'none') {
     const simErrorMap: Record<string, { status: number; message: string }> = {
       '429_rate_limit': { status: 429, message: 'OmniRoute Gateway 429: Upstream provider token limit / concurrency cap exceeded.' },
       'quota_exhausted': { status: 402, message: 'OmniRoute Gateway 402: Organization monthly spend quota exhausted for model ' + requestedModel },
@@ -179,7 +179,7 @@ export async function handleChatCompletions(req: Request, res: Response): Promis
     writeSystemNotice('rate_limit_handled', requestedModel, nextModel, sim.message, sim.status);
 
     // Seamlessly execute secondary fallback without breaking active chat session!
-    await executeFallbackStream({
+    await executeFallbackStream({ tenant: (req as any).tenant,
       res,
       writeSseChunk,
       messages,
@@ -191,7 +191,7 @@ export async function handleChatCompletions(req: Request, res: Response): Promis
   }
 
   if (!OMNIROUTE_GATEWAY_URL) {
-    await executeFallbackStream({ res, writeSseChunk, messages, fallbackModel: 'gemini-2.5-flash', userId, reason: 'OmniRoute gateway not configured' });
+    await executeFallbackStream({ tenant: (req as any).tenant, res, writeSseChunk, messages, fallbackModel: 'gemini-2.5-flash', userId, reason: 'OmniRoute gateway not configured' });
     return;
   }
   try {
@@ -242,7 +242,7 @@ export async function handleChatCompletions(req: Request, res: Response): Promis
         logGatewayIncident(requestedModel, `HTTP_${errorStatus}`, nextModel);
         writeSystemNotice('fallback_activated', requestedModel, nextModel, reasonText, errorStatus);
 
-        await executeFallbackStream({
+        await executeFallbackStream({ tenant: (req as any).tenant,
           res,
           writeSseChunk,
           messages,
@@ -293,7 +293,7 @@ export async function handleChatCompletions(req: Request, res: Response): Promis
                 console.warn('[OmniRoute Stream Error In-Band]:', parsed.error);
                 const nextModel = getNextFallbackModel(requestedModel, fallbackChain);
                 writeSystemNotice('provider_switch', requestedModel, nextModel, parsed.error.message || 'Stream provider error', 502);
-                await executeFallbackStream({
+                await executeFallbackStream({ tenant: (req as any).tenant,
                   res,
                   writeSseChunk,
                   messages,
@@ -327,7 +327,7 @@ export async function handleChatCompletions(req: Request, res: Response): Promis
     logGatewayIncident(requestedModel, netErr.code || 'CONN_ERR', nextModel);
     writeSystemNotice('fallback_activated', requestedModel, nextModel, reason, 503);
 
-    await executeFallbackStream({
+    await executeFallbackStream({ tenant: (req as any).tenant,
       res,
       writeSseChunk,
       messages,
@@ -361,15 +361,22 @@ async function executeFallbackStream(opts: {
   fallbackModel: string;
   userId: string;
   reason: string;
+  tenant?: { orgId: string; userId: string; role: string; name: string; email: string };
 }): Promise<void> {
-  const { res, writeSseChunk, messages, fallbackModel, userId, reason } = opts;
+  const { res, writeSseChunk, messages, fallbackModel, userId, reason, tenant } = opts;
   gatewayTelemetry.fallbackExecutions++;
 
   console.log(`[CRM AI Assistant Engine] Executing turn with tools for user: ${userId}`);
 
   const geminiApiKey = process.env.GEMINI_API_KEY;
   const lastUserMessage = [...messages].reverse().find(m => m.role === 'user')?.content || 'Hello';
-  const orgId = 'org_obsidian_enterprise';
+  if (!tenant) {
+    // Tools need an organization to act in; never fall back to a shared/default one.
+    writeSseChunk('', fallbackModel, 'stop');
+    if (!res.writableEnded) { res.write('data: {"error":{"code":"no_tenant","message":"Sign in to an organization to use the assistant."}}\n\n'); res.write('data: [DONE]\n\n'); res.end(); }
+    return;
+  }
+  const orgId = tenant.orgId;
 
   if (geminiApiKey) {
     try {
@@ -382,10 +389,10 @@ async function executeFallbackStream(opts: {
         incomingMessage: lastUserMessage,
         conversationHistory: history,
         context: {
-          userId,
+          userId: tenant.userId,
           orgId,
-          role: 'ADMIN',
-          name: 'Executive Director'
+          role: tenant.role,
+          name: tenant.name || tenant.email || 'there'
         },
         onToolCall: (name) => {
           writeSseChunk(`\n> *⚡ Executing CRM Action: ${name.replace(/_/g, ' ')}...*\n\n`, 'gemini-3.8-flash', null);
@@ -401,16 +408,15 @@ async function executeFallbackStream(opts: {
 
       writeSseChunk('', 'gemini-3.8-flash', 'stop');
 
-      // Persist conversation to Firestore
-      const sessionDocRef = adminDb.collection('crm_chat_sessions').doc(`session_${userId}_default`);
-      sessionDocRef.set({
-        id: `session_${userId}_default`,
-        userId,
-        orgId,
-        lastMessage: reply.slice(0, 120),
-        toolCallsCount: toolCallsExecuted.length,
-        updatedAt: new Date().toISOString()
-      }, { merge: true }).catch(() => {});
+      // Conversation metadata, scoped to the organization and user.
+      try {
+        const { getDocStore } = await import('../server/data/docStore');
+        const st = await getDocStore();
+        await st.set(`organizations/${orgId}/chat_sessions/session_${tenant.userId}_default`, {
+          id: `session_${tenant.userId}_default`, userId: tenant.userId, orgId,
+          lastMessage: reply.slice(0, 120), toolCallsCount: toolCallsExecuted.length, updatedAt: new Date().toISOString(),
+        });
+      } catch (e: any) { console.warn('[chat] could not save session metadata:', e?.message); }
 
       if (!res.writableEnded) {
         res.write('data: [DONE]\n\n');

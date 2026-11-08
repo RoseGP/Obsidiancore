@@ -1,3 +1,4 @@
+import { requireFirestore } from '../../lib/firestoreMode';
 import { 
   User, 
   ConnectedAccount, 
@@ -110,7 +111,7 @@ export async function saveConnectedAccount(account: ConnectedAccount): Promise<C
 
   // Sync to Firestore if available
   try {
-    const { adminDb } = await import('../../lib/firebaseAdmin');
+    const { adminDb } = await requireFirestore();
     await adminDb.collection('connected_accounts').doc(account.id).set(account, { merge: true });
   } catch {
     // In-memory fallback
@@ -135,7 +136,7 @@ export async function removeConnectedAccount(
   CONNECTED_ACCOUNTS_MAP.delete(key);
 
   try {
-    const { adminDb } = await import('../../lib/firebaseAdmin');
+    const { adminDb } = await requireFirestore();
     await adminDb.collection('connected_accounts').doc(existing.id).delete();
   } catch {
     // In-memory fallback
@@ -156,7 +157,7 @@ export async function disconnectAccountByProviderAccountId(
     if (account.provider === provider && account.provider_account_id === providerAccountId) {
       CONNECTED_ACCOUNTS_MAP.delete(key);
       try {
-        const { adminDb } = await import('../../lib/firebaseAdmin');
+        const { adminDb } = await requireFirestore();
         await adminDb.collection('connected_accounts').doc(account.id).delete();
       } catch {
         // In-memory fallback
@@ -207,7 +208,7 @@ export async function saveCustomer(customer: Customer): Promise<Customer> {
   CUSTOMERS_MAP.set(customer.id, customer);
 
   try {
-    const { adminDb } = await import('../../lib/firebaseAdmin');
+    const { adminDb } = await requireFirestore();
     await adminDb.collection('payment_customers').doc(customer.id).set(customer, { merge: true });
   } catch {
     // In-memory fallback
@@ -286,7 +287,7 @@ export async function saveInvoice(invoice: Invoice, items?: InvoiceItem[]): Prom
   }
 
   try {
-    const { adminDb } = await import('../../lib/firebaseAdmin');
+    const { adminDb } = await requireFirestore();
     await adminDb.collection('payment_invoices').doc(invoice.id).set(invoice, { merge: true });
     if (items) {
       await adminDb.collection('payment_invoices').doc(invoice.id).collection('items').doc('list').set({ items });
@@ -323,7 +324,7 @@ export async function updateInvoiceStatus(
   INVOICES_MAP.set(invoiceId, updated);
 
   try {
-    const { adminDb } = await import('../../lib/firebaseAdmin');
+    const { adminDb } = await requireFirestore();
     await adminDb.collection('payment_invoices').doc(invoiceId).set(updated, { merge: true });
   } catch {
     // In-memory fallback
@@ -352,7 +353,7 @@ export async function markWebhookEventProcessed(provider: PaymentProviderType, e
   PROCESSED_WEBHOOK_EVENTS.add(key);
 
   try {
-    const { adminDb } = await import('../../lib/firebaseAdmin');
+    const { adminDb } = await requireFirestore();
     await adminDb.collection('webhook_events').doc(key).set({
       provider,
       eventId,
@@ -388,7 +389,7 @@ export async function logAudit(
   if (AUDIT_LOGS.length > 500) AUDIT_LOGS.pop();
 
   try {
-    const { adminDb } = await import('../../lib/firebaseAdmin');
+    const { adminDb } = await requireFirestore();
     await adminDb.collection('payment_audit_logs').doc(entry.id).set(entry);
   } catch {
     // In-memory fallback

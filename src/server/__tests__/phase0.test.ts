@@ -12,7 +12,7 @@ let passed = 0; const ok = (n: string) => { passed++; console.log('  ✓', n); }
 process.on('unhandledRejection', () => {});
 
 Object.assign(process.env, {
-  NODE_ENV: 'test', SOCIAL_ACCOUNTS_DEV_AUTH: 'true', JWT_SECRET: 'unit-test-jwt-secret-0123456789',
+  CRM_STORE: 'memory', NODE_ENV: 'test', SOCIAL_ACCOUNTS_DEV_AUTH: 'true', JWT_SECRET: 'unit-test-jwt-secret-0123456789',
   SQUARE_WEBHOOK_SIGNATURE_KEY: 'sq-test-key', APP_URL: 'https://crm.example.test',
   META_APP_SECRET: 'meta-test-secret', TWILIO_AUTH_TOKEN: 'twilio-test-token', IVR_ALLOWED_HOSTS: '127.0.0.1',
 });
@@ -52,8 +52,8 @@ assert.equal((await request(crm).post('/api/leads/bulk/status').send({ ids: ['le
 assert.equal((await request(crm).get('/api/dashboard/deals')).status, 401); ok('GET /api/dashboard/deals requires sign-in');
 assert.equal((await request(crm).post('/api/dashboard/tickets/t1/resolve')).status, 401); ok('dashboard writes require sign-in');
 assert.equal((await request(crm).post('/api/marketing/api-tokens').send({ name: 'x' })).status, 401); ok('marketing API tokens require sign-in');
-let r = await request(crm).post('/api/leads/capture').set('x-org-id', 'org_victim').send({ name: '', email: 'bad' });
-assert.equal(r.status, 400); ok('website lead form stays public (validation still runs)');
+let r = await request(crm).post('/api/leads/capture').set('x-org-id', 'org_victim').send({ name: 'x', email: 'x@y.test' });
+assert.equal(r.body.code, 'form_not_connected'); ok('website lead form stays public (no sign-in needed) and ignores X-Org-Id');
 
 // Marketing workspace isolation: a signed-in user can't reach a workspace they don't belong to.
 r = await request(crm).get('/api/marketing/subscribers').set('X-Dev-User-Id', 'mallory').set('x-workspace-id', 'ws_default_obsidian');
@@ -111,16 +111,20 @@ r = await request(ca).post('/api/communication/twilio-video-token').set('X-Dev-U
 assert.equal(r.body.identity, 'alice'); ok('video token identity is the signed-in user, not the requested one');
 
 // ---- AI chat sessions: no cross-user access ----
-const { db } = await import('../../utils/db');
-await db.chatSession.create({ data: { sessionId: 'sess_alice_secret', userId: 'alice', messages: [{ role: 'user', content: 'alice private note' }] } });
 const chatRouter = (await import('../../routes/chat')).default;
 const chat = express(); chat.use(express.json()); chat.use('/api/chat', guard(PUBLIC.none), chatRouter);
+await request(chat).get('/api/chat/sessions').set('X-Dev-User-Id', 'alice'); // provisions alice's organization
+const { getDocStore } = await import('../data/docStore');
+const idx = await (await getDocStore()).get('crm_user_memberships/alice');
+await (await getDocStore()).set(`organizations/${idx.defaultOrgId}/chat_sessions/sess_alice_secret`, { sessionId: 'sess_alice_secret', userId: 'alice', messages: [{ role: 'user', content: 'alice private note' }] });
 r = await request(chat).get('/api/chat/session/sess_alice_secret').set('X-Dev-User-Id', 'mallory');
 assert.equal(r.status, 404); assert.ok(!JSON.stringify(r.body).includes('alice private note')); ok('chat: another user’s session → 404');
 r = await request(chat).delete('/api/chat/session/sess_alice_secret').set('X-Dev-User-Id', 'mallory');
 assert.equal(r.status, 404); ok('chat: cannot delete another user’s session');
 r = await request(chat).post('/api/chat').set('X-Dev-User-Id', 'mallory').send({ message: 'summarise', sessionId: 'sess_alice_secret' });
-assert.equal(r.status, 404); assert.ok(!JSON.stringify(r.body).includes('alice private note')); ok('chat: cannot append to / read history of another user’s session');
+assert.ok(!JSON.stringify(r.body).includes('alice private note'));
+const aliceSess = await (await getDocStore()).get(`organizations/${idx.defaultOrgId}/chat_sessions/sess_alice_secret`);
+assert.equal(aliceSess.messages.length, 1); ok('chat: reusing another user’s session id neither reads nor changes their history');
 r = await request(chat).get('/api/chat/session/sess_alice_secret').set('X-Dev-User-Id', 'alice');
 assert.equal(r.status, 200); ok('chat: the owner can still read their session');
 

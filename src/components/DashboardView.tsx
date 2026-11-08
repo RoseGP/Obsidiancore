@@ -110,7 +110,7 @@ export default function DashboardView({ contacts, onSelectContact, onNavigate }:
   const [assistantReply, setAssistantReply] = useState<string | null>(null);
   const [activeVoiceSim, setActiveVoiceSim] = useState(false);
   const [voiceTimer, setVoiceTimer] = useState(0);
-  const [actionAlert, setActionAlert] = useState<{ text: string; type: 'success' | 'info' | 'reward' } | null>(null);
+  const [actionAlert, setActionAlert] = useState<{ text: string; type: 'success' | 'info' | 'reward' | 'error' } | null>(null);
   const [activeSlide, setActiveSlide] = useState(0);
   const [carouselCategory, setCarouselCategory] = useState<'all' | 'sales' | 'marketing' | 'ops'>('all');
   const [isAutoPlaying, setIsAutoPlaying] = useState(false);
@@ -155,10 +155,10 @@ export default function DashboardView({ contacts, onSelectContact, onNavigate }:
     weightedForecastValue: number;
     activeTicketsCount: number;
     criticalTicketsCount: number;
-    slaMetRate: number;
-    avgResponseMinutes: number;
-    meetingsToday: number;
-    callsToday: number;
+    slaMetRate: number | null;
+    avgResponseMinutes: number | null;
+    meetingsToday: number | null;
+    callsToday: number | null;
     channelBreakdown?: Record<string, { count: number; pct: number }>;
   } | null>(null);
   const [isStatsLoading, setIsStatsLoading] = useState(true);
@@ -268,15 +268,18 @@ export default function DashboardView({ contacts, onSelectContact, onNavigate }:
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ replyText: replyInput.trim() })
       });
-      const data = await res.json();
-      triggerAlert(`📨 Reply dispatched to ${customerName} via ${channel.toUpperCase()}!`, 'success');
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) {
+        triggerAlert(data.error || `Couldn’t save the reply to ${customerName}. Your text is still in the box.`, 'error');
+        return; // keep the draft so nothing is lost
+      }
+      // The server says whether the reply was actually delivered; don't claim more than that.
+      triggerAlert(data.delivered ? `Reply sent to ${customerName} via ${channel.toUpperCase()}.` : (data.message || 'Reply saved to the ticket (not sent).'), data.delivered ? 'success' : 'info');
       setReplyOpenId(null);
       setReplyInput('');
       fetchDashboardData();
     } catch (err) {
-      triggerAlert(`Sent response to ${customerName}`, 'success');
-      setReplyOpenId(null);
-      setReplyInput('');
+      triggerAlert(`Couldn’t reach the server. Your reply to ${customerName} was not saved.`, 'error');
     } finally {
       setIsSendingReply(false);
     }
@@ -663,7 +666,7 @@ export default function DashboardView({ contacts, onSelectContact, onNavigate }:
     }
   };
 
-  const triggerAlert = (text: string, type: 'success' | 'info' | 'reward' = 'success') => {
+  const triggerAlert = (text: string, type: 'success' | 'info' | 'reward' | 'error' = 'success') => {
     setActionAlert({ text, type });
     if (type === 'reward') playSoundEffect('success');
     setTimeout(() => setActionAlert(null), 4000);
@@ -1027,17 +1030,17 @@ export default function DashboardView({ contacts, onSelectContact, onNavigate }:
           </div>
           <div className="flex items-baseline justify-between gap-2">
             <span className="text-2xl font-bold text-neutral-900 dark:text-neutral-100 font-mono tracking-tight tabular-nums">
-              ${(dashboardStats?.totalPipelineValue || 366500).toLocaleString()}
+              ${(dashboardStats?.totalPipelineValue ?? 0).toLocaleString()}
             </span>
             <span className="text-xs font-mono font-medium text-emerald-600 dark:text-emerald-400">
-              {dashboardStats?.openDealsCount || 5} deals
+              {dashboardStats?.openDealsCount ?? 0} deals
             </span>
           </div>
           <div className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-1.5 flex items-center gap-1.5">
             <span>Weighted</span>
             <span aria-hidden="true">·</span>
             <span className="font-mono text-neutral-700 dark:text-neutral-300">
-              ${(dashboardStats?.weightedForecastValue || 231500).toLocaleString()}
+              ${(dashboardStats?.weightedForecastValue ?? 0).toLocaleString()}
             </span>
           </div>
         </div>
@@ -1053,16 +1056,14 @@ export default function DashboardView({ contacts, onSelectContact, onNavigate }:
           </div>
           <div className="flex items-baseline justify-between gap-2">
             <span className="text-2xl font-bold text-neutral-900 dark:text-neutral-100 font-mono tracking-tight tabular-nums">
-              {dashboardStats?.callsToday || 14}
+              {dashboardStats?.callsToday ?? '—'}
             </span>
             <span className="text-xs font-mono font-medium text-indigo-600 dark:text-indigo-400">
               Active Triage
             </span>
           </div>
           <div className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-1.5 flex items-center gap-1.5">
-            <span>Calls handled today</span>
-            <span aria-hidden="true">·</span>
-            <span className="text-emerald-600 dark:text-emerald-400 font-medium">100% SLA</span>
+            <span>{dashboardStats?.callsToday == null ? 'Call tracking not connected yet' : 'Calls handled today'}</span>
           </div>
         </div>
 
@@ -1077,16 +1078,22 @@ export default function DashboardView({ contacts, onSelectContact, onNavigate }:
           </div>
           <div className="flex items-baseline justify-between gap-2">
             <span className="text-2xl font-bold text-neutral-900 dark:text-neutral-100 font-mono tracking-tight tabular-nums">
-              {dashboardStats?.activeTicketsCount || 3}
+              {dashboardStats?.activeTicketsCount ?? 0}
             </span>
             <span className="text-xs font-mono font-medium text-amber-600 dark:text-amber-400">
-              {dashboardStats?.criticalTicketsCount || 1} priority
+              {dashboardStats?.criticalTicketsCount ?? 0} priority
             </span>
           </div>
           <div className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-1.5 flex items-center gap-1.5 font-mono">
-            <span>Avg {dashboardStats?.avgResponseMinutes || 1.2}m</span>
-            <span aria-hidden="true">·</span>
-            <span>{dashboardStats?.slaMetRate || 98.4}% SLA met</span>
+            {dashboardStats?.avgResponseMinutes == null ? (
+              <span>Response-time tracking not connected yet</span>
+            ) : (
+              <>
+                <span>Avg {dashboardStats.avgResponseMinutes}m</span>
+                <span aria-hidden="true">·</span>
+                <span>{dashboardStats.slaMetRate}% SLA met</span>
+              </>
+            )}
           </div>
         </div>
 
@@ -1101,7 +1108,7 @@ export default function DashboardView({ contacts, onSelectContact, onNavigate }:
           </div>
           <div className="flex items-baseline justify-between gap-2">
             <span className="text-2xl font-bold text-neutral-900 dark:text-neutral-100 font-mono tracking-tight tabular-nums">
-              {dashboardStats?.meetingsToday || 3}
+              {dashboardStats?.meetingsToday ?? '—'}
             </span>
             <span className="text-xs font-mono font-medium text-purple-600 dark:text-purple-400">
               Scheduled
@@ -1837,16 +1844,18 @@ export default function DashboardView({ contacts, onSelectContact, onNavigate }:
         <div className={`fixed bottom-24 right-6 border text-white px-4 py-2.5 rounded-2xl shadow-2xl flex items-center gap-2.5 z-50 text-xs font-sans font-semibold animate-in slide-in-from-right duration-200 ${
           actionAlert.type === 'reward' 
             ? 'bg-gradient-to-r from-amber-600 to-indigo-600 border-amber-400/40 text-amber-100 shadow-amber-900/30' 
+            : actionAlert.type === 'error'
+            ? 'bg-rose-900 border-rose-400/40 text-white'
             : actionAlert.type === 'info'
             ? 'bg-neutral-900 border-white/10 text-white'
             : 'bg-neutral-900 border-emerald-500/30 text-white'
         }`}>
           {actionAlert.type === 'reward' ? (
             <Sparkles className="h-4 w-4 text-amber-300 animate-spin" />
-          ) : (
+          ) : actionAlert.type === 'error' ? null : (
             <Check className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
           )}
-          <span>{actionAlert.text}</span>
+          <span role={actionAlert.type === 'error' ? 'alert' : 'status'}>{actionAlert.text}</span>
         </div>
       )}
 
