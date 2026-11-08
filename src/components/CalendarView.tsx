@@ -78,10 +78,11 @@ export default function CalendarView({ events, onAddEvent, onRemoveEvent }: Cale
       const res = await fetch('/api/gcal/status');
       const data = await res.json();
       if (data.success) {
+        // Per-user connection (server stores tokens encrypted under this user's organization).
         setGcalStatus({
-          isConnected: data.isConnected,
-          syncedEventsCount: data.syncedEventsCount || 0,
-          activeWatchChannelsCount: data.activeWatchChannelsCount || 0,
+          isConnected: !!data.connected,
+          syncedEventsCount: 0,
+          activeWatchChannelsCount: 0,
         });
       }
     } catch (err) {
@@ -185,9 +186,16 @@ export default function CalendarView({ events, onAddEvent, onRemoveEvent }: Cale
       const res = await fetch('/api/gcal/auth-url');
       const data = await res.json();
       if (data.success && data.authUrl) {
-        window.open(data.authUrl, '_blank', 'width=600,height=700');
+        const popup = window.open(data.authUrl, '_blank', 'width=600,height=700');
+        // The result page posts back when done; refresh the status then.
+        const onMsg = (e: MessageEvent) => {
+          if (e.origin !== window.location.origin || e.data?.type !== 'gcal-connected') return;
+          window.removeEventListener('message', onMsg); fetchGCalStatus();
+        };
+        window.addEventListener('message', onMsg);
+        if (!popup) alert('Allow pop-ups to connect Google Calendar.');
       } else {
-        alert('Could not generate Google Calendar Auth URL.');
+        alert(data.error || 'Could not start the Google Calendar connection.');
       }
     } catch (err) {
       console.error(err);

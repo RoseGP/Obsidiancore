@@ -54,18 +54,14 @@ export const PUBLIC = {
   salesIntel: [/^\/health$/],
   // Website lead form (anonymous visitors). Rate limited in the handler; tenant mapping comes in Phase 1.
   leads: [/^\/capture$/],
-  socialConnection: [/^\/callback$/, /^\/webhook$/],
-  socialAuth: [/^\/(linkedin|facebook|twitter)\/callback$/],
   paymentIntegrations: [/^\/(stripe|square)\/callback$/],
   payments: [/^\/stripe\/callback$/],
   // Google push notifications: TO COMPLETE: validate X-Goog-Channel-Token in the handler.
-  gcal: [/^\/oauth2callback$/, /^\/gcal$/],
-  auth: [/^\/google\/callback$/, /^\/callback$/],
+  gcal: [/^\/oauth2callback$/, /^\/webhook$/],
   // Website chat widget used by anonymous site visitors.
   messaging: [/^\/widgets\/[^/]+$/, /^\/visitor-init$/, /^\/visitor-message$/, /^\/visitor-messages\/[^/]+$/, /^\/embed(\/.*)?$/],
   // Provider webhooks (verify each provider's signature inside the handler).
   communication: [/^\/whatsapp-webhook$/, /^\/twilio-sms$/, /^\/incoming-call$/, /^\/twiml-(fallback|voicemail-saved)$/],
-  postiz: [/^\/(webhook|callback)(\/.*)?$/],
   // Customer-facing proposal links. TO COMPLETE: require a signed share token in these handlers.
   proposals: [/^\/[A-Za-z0-9_-]+$/, /^\/[A-Za-z0-9_-]+\/(sign|render-pdf|stripe-checkout)$/],
 };

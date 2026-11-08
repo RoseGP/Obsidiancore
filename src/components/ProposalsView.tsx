@@ -14,20 +14,8 @@ import InvoicingApp from '../features/invoicing/InvoicingApp';
 import PaymentProvidersSettings from './proposals/PaymentProvidersSettings';
 import BrandLogoCustomizerModal from './proposals/BrandLogoCustomizerModal';
 
-interface CRMContact {
-  id: string;
-  name: string;
-  avatar: string;
-  channel: 'email' | 'whatsapp' | 'telegram' | 'sms' | 'instagram';
-  lastMessage: string;
-  timestamp: string;
-  unread: boolean;
-  status: 'active' | 'pending' | 'resolved';
-  sentiment: 'positive' | 'neutral' | 'negative';
-  email: string;
-  phone: string;
-  company: string;
-}
+// Shared contact type (src/types.ts); a local copy here had drifted from it.
+type CRMContact = import('../types').CRMContact;
 
 interface ClientDiscoveryProfile {
   contactId: string;

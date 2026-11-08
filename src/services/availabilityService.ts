@@ -1,5 +1,4 @@
 import { DateTime, Interval } from 'luxon';
-import { gcalDataStore } from './gcalTokenService';
 
 // --- TYPES & INTERFACES ---
 
@@ -123,61 +122,36 @@ export const EVENT_TYPES_DB: Record<string, EventTypeConfig> = {
 };
 
 /**
- * Simulates fetching existing booked CRM appointments from the internal database.
+ * Whose calendar the public booking page checks. Until booking pages belong to an organization (Phase D),
+ * this is one configured host: BOOKING_HOST_ORG_ID + BOOKING_HOST_USER_ID. Without them, no busy time is known.
  */
-async function fetchInternalBookings(hostId: string, rangeStart: DateTime, rangeEnd: DateTime): Promise<BusyBlock[]> {
-  // Mock internal bookings in UTC
-  const sampleDate = rangeStart.toFormat('yyyy-MM-dd');
-  return [
-    {
-      start: `${sampleDate}T13:00:00Z`,
-      end: `${sampleDate}T14:00:00Z`,
-      source: 'INTERNAL_BOOKING',
-      summary: 'Executive Client Review',
-    },
-    {
-      start: `${sampleDate}T18:30:00Z`,
-      end: `${sampleDate}T19:00:00Z`,
-      source: 'INTERNAL_BOOKING',
-      summary: 'Team Standup',
-    },
-  ];
+function bookingHost(): { orgId: string; userId: string } | null {
+  const orgId = process.env.BOOKING_HOST_ORG_ID?.trim(), userId = process.env.BOOKING_HOST_USER_ID?.trim();
+  return orgId && userId ? { orgId, userId } : null;
 }
 
-/**
- * Fetches external calendar busy blocks (Google Calendar / Microsoft Outlook Graph API)
- * including live synchronized events received via Webhooks.
- */
-async function fetchExternalCalendarBusyBlocks(hostId: string, rangeStart: DateTime, rangeEnd: DateTime): Promise<BusyBlock[]> {
-  const sampleDate = rangeStart.toFormat('yyyy-MM-dd');
-  
-  const defaultExternalBusy: BusyBlock[] = [
-    {
-      start: `${sampleDate}T15:00:00Z`,
-      end: `${sampleDate}T16:00:00Z`,
-      source: 'GOOGLE_CALENDAR',
-      summary: 'External Doctor Appointment',
-    },
-    {
-      start: `${sampleDate}T20:00:00Z`,
-      end: `${sampleDate}T21:00:00Z`,
-      source: 'OUTLOOK_CALENDAR',
-      summary: 'Board Meeting',
-    },
-  ];
+/** Existing CRM bookings/events for the host (organizations/{orgId}/calendar_events), excluding cancelled ones. */
+async function fetchInternalBookings(_hostId: string, rangeStart: DateTime, rangeEnd: DateTime): Promise<BusyBlock[]> {
+  const host = bookingHost();
+  if (!host) return [];
+  const { getDocStore } = await import('../server/data/docStore');
+  const events = await (await getDocStore()).list(`organizations/${host.orgId}/calendar_events`);
+  const from = rangeStart.toMillis(), to = rangeEnd.toMillis();
+  return events
+    .filter((e: any) => e.status !== 'cancelled' && e.scheduledAt)
+    .map((e: any) => ({ start: e.scheduledAt, end: e.endAt || new Date(Date.parse(e.scheduledAt) + 30 * 60_000).toISOString(), source: 'INTERNAL_BOOKING', summary: 'Busy' } as BusyBlock))
+    .filter((b: BusyBlock) => Date.parse(b.end) > from && Date.parse(b.start) < to);
+}
 
-  // Fetch live synchronized Google Calendar events from gcalDataStore
-  const liveSyncedGCalEvents = gcalDataStore.getSyncedEvents();
-  const liveGCalBusyBlocks: BusyBlock[] = liveSyncedGCalEvents
-    .filter(evt => evt.status === 'confirmed' && evt.startISO && evt.endISO)
-    .map(evt => ({
-      start: evt.startISO,
-      end: evt.endISO,
-      source: 'GOOGLE_CALENDAR',
-      summary: evt.summary,
-    }));
-
-  return [...defaultExternalBusy, ...liveGCalBusyBlocks];
+/** Busy blocks synced from the host's own Google Calendar (per-user, encrypted connection). */
+async function fetchExternalCalendarBusyBlocks(_hostId: string, rangeStart: DateTime, rangeEnd: DateTime): Promise<BusyBlock[]> {
+  const host = bookingHost();
+  if (!host) return [];
+  const { getSyncedEvents } = await import('./gcalSyncService');
+  const from = rangeStart.toMillis(), to = rangeEnd.toMillis();
+  return (await getSyncedEvents(host.orgId, host.userId))
+    .filter((e) => e.status === 'confirmed' && e.startISO && e.endISO && Date.parse(e.endISO) > from && Date.parse(e.startISO) < to)
+    .map((e) => ({ start: e.startISO, end: e.endISO, source: 'GOOGLE_CALENDAR', summary: 'Busy' } as BusyBlock));
 }
 
 // --- CORE ALGORITHM ENGINE ---

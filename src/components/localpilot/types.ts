@@ -176,7 +176,7 @@ export interface TeamMember {
   name: string;
   email: string;
   avatar: string;
-  role: 'Owner' | 'Admin' | 'Manager' | 'Review Approver' | 'Viewer';
+  role: 'Owner' | 'Admin' | 'Manager' | 'Review Approver' | 'Viewer' | 'Location Manager' | 'Review Moderator';
   locationsAccess: 'All Locations' | string;
   status: 'Active' | 'Invited' | 'Suspended';
   lastActive: string;
@@ -195,4 +195,22 @@ export interface AiChatMessage {
     buttonLabel: string;
     actionType: string;
   }[];
+}
+
+/** Settings → Integrations row. */
+export interface IntegrationItem {
+  id: string;
+  name: string;
+  description: string;
+  status: 'Connected' | 'Disconnected' | 'Error' | string;
+  lastSynced: string;
+  icon: string;
+}
+
+/** Settings → Billing summary. */
+export interface BillingPlan {
+  planName: string;
+  monthlyPrice: number;
+  locationsIncluded: string;
+  nextBillingDate: string;
 }

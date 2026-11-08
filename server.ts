@@ -14,22 +14,15 @@ import chatRouter from './src/routes/chat';
 import commRouter from './src/routes/communication';
 import meetingsRouter from './src/routes/meetings';
 import proposalsRouter from './src/routes/proposals';
-import postsRouter from './src/routes/posts';
-import socialPostsRouter from './src/routes/socialPosts';
-import socialAuthRouter from './src/routes/socialAuth';
-import socialConnectionRouter from './src/routes/socialConnection';
-import authRouter from './src/routes/auth';
 import availabilityRouter from './src/routes/availability';
 import gcalWebhookRouter from './src/routes/gcalWebhook';
 import apiV1Router from './src/routes/apiV1Bff';
 import { eventsRouter as embedEventsRouter, embedTokensRouter } from './src/routes/embedEventsApi';
 import salesIntelRouter from './src/routes/salesIntel';
-import postizRouter from './src/routes/postiz';
 import messagingPlatformRouter from './src/routes/messagingPlatform';
 import paymentIntegrationsRouter from './src/routes/paymentIntegrations';
 import paymentWebhooksRouter from './src/routes/paymentWebhooks';
 import paymentsRouter, { invoicesRouter } from './src/routes/payments';
-import socialPlannerApiRouter from './src/routes/socialPlannerApi';
 import billingRouter from './src/routes/billing';
 import accountsApiRouter, { listIntegrations } from './src/routes/accountsApi';
 import postsApiRouter from './src/routes/postsApi';
@@ -97,20 +90,10 @@ app.use('/api/v1/marketing', guard(PUBLIC.none), marketingApiRouter);
 // New application routes first; remaining legacy paths (/queue, /schedule, /retry, /accounts) require a verified user too.
 app.use('/api/posts', postsApiRouter);
 app.use('/api/media', postsApiRouter);
-app.use('/api/posts', requireUser, postsRouter);
 app.use('/api/integrations', guard(PUBLIC.paymentIntegrations), paymentIntegrationsRouter);
 app.use('/api/webhooks', paymentWebhooksRouter);
-app.use('/api/postiz', guard(PUBLIC.postiz), postizRouter);
-app.use('/api/social/postiz', guard(PUBLIC.postiz), postizRouter);
-app.use('/integrations/postiz', guard(PUBLIC.postiz), postizRouter);
-app.use('/api/social-posts', guard(PUBLIC.none), socialPostsRouter);
-app.use('/api/social-auth', guard(PUBLIC.socialAuth), socialAuthRouter);
-app.use('/api/social-connection', guard(PUBLIC.socialConnection), socialConnectionRouter);
 // Channel list for pickers (same data as /api/accounts/integrations), before the legacy /api/social router.
 app.get('/api/social/integrations', requireUser, listIntegrations as any);
-app.use('/api/social', guard(PUBLIC.socialConnection), socialConnectionRouter);
-app.use('/api/social-planner', guard(PUBLIC.none), socialPlannerApiRouter);
-app.use('/api/auth', guard(PUBLIC.auth), authRouter);
 app.use('/api/availability', guard(PUBLIC.availability), availabilityRouter);
 app.use('/api/gcal', guard(PUBLIC.gcal), gcalWebhookRouter);
 // Embeddable calendar (public, cross-origin): before the /api/v1 gateway router.
@@ -121,6 +104,10 @@ app.use('/api/sales-intelligence', guard(PUBLIC.salesIntel), salesIntelRouter);
 // Legacy bare '/api' mount of the payments router (catch-all routes such as GET /:invoiceId).
 // Kept LAST so it can't shadow other routers (it previously swallowed /api/posts and would block webhooks).
 app.use('/api', guard(PUBLIC.payments), paymentsRouter);
+
+// Unknown API paths get a JSON 404 instead of falling through to the single-page app (which answered
+// removed routes like /api/postiz/status with index.html and HTTP 200).
+app.use('/api', (_req, res) => { res.status(404).json({ success: false, code: 'not_found', error: 'No such API route.' }); });
 
 // Start Server with Vite Middleware
 async function startServer() {

@@ -153,6 +153,9 @@ const LocalPilotInner: React.FC = () => {
     }
   };
 
+  /** For actions this screen can't perform yet: say so instead of pretending. */
+  const notAvailable = (what: string) => showToast(`${what} needs a connected Google Business Profile and isn’t available here yet.`, 'info');
+
   const handleInviteMember = (member: Partial<TeamMember>) => {
     setTeamMembers((prev) => [member as TeamMember, ...prev]);
     showToast(`Invitation sent to ${member.email}`, 'success');
@@ -220,10 +223,9 @@ const LocalPilotInner: React.FC = () => {
               <DashboardView
                 selectedLocation={selectedLocation}
                 locations={locations}
-                reviews={reviews}
-                posts={posts}
                 opportunities={opportunities}
-                selectedRange={selectedRange}
+                timeRange={selectedRange}
+                onTimeRangeChange={setSelectedRange}
                 onNavigate={(route, locId) => {
                   if (locId) {
                     setSelectedLocationId(locId);
@@ -231,11 +233,7 @@ const LocalPilotInner: React.FC = () => {
                   }
                   setCurrentRoute(route);
                 }}
-                onOpenPostEditor={() => {
-                  setEditingPost(null);
-                  setIsPostEditorOpen(true);
-                }}
-                onResolveOpportunity={handleResolveOpportunity}
+                onExecuteAction={(opp) => handleResolveOpportunity(opp.id)}
                 onOpenAiAssistant={() => setIsAiAssistantOpen(true)}
               />
             )}
@@ -244,12 +242,14 @@ const LocalPilotInner: React.FC = () => {
             {currentRoute === 'locations' && (
               <LocationsView
                 locations={locations}
-                onSelectLocation={(loc) => {
-                  setDetailLocationId(loc.id);
-                  setSelectedLocationId(loc.id);
+                onSelectLocation={(locId) => {
+                  setDetailLocationId(locId);
+                  setSelectedLocationId(locId);
                   setCurrentRoute('location-detail');
                 }}
                 onAddNewLocation={() => setIsOnboardingOpen(true)}
+                onRunAudit={() => notAvailable('A local SEO audit')}
+                onCreatePost={() => { setEditingPost(null); setIsPostEditorOpen(true); }}
               />
             )}
 
@@ -283,21 +283,8 @@ const LocalPilotInner: React.FC = () => {
               <PostsView
                 posts={posts}
                 locations={locations}
-                onCreatePost={() => {
-                  setEditingPost(null);
-                  setIsPostEditorOpen(true);
-                }}
-                onEditPost={(p) => {
-                  setEditingPost(p);
-                  setIsPostEditorOpen(true);
-                }}
-                onDeletePost={handleDeletePost}
-                onPublishDraft={(postId) => {
-                  setPosts((prev) =>
-                    prev.map((p) => (p.id === postId ? { ...p, status: 'Published', publishedAt: 'Just now' } : p))
-                  );
-                  showToast('Draft approved and published to Google Business Profile!', 'success');
-                }}
+                onSavePost={handleSavePost}
+                onOpenAiAssistant={() => setIsAiAssistantOpen(true)}
               />
             )}
 
@@ -307,7 +294,8 @@ const LocalPilotInner: React.FC = () => {
                 opportunities={opportunities}
                 auditLogs={auditLogs}
                 selectedLocation={selectedLocation}
-                onResolveOpportunity={handleResolveOpportunity}
+                onNavigate={(route, locId) => { if (locId) { setSelectedLocationId(locId); setDetailLocationId(locId); } setCurrentRoute(route); }}
+                onExecuteAction={(opp) => handleResolveOpportunity(opp.id)}
                 onRunAudit={() => {
                   const newAudit: SeoAuditLog = {
                     id: `audit-${Date.now()}`,
@@ -335,13 +323,8 @@ const LocalPilotInner: React.FC = () => {
               <SecurityView
                 activities={securityActivities}
                 recommendations={securityRecs}
-                onEnforcePolicy={(id) => {
-                  setSecurityRecs((prev) => prev.filter((r) => r.id !== id));
-                  showToast('Security policy enforced. 2FA mandatory for all location managers.', 'success');
-                }}
-                onAuditAccess={() => {
-                  showToast('Access tokens verified. 0 expired OAuth credentials.', 'info');
-                }}
+                onNavigate={(route) => setCurrentRoute(route)}
+                onRefreshOAuth={() => notAvailable('Refreshing the Google connection')}
               />
             )}
 
@@ -349,25 +332,9 @@ const LocalPilotInner: React.FC = () => {
             {currentRoute === 'reports' && (
               <ReportsView
                 reports={reports}
-                onGenerateReport={(title, format) => {
-                  const newRep: ReportItem = {
-                    id: `rep-${Date.now()}`,
-                    title,
-                    period: 'Custom Date Range',
-                    generatedDate: 'Just now',
-                    visibilityScore: 92,
-                    reviewsDelta: 43,
-                    customerActionsDelta: 18,
-                    seoOpportunitiesCount: 4,
-                    locationsCovered: 127,
-                    format: format as any
-                  };
-                  setReports([newRep, ...reports]);
-                  showToast(`Report "${title}" generated in ${format} format.`, 'success');
-                }}
-                onScheduleDelivery={() => {
-                  showToast('Weekly Monday executive digest scheduled to team.', 'success');
-                }}
+                onDownloadPdf={() => notAvailable('Report downloads')}
+                onSendEmail={() => notAvailable('Emailing reports')}
+                onScheduleReport={() => notAvailable('Scheduled reports')}
               />
             )}
 
@@ -433,7 +400,8 @@ const LocalPilotInner: React.FC = () => {
           setCurrentRoute(route);
         }}
         locations={locations}
-        reviews={reviews}
+        onOpenAiAssistant={() => setIsAiAssistantOpen(true)}
+        onCreatePost={() => { setEditingPost(null); setIsPostEditorOpen(true); }}
       />
 
       {/* AI Assistant Drawer */}

@@ -5,7 +5,6 @@
 import React, { useMemo } from 'react';
 import PlannerApp from '../features/social-planner/PlannerApp';
 import { createAccountsApi } from '../features/social-accounts/client/accountsApi';
-import SocialPlannerView from './SocialPlannerView';
 import { useDatabase } from '../context/DatabaseContext';
 import { useAuth } from '../context/AuthContext';
 import { useCommand } from '../context/CommandContext';
@@ -37,7 +36,6 @@ export default function SocialPlannerTab() {
       workspaceName={userProfile?.company || 'My workspace'}
       userName={userProfile?.displayName}
       onOpenMessaging={() => setActiveView('messages')}
-      renderClassicTools={() => <SocialPlannerView />}
       startInClassic={cameFromConnectRedirect()}
       startInAccounts={returningFromAuthorization}
       accountsApi={accountsApi}

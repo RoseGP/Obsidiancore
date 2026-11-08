@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { useDatabase } from '../context/DatabaseContext';
 import { useAuth } from '../context/AuthContext';
 import { useRealtimeSync } from '../context/RealtimeSyncContext';
-import { initiateLinkedInLogin } from './LinkedInCallbackHandler';
 import IntegrationsSettingsSection from './IntegrationsSettingsSection';
 import NotificationPreferencesModal from './notifications/NotificationPreferencesModal';
 import OrganizationSettings from './OrganizationSettings';
@@ -841,7 +840,8 @@ export default function SettingsView({ defaultTab = 'account' }: SettingsViewPro
                   ) : (
                     <button
                       type="button"
-                      onClick={() => initiateLinkedInLogin()}
+                      onClick={() => { window.location.href = '/?view=social_planner'; }}
+                      title="LinkedIn is connected through Social Planner → Accounts (Postiz)"
                       className="px-2.5 py-1 bg-white hover:bg-neutral-200 text-neutral-900 text-[10px] font-bold rounded-lg transition-all cursor-pointer"
                     >
                       Connect

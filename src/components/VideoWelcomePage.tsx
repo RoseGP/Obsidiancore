@@ -367,7 +367,7 @@ export default function VideoWelcomePage({
           surfaceSwitching: 'include' as any,
           monitorTypeSurfaces: 'include' as any,
           systemAudio: 'include' as any
-        });
+        } as DisplayMediaStreamOptions);
       } catch (optionErr: any) {
         // If browser rejected advanced hints with TypeError (e.g. Firefox or older Chromium),
         // gracefully fall back to basic options without hints
@@ -1198,7 +1198,7 @@ export default function VideoWelcomePage({
                           <div className="flex items-center gap-3 text-[11px] text-neutral-500 flex-wrap">
                             <span>{item.date} • {item.time}</span>
                             <span>•</span>
-                            <span>Duration: {item.duration}</span>
+                            <span>Duration: {item.durationFormatted}</span>
                             <span>•</span>
                             <span>{item.participants.length} attendees</span>
                           </div>

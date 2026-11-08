@@ -771,22 +771,7 @@ export default function CRMSoftphoneCanvas({
         }
       ]);
 
-      // Automatically store recording in the calendar database
-      if (onAddCalendarEvent) {
-        onAddCalendarEvent({
-          title: "SLA Strategic Assessment WebRTC Recording",
-          time: new Date().toISOString().replace('T', ' ').substring(0, 16),
-          type: "call",
-          contact: "Christina Mant (WebRTC Studio)",
-          status: "completed",
-          recording: {
-            url: "https://storage.googleapis.com/obsidian-recordings/session_webrtc_993.mp4",
-            duration: "15:24",
-            transcript: "Christina Mant (11:34 AM): We must change strategy to boost revenue this month. I've sent the deck through chat...\nCamelia Rose (11:35 AM): Fully agreed, I will coordinate with Nicholas to optimize our webhook integration endpoints."
-          },
-          meetingLink: "https://meet.google.com/real_estate_proposal_review_group"
-        });
-      }
+      // (Recordings aren’t stored on the server yet, so no calendar entry is created for them.)
     }
   };
 
@@ -1160,22 +1145,7 @@ export default function CRMSoftphoneCanvas({
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
 
-    // Sync recording node to CRM Database / Calendar history if provided
-    if (onAddCalendarEvent) {
-      onAddCalendarEvent({
-        title: "Gamma Project Reporting WebRTC Session Recording",
-        time: new Date().toISOString().replace('T', ' ').substring(0, 16),
-        type: "call",
-        contact: "Marcus Aurelius (Stoic Ventures LLC)",
-        status: "completed",
-        recording: {
-          url: "https://storage.googleapis.com/obsidian-recordings/session_webrtc_993.mp4",
-          duration: formattedDuration,
-          transcript: accumulatedTranscripts.map(t => `[${t.timestamp}] ${t.speaker}: ${t.text}`).join('\n')
-        },
-        meetingLink: "https://meet.google.com/real_estate_proposal_review_group"
-      });
-    }
+    // (Recordings aren’t stored on the server yet, so no calendar entry is created for them.)
 
     // Auto switch tab to "My Meeting" section and open chat sidebar if closed
     setActiveTab("my_meetings");

@@ -77,8 +77,8 @@ export class StripeProvider implements PaymentProvider {
         const response = await stripe.oauth.token({
           grant_type: 'authorization_code',
           code: authCode,
-          redirect_uri: redirectUri
         });
+        void redirectUri; // Stripe Connect's token exchange doesn't take a redirect URI
 
         stripeUserId = response.stripe_user_id || stripeUserId;
         accessToken = response.access_token || accessToken;
@@ -384,7 +384,7 @@ export class StripeProvider implements PaymentProvider {
     if (process.env.STRIPE_SECRET_KEY && !invoice.provider_invoice_id.startsWith('in_stripe_sb_')) {
       try {
         const stripeReqOptions = accountId ? { stripeAccount: accountId } : undefined;
-        const finalized = await stripe.invoices.finalizeInvoice(invoice.provider_invoice_id, stripeReqOptions);
+        const finalized = await stripe.invoices.finalizeInvoice(invoice.provider_invoice_id, {}, stripeReqOptions);
         finalUrl = finalized.hosted_invoice_url || finalUrl;
       } catch (err: any) {
         throw new PaymentProviderError(
@@ -412,7 +412,7 @@ export class StripeProvider implements PaymentProvider {
     if (process.env.STRIPE_SECRET_KEY && !invoice.provider_invoice_id.startsWith('in_stripe_sb_')) {
       try {
         const stripeReqOptions = accountId ? { stripeAccount: accountId } : undefined;
-        const sent = await stripe.invoices.sendInvoice(invoice.provider_invoice_id, stripeReqOptions);
+        const sent = await stripe.invoices.sendInvoice(invoice.provider_invoice_id, {}, stripeReqOptions);
         const finalUrl = sent.hosted_invoice_url || invoice.hosted_invoice_url;
         const updated = await paymentDb.updateInvoiceStatus(invoice.id, 'open', {
           hosted_invoice_url: finalUrl
@@ -452,7 +452,7 @@ export class StripeProvider implements PaymentProvider {
     const { stripe, accountId } = await this.getStripeClient();
     if (process.env.STRIPE_SECRET_KEY && !invoice.provider_invoice_id.startsWith('in_stripe_sb_')) {
       try {
-        await stripe.invoices.voidInvoice(invoice.provider_invoice_id, accountId ? { stripeAccount: accountId } : undefined);
+        await stripe.invoices.voidInvoice(invoice.provider_invoice_id, {}, accountId ? { stripeAccount: accountId } : undefined);
       } catch (err: any) {
         console.warn('[Stripe void] API warning:', err.message);
       }

@@ -1,205 +1,99 @@
-import { Router, Request, Response } from 'express';
-import { 
-  generateAuthUrl, 
-  handleOAuthCallback, 
-  registerWatchChannel, 
-  syncGoogleCalendarEvents 
-} from '../services/gcalSyncService';
-import { gcalDataStore } from '../services/gcalTokenService';
+/**
+ * Google Calendar connection, per signed-in user (organizations/{orgId}/users/{userId}/integrations/google).
+ *
+ *   GET    /api/gcal/status          connection status for the caller (never tokens)
+ *   GET    /api/gcal/auth-url        consent URL bound to the caller via single-use server-side state
+ *   GET    /api/gcal/oauth2callback  public: Google redirects here; state decides whose tokens these are
+ *   POST   /api/gcal/sync            sync now
+ *   POST   /api/gcal/register-watch  start push notifications (needs a public https APP_URL)
+ *   DELETE /api/gcal/connection      disconnect: revoke at Google, stop the channel, delete tokens and synced data
+ *   POST   /api/gcal/webhook         public: Google push notifications, verified by the per-channel token
+ */
+import { Router, type Request, type Response } from 'express';
+import { google } from 'googleapis';
+import { getDocStore } from '../server/data/docStore';
+import { consumeOAuthState, createOAuthState, deleteGoogleTokens, getGoogleConnection, verifyChannelToken } from '../server/integrations/googleTokens';
+import { requireTenant, sendError, tenantOf } from '../server/tenancy/middleware';
+import { generateAuthUrl, googleConfig, handleOAuthCallback, registerWatchChannel, stopSync, syncGoogleCalendarEvents } from '../services/gcalSyncService';
 
 const router = Router();
 
-/**
- * GET /api/gcal/auth-url
- * Returns the Google Calendar OAuth2 consent URL
- */
-router.get('/auth-url', (req: Request, res: Response) => {
-  try {
-    const host = req.get('host');
-    const protocol = req.protocol === 'https' || req.get('x-forwarded-proto') === 'https' ? 'https' : 'http';
-    const redirectUri = `${protocol}://${host}/api/gcal/oauth2callback`;
+const esc = (s: unknown) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
+/** Small result page for the OAuth pop-up. All dynamic text is escaped. */
+function resultPage(res: Response, status: number, ok: boolean, message: string) {
+  res.status(status).set({ 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'" }).send(`<!doctype html><html><head><meta charset="utf-8"><title>Google Calendar</title>
+<style>body{font:15px system-ui,sans-serif;background:#0f172a;color:#f8fafc;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}main{max-width:420px;padding:28px;text-align:center}h1{font-size:18px;color:${ok ? '#34d399' : '#f87171'}}</style></head>
+<body><main><h1>${ok ? 'Google Calendar connected' : 'Couldn’t connect Google Calendar'}</h1><p>${esc(message)}</p><p>You can close this window.</p></main>
+<script>try{window.opener&&window.opener.postMessage({type:'gcal-connected',ok:${ok}},location.origin)}catch(e){}setTimeout(function(){window.close()},${ok ? 1500 : 6000})</script></body></html>`);
+}
 
-    const authUrl = generateAuthUrl('host_primary', redirectUri);
-
-    return res.json({
-      success: true,
-      authUrl,
-      redirectUri,
-    });
-  } catch (error: any) {
-    return res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * GET /api/gcal/oauth2callback
- * Handles Google OAuth redirect callback
- */
+// ---- Public endpoints (no CRM session) ----
 router.get('/oauth2callback', async (req: Request, res: Response) => {
+  const who = await consumeOAuthState(req.query.state, 'gcal').catch(() => null);
+  if (req.query.error) return resultPage(res, 400, false, 'Access wasn’t granted. Try again from the Calendar page.');
+  if (!who) return resultPage(res, 400, false, 'This link expired or was already used. Start again from the Calendar page.');
+  if (typeof req.query.code !== 'string') return resultPage(res, 400, false, 'Google didn’t return an authorization code.');
   try {
-    const code = req.query.code as string;
-    const error = req.query.error as string;
-
-    if (error) {
-      return res.status(400).send(`
-        <html>
-          <body style="font-family: sans-serif; background: #0f172a; color: #f8fafc; padding: 40px; text-align: center;">
-            <h2 style="color: #ef4444;">Google Calendar OAuth Authorization Failed</h2>
-            <p>Error: ${error}</p>
-            <a href="/" style="color: #6366f1;">Return to CRM Workspace</a>
-          </body>
-        </html>
-      `);
-    }
-
-    if (!code) {
-      return res.status(400).json({ success: false, error: 'Missing code query parameter.' });
-    }
-
-    // 1. Exchange auth code for tokens and encrypt them
-    const { userId } = await handleOAuthCallback(code, 'host_primary');
-
-    // 2. Register Webhook Watch Channel with Google Calendar
-    const host = req.get('host');
-    const protocol = req.protocol === 'https' || req.get('x-forwarded-proto') === 'https' ? 'https' : 'http';
-    const baseUrl = `${protocol}://${host}`;
-
-    const watchChannel = await registerWatchChannel(userId, baseUrl);
-
-    // 3. Perform initial Google Calendar event synchronization
-    const syncResult = await syncGoogleCalendarEvents(userId, watchChannel.channelId);
-
-    // Return clean user feedback page and automatically redirect back to the app UI
-    return res.send(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>Google Calendar Connected</title>
-          <style>
-            body { font-family: system-ui, -apple-system, sans-serif; background-color: #07090e; color: #f8fafc; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
-            .card { background: #0f172a; border: 1px solid #1e293b; border-radius: 16px; padding: 32px; max-width: 480px; text-align: center; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); }
-            .badge { background: #10b981; color: #022c22; font-weight: bold; padding: 6px 16px; border-radius: 9999px; display: inline-block; margin-bottom: 16px; }
-            button { background: #6366f1; color: white; border: none; padding: 10px 24px; border-radius: 8px; font-weight: bold; cursor: pointer; margin-top: 20px; }
-          </style>
-        </head>
-        <body>
-          <div class="card">
-            <div class="badge">Connected & Synchronized</div>
-            <h2>Google Calendar Live Sync Active</h2>
-            <p style="color: #94a3b8; font-size: 14px;">
-              Successfully attached Google Calendar push notification watch channel.
-              Synchronized <strong>${syncResult.syncedCount}</strong> events to guarantee zero double bookings.
-            </p>
-            <button onclick="window.close(); if(window.opener) window.opener.location.reload();">Return to Booking Workspace</button>
-          </div>
-          <script>
-            setTimeout(() => {
-              if (window.opener) {
-                window.opener.location.href = '/?view=public_scheduling&gcal_connected=true';
-                window.close();
-              } else {
-                window.location.href = '/?view=public_scheduling&gcal_connected=true';
-              }
-            }, 2500);
-          </script>
-        </body>
-      </html>
-    `);
+    const { email } = await handleOAuthCallback(who.orgId, who.userId, req.query.code);
+    try { await syncGoogleCalendarEvents(who.orgId, who.userId); } catch (e: any) { console.warn('[gcal] first sync failed:', e?.message); }
+    if (googleConfig().appUrl.startsWith('https://')) { try { await registerWatchChannel(who.orgId, who.userId); } catch (e: any) { console.warn('[gcal] watch registration failed:', e?.message); } }
+    return resultPage(res, 200, true, email ? `Connected as ${email}.` : 'Connected.');
   } catch (err: any) {
-    console.error('[GCal OAuth Callback Error]:', err);
-    return res.status(500).send(`
-      <html>
-        <body style="font-family: sans-serif; background: #0f172a; color: #f8fafc; padding: 40px; text-align: center;">
-          <h2 style="color: #ef4444;">Google Calendar Setup Error</h2>
-          <p>${err.message || err}</p>
-          <a href="/" style="color: #6366f1;">Return to Workspace</a>
-        </body>
-      </html>
-    `);
+    console.error('[gcal] OAuth callback failed:', err?.message);
+    return resultPage(res, 502, false, 'Google rejected the request. Try again.');
   }
 });
 
-/**
- * POST /api/webhooks/gcal
- * Google Calendar Push Notification Webhook Listener Endpoint
- * Triggers when events are created, modified, or deleted in the host's primary calendar.
- */
-router.post('/gcal', async (req: Request, res: Response) => {
-  // Extract notification headers from Google Push Notification request
-  const channelId = req.header('x-goog-channel-id');
-  const resourceId = req.header('x-goog-resource-id');
-  const resourceState = req.header('x-goog-resource-state'); // 'sync' | 'exists' | 'not_exists'
-  const channelToken = req.header('x-goog-channel-token');
-
-  console.log(`[Google Calendar Webhook Received]: State=${resourceState} | ChannelID=${channelId} | ResourceID=${resourceId}`);
-
-  // 1. Google Webhook Handshake Verification (Sync Header)
-  if (resourceState === 'sync') {
-    console.log(`[GCal Webhook Verified]: Watch channel '${channelId}' connected successfully.`);
-    return res.status(200).send('OK - Channel Synchronized');
-  }
-
-  // 2. Immediately respond 200 OK to Google Webhook server to satisfy 10s latency SLA
-  res.status(200).send('OK');
-
-  // 3. Asynchronously trigger delta sync to fetch modified event details and update local busy intervals
+router.post('/webhook', async (req: Request, res: Response) => {
+  const channelId = req.get('x-goog-channel-id') || '';
+  if (!/^crm_[0-9a-f-]{36}$/.test(channelId) || !verifyChannelToken(channelId, req.get('x-goog-channel-token'))) return res.status(401).end();
+  res.status(200).end(); // acknowledge immediately; Google retries slow endpoints
+  if (req.get('x-goog-resource-state') === 'sync') return;
   try {
-    if (channelId) {
-      const syncResult = await syncGoogleCalendarEvents('host_primary', channelId);
-      console.log(`[GCal Incremental Sync Complete]: Processed ${syncResult.syncedCount} events. Zero double-booking status maintained.`);
-    }
-  } catch (err: any) {
-    console.error('[GCal Webhook Async Processing Error]:', err.message || err);
-  }
+    const ch = await (await getDocStore()).get(`crm_gcal_channels/${channelId}`);
+    if (ch) await syncGoogleCalendarEvents(ch.orgId, ch.userId);
+  } catch (e: any) { console.warn('[gcal] webhook sync failed:', e?.message); }
 });
 
-/**
- * POST /api/gcal/register-watch
- * Manually register or renew Google Calendar push notification watch channel
- */
-router.post('/register-watch', async (req: Request, res: Response) => {
+// ---- Signed-in endpoints ----
+router.use(requireTenant);
+
+router.get('/status', async (req, res) => {
   try {
-    const host = req.get('host');
-    const protocol = req.protocol === 'https' || req.get('x-forwarded-proto') === 'https' ? 'https' : 'http';
-    const baseUrl = `${protocol}://${host}`;
-
-    const channelInfo = await registerWatchChannel('host_primary', baseUrl);
-    const syncResult = await syncGoogleCalendarEvents('host_primary', channelInfo.channelId);
-
-    return res.json({
-      success: true,
-      message: 'Watch channel attached and calendar synchronized successfully.',
-      data: {
-        channelInfo,
-        syncedEventsCount: syncResult.syncedCount,
-      }
-    });
-  } catch (error: any) {
-    return res.status(500).json({ success: false, error: error.message });
-  }
+    const t = tenantOf(req);
+    const c = googleConfig();
+    res.json({ success: true, configured: c.configured, ...(await getGoogleConnection(t.orgId, t.userId)), setup: c.configured ? undefined : 'Set GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and APP_URL, and add the redirect URI below in Google Cloud.', redirectUri: c.configured ? c.redirectUri : undefined });
+  } catch (err) { sendError(res, err, 'gcal.status'); }
 });
 
-/**
- * GET /api/gcal/status
- * Returns Google Calendar sync and watch channel status
- */
-router.get('/status', (req: Request, res: Response) => {
+router.get('/auth-url', async (req, res) => {
   try {
-    const tokens = gcalDataStore.getTokens('host_primary');
-    const watchChannels = gcalDataStore.getAllWatchChannels();
-    const syncedEvents = gcalDataStore.getSyncedEvents();
+    const t = tenantOf(req);
+    if (!googleConfig().configured) return res.status(503).json({ success: false, code: 'google_not_configured', error: 'Google Calendar isn’t configured on the server yet.' });
+    const authUrl = generateAuthUrl(await createOAuthState(t.orgId, t.userId, 'gcal'));
+    res.json({ success: true, authUrl, redirectUri: googleConfig().redirectUri });
+  } catch (err) { sendError(res, err, 'gcal.authUrl'); }
+});
 
-    return res.json({
-      success: true,
-      isConnected: !!tokens,
-      activeWatchChannelsCount: watchChannels.length,
-      syncedEventsCount: syncedEvents.length,
-      watchChannels,
-      syncedEvents,
-    });
-  } catch (error: any) {
-    return res.status(500).json({ success: false, error: error.message });
-  }
+router.post('/sync', async (req, res) => {
+  try { const t = tenantOf(req); res.json({ success: true, ...(await syncGoogleCalendarEvents(t.orgId, t.userId)) }); }
+  catch (err) { sendError(res, err, 'gcal.sync'); }
+});
+
+router.post('/register-watch', async (req, res) => {
+  try { const t = tenantOf(req); res.json({ success: true, channel: await registerWatchChannel(t.orgId, t.userId) }); }
+  catch (err) { sendError(res, err, 'gcal.watch'); }
+});
+
+router.delete('/connection', async (req, res) => {
+  try {
+    const t = tenantOf(req);
+    await stopSync(t.orgId, t.userId).catch(() => {});
+    const tokens = await deleteGoogleTokens(t.orgId, t.userId);
+    const token = tokens?.refreshToken || tokens?.accessToken;
+    if (token && googleConfig().configured) { try { await new google.auth.OAuth2().revokeToken(token); } catch { /* already revoked */ } }
+    res.json({ success: true });
+  } catch (err) { sendError(res, err, 'gcal.disconnect'); }
 });
 
 export default router;

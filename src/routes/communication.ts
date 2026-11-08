@@ -8,6 +8,7 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { receptionistKnowledgeDb } from '../utils/receptionistKnowledgeDb';
 import { meetingsDb } from './meetings';
 import { coreSecret } from '../utils/secrets';
+import { sendSecureOutboundEmail } from '../utils/secureOutboundMailer';
 import { unsignedWebhooksAllowed } from '../server/runtimeEnv';
 import { verifyTwilio } from '../features/voice/server/webhook';
 import { loadIvrConfig } from '../features/voice/server/config';
@@ -796,37 +797,33 @@ router.post('/replyzen-assistant', async (req: Request, res: Response) => {
  * 6. SEND EMAIL COMPOSER OUTBOX (POST)
  * Accepts To, CC, BCC, Subject, and Body and handles outgoing SMTP/IMAP simulations.
  */
-router.post('/send-email', (req: Request, res: Response) => {
+router.post('/send-email', async (req: Request, res: Response) => {
+  // Real SMTP delivery (utils/secureOutboundMailer). Without SMTP settings this reports "not configured"
+  // instead of pretending the email went out.
+  const { to, cc, bcc, subject, body, html } = req.body || {};
+  const emails = (v: unknown) => (Array.isArray(v) ? v : typeof v === 'string' && v ? v.split(',') : []).map((x) => String(x).trim()).filter(Boolean);
+  const valid = (list: string[]) => list.every((e) => /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(e) && e.length <= 254);
+  const toList = emails(to), ccList = emails(cc), bccList = emails(bcc);
+  if (!toList.length) { res.status(400).json({ success: false, error: 'Add a recipient.' }); return; }
+  if (!valid([...toList, ...ccList, ...bccList]) || toList.length + ccList.length + bccList.length > 50) { res.status(400).json({ success: false, error: 'One of the email addresses is invalid (max 50 recipients).' }); return; }
+  if (typeof body !== 'string' || !body.trim() || body.length > 200_000) { res.status(400).json({ success: false, error: 'Write a message.' }); return; }
+  if (!process.env.SMTP_HOST && !process.env.CLOUDFLARE_SMTP_RELAY_HOST) {
+    res.status(503).json({ success: false, code: 'email_not_configured', error: 'Email sending isn’t configured on the server (SMTP_HOST, SMTP_USER, SMTP_PASS, SMTP_FROM).' });
+    return;
+  }
   try {
-    const { to, cc, bcc, subject, body } = req.body;
-
-    if (!to) {
-      res.status(400).json({ error: 'Required parameter "to" is missing.' });
-      return;
-    }
-
-    console.log('[SMTP Outbox] Dispaching Outgoing Secure Email Transmission:');
-    console.log(` - TO: ${to}`);
-    if (cc) console.log(` - CC: ${cc}`);
-    if (bcc) console.log(` - BCC: ${bcc}`);
-    console.log(` - SUBJECT: ${subject || '(No Subject)'}`);
-    console.log(` - BODY CHARACTER LENGTH: ${body ? body.length : 0}`);
-
-    // Broadcast through wsDispatcher to simulate real-time updates if any
-    wsDispatcher.broadcast('SMTP_DISPATCHED', {
-      to, cc, bcc, subject, timestamp: new Date().toISOString()
+    const esc = (t: string) => t.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
+    const result = await sendSecureOutboundEmail({
+      to: toList, cc: ccList.length ? ccList : undefined, bcc: bccList.length ? bccList : undefined,
+      subject: String(subject || '(No subject)').slice(0, 300), text: body,
+      // The HTML version is built from the text (escaped), never from client-supplied HTML.
+      html: `<div style="font-family:sans-serif;line-height:1.6">${esc(body).replace(/\n/g, '<br>')}</div>`,
     });
-
-    res.json({
-      success: true,
-      message: 'SMTP email dispatched successfully!',
-      dispatchId: `smtp-${crypto.randomBytes(8).toString('hex')}`,
-      dispatchedAt: new Date().toISOString(),
-      details: { to, cc, bcc, subject }
-    });
+    void html;
+    res.status(202).json({ success: true, messageId: result.messageId, dispatchedAt: new Date().toISOString() });
   } catch (err: any) {
-    console.error('[SMTP Outbox Dispatch Exception]', err.message);
-    res.status(500).json({ error: 'Failed to dispatch email transaction through secure outbox gateway.' });
+    console.error('[send-email] SMTP delivery failed:', err?.message);
+    res.status(502).json({ success: false, code: 'smtp_failed', error: 'The mail server rejected the message. Nothing was sent.' });
   }
 });
 
@@ -2188,18 +2185,10 @@ Generate the post-call summary and next action items.`;
  * LiveKit Outbound SIP Telephony Trigger
  * Executes createSipParticipant to call a phone number and assign the participant directly to an active voice agent room.
  */
-router.post('/trigger-outbound', async (req: Request, res: Response) => {
-  try {
-    const { livekitOutboundWorker } = await import('../workers/livekitOutboundWorker');
-    const result = await livekitOutboundWorker.triggerOutbound(req.body);
-    return res.status(200).json(result);
-  } catch (error: any) {
-    console.error('[Communication /trigger-outbound Error]', error);
-    return res.status(500).json({
-      success: false,
-      error: error.message || 'Failed to trigger outbound SIP participant via LiveKit worker.'
-    });
-  }
+router.post('/trigger-outbound', (_req: Request, res: Response) => {
+  // The LiveKit outbound SIP worker isn't part of this build (livekit-server-sdk isn't installed), so say so
+  // instead of failing with a module error. Wire it up with the video/telephony provider work.
+  res.status(501).json({ success: false, code: 'not_available', error: 'Outbound calling through LiveKit isn’t set up on this server.' });
 });
 
 export default router;

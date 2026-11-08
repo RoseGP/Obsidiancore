@@ -6,7 +6,8 @@ export type SemanticView =
   | 'welcome'
   | 'meet_and_greet'
   | 'home' 
-  | 'email_assistant' 
+  | 'email_assistant'
+  | 'chat' // legacy link target: opens Email & Messaging
   | 'voice_hub' 
   | 'video_call' 
   | 'enterprise_proposals'

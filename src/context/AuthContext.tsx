@@ -150,7 +150,7 @@ interface AuthContextType {
   currentSession: UserSession;
   
   // Auth Actions
-  loginWithEmail: (email: string, password: string, rememberMe?: boolean) => Promise<void>;
+  loginWithEmail: (email: string, password: string, rememberMe?: boolean) => Promise<unknown>;
   signUpWithEmail: (email: string, password: string, displayName: string, company?: string, role?: string) => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   loginWithGoogle: () => Promise<void>;

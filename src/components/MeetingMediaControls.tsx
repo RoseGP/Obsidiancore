@@ -127,7 +127,7 @@ export default function MeetingMediaControls() {
           surfaceSwitching: 'include' as any,
           monitorTypeSurfaces: 'include' as any,
           systemAudio: 'include' as any
-        });
+        } as DisplayMediaStreamOptions);
       } catch (optionErr: any) {
         if (optionErr?.name === 'TypeError') {
           try {

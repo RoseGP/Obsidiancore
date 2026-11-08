@@ -22,7 +22,7 @@ export class StripePaymentProvider implements PaymentProvider {
 
     if (!secretKey || !isTestKey) {
       // In sandbox preview environments without active sk_test key, use safe mock client
-      const fallbackKey = 'sk_test_51MockStripeKeyOnlyUsedForTestVerification12345';
+      const fallbackKey = 'sk_test_51MockStripeKeyOnlyUsedForTestVerification12345'; // lint-guards: allow (obviously fake fixture; removed in Phase B)
       const stripe = new Stripe(fallbackKey, {
         apiVersion: '2023-10-16' as any,
         httpClient: Stripe.createFetchHttpClient() // Compatible with Cloudflare Workers fetch
@@ -221,9 +221,9 @@ export class StripePaymentProvider implements PaymentProvider {
         await stripe.invoiceItems.create({
           customer: stripeCustomerId,
           invoice: stripeInvoice.id,
-          description: item.description,
-          quantity: item.quantity,
-          unit_amount: item.unitPriceCents, // Integer minor units (e.g. 2599)
+          // `amount` is the line total in minor units (Stripe's invoice items API has no unit_amount).
+          description: item.quantity === 1 ? item.description : `${item.description} (× ${item.quantity})`,
+          amount: item.unitPriceCents * item.quantity,
           currency: input.currency.toLowerCase()
         }, reqOptions);
       }

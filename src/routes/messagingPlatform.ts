@@ -112,6 +112,8 @@ export interface MessageRecord {
   attachmentMime?: string;
   voiceDuration?: number;
   reactions?: MessageReaction[];
+  /** For contentType 'ai_response': what produced it (rendered by ChatDetailColumn). */
+  aiResponseData?: { promptUsed: string; model: string; generatedText: string; tokensUsed?: number; [k: string]: unknown };
   isInternalNote?: boolean;
   isPinned?: boolean;
   isEdited?: boolean;

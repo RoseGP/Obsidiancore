@@ -36,7 +36,6 @@ app.use('/api/accounts', (await import('../../../routes/accountsApi')).default);
 app.use('/api/analytics', (await import('../../../routes/analyticsApi')).default);
 app.use('/api/posts', (await import('../../../routes/postsApi')).default);
 app.use('/api/media', (await import('../../../routes/postsApi')).default);
-app.use('/api/posts', requireUser, (await import('../../../routes/posts')).default);
 
 const H = (u: string) => ({ 'X-Dev-User-Id': u, Origin: APP_URL });
 const A = H('alice'); const B = H('bob');
@@ -57,7 +56,7 @@ console.log(`mode: ${MODE}`);
 assert.equal((await request(app).get('/api/accounts')).status, 401);
 assert.equal((await request(app).get('/api/posts').query({ from: future(-1), to: future(1) })).status, 401);
 assert.equal((await request(app).get('/api/analytics')).status, 401);
-assert.equal((await request(app).get('/api/posts/queue')).status, 401); ok('every endpoint (incl. legacy /api/posts/queue) rejects unauthenticated calls');
+assert.notEqual((await request(app).get('/api/posts/queue').set('X-Dev-User-Id', 'alice')).status, 200); ok('every endpoint rejects unauthenticated calls; the legacy /api/posts/queue route is gone');
 assert.equal((await request(app).get('/api/accounts').set('Authorization', 'Bearer admin-jwt-token-2026')).status, 401); ok('hardcoded dev bearer token rejected');
 assert.equal((await request(app).post('/api/accounts/connect').set('X-Dev-User-Id', 'alice').send({ platform: 'x' })).status, 403);
 assert.equal((await request(app).post('/api/accounts/connect').set({ 'X-Dev-User-Id': 'alice', Origin: 'https://evil.example' }).send({ platform: 'x' })).status, 403); ok('CSRF: writes without the app’s Origin are refused');
@@ -214,9 +213,9 @@ let limited = 0;
 for (let i = 0; i < 32; i++) if ((await request(app).get('/api/analytics').set(H('rate'))).status === 429) limited++;
 assert.ok(limited > 0); ok('rate limiting returns 429');
 
-// ---------- Legacy router now bound to the verified user ----------
+// ---------- Legacy router removed ----------
 r = await request(app).get('/api/posts/queue').set(A).query({ userId: 'bob' });
-assert.equal(r.status, 200); ok('legacy /api/posts/queue ignores a client userId and uses the verified user');
+assert.equal(r.status, 404); ok('the legacy /api/posts/queue router no longer exists');
 
 // ---------- Direct adapter, disconnect, revocation, redaction ----------
 r = await request(app).post('/api/accounts/connect').set(A).send({ platform: 'bluesky', credentials: { identifier: 'acme.bsky.social', appPassword: 'abcd-efgh-ijkl-mnop' } });

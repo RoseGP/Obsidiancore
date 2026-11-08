@@ -17,7 +17,7 @@ export interface PlatformInfo {
   charLimit: number;
   /** Platform rejects text-only posts. */
   requiresMedia: boolean;
-  /** A publishing adapter exists on the server (src/services/publisher/adapters). */
+  /** Publishing is supported on the server (Postiz, or a direct adapter in features/social-accounts/server/directAdapters.ts). */
   autoPublish: boolean;
   /** Shown as a top-level filter (others appear under "All"). */
   primary: boolean;

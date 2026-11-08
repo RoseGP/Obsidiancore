@@ -1,3 +1,4 @@
+import axios from 'axios';
 import React, { useState, useEffect, useRef } from 'react';
 import useDebounce from '../hooks/useDebounce';
 import { 
@@ -136,7 +137,7 @@ export default function MessagingView({
   const [snippetSearchQuery, setSnippetSearchQuery] = useState('');
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [channelFilter, setChannelFilter] = useState<'all' | 'whatsapp' | 'telegram' | 'sms' | 'instagram'>('all');
+  const [channelFilter, setChannelFilter] = useState<'all' | 'whatsapp' | 'telegram' | 'email' | 'sms' | 'instagram'>('all');
   const [viewMode, setViewMode] = useState<'omni-chat'>('omni-chat');
   
   // Interactive Mid-panel tab: 'chat' | 'expandable-chat'
@@ -541,21 +542,15 @@ export default function MessagingView({
 
       // Send to the backend endpoint with custom headers (cc, bcc, subject, text, html)
       try {
-        const payload = {
-          to: activeContact.email || 'rpierrette45@gmail.com',
-          cc: msgCc || undefined,
-          bcc: msgBcc || undefined,
-          subject: msgSubject || 'CRM Action Plan & Pipeline Audit',
-          text: userMsg,
-          html: `<div style="font-family: sans-serif; line-height: 1.6; color: #334155;"><p>${userMsg.replace(/\n/g, '<br />')}</p></div>`
-        };
-        const response = await axios.post('/api/mail/send', payload);
-        if (response.status === 202 || response.status === 200) {
-          showToast('Email queued for delivery! (HTTP 202 Accepted)');
-        }
+        if (!activeContact.email) { showToast('This contact has no email address.'); return; }
+        const response = await axios.post('/api/communication/send-email', {
+          to: activeContact.email, cc: msgCc || undefined, bcc: msgBcc || undefined,
+          subject: msgSubject || '(No subject)', body: userMsg,
+        }, { validateStatus: () => true });
+        if (response.status === 202) showToast('Email sent.');
+        else showToast(response.data?.error || `Email not sent (HTTP ${response.status}).`);
       } catch (err) {
-        console.error('Network dispatch to /api/mail/send failed:', err);
-        showToast('Email queued for delivery successfully! (Offline mode fallback)');
+        showToast('Email not sent: the server couldn’t be reached.');
       }
 
       // Reset CC / BCC Composer Fields
@@ -2403,15 +2398,20 @@ Lead is seeking high-trust conversational CRM integration for **${activeContact?
                       if (!newPostCaption.trim()) return;
 
                       setIsSchedulingLoading(true);
-                      try {
-                        // Secure back-end proxy submission call
-                        await axios.post('/api/social-posts/schedule', {
-                          caption: newPostCaption,
-                          platforms: newPostPlatforms.map(p => p.toUpperCase()),
-                          scheduledAt: `${scheduleTargetDate}T${newPostTime === '10:00 AM' ? '10:00:00' : '13:30:00'}Z`
-                        });
-                      } catch (err: any) {
-                        console.warn('[Scheduler API Fallback triggered cleanly]:', err.message);
+                      // Schedules through the Social Planner API (Postiz). If it fails, say so: nothing is added locally.
+                      const res = await fetch('/api/posts', {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          content: newPostCaption.trim(), mode: 'schedule',
+                          platforms: newPostPlatforms.map(p => String(p).toLowerCase()),
+                          scheduledAt: `${scheduleTargetDate}T${newPostTime === '10:00 AM' ? '10:00:00' : '13:30:00'}Z`,
+                        }),
+                      }).catch(() => null);
+                      if (!res || !res.ok) {
+                        const j = res ? await res.json().catch(() => ({})) : {};
+                        setIsSchedulingLoading(false);
+                        alert(j.error || 'The post couldn’t be scheduled. Check Social Planner → Accounts.');
+                        return;
                       }
 
                       const id = `sp-custom-${Date.now()}`;

@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import tls from 'tls';
 import nodemailer from 'nodemailer';
+import type { Transporter, SendMailOptions } from 'nodemailer';
 import { wsDispatcher } from './wsDispatcher';
 
 export type DKIMAlgorithm = 'rsa-sha256' | 'ed25519-sha256';
@@ -185,7 +186,7 @@ export function createDKIMHeader(
 export function createCloudflareMtlsTransporter(
   relayConfig?: Partial<CloudflareMtlsRelayConfig>,
   dkimConfig?: Partial<DKIMConfig>
-): nodemailer.Transporter {
+): Transporter {
   const host = relayConfig?.host || process.env.CLOUDFLARE_SMTP_RELAY_HOST || process.env.SMTP_HOST || 'smtp.cloudflare.com';
   const port = relayConfig?.port || Number(process.env.CLOUDFLARE_SMTP_RELAY_PORT) || Number(process.env.SMTP_PORT) || 587;
   const secure = relayConfig?.secure ?? (port === 465);
@@ -308,7 +309,7 @@ export async function sendSecureOutboundEmail(options: SendSecureEmailOptions): 
   const isSimulated = !process.env.CLOUDFLARE_SMTP_RELAY_HOST && !process.env.SMTP_HOST;
   const relayHost = options.relayConfig?.host || process.env.CLOUDFLARE_SMTP_RELAY_HOST || process.env.SMTP_HOST || 'smtp.cloudflare.com';
 
-  const mailOptions: nodemailer.SendMailOptions = {
+  const mailOptions: SendMailOptions = {
     from: `"${fromName}" <${fromEmail}>`,
     to: recipients,
     cc: options.cc ? (Array.isArray(options.cc) ? options.cc.join(', ') : options.cc) : undefined,

@@ -3,7 +3,7 @@ import React from 'react';
 export interface BadgeProps {
   children: React.ReactNode;
   variant?: 'default' | 'success' | 'warning' | 'danger' | 'info' | 'neutral' | 'outline' | 'purple';
-  size?: 'sm' | 'md';
+  size?: 'xs' | 'sm' | 'md';
   className?: string;
 }
 
@@ -15,8 +15,10 @@ export const Badge: React.FC<BadgeProps> = ({
 }) => {
   const base = 'inline-flex items-center font-medium transition-colors whitespace-nowrap rounded-md';
   
-  const sizeClasses = size === 'sm' 
-    ? 'px-2 py-0.5 text-[11px] leading-tight' 
+  const sizeClasses = size === 'xs'
+    ? 'px-1.5 py-0 text-[10px] leading-tight'
+    : size === 'sm'
+    ? 'px-2 py-0.5 text-[11px] leading-tight'
     : 'px-2.5 py-1 text-xs';
 
   const variantClasses = {

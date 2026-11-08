@@ -37,7 +37,8 @@ const KEY = 'a'.repeat(64), OLD = 'b'.repeat(64);
 
 // ---- Express / Firebase ----
 {
-  const { createApiApp } = await import('../../../functions/src/app');
+  // Untyped import: functions/ is a separate CommonJS TypeScript project with its own tsconfig.
+  const { createApiApp } = await import('../../../functions/src/app' as string);
   let keys: Array<string | undefined> = [KEY];
   const app = createApiApp(() => keys);
   let r = await request(app).get('/api/v1/health').set('x-api-key', KEY);

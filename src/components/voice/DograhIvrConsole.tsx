@@ -87,7 +87,7 @@ export default function DograhIvrConsole() {
   const run = async (body: any, callerSays?: string) => {
     setSim((s) => ({ ...s, busy: true }));
     try {
-      const { twiml, note } = await api('/simulate', { method: 'POST', body: JSON.stringify(body) });
+      const { twiml, note } = await api('/preview', { method: 'POST', body: JSON.stringify(body) });
       const parsed = readTwiml(twiml);
       const lines = note ? [...parsed.lines, { kind: 'pause' as const, text: note }] : parsed.lines;
       const next = parsed.next;

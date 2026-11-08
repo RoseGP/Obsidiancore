@@ -65,7 +65,7 @@ const DEFAULT_MISSIONS: AIMission[] = [
   {
     id: 'm-3',
     title: 'Follow up on Summit Logistics proposal ($65k ARR)',
-    category: 'sales',
+    category: 'deals',
     rewardXP: 120,
     completed: false,
     targetView: 'proposals',
@@ -1259,9 +1259,9 @@ export default function DashboardView({ contacts, onSelectContact, onNavigate }:
                   <div className="text-xs font-bold text-neutral-900 truncate">{contact.name}</div>
                   <div className="text-[10px] text-neutral-400 truncate">{contact.company}</div>
                 </div>
-                {contact.dealSize && (
+                {contact.pipelineValue && (
                   <span className="text-[10px] font-mono font-extrabold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">
-                    {contact.dealSize}
+                    {contact.pipelineValue}
                   </span>
                 )}
               </div>
@@ -1769,7 +1769,7 @@ export default function DashboardView({ contacts, onSelectContact, onNavigate }:
                   <label className="block text-[11px] font-bold text-neutral-700 mb-1">Stage</label>
                   <select
                     value={newDealForm.stage}
-                    onChange={(e) => setNewDealForm({ ...newDealForm, stage: e.target.value })}
+                    onChange={(e) => setNewDealForm({ ...newDealForm, stage: e.target.value as typeof newDealForm.stage })}
                     className="w-full px-3 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-50/50 text-neutral-900 focus:outline-none focus:border-indigo-500 focus:bg-white transition cursor-pointer"
                   >
                     <option value="lead">Lead</option>
