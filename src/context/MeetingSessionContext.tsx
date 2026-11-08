@@ -15,6 +15,9 @@ export interface MeetingParticipant {
   isVideoOff: boolean;
   isSpeaking: boolean;
   isScreenSharing?: boolean;
+  /** Raised hand (cleared when the host lowers it or the participant lowers their own). */
+  isHandRaised?: boolean;
+  handRaisedAt?: number;
   joinedAt: string;
   bio?: string;
   interests?: string[];
@@ -250,6 +253,23 @@ interface MeetingSessionContextType {
   // Live reactions
   broadcastReaction: (emoji: string) => void;
   activeReactions: Array<{ id: string; emoji: string; sender: string; timestamp: number }>;
+
+  // Raise hand (everyone)
+  isHandRaised: boolean;
+  toggleRaiseHand: () => void;
+
+  // Waiting room & participant management (host / org admin; the UI enforces who sees these)
+  isWaitingRoomEnabled: boolean;
+  setWaitingRoomEnabled: (enabled: boolean) => void;
+  waitingRoom: MeetingParticipant[];
+  admitParticipant: (participantId: string) => { success: boolean; message: string };
+  admitAllWaiting: () => { success: boolean; message: string };
+  denyParticipant: (participantId: string) => void;
+  muteParticipant: (participantId: string) => void;
+  muteAllParticipants: () => void;
+  removeParticipant: (participantId: string) => void;
+  lowerParticipantHand: (participantId: string) => void;
+  lowerAllHands: () => void;
 }
 
 const MeetingSessionContext = createContext<MeetingSessionContextType | null>(null);
@@ -301,6 +321,13 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
   
   // Live reaction bubbles
   const [activeReactions, setActiveReactions] = useState<Array<{ id: string; emoji: string; sender: string; timestamp: number }>>([]);
+
+  // Raise hand & waiting room
+  const [isHandRaised, setIsHandRaised] = useState(false);
+  const [waitingRoom, setWaitingRoom] = useState<MeetingParticipant[]>([]);
+  const [isWaitingRoomEnabled, setIsWaitingRoomEnabledState] = useState<boolean>(() => {
+    try { return localStorage.getItem('obsidian_meeting_waiting_room') === 'on'; } catch { return false; }
+  });
 
   // Recording State
   const [isRecording, setIsRecording] = useState(false);
@@ -814,6 +841,8 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
       await stopRecording();
     }
     cleanupMediaTracks();
+    setIsHandRaised(false);
+    setWaitingRoom([]);
     setActiveMeeting(prev => prev ? { ...prev, status: 'ended' } : null);
     setTimeout(() => {
       setActiveMeeting(null);
@@ -828,6 +857,8 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
       await stopRecording();
     }
     cleanupMediaTracks();
+    setIsHandRaised(false);
+    setWaitingRoom([]);
     setActiveMeeting(prev => prev ? { ...prev, status: 'ended' } : null);
     setTimeout(() => {
       setActiveMeeting(null);
@@ -1455,7 +1486,7 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
     // Simulate email dispatch
     await new Promise(r => setTimeout(r, 600));
 
-    // Add guest to room participant roster as invited/joined
+    // Add guest to the room (or to the waiting room, when the host has it on)
     const newGuestName = email.split('@')[0].replace('.', ' ');
     const guestObj: MeetingParticipant = {
       id: `p-guest-${Date.now()}`,
@@ -1473,6 +1504,12 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
       isCrmContact: false
     };
 
+    if (isWaitingRoomEnabled) {
+      setWaitingRoom(prev => [...prev, { ...guestObj, joinedAt: 'Waiting' }]);
+      playChime('join');
+      return { success: true, message: `Invitation sent to ${email}. They'll wait in the waiting room until you admit them.` };
+    }
+
     setActiveMeeting(prev => {
       if (!prev) return prev;
       return {
@@ -1484,6 +1521,79 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
     playChime('join');
     return { success: true, message: `Invitation dispatched to ${email}. Guest joined room.` };
   };
+
+  // ---------------------------------------------------------------------------
+  // RAISE HAND
+  // ---------------------------------------------------------------------------
+  const toggleRaiseHand = useCallback(() => {
+    setIsHandRaised(prev => !prev);
+  }, []);
+
+  // ---------------------------------------------------------------------------
+  // WAITING ROOM & PARTICIPANT MANAGEMENT
+  // ---------------------------------------------------------------------------
+  const setWaitingRoomEnabled = useCallback((enabled: boolean) => {
+    setIsWaitingRoomEnabledState(enabled);
+    try { localStorage.setItem('obsidian_meeting_waiting_room', enabled ? 'on' : 'off'); } catch { /* storage unavailable */ }
+  }, []);
+
+  const roomHasSpaceFor = (count: number) =>
+    !activeMeeting || (activeMeeting.participants.length + 1 + count) <= planConfig.maxParticipants;
+
+  const admitParticipant = (participantId: string): { success: boolean; message: string } => {
+    const guest = waitingRoom.find(p => p.id === participantId);
+    if (!guest) return { success: false, message: 'That person is no longer waiting.' };
+    if (!roomHasSpaceFor(1)) {
+      return { success: false, message: `The room is full (${planConfig.maxParticipants} max on ${planConfig.label}).` };
+    }
+    setWaitingRoom(prev => prev.filter(p => p.id !== participantId));
+    setActiveMeeting(prev => prev ? { ...prev, participants: [...prev.participants, { ...guest, joinedAt: 'Just now' }] } : prev);
+    playChime('join');
+    return { success: true, message: `${guest.name} joined the meeting.` };
+  };
+
+  const admitAllWaiting = (): { success: boolean; message: string } => {
+    if (waitingRoom.length === 0) return { success: false, message: 'Nobody is waiting.' };
+    const free = activeMeeting ? Math.max(0, planConfig.maxParticipants - (activeMeeting.participants.length + 1)) : waitingRoom.length;
+    const admitted = waitingRoom.slice(0, free);
+    if (admitted.length === 0) return { success: false, message: `The room is full (${planConfig.maxParticipants} max on ${planConfig.label}).` };
+    const admittedIds = new Set(admitted.map(p => p.id));
+    setWaitingRoom(prev => prev.filter(p => !admittedIds.has(p.id)));
+    setActiveMeeting(prev => prev ? { ...prev, participants: [...prev.participants, ...admitted.map(p => ({ ...p, joinedAt: 'Just now' }))] } : prev);
+    playChime('join');
+    const left = waitingRoom.length - admitted.length;
+    return { success: true, message: left > 0 ? `Admitted ${admitted.length}. ${left} still waiting (room is full).` : `Admitted ${admitted.length}.` };
+  };
+
+  const denyParticipant = useCallback((participantId: string) => {
+    setWaitingRoom(prev => prev.filter(p => p.id !== participantId));
+  }, []);
+
+  const updateParticipants = useCallback((fn: (list: MeetingParticipant[]) => MeetingParticipant[]) => {
+    setActiveMeeting(prev => prev ? { ...prev, participants: fn(prev.participants) } : prev);
+  }, []);
+
+  const muteParticipant = useCallback((participantId: string) => {
+    updateParticipants(list => list.map(p => p.id === participantId ? { ...p, isMuted: true, isSpeaking: false } : p));
+  }, [updateParticipants]);
+
+  const muteAllParticipants = useCallback(() => {
+    updateParticipants(list => list.map(p => ({ ...p, isMuted: true, isSpeaking: false })));
+  }, [updateParticipants]);
+
+  const removeParticipant = useCallback((participantId: string) => {
+    updateParticipants(list => list.filter(p => p.id !== participantId));
+    playChime('leave');
+  }, [updateParticipants, playChime]);
+
+  const lowerParticipantHand = useCallback((participantId: string) => {
+    updateParticipants(list => list.map(p => p.id === participantId ? { ...p, isHandRaised: false, handRaisedAt: undefined } : p));
+  }, [updateParticipants]);
+
+  const lowerAllHands = useCallback(() => {
+    setIsHandRaised(false);
+    updateParticipants(list => list.map(p => ({ ...p, isHandRaised: false, handRaisedAt: undefined })));
+  }, [updateParticipants]);
 
   // BROADCAST REACTION
   const broadcastReaction = (emoji: string) => {
@@ -1560,7 +1670,20 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
         meetingHistory,
         deleteMeetingHistoryItem,
         broadcastReaction,
-        activeReactions
+        activeReactions,
+        isHandRaised,
+        toggleRaiseHand,
+        isWaitingRoomEnabled,
+        setWaitingRoomEnabled,
+        waitingRoom,
+        admitParticipant,
+        admitAllWaiting,
+        denyParticipant,
+        muteParticipant,
+        muteAllParticipants,
+        removeParticipant,
+        lowerParticipantHand,
+        lowerAllHands
       }}
     >
       {children}

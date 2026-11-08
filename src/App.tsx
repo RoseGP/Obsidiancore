@@ -23,7 +23,6 @@ import GbpView from './components/GbpView';
 import DealsPipelineView from './components/DealsPipelineView';
 import LeadsView from './components/leads/LeadsView';
 import CRMVoiceDialer from './components/CRMVoiceDialer';
-import CRMCallCanvas from './components/CRMCallCanvas';
 import VideoMeetingWorkspace from './components/greet/VideoMeetingWorkspace';
 import FloatingMeetingHUD from './components/greet/FloatingMeetingHUD';
 import { MeetingSessionProvider, useMeetingSession } from './context/MeetingSessionContext';
@@ -392,15 +391,7 @@ function AppMain() {
             onNavigate={(v) => setActiveView(v as SemanticView)}
           />
         );
-      case 'call_canvas':
-      case 'video_call':
-        return (
-          <CRMCallCanvas
-            onAddCalendarEvent={handleAddCalendarEvent}
-            onNavigateToDashboard={() => setActiveView('dashboard')}
-            onNavigateToGreet={() => setActiveView('greet')}
-          />
-        );
+      // 'call_canvas' / 'video_call' render the full-viewport VideoMeetingWorkspace (early return below).
       case 'public_scheduling':
         return (
           <PublicSchedulingPage

@@ -13,6 +13,8 @@ export interface MeetingPermissions {
   canEndForEveryone: boolean;
   /** Start, pause, resume and stop the meeting recording. */
   canRecord: boolean;
+  /** Admit from the waiting room, mute or remove participants, lower hands. */
+  canManageParticipants: boolean;
   /** Short explanation shown on host-only items for everyone else. */
   hostOnlyReason: string;
 }
@@ -24,7 +26,7 @@ export interface MeetingPermissions {
 export function meetingPermissions(input: { isHost: boolean; orgRole?: OrgRole }): MeetingPermissions {
   const isAdmin = input.orgRole === 'OWNER' || input.orgRole === 'ADMIN';
   const privileged = !!input.isHost || isAdmin;
-  return { canEndForEveryone: privileged, canRecord: privileged, hostOnlyReason: 'Only the host or an admin can do this' };
+  return { canEndForEveryone: privileged, canRecord: privileged, canManageParticipants: privileged, hostOnlyReason: 'Only the host or an admin can do this' };
 }
 
 export function screenShareSupported(nav: Navigator | undefined = typeof navigator !== 'undefined' ? navigator : undefined): boolean {
@@ -42,6 +44,10 @@ export interface MeetingControlState {
   activeSidebarTab: SidebarTab;
   isRecording: boolean;
   isRecordingPaused: boolean;
+  /** Optional so older callers keep working; default false / 0. */
+  isHandRaised?: boolean;
+  isWaitingRoomEnabled?: boolean;
+  raisedHandsCount?: number;
 }
 
 export type MenuActionId =
@@ -50,6 +56,8 @@ export type MenuActionId =
   | `react:${string}`
   | 'record-start' | 'record-pause-resume' | 'record-stop'
   | 'open-settings'
+  | 'toggle-raise-hand'
+  | 'toggle-waiting-room' | 'mute-all' | 'lower-all-hands'
   | 'end-for-everyone';
 
 export interface MenuItem {
@@ -86,6 +94,11 @@ export function buildMoreMenu(state: MeetingControlState, perms: MeetingPermissi
       ],
     },
     {
+      id: 'participate', title: 'Participate', items: [
+        { id: 'toggle-raise-hand', label: state.isHandRaised ? 'Lower my hand' : 'Raise my hand', checked: !!state.isHandRaised, icon: 'hand' },
+      ],
+    },
+    {
       id: 'reactions', title: 'Send a reaction',
       items: REACTIONS.map((e) => ({ id: `react:${e}` as MenuActionId, label: e, compact: true })),
     },
@@ -101,9 +114,20 @@ export function buildMoreMenu(state: MeetingControlState, perms: MeetingPermissi
     { id: 'settings', title: 'Settings', items: [{ id: 'open-settings', label: 'Audio and video settings', icon: 'settings' }] },
   ];
   // Host-only section is only shown to people who can use it: Leave stays the primary exit for everyone.
-  if (perms.canEndForEveryone) {
-    sections.push({ id: 'host', title: 'Host controls', items: [{ id: 'end-for-everyone', label: 'End meeting for everyone', danger: true, icon: 'end' }] });
+  const hostItems: MenuItem[] = [];
+  if (perms.canManageParticipants) {
+    hostItems.push(
+      { id: 'toggle-waiting-room', label: 'Waiting room', checked: !!state.isWaitingRoomEnabled, icon: 'waiting' },
+      { id: 'mute-all', label: 'Mute everyone else', icon: 'mute' },
+    );
+    if ((state.raisedHandsCount ?? 0) > 0) {
+      hostItems.push({ id: 'lower-all-hands', label: `Lower all hands (${state.raisedHandsCount})`, icon: 'hand' });
+    }
   }
+  if (perms.canEndForEveryone) {
+    hostItems.push({ id: 'end-for-everyone', label: 'End meeting for everyone', danger: true, icon: 'end' });
+  }
+  if (hostItems.length) sections.push({ id: 'host', title: 'Host controls', items: hostItems });
   return sections;
 }
 

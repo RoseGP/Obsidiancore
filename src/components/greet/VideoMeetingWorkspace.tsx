@@ -9,7 +9,7 @@ import {
   Laptop, ShieldAlert, Award, Pause, Play, Disc, Settings, FileText,
   SlidersHorizontal, CheckCircle, RotateCw, Printer,
   // Used by the transcript tab and summary modal but previously never imported (ReferenceError at render).
-  Save, Activity
+  Save, Activity, UserX
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { jsPDF } from 'jspdf';
@@ -24,7 +24,7 @@ import {
 } from '../../context/MeetingSessionContext';
 import { CRMContact } from '../../types';
 import MeetingControlBar, { EndMeetingConfirmDialog } from './MeetingControlBar';
-import type { OrgRole } from './meetingControls';
+import { meetingPermissions, type OrgRole } from './meetingControls';
 
 interface VideoMeetingWorkspaceProps {
   contacts?: CRMContact[];
@@ -76,6 +76,19 @@ export default function VideoMeetingWorkspace({
     exchangeContactConsent,
     broadcastReaction,
     activeReactions,
+    isHandRaised,
+    toggleRaiseHand,
+    isWaitingRoomEnabled,
+    setWaitingRoomEnabled,
+    waitingRoom,
+    admitParticipant,
+    admitAllWaiting,
+    denyParticipant,
+    muteParticipant,
+    muteAllParticipants,
+    removeParticipant,
+    lowerParticipantHand,
+    lowerAllHands,
     // Recording
     isRecording,
     isRecordingPaused,
@@ -463,6 +476,13 @@ export default function VideoMeetingWorkspace({
   };
 
   const participantsList = activeMeeting?.participants || [];
+  // Host or org OWNER/ADMIN: same rule as the control bar (see meetingControls.ts).
+  const meetingPerms = meetingPermissions({ isHost: !!activeMeeting?.isHost, orgRole });
+  const raisedHandsCount = participantsList.filter(p => p.isHandRaised).length + (isHandRaised ? 1 : 0);
+  // Raised hands first (in the order they were raised), then everyone else as they joined.
+  const rosterOrder = [...participantsList].sort((a, b) =>
+    (a.isHandRaised ? 0 : 1) - (b.isHandRaised ? 0 : 1) || (a.handRaisedAt ?? 0) - (b.handRaisedAt ?? 0));
+  const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
   const currentDuration = activeMeeting?.durationSeconds || 0;
 
   return (
@@ -639,6 +659,7 @@ export default function VideoMeetingWorkspace({
             onClick={handleCopyMeetingLink}
             className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 border border-white/10 text-neutral-300 text-xs font-semibold transition-all cursor-pointer"
             title="Copy meeting invitation link"
+            aria-label="Copy meeting invitation link"
           >
             {copiedLinkNotice ? (
               <>
@@ -648,7 +669,7 @@ export default function VideoMeetingWorkspace({
             ) : (
               <>
                 <Share2 className="h-3.5 w-3.5 text-neutral-400" />
-                <span className="hidden md:inline">Share</span>
+                <span className="hidden md:inline">Copy link</span>
               </>
             )}
           </button>
@@ -672,14 +693,7 @@ export default function VideoMeetingWorkspace({
             {isFullscreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
           </button>
 
-          {/* Leave / End Call Button */}
-          <button
-            onClick={() => setShowLeaveConfirmModal(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 active:scale-95 text-white text-xs font-bold transition-all shadow-md shadow-rose-950/40 cursor-pointer"
-          >
-            <PhoneOff className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Leave</span>
-          </button>
+          {/* Leave lives in the bottom control bar (always visible), so it isn't repeated here. */}
         </div>
       </header>
 
@@ -1029,6 +1043,7 @@ export default function VideoMeetingWorkspace({
                   {/* Local User Badge */}
                   <div className="absolute bottom-3 left-3 flex items-center gap-2 px-2.5 py-1 rounded-xl bg-black/75 backdrop-blur-md border border-white/10">
                     <span className="text-xs font-bold text-white">Camelia Rose (You)</span>
+                    {isHandRaised && <span role="img" aria-label="Hand raised" title="Hand raised" className="text-sm leading-none">✋</span>}
                     <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-indigo-600 text-white">Host</span>
                   </div>
 
@@ -1082,6 +1097,7 @@ export default function VideoMeetingWorkspace({
                     {/* Participant Badge */}
                     <div className="absolute bottom-3 left-3 flex items-center gap-2 px-2.5 py-1 rounded-xl bg-black/75 backdrop-blur-md border border-white/10">
                       <span className="text-xs font-bold text-white truncate max-w-[120px]">{p.name}</span>
+                      {p.isHandRaised && <span role="img" aria-label="Hand raised" title="Hand raised" className="text-sm leading-none">✋</span>}
                       <span className="text-[10px] font-semibold text-neutral-400">{p.role}</span>
                     </div>
 
@@ -1146,6 +1162,17 @@ export default function VideoMeetingWorkspace({
             isRecording={isRecording}
             isRecordingPaused={isRecordingPaused}
             recordingDurationSeconds={recordingDurationSeconds}
+            isHandRaised={isHandRaised}
+            raisedHandsCount={raisedHandsCount}
+            isWaitingRoomEnabled={isWaitingRoomEnabled}
+            waitingCount={waitingRoom.length}
+            onToggleRaiseHand={toggleRaiseHand}
+            onToggleWaitingRoom={() => {
+              setWaitingRoomEnabled(!isWaitingRoomEnabled);
+              showToast(isWaitingRoomEnabled ? 'Waiting room off: invited guests join directly.' : 'Waiting room on: you admit invited guests from Participants.', 'info');
+            }}
+            onMuteAll={() => { muteAllParticipants(); showToast('Everyone else is muted. They can unmute themselves.', 'info'); }}
+            onLowerAllHands={() => { lowerAllHands(); showToast('All hands lowered.', 'info'); }}
             onToggleMic={toggleMic}
             onToggleCam={toggleCam}
             onToggleScreenShare={isScreenSharing ? stopScreenShare : startScreenShare}
@@ -1512,15 +1539,75 @@ export default function VideoMeetingWorkspace({
                   <div className="p-3 border-b border-white/10 bg-neutral-900/60 flex items-center justify-between gap-2">
                     <span className="text-xs font-bold text-white">
                       {participantsList.length + 1} In Call
+                      {raisedHandsCount > 0 && <span className="ml-1.5 text-amber-300 font-semibold">· ✋ {raisedHandsCount}</span>}
                     </span>
-                    <button
-                      onClick={() => setShowInviteModal(true)}
-                      className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-1 cursor-pointer"
-                    >
-                      <UserPlus className="h-3.5 w-3.5" />
-                      <span>Invite</span>
-                    </button>
+                    <div className="flex items-center gap-1.5">
+                      {meetingPerms.canManageParticipants && participantsList.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => { muteAllParticipants(); showToast('Everyone else is muted. They can unmute themselves.', 'info'); }}
+                          className="px-2.5 py-1 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-200 font-bold text-xs flex items-center gap-1 cursor-pointer"
+                          title="Mute everyone except you"
+                        >
+                          <MicOff className="h-3.5 w-3.5" />
+                          <span>Mute all</span>
+                        </button>
+                      )}
+                      <button
+                        onClick={() => setShowInviteModal(true)}
+                        className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-1 cursor-pointer"
+                      >
+                        <UserPlus className="h-3.5 w-3.5" />
+                        <span>Invite</span>
+                      </button>
+                    </div>
                   </div>
+
+                  {/* Waiting room (host / admin only) */}
+                  {meetingPerms.canManageParticipants && (isWaitingRoomEnabled || waitingRoom.length > 0) && (
+                    <div className="p-3 border-b border-white/10 bg-amber-950/20 space-y-2" aria-label="Waiting room">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[11px] font-bold text-amber-200 uppercase tracking-wider">
+                          Waiting room ({waitingRoom.length})
+                        </span>
+                        {waitingRoom.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => { const r = admitAllWaiting(); showToast(r.message, r.success ? 'success' : 'warning'); }}
+                            className="px-2 py-0.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold cursor-pointer"
+                          >
+                            Admit all
+                          </button>
+                        )}
+                      </div>
+                      {waitingRoom.length === 0 ? (
+                        <p className="text-[11px] text-neutral-400">On. Invited guests wait here until you admit them.</p>
+                      ) : waitingRoom.map(w => (
+                        <div key={w.id} className="flex items-center justify-between gap-2 p-2 rounded-lg bg-neutral-900/70 border border-white/5">
+                          <div className="min-w-0">
+                            <p className="text-xs font-bold text-white truncate">{w.name}</p>
+                            <p className="text-[10px] text-neutral-400 truncate">{w.email}</p>
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => { const r = admitParticipant(w.id); showToast(r.message, r.success ? 'success' : 'warning'); }}
+                              className="px-2 py-1 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold cursor-pointer"
+                            >
+                              Admit
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => denyParticipant(w.id)}
+                              className="px-2 py-1 rounded-md bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-[11px] font-semibold cursor-pointer"
+                            >
+                              Deny
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
                   {/* Participants List */}
                   <div className="flex-1 overflow-y-auto p-3 space-y-2">
@@ -1536,13 +1623,16 @@ export default function VideoMeetingWorkspace({
                         </div>
                       </div>
                       <div className="flex items-center gap-1.5 text-neutral-400">
+                        {isHandRaised && (
+                          <button type="button" onClick={toggleRaiseHand} title="Lower your hand" aria-label="Lower your hand" className="text-sm leading-none cursor-pointer">✋</button>
+                        )}
                         {isMicMuted ? <MicOff className="h-3.5 w-3.5 text-rose-400" /> : <Mic className="h-3.5 w-3.5 text-emerald-400" />}
                         {isCamOff ? <VideoOff className="h-3.5 w-3.5 text-rose-400" /> : <Video className="h-3.5 w-3.5 text-indigo-400" />}
                       </div>
                     </div>
 
-                    {/* Remote Participants */}
-                    {participantsList.map(p => (
+                    {/* Remote Participants (raised hands first) */}
+                    {rosterOrder.map(p => (
                       <div
                         key={p.id}
                         className="obsidian p-3 rounded-xl bg-[var(--obsidian-1)] border border-white/10 flex items-center justify-between"
@@ -1558,14 +1648,61 @@ export default function VideoMeetingWorkspace({
                         </div>
 
                         <div className="flex items-center gap-1.5">
+                          {p.isHandRaised && (
+                            meetingPerms.canManageParticipants ? (
+                              <button type="button" onClick={() => lowerParticipantHand(p.id)} title={`Lower ${p.name}'s hand`} aria-label={`Lower ${p.name}'s hand`} className="text-sm leading-none cursor-pointer">✋</button>
+                            ) : (
+                              <span role="img" aria-label="Hand raised" title="Hand raised" className="text-sm leading-none">✋</span>
+                            )
+                          )}
                           {p.isMuted ? (
-                            <span className="p-1 rounded bg-rose-950/80 text-rose-400">
+                            <span className="p-1 rounded bg-rose-950/80 text-rose-400" title="Muted">
                               <MicOff className="h-3 w-3" />
                             </span>
+                          ) : meetingPerms.canManageParticipants ? (
+                            <button
+                              type="button"
+                              onClick={() => muteParticipant(p.id)}
+                              className="p-1 rounded bg-emerald-950/80 text-emerald-400 hover:bg-rose-950/80 hover:text-rose-400 cursor-pointer transition-colors"
+                              title={`Mute ${p.name}`}
+                              aria-label={`Mute ${p.name}`}
+                            >
+                              <Mic className="h-3 w-3" />
+                            </button>
                           ) : (
                             <span className="p-1 rounded bg-emerald-950/80 text-emerald-400">
                               <Mic className="h-3 w-3" />
                             </span>
+                          )}
+                          {meetingPerms.canManageParticipants && (
+                            confirmRemoveId === p.id ? (
+                              <span className="flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => { removeParticipant(p.id); setConfirmRemoveId(null); showToast(`${p.name} was removed from the meeting.`, 'info'); }}
+                                  className="px-1.5 py-0.5 rounded bg-rose-600 hover:bg-rose-500 text-white text-[10px] font-bold cursor-pointer"
+                                >
+                                  Remove
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setConfirmRemoveId(null)}
+                                  className="px-1.5 py-0.5 rounded bg-neutral-800 text-neutral-300 text-[10px] cursor-pointer"
+                                >
+                                  Cancel
+                                </button>
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => setConfirmRemoveId(p.id)}
+                                className="p-1 rounded hover:bg-rose-950/80 text-neutral-400 hover:text-rose-400 transition-colors cursor-pointer"
+                                title={`Remove ${p.name} from the meeting`}
+                                aria-label={`Remove ${p.name} from the meeting`}
+                              >
+                                <UserX className="h-3.5 w-3.5" />
+                              </button>
+                            )
                           )}
                           <button
                             onClick={() => {

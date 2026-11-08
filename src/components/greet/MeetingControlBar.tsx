@@ -2,7 +2,8 @@
  * Meeting control bar.
  *
  *   Bar (always visible): Microphone · Camera · Share screen (if supported) · Participants · Chat · More · Leave
- *   More menu:            Video and layout · Panels · Reactions · Recording · Settings · Host controls
+ *   More menu:            Video and layout · Panels · Participate (raise hand) · Reactions · Recording · Settings ·
+ *                         Host controls (waiting room, mute everyone, lower hands, end for everyone)
  *
  * The bar only presents controls and calls the handlers it's given; all media/SDK behavior stays in
  * MeetingSessionContext. Menu follows the WAI-ARIA menu button pattern: Enter/Space/↓ opens and focuses
@@ -12,7 +13,7 @@
  */
 import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
-  Briefcase, Disc, FileText, LayoutGrid, MessageSquare, Mic, MicOff, MonitorOff, MonitorUp, MoreHorizontal,
+  Briefcase, DoorOpen, Disc, FileText, Hand, LayoutGrid, MessageSquare, Mic, MicOff, MonitorOff, MonitorUp, MoreHorizontal,
   Pause, PhoneOff, Play, Power, Settings, Sparkles, Square, Users, Video, VideoOff,
 } from 'lucide-react';
 import {
@@ -37,6 +38,15 @@ export interface MeetingControlBarProps {
   recordingDurationSeconds: number;
   /** Overrides feature detection (tests). */
   canShareScreen?: boolean;
+  /** Raise hand, waiting room and participant management (optional; omitted = feature hidden). */
+  isHandRaised?: boolean;
+  raisedHandsCount?: number;
+  isWaitingRoomEnabled?: boolean;
+  waitingCount?: number;
+  onToggleRaiseHand?: () => void;
+  onToggleWaitingRoom?: () => void;
+  onMuteAll?: () => void;
+  onLowerAllHands?: () => void;
   onToggleMic: () => void;
   onToggleCam: () => void;
   onToggleScreenShare: () => void;
@@ -56,7 +66,7 @@ const fmt = (s: number) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${Str
 
 const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   pause: Pause, play: Play, layout: LayoutGrid, greet: Sparkles, transcript: FileText, crm: Briefcase,
-  record: Disc, stop: Square, settings: Settings, end: Power,
+  record: Disc, stop: Square, settings: Settings, end: Power, hand: Hand, waiting: DoorOpen, mute: MicOff,
 };
 
 const DIALOG_ACTIONS = new Set<MenuActionId>(['record-start', 'open-settings', 'end-for-everyone']);
@@ -105,7 +115,17 @@ export default function MeetingControlBar(p: MeetingControlBarProps) {
   const sections = useMemo(() => buildMoreMenu({
     isHost: p.isHost, isVideoPaused: p.isVideoPaused, isCamOff: p.isCamOff, layoutMode: p.layoutMode,
     isSidebarOpen: p.isSidebarOpen, activeSidebarTab: p.activeSidebarTab, isRecording: p.isRecording, isRecordingPaused: p.isRecordingPaused,
-  }, perms), [p.isHost, p.isVideoPaused, p.isCamOff, p.layoutMode, p.isSidebarOpen, p.activeSidebarTab, p.isRecording, p.isRecordingPaused, perms]);
+    isHandRaised: p.isHandRaised, isWaitingRoomEnabled: p.isWaitingRoomEnabled, raisedHandsCount: p.raisedHandsCount,
+  }, perms).map((s) => ({
+    ...s,
+    // Hide items whose handler wasn't provided, so the menu never offers something that does nothing.
+    items: s.items.filter((i) =>
+      (i.id !== 'toggle-raise-hand' || !!p.onToggleRaiseHand) &&
+      (i.id !== 'toggle-waiting-room' || !!p.onToggleWaitingRoom) &&
+      (i.id !== 'mute-all' || !!p.onMuteAll) &&
+      (i.id !== 'lower-all-hands' || !!p.onLowerAllHands)),
+  })).filter((s) => s.items.length > 0), [p.isHost, p.isVideoPaused, p.isCamOff, p.layoutMode, p.isSidebarOpen, p.activeSidebarTab, p.isRecording, p.isRecordingPaused,
+    p.isHandRaised, p.isWaitingRoomEnabled, p.raisedHandsCount, p.onToggleRaiseHand, p.onToggleWaitingRoom, p.onMuteAll, p.onLowerAllHands, perms]);
   const items = useMemo(() => flattenMenu(sections), [sections]);
 
   const [open, setOpen] = useState(false);
@@ -121,8 +141,8 @@ export default function MeetingControlBar(p: MeetingControlBarProps) {
   const first = useRef(true);
   useEffect(() => {
     if (first.current) { first.current = false; return; }
-    setAnnouncement(`Microphone ${p.isMicMuted ? 'off' : 'on'}. Camera ${p.isCamOff ? 'off' : 'on'}.${p.isScreenSharing ? ' Sharing your screen.' : ''}${p.isRecording ? (p.isRecordingPaused ? ' Recording paused.' : ' Recording.') : ''}`);
-  }, [p.isMicMuted, p.isCamOff, p.isScreenSharing, p.isRecording, p.isRecordingPaused]);
+    setAnnouncement(`Microphone ${p.isMicMuted ? 'off' : 'on'}. Camera ${p.isCamOff ? 'off' : 'on'}.${p.isScreenSharing ? ' Sharing your screen.' : ''}${p.isRecording ? (p.isRecordingPaused ? ' Recording paused.' : ' Recording.') : ''}${p.isHandRaised ? ' Your hand is raised.' : ''}`);
+  }, [p.isMicMuted, p.isCamOff, p.isScreenSharing, p.isRecording, p.isRecordingPaused, p.isHandRaised]);
 
   // ---- menu positioning: fixed, so no ancestor can clip it ----
   const place = useCallback(() => {
@@ -181,6 +201,10 @@ export default function MeetingControlBar(p: MeetingControlBarProps) {
       case 'record-pause-resume': return p.onPauseResumeRecording();
       case 'record-stop': return p.onStopRecording();
       case 'open-settings': return p.onOpenSettings();
+      case 'toggle-raise-hand': return p.onToggleRaiseHand?.();
+      case 'toggle-waiting-room': return p.onToggleWaitingRoom?.();
+      case 'mute-all': return p.onMuteAll?.();
+      case 'lower-all-hands': return p.onLowerAllHands?.();
       case 'end-for-everyone': return p.onEndForEveryone();
     }
   };
@@ -212,6 +236,11 @@ export default function MeetingControlBar(p: MeetingControlBarProps) {
             {p.isRecordingPaused ? 'Recording paused' : 'Recording'} <span className="font-mono">{fmt(p.recordingDurationSeconds)}</span>
           </span>
         )}
+        {!p.isRecording && p.isHandRaised && p.onToggleRaiseHand && (
+          <button type="button" onClick={p.onToggleRaiseHand} className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-bold bg-amber-500/20 text-amber-200 hover:bg-amber-500/30 cursor-pointer ${focusRing}`}>
+            <Hand className="h-3.5 w-3.5" /> Hand raised · lower
+          </button>
+        )}
       </div>
 
       {/* Primary controls */}
@@ -228,8 +257,12 @@ export default function MeetingControlBar(p: MeetingControlBarProps) {
             icon={p.isScreenSharing ? <MonitorOff className="h-5 w-5" /> : <MonitorUp className="h-5 w-5" />} text={p.isScreenSharing ? 'Stop sharing' : 'Share'} />
         )}
         <ControlButton id="btn-tab-people" onClick={() => p.onTogglePanel('participants')} tone={panelPressed('participants') ? 'active' : 'default'} pressed={panelPressed('participants')}
-          label={`Participants (${p.participantsCount})`} icon={<Users className="h-5 w-5" />}
-          badge={<span aria-hidden="true" className="absolute -top-1 -right-1 min-w-5 h-5 px-1 rounded-full bg-neutral-600 text-[10px] leading-5 font-mono text-white text-center">{p.participantsCount}</span>} />
+          label={`Participants (${p.participantsCount})${perms.canManageParticipants && p.waitingCount ? `, ${p.waitingCount} waiting` : ''}`}
+          tooltip={perms.canManageParticipants && p.waitingCount ? `${p.waitingCount} waiting to join` : undefined}
+          icon={<Users className="h-5 w-5" />}
+          badge={perms.canManageParticipants && p.waitingCount
+            ? <span aria-hidden="true" className="absolute -top-1 -right-1 min-w-5 h-5 px-1 rounded-full bg-amber-400 text-[10px] leading-5 font-mono font-bold text-neutral-950 text-center animate-pulse">{p.waitingCount}</span>
+            : <span aria-hidden="true" className="absolute -top-1 -right-1 min-w-5 h-5 px-1 rounded-full bg-neutral-600 text-[10px] leading-5 font-mono text-white text-center">{p.participantsCount}</span>} />
         <ControlButton id="btn-tab-chat" onClick={() => p.onTogglePanel('chat')} tone={panelPressed('chat') ? 'active' : 'default'} pressed={panelPressed('chat')}
           label={p.chatCount ? `Chat (${p.chatCount} messages)` : 'Chat'} icon={<MessageSquare className="h-5 w-5" />}
           badge={p.chatCount > 0 ? <span aria-hidden="true" className="absolute -top-1 -right-1 min-w-5 h-5 px-1 rounded-full bg-indigo-400 text-[10px] leading-5 font-mono text-neutral-950 text-center">{p.chatCount > 99 ? '99+' : p.chatCount}</span> : undefined} />

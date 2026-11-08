@@ -174,6 +174,43 @@ const active = () => document.activeElement as any;
   await render(false); assert.equal(document.querySelector('[role="alertdialog"]'), null);
 }
 
+// ---- Raise hand, waiting room and participant management ----
+{
+  // Model
+  assert.equal(meetingPermissions({ isHost: false, orgRole: 'ADMIN' }).canManageParticipants, true);
+  assert.equal(meetingPermissions({ isHost: false, orgRole: 'SALES_REP' }).canManageParticipants, false);
+  const guest = flattenMenu(buildMoreMenu({ ...baseState }, meetingPermissions({ isHost: false })));
+  assert.ok(guest.some((i) => i.id === 'toggle-raise-hand' && i.label === 'Raise my hand' && i.checked === false));
+  assert.ok(!guest.some((i) => ['toggle-waiting-room', 'mute-all', 'lower-all-hands'].includes(i.id)));
+  ok('everyone can raise a hand; participants see no waiting-room / mute-all controls');
+  const hostItems = flattenMenu(buildMoreMenu({ ...baseState, isHost: true, isHandRaised: true, isWaitingRoomEnabled: true, raisedHandsCount: 2 }, meetingPermissions({ isHost: true })));
+  assert.equal(hostItems.find((i) => i.id === 'toggle-raise-hand')!.label, 'Lower my hand');
+  assert.equal(hostItems.find((i) => i.id === 'toggle-waiting-room')!.checked, true);
+  assert.equal(hostItems.find((i) => i.id === 'lower-all-hands')!.label, 'Lower all hands (2)');
+  assert.ok(!flattenMenu(buildMoreMenu({ ...baseState, isHost: true }, meetingPermissions({ isHost: true }))).some((i) => i.id === 'lower-all-hands'));
+  ok('host menu: waiting room toggle, mute everyone, lower all hands only when hands are up');
+
+  // Rendered: handlers wired; items hidden when no handler is passed (no dead controls)
+  let t = setup(); await t.render();
+  await click(t.q('#btn-more')); await tick();
+  assert.equal(t.q('[data-menu-id="toggle-raise-hand"]'), null); ok('raise hand is hidden when the screen provides no handler');
+  await key(t.q('[role="menu"]'), 'Escape'); await tick();
+
+  t = setup({ isHost: true, onToggleRaiseHand: () => { (t.calls.hand ??= []).push([]); }, onToggleWaitingRoom: () => { (t.calls.waiting ??= []).push([]); },
+    onMuteAll: () => { (t.calls.muteAll ??= []).push([]); }, onLowerAllHands: () => {}, waitingCount: 3, raisedHandsCount: 1 });
+  await t.render();
+  assert.equal(t.q('#btn-tab-people').getAttribute('aria-label'), 'Participants (4), 3 waiting'); ok('host sees the waiting count on Participants');
+  await click(t.q('#btn-more')); await tick(); await click(t.q('[data-menu-id="toggle-raise-hand"]'));
+  await click(t.q('#btn-more')); await tick(); await click(t.q('[data-menu-id="toggle-waiting-room"]'));
+  await click(t.q('#btn-more')); await tick(); await click(t.q('[data-menu-id="mute-all"]'));
+  assert.deepEqual([t.calls.hand?.length, t.calls.waiting?.length, t.calls.muteAll?.length], [1, 1, 1]); ok('raise hand, waiting room and mute everyone call their handlers');
+  await t.render({ isHandRaised: true }); await tick();
+  assert.match(t.q('[role="status"]').textContent, /Your hand is raised/); ok('raised hand is announced to screen readers');
+
+  t = setup({ isHost: false, waitingCount: 3, onToggleRaiseHand: () => {} }); await t.render();
+  assert.equal(t.q('#btn-tab-people').getAttribute('aria-label'), 'Participants (4)'); ok('non-hosts never see the waiting count');
+}
+
 // ---- Responsive: bottom sheet on phones, anchored popover on wide screens ----
 {
   const t = setup(); await t.render();
