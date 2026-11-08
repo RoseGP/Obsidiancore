@@ -8,6 +8,12 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { receptionistKnowledgeDb } from '../utils/receptionistKnowledgeDb';
 import { meetingsDb } from './meetings';
 import { coreSecret } from '../utils/secrets';
+import { unsignedWebhooksAllowed } from '../server/runtimeEnv';
+import { verifyTwilio } from '../features/voice/server/webhook';
+import { loadIvrConfig } from '../features/voice/server/config';
+
+// Twilio signature check shared with the IVR (TWILIO_AUTH_TOKEN, IVR_ALLOWED_HOSTS, TRUST_PROXY).
+const twilioSignature = verifyTwilio(loadIvrConfig());
 
 const router = Router();
 
@@ -36,51 +42,39 @@ const SOFTPHONE_CLIENT_IDENTITY = process.env.TWILIO_SOFTPHONE_IDENTITY || 'luxu
 const META_APP_SECRET = process.env.META_APP_SECRET || '';
 
 /**
- * META CRYPTOGRAPHIC WEBHOOK SIGNATURE VERIFICATION MIDDLEWARE (POST)
- * Dynamically validates incoming payloads using standard HMAC-SHA256 signature audits.
- * Gracefully permits testing bypasses with standard warning logs if META_APP_SECRET is not configured.
+ * Verifies Meta's X-Hub-Signature-256 (HMAC-SHA256 of the RAW request body with the app secret).
+ * Without META_APP_SECRET, events are rejected unless NODE_ENV is explicitly development/test
+ * and ALLOW_UNSIGNED_WEBHOOKS=true.
  */
 function verifyMetaSignature(req: Request, res: Response, next: NextFunction) {
-  const signatureHeader = req.headers['x-hub-signature-256'] as string;
+  const signatureHeader = String(req.headers['x-hub-signature-256'] || '');
 
   if (!META_APP_SECRET) {
-    console.warn('[Meta Signature] META_APP_SECRET environment secret is omitted. Skipping signature token checking for sandbox flexibility.');
-    return next();
+    if (unsignedWebhooksAllowed()) {
+      console.warn('[Meta Signature] META_APP_SECRET not set; accepting unsigned event (development only).');
+      return next();
+    }
+    console.error('[Meta Signature] Rejected: META_APP_SECRET is not configured.');
+    res.status(503).send('Webhook signature verification is not configured.');
+    return;
   }
 
-  if (!signatureHeader) {
-    console.error('[Meta Signature] Unauthorized Block: X-Hub-Signature-256 header missing on Meta POST webhook.');
+  const match = /^sha256=([0-9a-f]{64})$/i.exec(signatureHeader);
+  const rawBody: string | undefined = (req as any).rawBody;
+  if (!match || typeof rawBody !== 'string') {
     res.status(401).send('Signature verification failed.');
     return;
   }
 
-  try {
-    const parts = signatureHeader.split('=');
-    if (parts.length !== 2 || parts[0] !== 'sha256') {
-      res.status(400).send('Malformed signature format.');
-      return;
-    }
-
-    const signatureHash = parts[1];
-    const rawPayload = JSON.stringify(req.body);
-
-    const computedHash = crypto
-      .createHmac('sha256', META_APP_SECRET)
-      .update(rawPayload)
-      .digest('hex');
-
-    if (!crypto.timingSafeEqual(Buffer.from(signatureHash, 'utf8'), Buffer.from(computedHash, 'utf8'))) {
-      console.error('[Meta Signature] Handshake Rejected: Computed HMAC signature mismatch on Meta webhook data.');
-      res.status(401).send('Invalid webhook signature verification.');
-      return;
-    }
-
-    console.log('[Meta Signature] Cryptographic signature verified successfully.');
-    next();
-  } catch (err: any) {
-    console.error('[Meta Signature] Verification exception triggered:', err.message);
-    res.status(500).send('Internal validation middleware error.');
+  // Meta signs the exact bytes it sent; re-serialising req.body would change them (e.g. \u escapes).
+  const computed = crypto.createHmac('sha256', META_APP_SECRET).update(Buffer.from(rawBody, 'utf8')).digest();
+  const provided = Buffer.from(match[1], 'hex');
+  if (provided.length !== computed.length || !crypto.timingSafeEqual(provided, computed)) {
+    console.error('[Meta Signature] Rejected: signature mismatch.');
+    res.status(401).send('Invalid webhook signature.');
+    return;
   }
+  next();
 }
 
 /**
@@ -232,7 +226,7 @@ router.post('/whatsapp-webhook', verifyMetaSignature, async (req: Request, res: 
  * 1C. TWILIO SMS WEBHOOK DATA RECEPTION (POST)
  * Receives incoming SMS webhook payloads directly from Twilio over URL-encoded form format.
  */
-router.post('/twilio-sms', async (req: Request, res: Response) => {
+router.post('/twilio-sms', twilioSignature, async (req: Request, res: Response) => {
   try {
     const { From, Body, MessageSid } = req.body;
 
@@ -329,7 +323,7 @@ router.post('/twilio-sms', async (req: Request, res: Response) => {
  * 2A. TWILIO INBOUND CALLS ROUTER (POST)
  * Outputs XML-compliant Twilio Markup Language (TwiML) to bridge call logs or fallback to voicemail.
  */
-router.post('/incoming-call', (req: Request, res: Response) => {
+router.post('/incoming-call', twilioSignature, (req: Request, res: Response) => {
   try {
     const fromNumber = req.body.From || 'Unknown Caller';
     const callSid = req.body.CallSid || 'n/a';
@@ -372,7 +366,7 @@ router.post('/incoming-call', (req: Request, res: Response) => {
  * 2B. TWILIO FALLBACK VOICEMAIL CAPTURE ROUTE (POST)
  * Triggered automatically by Twilio if the <Dial><Client> ring duration yields no live connection.
  */
-router.post('/twiml-fallback', (req: Request, res: Response) => {
+router.post('/twiml-fallback', twilioSignature, (req: Request, res: Response) => {
   try {
     const dialCallStatus = req.body.DialCallStatus || '';
     const fromNumber = req.body.From || 'Unknown Caller';
@@ -412,7 +406,7 @@ router.post('/twiml-fallback', (req: Request, res: Response) => {
  * 2C. TWILIO RECORDING COMPLETED EVENT (POST)
  * Twilio issues metadata to this route when a customer finishes recording a voicemail.
  */
-router.post('/twiml-voicemail-saved', (req: Request, res: Response) => {
+router.post('/twiml-voicemail-saved', twilioSignature, (req: Request, res: Response) => {
   try {
     const recordingUrl = req.body.RecordingUrl || '';
     const duration = req.body.RecordingDuration || '0';
@@ -449,8 +443,12 @@ router.post('/twiml-voicemail-saved', (req: Request, res: Response) => {
 router.all('/twilio-video-token', (req: Request, res: Response) => {
   try {
     // Resolve identity and roomName from either query keys (GET) or request payload (POST)
-    const identity = (req.query.identity || req.body.identity || `agent-${Math.floor(Math.random() * 1000) + 100}`).toString();
-    const roomName = (req.query.roomName || req.body.roomName || 'crm-default-consultation-room').toString();
+    // The token identity is always the signed-in user (the route is no longer public).
+    // TO COMPLETE (Phase 1): check the caller is a participant of roomName before granting it.
+    const identity = String((req as any).user?.id || '');
+    if (!identity) { res.status(401).json({ success: false, error: 'Sign in to continue.' }); return; }
+    const roomName = String(req.query.roomName || req.body?.roomName || '').trim();
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(roomName)) { res.status(400).json({ success: false, error: 'A valid roomName is required.' }); return; }
 
     console.log(`[Twilio Video Token] Request received for client identity "${identity}" in room "${roomName}"`);
 

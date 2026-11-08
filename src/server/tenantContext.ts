@@ -1,6 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { identifyToken, looksLikeFirebaseToken } from '../features/social-accounts/server/auth';
-import { adminDb } from '../lib/firebaseAdmin';
+import { identifyToken } from '../features/social-accounts/server/auth';
 
 export interface TenantUser {
   userId: string;
@@ -35,65 +34,24 @@ MEMBER_CACHE.set('exec-director-45', {
   name: 'Rene Pierrette'
 });
 
-MEMBER_CACHE.set('demo-user-123', {
-  userId: 'demo-user-123',
-  orgId: DEFAULT_ORG_ID,
-  role: 'ADMIN',
-  email: 'rpierrette45@gmail.com',
-  name: 'Rene Pierrette'
-});
 
 /**
  * Resolves the authenticated user and their active organization from headers/tokens.
  */
-export async function resolveTenantUser(req: Request): Promise<TenantUser> {
+export async function resolveTenantUser(req: Request): Promise<TenantUser | null> {
+  // Phase 0 hardening. This module is not mounted anywhere yet; Phase 1 replaces it with the Firestore
+  // membership model. Until then it must never invent an identity, grant ADMIN, or let the client pick the org.
   const authHeader = req.headers.authorization || '';
   const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
-  const devUserHeader = req.headers['x-dev-user-id'] as string;
-  const requestedOrgId = (req.headers['x-org-id'] as string) || (req.query?.orgId as string) || DEFAULT_ORG_ID;
+  const verified = await identifyToken(token, req.headers['x-dev-user-id'] as string | undefined);
+  if (!verified?.id) return null;
 
-  let resolvedId = 'exec-director-45';
-  let resolvedEmail = 'rpierrette45@gmail.com';
-  let resolvedName = 'Rene Pierrette';
+  const member = MEMBER_CACHE.get(verified.id);
+  if (!member) return null; // not a member of any organization
 
-  if (token) {
-    const verified = await identifyToken(token, devUserHeader);
-    if (verified?.id) {
-      resolvedId = verified.id;
-      if (verified.claims?.email) resolvedEmail = verified.claims.email;
-      if (verified.claims?.name) resolvedName = verified.claims.name;
-    }
-  } else if (process.env.NODE_ENV !== 'production' && devUserHeader) {
-    resolvedId = devUserHeader.trim();
-  }
-
-  // Check if member exists in cache
-  const cachedMember = MEMBER_CACHE.get(resolvedId);
-  if (cachedMember) {
-    return {
-      ...cachedMember,
-      orgId: requestedOrgId || cachedMember.orgId
-    };
-  }
-
-  // Otherwise, construct member with default organization access
-  const member: TenantUser = {
-    userId: resolvedId,
-    orgId: requestedOrgId,
-    role: 'ADMIN',
-    email: resolvedEmail,
-    name: resolvedName
-  };
-
-  MEMBER_CACHE.set(resolvedId, member);
-
-  // Sync to Firestore in background
-  adminDb.collection('crm_org_members').doc(`${requestedOrgId}_${resolvedId}`).set({
-    ...member,
-    updatedAt: new Date().toISOString()
-  }).catch(() => {});
-
-  return member;
+  const requestedOrgId = (req.headers['x-org-id'] as string) || '';
+  if (requestedOrgId && requestedOrgId !== member.orgId) return null; // no switching into other orgs
+  return { ...member };
 }
 
 /**

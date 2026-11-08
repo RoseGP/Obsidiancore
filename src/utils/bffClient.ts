@@ -116,19 +116,10 @@ class BffClient {
   }
 
   /**
-   * Authenticate and save JWT token
+   * The gateway's password-less login endpoint was removed. Set a Firebase ID token with setToken().
    */
-  public async login(email?: string, password?: string): Promise<BffApiResponse> {
-    const res = await this.request<{ token: string; user: any }>('/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ email, password })
-    });
-
-    if (res.success && res.data?.token) {
-      this.setToken(res.data.token);
-    }
-
-    return res;
+  public async login(): Promise<BffApiResponse> {
+    return { success: false, data: null, error: 'Gateway login was removed; sign in through the app.' };
   }
 
   /**

@@ -7,21 +7,37 @@ import { marketingEngine } from '../features/marketing/marketingEngine';
 
 const router = Router();
 
-// Middleware to extract workspace ID from header or default
-const getWorkspaceId = (req: Request): string => {
-  return (req.headers['x-workspace-id'] as string) || (req.query.workspaceId as string) || 'ws_default_obsidian';
+/** Verified caller (set by guard() in server.ts). Never falls back to a default user. */
+const callerId = (req: Request): string => String((req as any).user?.id || (req as any).accountUser?.id || '');
+
+/**
+ * Resolves the workspace for this request and checks the caller belongs to it.
+ * The client may name a workspace (x-workspace-id header or ?workspaceId), but it is only
+ * honoured if the verified user is a member or owner. Otherwise 403.
+ */
+const resolveWorkspace = (req: Request, res: Response): string | null => {
+  const userId = callerId(req);
+  if (!userId) { res.status(401).json({ success: false, error: 'Sign in to continue.' }); return null; }
+  const mine = marketingEngine.listWorkspacesForUser(userId);
+  const requested = (req.headers['x-workspace-id'] as string) || (req.query.workspaceId as string) || '';
+  const ws = requested ? mine.find((w) => w.id === requested) : mine[0];
+  if (!ws) {
+    res.status(403).json({ success: false, error: requested ? 'You don’t have access to this workspace.' : 'You aren’t a member of any marketing workspace yet.' });
+    return null;
+  }
+  return ws.id;
 };
 
 // 1. Workspaces
 router.get('/workspaces', (req: Request, res: Response) => {
-  const userId = (req as any).user?.uid || 'exec-director-45';
+  const userId = callerId(req);
   const workspaces = marketingEngine.listWorkspacesForUser(userId);
   return res.json({ success: true, workspaces });
 });
 
 router.post('/workspaces', (req: Request, res: Response) => {
   const { name } = req.body;
-  const userId = (req as any).user?.uid || 'exec-director-45';
+  const userId = callerId(req);
   if (!name || typeof name !== 'string') {
     return res.status(400).json({ success: false, error: 'Workspace name is required.' });
   }
@@ -31,6 +47,9 @@ router.post('/workspaces', (req: Request, res: Response) => {
 
 // 2. Invitations
 router.post('/workspaces/:id/invitations', (req: Request, res: Response) => {
+  if (!marketingEngine.listWorkspacesForUser(callerId(req)).some((w) => w.id === req.params.id)) {
+    return res.status(403).json({ success: false, error: 'You don’t have access to this workspace.' });
+  }
   const { email, role } = req.body;
   if (!email || typeof email !== 'string') {
     return res.status(400).json({ success: false, error: 'Email is required.' });
@@ -41,7 +60,7 @@ router.post('/workspaces/:id/invitations', (req: Request, res: Response) => {
 
 router.post('/invitations/accept', (req: Request, res: Response) => {
   const { token } = req.body;
-  const userId = (req as any).user?.uid || 'exec-director-45';
+  const userId = callerId(req);
   if (!token) return res.status(400).json({ success: false, error: 'Invitation token is required.' });
   const result = marketingEngine.acceptInvitation(token, userId);
   if (!result.success) return res.status(400).json(result);
@@ -50,13 +69,15 @@ router.post('/invitations/accept', (req: Request, res: Response) => {
 
 // 3. API Tokens
 router.get('/api-tokens', (req: Request, res: Response) => {
-  const wsId = getWorkspaceId(req);
+  const wsId = resolveWorkspace(req, res);
+  if (!wsId) return;
   const tokens = marketingEngine.listApiTokens(wsId);
   return res.json({ success: true, tokens });
 });
 
 router.post('/api-tokens', (req: Request, res: Response) => {
-  const wsId = getWorkspaceId(req);
+  const wsId = resolveWorkspace(req, res);
+  if (!wsId) return;
   const { name } = req.body;
   if (!name) return res.status(400).json({ success: false, error: 'Token name is required.' });
   const result = marketingEngine.createApiToken(wsId, name);
@@ -64,14 +85,16 @@ router.post('/api-tokens', (req: Request, res: Response) => {
 });
 
 router.delete('/api-tokens/:id', (req: Request, res: Response) => {
-  const wsId = getWorkspaceId(req);
+  const wsId = resolveWorkspace(req, res);
+  if (!wsId) return;
   const success = marketingEngine.deleteApiToken(req.params.id, wsId);
   return res.json({ success });
 });
 
 // 4. Subscribers
 router.get('/subscribers', (req: Request, res: Response) => {
-  const wsId = getWorkspaceId(req);
+  const wsId = resolveWorkspace(req, res);
+  if (!wsId) return;
   const tag = req.query.tag as string | undefined;
   const status = req.query.status as string | undefined;
   const subscribers = marketingEngine.listSubscribers(wsId, { tag, status });
@@ -79,7 +102,8 @@ router.get('/subscribers', (req: Request, res: Response) => {
 });
 
 router.post('/subscribers', (req: Request, res: Response) => {
-  const wsId = getWorkspaceId(req);
+  const wsId = resolveWorkspace(req, res);
+  if (!wsId) return;
   const { email, firstName, lastName, tags } = req.body;
   if (!email || !email.includes('@')) {
     return res.status(400).json({ success: false, error: 'A valid email address is required.' });
@@ -89,20 +113,23 @@ router.post('/subscribers', (req: Request, res: Response) => {
 });
 
 router.delete('/subscribers/:id', (req: Request, res: Response) => {
-  const wsId = getWorkspaceId(req);
+  const wsId = resolveWorkspace(req, res);
+  if (!wsId) return;
   const success = marketingEngine.deleteSubscriber(req.params.id, wsId);
   return res.json({ success });
 });
 
 // 5. Campaigns
 router.get('/campaigns', (req: Request, res: Response) => {
-  const wsId = getWorkspaceId(req);
+  const wsId = resolveWorkspace(req, res);
+  if (!wsId) return;
   const campaigns = marketingEngine.listCampaigns(wsId);
   return res.json({ success: true, campaigns, total: campaigns.length });
 });
 
 router.post('/campaigns', (req: Request, res: Response) => {
-  const wsId = getWorkspaceId(req);
+  const wsId = resolveWorkspace(req, res);
+  if (!wsId) return;
   const { name, subject, fromName, fromEmail, content } = req.body;
   if (!name || !subject || !content) {
     return res.status(400).json({ success: false, error: 'Name, subject, and content are required.' });
@@ -118,7 +145,8 @@ router.post('/campaigns', (req: Request, res: Response) => {
 });
 
 router.post('/campaigns/:id/send', (req: Request, res: Response) => {
-  const wsId = getWorkspaceId(req);
+  const wsId = resolveWorkspace(req, res);
+  if (!wsId) return;
   const result = marketingEngine.dispatchCampaign(req.params.id, wsId);
   if (!result.success) return res.status(400).json(result);
   return res.json(result);
@@ -132,6 +160,8 @@ router.get('/engine/status', (_req: Request, res: Response) => {
 
 // 7. Interactive JavaScript CLI Command Runner (replacing PHP artisan console)
 router.post('/engine/command', (req: Request, res: Response) => {
+  const wsId = resolveWorkspace(req, res);
+  if (!wsId) return;
   const { command } = req.body;
   const cmd = String(command || '').trim();
   const health = marketingEngine.getHealth();
@@ -144,10 +174,10 @@ router.post('/engine/command', (req: Request, res: Response) => {
   } else if (cmd.includes('engine:status') || cmd.includes('health') || cmd.includes('check')) {
     output = `[PASS] JavaScript Runtime: ${health.runtime}\n[PASS] Core Architecture: ${health.engine}\n[PASS] Memory RSS: ${health.memoryUsage.rss} (Heap: ${health.memoryUsage.heapUsed})\n[PASS] Database & Cache: In-Memory + Persistent Store Active\n[PASS] Campaigns Engine: Ready (${health.campaignsCount} active)\n[PASS] Subscribers Pipeline: Calibrated (${health.subscribersCount} records)\n[PASS] Status: Healthy (Exit Code 0)`;
   } else if (cmd.includes('campaigns:list')) {
-    const list = marketingEngine.listCampaigns('ws_default_obsidian');
+    const list = marketingEngine.listCampaigns(wsId);
     output = `Found ${list.length} campaign(s):\n` + list.map(c => `• [${c.id}] "${c.name}" - Status: ${c.status.toUpperCase()} (${c.stats.sent} sent)`).join('\n');
   } else if (cmd.includes('subscribers:count')) {
-    const subs = marketingEngine.listSubscribers('ws_default_obsidian');
+    const subs = marketingEngine.listSubscribers(wsId);
     output = `Total verified subscribers: ${subs.length}`;
   } else {
     output = `$ ${cmd}\nCommand executed via Node.js JavaScript Engine runtime. Code 0 (Success).`;

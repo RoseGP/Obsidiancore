@@ -7,7 +7,7 @@ import {
   jwtAuthMiddleware, 
   apiSuccess, 
   apiError,
-  generateUserJwt,
+
   JWT_SECRET
 } from '../middleware/apiGatewayMiddleware';
 import { meetingsDb, MeetingRecord } from './meetings';
@@ -43,37 +43,11 @@ apiV1Router.get('/health', (req, res) => {
 });
 
 /**
- * POST /api/v1/auth/login
- * Public authentication endpoint returning a signed JWT for the gateway
+ * POST /api/v1/auth/login: REMOVED.
+ * It issued a signed ADMIN token for any email without checking a password. Clients sign in with
+ * Firebase and send that ID token as `Authorization: Bearer <token>`; the gateway verifies it.
  */
-apiV1Router.post('/auth/login', (req, res) => {
-  try {
-    const { email = 'alex.director@acme-crm.com', password = 'password' } = req.body || {};
-
-    if (!email) {
-      return apiError(res, 'Field "email" is required for authentication.', 400);
-    }
-
-    // Mock directory user validation
-    const userPayload = {
-      id: 'usr_director_101',
-      email: email.trim(),
-      name: email.split('@')[0].replace('.', ' ').toUpperCase(),
-      role: 'ADMIN'
-    };
-
-    const token = generateUserJwt(userPayload, '24h');
-
-    return apiSuccess(res, {
-      token,
-      expiresIn: '24h',
-      tokenType: 'Bearer',
-      user: userPayload
-    });
-  } catch (err: any) {
-    return apiError(res, `Authentication failed: ${err.message}`, 500);
-  }
-});
+apiV1Router.post('/auth/login', (_req, res) => apiError(res, 'This endpoint has been removed. Sign in through the app and send your session token.', 410));
 
 // -----------------------------------------------------------------------------
 // SECURED GATEWAY ENDPOINTS (Protected by Unified JWT Auth Middleware)

@@ -4,13 +4,14 @@
  * 1. Firebase ID token (what this app's sign-in issues) — verified with
  *    firebase-admin against Google's public keys.
  * 2. HS256 session JWT signed with SOCIAL_ACCOUNTS_JWT_SECRET or JWT_SECRET.
- * 3. Development only (NODE_ENV !== 'production' AND SOCIAL_ACCOUNTS_DEV_AUTH=true):
+ * 3. Development only (NODE_ENV explicitly 'development' or 'test' AND SOCIAL_ACCOUNTS_DEV_AUTH=true):
  *    the X-Dev-User-Id header, so demo sessions without Firebase can be tested.
  */
 import type { NextFunction, Request, Response } from 'express';
 import { getApps, initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { verifyJwt } from '../../../utils/verifyJwt';
+import { devIdentityHeaderAllowed } from '../../../server/runtimeEnv';
 import firebaseConfigJson from '../../../../firebase-applet-config.json';
 
 export interface AuthedRequest extends Request {
@@ -21,7 +22,7 @@ function firebaseProjectId(): string | undefined {
   return process.env.VITE_FIREBASE_PROJECT_ID || process.env.FIREBASE_PROJECT_ID || (firebaseConfigJson as any)?.projectId || undefined;
 }
 
-function looksLikeFirebaseToken(token: string): boolean {
+export function looksLikeFirebaseToken(token: string): boolean {
   try {
     const payload = JSON.parse(Buffer.from(token.split('.')[1] ?? '', 'base64url').toString('utf8'));
     return typeof payload?.iss === 'string' && payload.iss.startsWith('https://securetoken.google.com/');
@@ -58,7 +59,7 @@ export async function identify(req: Request): Promise<AuthedRequest['accountUser
       }
     }
   }
-  if (process.env.NODE_ENV !== 'production' && process.env.SOCIAL_ACCOUNTS_DEV_AUTH !== 'false') {
+  if (devIdentityHeaderAllowed()) {
     const rawDev = req.headers['x-dev-user-id'];
     if (typeof rawDev === 'string' && rawDev.trim() && /^[A-Za-z0-9_.@-]{1,128}$/.test(rawDev.trim())) {
       return { id: rawDev.trim(), via: 'dev' };
@@ -98,7 +99,7 @@ export async function identifyToken(token: string | undefined, devUserId?: strin
       }
     }
   }
-  if (process.env.NODE_ENV !== 'production' && process.env.SOCIAL_ACCOUNTS_DEV_AUTH !== 'false') {
+  if (devIdentityHeaderAllowed()) {
     if (typeof devUserId === 'string' && devUserId.trim() && /^[A-Za-z0-9_.@-]{1,128}$/.test(devUserId.trim())) {
       return { id: devUserId.trim(), via: 'dev' };
     }

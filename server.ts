@@ -1,5 +1,6 @@
 // Must be the first import: loads .env before any module reads process.env at import time.
 import 'dotenv/config';
+import './src/server/defaultNodeEnv';
 import './src/server/startupChecks';
 import express from 'express';
 import path from 'path';
@@ -39,6 +40,7 @@ import leadsApiRouter from './src/routes/leadsApi';
 import marketingApiRouter from './src/routes/marketingApi';
 import { requireUser } from './src/features/social-accounts/server/auth';
 import { guard, PUBLIC } from './src/server/routeGuards';
+import { isExplicitDevOrTest } from './src/server/runtimeEnv';
 
 dotenv.config();
 
@@ -81,10 +83,10 @@ app.use('/api/accounts', accountsApiRouter);
 app.use('/api/analytics', analyticsApiRouter);
 app.use('/api/local-seo', localSeoApiRouter);
 app.use('/api/voice', voiceIvrRouter);
-app.use('/api/dashboard', dashboardApiRouter);
-app.use('/api/leads', leadsApiRouter);
-app.use('/api/marketing', marketingApiRouter);
-app.use('/api/v1/marketing', marketingApiRouter);
+app.use('/api/dashboard', guard(PUBLIC.none), dashboardApiRouter);
+app.use('/api/leads', guard(PUBLIC.leads), leadsApiRouter);
+app.use('/api/marketing', guard(PUBLIC.none), marketingApiRouter);
+app.use('/api/v1/marketing', guard(PUBLIC.none), marketingApiRouter);
 // New application routes first; remaining legacy paths (/queue, /schedule, /retry, /accounts) require a verified user too.
 app.use('/api/posts', postsApiRouter);
 app.use('/api/media', postsApiRouter);
@@ -110,7 +112,7 @@ app.use('/api', guard(PUBLIC.payments), paymentsRouter);
 
 // Start Server with Vite Middleware
 async function startServer() {
-  if (process.env.NODE_ENV !== 'production') {
+  if (isExplicitDevOrTest()) {
     const vite = await createViteServer({
       server: { middlewareMode: true, host: '0.0.0.0', port: PORT },
       appType: 'spa'

@@ -37,14 +37,9 @@ const DEFAULT_LEAD_CONTEXT = {
 
 // Ensure or retrieve active userId
 async function getOrProvisionUserId(req: Request, fallbackId?: string): Promise<string> {
-  const targetId =
-    fallbackId ||
-    (req as any).session?.userId ||
-    (req as any).user?.id ||
-    (req as any).userId ||
-    req.body?.userId ||
-    (req.query?.userId as string) ||
-    'demo-user-123';
+  // The verified identity (bound by guard() in server.ts) always wins over anything the client sent.
+  const targetId = String((req as any).user?.id || (req as any).userId || fallbackId || '');
+  if (!targetId) throw Object.assign(new Error('Sign in to continue.'), { status: 401 });
 
   if (db.user) {
     try {
@@ -62,6 +57,22 @@ async function getOrProvisionUserId(req: Request, fallbackId?: string): Promise<
     } catch (e) {}
   }
   return targetId;
+}
+
+/**
+ * Loads a chat session only if it belongs to `userId`. A session owned by someone else is reported
+ * exactly like a missing one, so session ids can't be probed.
+ */
+async function loadOwnedSession(sessionId: string, userId: string): Promise<any | null> {
+  if (!db.chatSession || !sessionId) return null;
+  const s = await db.chatSession.findFirst({ where: { sessionId } });
+  return s && s.sessionId === sessionId && s.userId === userId ? s : null;
+}
+
+async function sessionIdTakenByOther(sessionId: string, userId: string): Promise<boolean> {
+  if (!db.chatSession || !sessionId) return false;
+  const s = await db.chatSession.findFirst({ where: { sessionId } });
+  return !!(s && s.sessionId === sessionId && s.userId !== userId);
 }
 
 /**
@@ -95,9 +106,10 @@ router.post('/', async (req: Request, res: Response) => {
     let session = null;
     if (db.chatSession) {
       try {
-        session = await db.chatSession.findFirst({
-          where: { sessionId },
-        });
+        if (await sessionIdTakenByOther(sessionId, userId)) {
+          return res.status(404).json({ success: false, error: 'Chat session not found.' });
+        }
+        session = await loadOwnedSession(sessionId, userId);
       } catch (err) {
         console.warn('[Chat DB Fetch Note]:', (err as any).message);
       }
@@ -303,19 +315,11 @@ router.get('/sessions', async (req: Request, res: Response) => {
 router.get('/session/:sessionId', async (req: Request, res: Response) => {
   try {
     const { sessionId } = req.params;
-    let session = null;
-
-    if (db.chatSession) {
-      session = await db.chatSession.findFirst({
-        where: { sessionId },
-      });
-    }
+    const userId = await getOrProvisionUserId(req);
+    const session = await loadOwnedSession(sessionId, userId);
 
     if (!session) {
-      return res.status(404).json({
-        success: false,
-        error: `Chat session '${sessionId}' not found.`,
-      });
+      return res.status(404).json({ success: false, error: 'Chat session not found.' });
     }
 
     return res.status(200).json({
@@ -338,6 +342,11 @@ router.get('/session/:sessionId', async (req: Request, res: Response) => {
 router.delete('/session/:sessionId', async (req: Request, res: Response) => {
   try {
     const { sessionId } = req.params;
+    const userId = await getOrProvisionUserId(req);
+    const session = await loadOwnedSession(sessionId, userId);
+    if (!session) {
+      return res.status(404).json({ success: false, error: 'Chat session not found.' });
+    }
 
     if (db.chatSession) {
       try {

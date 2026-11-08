@@ -4,9 +4,9 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "tsx server.ts",
+    "dev": "NODE_ENV=development tsx server.ts",
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
-    "start": "node dist/server.cjs",
+    "start": "NODE_ENV=production node dist/server.cjs",
     "lint": "tsc --noEmit",
     "test": "npx tsx src/tests/messagingIntegration.test.ts",
     "test:payments": "npx tsx src/tests/paymentIntegration.test.ts",
@@ -17,7 +17,7 @@
     "test:social-accounts": "npx tsx src/features/social-accounts/__tests__/api.test.ts oauth && npx tsx src/features/social-accounts/__tests__/api.test.ts shared && npx tsx src/features/social-accounts/__tests__/firestoreStore.test.ts",
     "test:local-seo": "npx tsx src/features/gbp/__tests__/localSeo.test.ts",
     "test:voice-ivr": "npx tsx src/features/voice/__tests__/ivr.test.ts",
-    "test:security": "npx tsx src/server/__tests__/security.test.ts"
+    "test:security": "npx tsx src/server/__tests__/security.test.ts && npx tsx src/server/__tests__/phase0.test.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

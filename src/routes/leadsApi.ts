@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import rateLimit from 'express-rate-limit';
 import { adminDb } from '../lib/firebaseAdmin';
 import { calculateLeadScore, logCrmActivity } from './dashboardApi';
 
@@ -333,7 +334,11 @@ router.get('/duplicates', async (req: Request, res: Response) => {
 });
 
 // 4. POST /api/leads/capture - Automated Website Lead Capture (Public Webhook / Form Widget)
-router.post('/capture', async (req: Request, res: Response) => {
+// Public website form: limit submissions per IP so the endpoint can't be used to flood the CRM.
+const captureLimiter = rateLimit({ windowMs: 15 * 60_000, limit: 20, standardHeaders: 'draft-7', legacyHeaders: false,
+  message: { success: false, error: 'Too many submissions. Please try again later.' } });
+
+router.post('/capture', captureLimiter, async (req: Request, res: Response) => {
   try {
     const {
       name,
@@ -367,7 +372,8 @@ router.post('/capture', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, error: 'A valid work email is required.' });
     }
 
-    const orgId = (req.headers['x-org-id'] as string) || 'org_obsidian_enterprise';
+    // Anonymous endpoint: never let the caller choose the tenant. Per-tenant form keys arrive in Phase 1.
+    const orgId = 'org_obsidian_enterprise';
     const cleanEmail = email.trim().toLowerCase();
     const cleanPhone = phone ? phone.trim() : '';
     const cleanCompany = company ? company.trim() : 'Inbound Website Lead';
