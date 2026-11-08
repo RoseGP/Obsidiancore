@@ -36,8 +36,8 @@ export default function SocialPlannerTab() {
       workspaceName={userProfile?.company || 'My workspace'}
       userName={userProfile?.displayName}
       onOpenMessaging={() => setActiveView('messages')}
-      startInClassic={cameFromConnectRedirect()}
-      startInAccounts={returningFromAuthorization}
+      // Old Postiz-panel redirects now land on Accounts, where connections are managed.
+      startInAccounts={returningFromAuthorization || cameFromConnectRedirect()}
       accountsApi={accountsApi}
       getAuthHeaders={getAuthHeaders}
     />

@@ -220,7 +220,7 @@ export function InboxPage({ onOpenMessaging }: { onOpenMessaging?: () => void })
 
 // ---------- Settings ----------
 
-export function SettingsPage({ onOpenClassic }: { onOpenClassic: () => void }) {
+export function SettingsPage({ onOpenClassic }: { onOpenClassic?: () => void }) {
   const { prefs, setPrefs } = usePrefs();
   const toast = useToast();
   const [form, setForm] = useState<PlannerPrefs>(prefs);
@@ -255,11 +255,13 @@ export function SettingsPage({ onOpenClassic }: { onOpenClassic: () => void }) {
           <Button variant="primary" disabled={!dirty} onClick={() => { setPrefs(form); toast({ tone: 'success', title: 'Preferences saved' }); }}>Save preferences</Button>
         </div>
       </section>
-      <section className="sp-card max-w-[760px] p-5" aria-labelledby="sp-classic">
-        <h2 id="sp-classic" className="display text-[15px] font-semibold">Integrations and advanced tools</h2>
-        <p className="sp-muted mt-1 text-[13.5px]">Postiz channels, OAuth account connections, the publishing worker monitor and the grid planner.</p>
-        <Button className="mt-4" icon={<Wrench size={15} />} onClick={onOpenClassic}>Open advanced tools</Button>
-      </section>
+      {onOpenClassic && (
+        <section className="sp-card max-w-[760px] p-5" aria-labelledby="sp-classic">
+          <h2 id="sp-classic" className="display text-[15px] font-semibold">Integrations and advanced tools</h2>
+          <p className="sp-muted mt-1 text-[13.5px]">Postiz channels, OAuth account connections, the publishing worker monitor and the grid planner.</p>
+          <Button className="mt-4" icon={<Wrench size={15} />} onClick={onOpenClassic}>Open advanced tools</Button>
+        </section>
+      )}
     </div>
   );
 }

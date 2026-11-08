@@ -329,7 +329,7 @@ function Shell(props: PlannerAppProps) {
               ? <AccountsPage api={props.accountsApi} onOpenAdvanced={props.renderClassicTools ? () => setRoute('classic') : undefined} />
               : <LegacyAccountsPage onManage={() => setRoute('classic')} />)}
             {route === 'inbox' && <InboxPage onOpenMessaging={props.onOpenMessaging} />}
-            {route === 'settings' && <SettingsPage onOpenClassic={() => setRoute('classic')} />}
+            {route === 'settings' && <SettingsPage onOpenClassic={props.renderClassicTools ? () => setRoute('classic') : undefined} />}
             {route === 'classic' && (
               <div className="p-3 sm:p-5">
                 <div className="overflow-hidden rounded-2xl" style={{ background: '#f8fafc', color: '#0f172a' }}>

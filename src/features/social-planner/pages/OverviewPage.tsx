@@ -425,7 +425,7 @@ export function OverviewPage({
                       title={isConnected ? 'Connected' : 'Not Connected'}
                     />
                   </div>
-                  <p className="mt-2 text-[12.5px] font-semibold text-[var(--sp-text)] truncate">{pInfo.name}</p>
+                  <p className="mt-2 text-[12.5px] font-semibold text-[var(--sp-text)] truncate">{pInfo.label}</p>
                   <p className="sp-faint truncate text-[11px]">
                     {matchedAccount ? matchedAccount.handle || 'Linked' : 'Not linked'}
                   </p>
@@ -784,7 +784,7 @@ export function OverviewPage({
                       )}
                     >
                       <PlatformGlyph id={pid} size={12} color={active ? '#c7d2fe' : PLATFORMS[pid].dot} />
-                      {PLATFORMS[pid].name}
+                      {PLATFORMS[pid].label}
                     </button>
                   );
                 })}
@@ -830,7 +830,7 @@ export function OverviewPage({
                     <div className="flex items-center justify-between text-[12.5px]">
                       <div className="flex items-center gap-2">
                         <PlatformGlyph id={pid} size={13} color={PLATFORMS[pid].dot} />
-                        <span className="font-medium text-[var(--sp-text)]">{PLATFORMS[pid].name}</span>
+                        <span className="font-medium text-[var(--sp-text)]">{PLATFORMS[pid].label}</span>
                       </div>
                       <span className="num sp-faint text-[12px]">{count} posts ({pct}%)</span>
                     </div>
