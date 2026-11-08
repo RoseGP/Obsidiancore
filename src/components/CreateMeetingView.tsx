@@ -1,6 +1,10 @@
 import React, { useState } from 'react';
 import { ArrowLeft, ChevronDown, Plus, X, Check, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { CalendarEvent } from '../types';
+import { useMeetingSession } from '../context/MeetingSessionContext';
+import { MEETING_PLAN_TIERS, formatMinutes } from '../lib/meetingPlans';
+
+const DURATION_OPTIONS = [15, 30, 45, 60, 90, 120, 180, 240, 300, 480, 720];
 
 export interface MeetingGuestPermissions {
   modify: boolean;
@@ -17,6 +21,9 @@ export interface MeetingFormState {
   time: string;
   ampm: 'AM' | 'PM';
   duration: string;
+  /** Repeat: 'none' or a frequency, with how many meetings in the series. */
+  recurrenceFrequency: 'none' | 'daily' | 'weekly' | 'monthly';
+  recurrenceCount: string;
   availability: string;
   visibility: string;
   additionalNotes: string;
@@ -42,6 +49,8 @@ export default function CreateMeetingView({ onBack, onSubmit }: CreateMeetingVie
     time: '17:30',
     ampm: 'AM',
     duration: '30',
+    recurrenceFrequency: 'none',
+    recurrenceCount: '4',
     availability: 'Free',
     visibility: 'Default Visibility',
     additionalNotes: '',
@@ -54,6 +63,16 @@ export default function CreateMeetingView({ onBack, onSubmit }: CreateMeetingVie
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  // The organizer's plan limits scheduled and recurring meetings (the server enforces them; this explains them).
+  const { subscription } = useMeetingSession();
+  const planLimits = subscription?.plan.limits;
+  const planLabel = subscription?.plan.label;
+  const planForMinutes = (min: number) => {
+    const plans = subscription?.plans;
+    const t = plans ? MEETING_PLAN_TIERS.find(x => plans[x].limits.maxDurationMinutes >= min) : undefined;
+    return t && plans ? plans[t].label : null;
+  };
 
   const availableLocationsList = ['New York', 'Mexico', 'Canada', 'London', 'Berlin', 'Tokyo', 'Remote / Online'];
 
@@ -146,16 +165,24 @@ export default function CreateMeetingView({ onBack, onSubmit }: CreateMeetingVie
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(formState),
+        body: JSON.stringify({
+          ...formState,
+          duration: Number(formState.duration),
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          recurrence: formState.recurrenceFrequency === 'none'
+            ? undefined
+            : { frequency: formState.recurrenceFrequency, count: Number(formState.recurrenceCount) || 1 },
+        }),
       });
 
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
 
       if (!response.ok || !data.success) {
-        throw new Error(data.error || data.message || 'Failed to create meeting.');
+        const hint = data.upgradeLabel ? ` ${data.upgradeLabel} allows it: an owner or admin can request it in Settings → Organization.` : '';
+        throw new Error((data.error || data.message || 'The meeting wasn\'t scheduled.') + hint);
       }
 
-      setSuccessMessage('Meeting scheduled successfully!');
+      setSuccessMessage(data.message || 'Meeting scheduled.');
 
       // Format created meeting into CalendarEvent for app state
       const createdMeeting = data.meeting;
@@ -177,24 +204,8 @@ export default function CreateMeetingView({ onBack, onSubmit }: CreateMeetingVie
       }, 500);
 
     } catch (err: any) {
-      console.warn('[CreateMeetingView API Fallback]:', err.message);
-      // Construct fallback calendar event if API request failed
-      const randId = `evt-${Date.now()}`;
-      const videoLink = `https://meet.google.com/${Math.random().toString(36).substring(2, 5)}-${Math.random().toString(36).substring(2, 6)}-${Math.random().toString(36).substring(2, 5)}`;
-      
-      const fallbackEvent: CalendarEvent = {
-        id: randId,
-        title: formState.title.trim(),
-        time: `${formState.date} ${formState.time} ${formState.ampm}`,
-        type: 'demo',
-        contact: formState.guests.length > 0 ? formState.guests[0] : 'Guest Candidate',
-        status: 'upcoming',
-        meetingLink: videoLink,
-        invitees: formState.guests.join(', '),
-        notes: formState.additionalNotes || `Location(s): ${formState.locations.join(', ')}`,
-      };
-
-      onSubmit(fallbackEvent);
+      // Nothing is created when the server refuses or can't be reached: limits are checked there.
+      setErrorMessage(err instanceof TypeError ? "Couldn't reach the server. The meeting wasn't scheduled." : err.message);
     } finally {
       setIsSubmitting(false);
     }
@@ -492,14 +503,46 @@ export default function CreateMeetingView({ onBack, onSubmit }: CreateMeetingVie
                     <select
                       value={formState.duration}
                       onChange={(e) => handleFieldChange('duration', e.target.value)}
+                      aria-label="Duration in minutes"
                       className="bg-slate-50/80 border border-slate-200/90 rounded-xl px-2 py-2 text-xs font-bold text-slate-800 outline-none cursor-pointer"
                     >
-                      <option value="15">15</option>
-                      <option value="30">30</option>
-                      <option value="45">45</option>
-                      <option value="60">60</option>
+                      {DURATION_OPTIONS.map(min => {
+                        const over = !!planLimits && min > planLimits.maxDurationMinutes;
+                        const needs = over ? planForMinutes(min) : null;
+                        return <option key={min} value={String(min)} disabled={over}>{min}{over ? ` (${needs ?? 'not available'})` : ''}</option>;
+                      })}
                     </select>
                   </div>
+
+                  {/* Repeat (every meeting in the series must fit the plan) */}
+                  <div className="grid grid-cols-2 gap-3 pt-1">
+                    <select
+                      value={formState.recurrenceFrequency}
+                      onChange={(e) => handleFieldChange('recurrenceFrequency', e.target.value as MeetingFormState['recurrenceFrequency'])}
+                      aria-label="Repeat"
+                      className="w-full bg-slate-50/80 border border-slate-200/90 rounded-xl px-3 py-2.5 text-xs font-bold text-slate-800 outline-none cursor-pointer"
+                    >
+                      <option value="none">Does not repeat</option>
+                      <option value="daily">Daily</option>
+                      <option value="weekly">Weekly</option>
+                      <option value="monthly">Monthly</option>
+                    </select>
+                    <input
+                      type="number"
+                      min={1}
+                      max={52}
+                      value={formState.recurrenceCount}
+                      disabled={formState.recurrenceFrequency === 'none'}
+                      onChange={(e) => handleFieldChange('recurrenceCount', e.target.value)}
+                      aria-label="Number of meetings in the series"
+                      className="w-full bg-slate-50/80 border border-slate-200/90 rounded-xl px-3 py-2.5 text-xs font-bold text-slate-800 outline-none disabled:opacity-50"
+                    />
+                  </div>
+                  {planLimits && (
+                    <p className="text-[11px] text-slate-500">
+                      {planLabel} plan: meetings up to {formatMinutes(planLimits.maxDurationMinutes)} and {planLimits.maxParticipants} people (you plus {formState.guests.length} guest{formState.guests.length === 1 ? '' : 's'} now).
+                    </p>
+                  )}
 
                   {/* Status & Visibility Row */}
                   <div className="grid grid-cols-2 gap-3 pt-1">

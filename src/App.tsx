@@ -204,6 +204,23 @@ function AppMain() {
     });
   }, []);
 
+  // Meeting invitation links (/?view=greet&meet=<code>): join once signed in. The server applies the
+  // organizer's plan (capacity, lock, waiting room) and refuses with a reason if the meeting can't be joined.
+  const inviteHandledRef = React.useRef(false);
+  React.useEffect(() => {
+    if (!isAuthenticated || inviteHandledRef.current || typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    const code = url.searchParams.get('meet');
+    if (!code) return;
+    inviteHandledRef.current = true;
+    url.searchParams.delete('meet');
+    window.history.replaceState(null, '', url.toString());
+    meetingSession.joinMeeting(code).then((r) => {
+      if (r.success) { setActiveView('call_canvas'); if (r.message) showToast(r.message); }
+      else { setActiveView('greet'); if (r.message) showToast(r.message); }
+    });
+  }, [isAuthenticated]);
+
   // Auto-route to proposals view if OAuth callback redirected with payment provider params
   React.useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -346,12 +363,15 @@ function AppMain() {
           <VideoWelcomePage
             contacts={contacts}
             onStartInstantMeeting={async (roomCode, contact, title, options) => {
-              await meetingSession.startInstantMeeting(roomCode, contact, title, options);
-              setActiveView('call_canvas');
+              // The server starts the meeting on the organization's plan; if it refuses, say why and stay here.
+              const r = await meetingSession.startInstantMeeting(roomCode, contact, title, options);
+              if (r.success) setActiveView('call_canvas');
+              else if (r.message) showToast(r.message);
             }}
             onJoinMeeting={async (code) => {
-              await meetingSession.joinMeeting(code);
-              setActiveView('call_canvas');
+              const r = await meetingSession.joinMeeting(code);
+              if (r.success) { setActiveView('call_canvas'); if (r.message) showToast(r.message); }
+              else if (r.message) showToast(r.message);
             }}
             onScheduleMeeting={handleAddCalendarEvent}
             onNavigateToDashboard={() => setActiveView('dashboard')}

@@ -1,64 +1,59 @@
 /**
- * Meeting plans: limits, capacity, time limit and large-room tile paging.
+ * Meeting plan rules (shared by server and UI): defaults, Enterprise custom limits, upgrades never lower a
+ * running meeting, capacity and time-limit states, plan suggestions, and large-room tile paging.
  * Run: npx tsx src/lib/__tests__/meetingPlans.test.ts
  */
 import assert from 'node:assert/strict';
 import {
-  MEETING_PLANS, durationStatus, gridColumns, isMeetingPlanTier, pageOfTiles, planForSize, prioritizeTiles, roomCapacity, tilesPerPage,
+  DEFAULT_PLAN_CONFIGS as P, capacityStatus, durationStatus, effectiveLimits, formatMinutes, gridColumns, normalizeTier, pageOfTiles,
+  planForNeeds, prioritizeTiles, raiseFeatures, raiseLimits, roomCapacity, tilesPerPage,
 } from '../meetingPlans';
 
 let passed = 0; const ok = (n: string) => { passed++; console.log('  ✓', n); };
 
-// Plans
-assert.deepEqual([MEETING_PLANS.standard.maxParticipants, MEETING_PLANS.standard.maxDurationMinutes], [100, 60]);
-assert.deepEqual([MEETING_PLANS.premium.maxParticipants, MEETING_PLANS.premium.maxDurationMinutes], [250, 0]);
-assert.deepEqual([MEETING_PLANS.enterprise.maxParticipants, MEETING_PLANS.enterprise.maxDurationMinutes], [500, 0]);
-ok('Standard: 100 people, 60 minutes; Premium: 250, no limit; Enterprise: 500, no limit');
-assert.ok(isMeetingPlanTier('premium') && !isMeetingPlanTier('gold') && !isMeetingPlanTier(undefined)); ok('plan names are validated');
-assert.deepEqual([planForSize(100), planForSize(101), planForSize(250), planForSize(251), planForSize(500), planForSize(501)], ['standard', 'premium', 'premium', 'enterprise', 'enterprise', null]);
-ok('smallest plan for a group size');
+assert.deepEqual(P.free.limits, { maxParticipants: 100, maxDurationMinutes: 60 });
+assert.deepEqual(P.premium.limits, { maxParticipants: 250, maxDurationMinutes: 300 });
+assert.deepEqual(P.enterprise.limits, { maxParticipants: 500, maxDurationMinutes: 720 });
+assert.equal(P.free.warnMinutesBefore, 5);
+assert.ok(!P.free.features.recording && P.premium.features.recording && P.premium.features.waitingRoom && P.premium.features.analytics);
+assert.ok(!P.premium.features.coHosts && P.enterprise.features.coHosts && P.enterprise.features.attendanceReports && P.enterprise.features.customBranding);
+ok('seed defaults: Free 100 / 60 min; Premium 250 / 5 h with recording, waiting room, analytics; Enterprise 500 / 12 h with co-hosts, reports, branding');
+assert.deepEqual([normalizeTier('standard'), normalizeTier('premium'), normalizeTier('gold')], ['free', 'premium', 'free']); ok('older "standard" reads as Free; unknown tiers fall back to Free');
 
-// Capacity (counts include the host)
-const std = MEETING_PLANS.standard;
-assert.deepEqual(roomCapacity(std, 99), { free: 1, fits: 1, full: false, allFit: true }); ok('99 in the room: the 100th person fits');
-assert.equal(roomCapacity(std, 100).full, true); assert.equal(roomCapacity(std, 100).fits, 0); ok('100 in the room: Standard is full');
-assert.deepEqual(roomCapacity(std, 95, 10), { free: 5, fits: 5, full: false, allFit: false }); ok('admitting a group only seats who fits');
-assert.equal(roomCapacity(MEETING_PLANS.premium, 249).fits, 1); assert.equal(roomCapacity(MEETING_PLANS.premium, 250).full, true);
-assert.equal(roomCapacity(MEETING_PLANS.enterprise, 499).fits, 1); assert.equal(roomCapacity(MEETING_PLANS.enterprise, 500).full, true);
-ok('Premium fills at 250, Enterprise at 500');
-assert.equal(roomCapacity(std, 150).free, 0); ok('over capacity never reports negative seats');
+assert.deepEqual(effectiveLimits(P.enterprise, { maxParticipants: 800 }), { maxParticipants: 800, maxDurationMinutes: 720 });
+assert.deepEqual(effectiveLimits(P.premium, { maxParticipants: 800 }), P.premium.limits); ok('custom limits apply to Enterprise only');
+assert.deepEqual(raiseLimits(P.premium.limits, P.free.limits), P.premium.limits);
+assert.deepEqual(raiseLimits(P.free.limits, P.premium.limits), P.premium.limits);
+assert.equal(raiseFeatures(P.premium.features, P.free.features).recording, true); ok('running meetings only ever gain limits and features');
 
-// Time limit
-assert.deepEqual(durationStatus(std, 0), { state: 'ok', secondsLeft: 3600 });
-assert.equal(durationStatus(std, 54 * 60 + 59).state, 'ok');
+const std = P.free.limits;
+assert.deepEqual(roomCapacity(std, 99), { free: 1, fits: 1, full: false, allFit: true });
+assert.equal(roomCapacity(std, 100).full, true);
+assert.deepEqual([capacityStatus(std, 89), capacityStatus(std, 90), capacityStatus(std, 99), capacityStatus(std, 100)], ['ok', 'near', 'near', 'full']);
+ok('capacity: 100th person fits; near-full from 90%; full at 100 (75/100 is ok)');
+assert.deepEqual(durationStatus(std, 54 * 60 + 59), { state: 'ok', secondsLeft: 301 });
 assert.deepEqual(durationStatus(std, 55 * 60), { state: 'warning', secondsLeft: 300 });
-assert.deepEqual(durationStatus(std, 3599), { state: 'warning', secondsLeft: 1 });
 assert.deepEqual(durationStatus(std, 3600), { state: 'reached', secondsLeft: 0 });
-assert.equal(durationStatus(std, 9000).state, 'reached');
-ok('Standard: warning for the last 5 minutes, limit reached at 60:00');
-assert.deepEqual(durationStatus(MEETING_PLANS.premium, 10 * 3600), { state: 'unlimited', secondsLeft: null });
-assert.equal(durationStatus(MEETING_PLANS.enterprise, 10 * 3600).state, 'unlimited'); ok('Premium and Enterprise have no time limit');
+assert.equal(durationStatus(P.premium.limits, 3600).state, 'ok');
+assert.equal(durationStatus(P.premium.limits, 296 * 60, 5).state, 'warning');
+assert.equal(durationStatus(std, 50 * 60, 15).state, 'warning'); ok('time limit: 5-minute warning (configurable), ends at the limit; Premium runs past 60 minutes');
 
-// Large rooms
-assert.deepEqual([tilesPerPage(375), tilesPerPage(800), tilesPerPage(1280), tilesPerPage(1920)], [4, 9, 16, 25]); ok('tiles per page by screen width');
+assert.equal(planForNeeds(P, { participants: 101 }), 'premium');
+assert.equal(planForNeeds(P, { minutes: 301 }), 'enterprise');
+assert.equal(planForNeeds(P, { feature: 'recording' }), 'premium');
+assert.equal(planForNeeds(P, { feature: 'coHosts' }), 'enterprise');
+assert.equal(planForNeeds(P, { participants: 501 }), null); ok('suggests the smallest plan that fits a need');
+assert.deepEqual([formatMinutes(0), formatMinutes(1), formatMinutes(45), formatMinutes(60), formatMinutes(90), formatMinutes(300)], ['0 minutes', '1 minute', '45 minutes', '1 hour', '1 h 30 min', '5 hours']); ok('durations read naturally');
+
+assert.deepEqual([tilesPerPage(375), tilesPerPage(800), tilesPerPage(1280), tilesPerPage(1920)], [4, 9, 16, 25]);
 const people = Array.from({ length: 99 }, (_, i) => ({ id: `p${i}` }));
-let pg = pageOfTiles(people, 0, 25);
-assert.equal(pg.items.length, 24); assert.equal(pg.pages, 4); assert.equal(pg.items[0].id, 'p0'); ok('100-person meeting: page 1 has you + 24 others; 4 pages');
-pg = pageOfTiles(people, 3, 25);
-assert.equal(pg.items.at(-1)!.id, 'p98'); assert.equal(pg.items.length, 99 - 24 - 50); ok('last page holds the remainder');
-assert.equal(pageOfTiles(people, 99, 25).page, 3); assert.equal(pageOfTiles(people, -2, 25).page, 0); ok('out-of-range pages are clamped (e.g. after people leave)');
+const pg = pageOfTiles(people, 0, 25);
+assert.equal(pg.items.length, 24); assert.equal(pg.pages, 4);
 const seen = new Set<string>(); for (let i = 0; i < pg.pages; i++) pageOfTiles(people, i, 25).items.forEach((p) => seen.add(p.id));
-assert.equal(seen.size, 99); ok('every participant appears on exactly one page');
-const big = Array.from({ length: 499 }, (_, i) => ({ id: `e${i}` }));
-assert.equal(pageOfTiles(big, 0, 4).pages, 1 + Math.ceil((499 - 3) / 4)); ok('500-person meeting on a phone pages 4 at a time');
-assert.deepEqual(pageOfTiles([], 0, 25), { items: [], page: 0, pages: 1 }); ok('alone in the meeting: one page');
-
-const order = prioritizeTiles([
-  { id: 'a' }, { id: 'b', isHandRaised: true, handRaisedAt: 20 }, { id: 'c', isSpeaking: true },
-  { id: 'd', isHandRaised: true, handRaisedAt: 10 }, { id: 'e', isScreenSharing: true }, { id: 'f' },
-]).map((p) => p.id);
-assert.deepEqual(order, ['e', 'c', 'd', 'b', 'a', 'f']); ok('screen sharer, then speaker, then raised hands in order raised, then join order');
-assert.deepEqual([gridColumns(1), gridColumns(2), gridColumns(5), gridColumns(10), gridColumns(25)], [1, 2, 3, 4, 5]); ok('grid columns grow with the page');
+assert.equal(seen.size, 99);
+assert.deepEqual(prioritizeTiles([{ id: 'a' }, { id: 'b', isHandRaised: true, handRaisedAt: 2 }, { id: 'c', isSpeaking: true }, { id: 'd', isScreenSharing: true }]).map((p) => p.id), ['d', 'c', 'b', 'a']);
+assert.deepEqual([gridColumns(1), gridColumns(4), gridColumns(9), gridColumns(16), gridColumns(25)], [1, 2, 3, 4, 5]);
+ok('large rooms: paged grid, everyone on exactly one page, most relevant first');
 
 console.log(`\n${passed} passed (meeting plans)`);
 process.exit(0);

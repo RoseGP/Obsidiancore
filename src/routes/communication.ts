@@ -6,7 +6,6 @@ import twilio from 'twilio';
 import axios from 'axios';
 import { GoogleGenAI, Type } from "@google/genai";
 import { receptionistKnowledgeDb } from '../utils/receptionistKnowledgeDb';
-import { meetingsDb } from './meetings';
 import { coreSecret } from '../utils/secrets';
 import { sendSecureOutboundEmail } from '../utils/secureOutboundMailer';
 import { unsignedWebhooksAllowed } from '../server/runtimeEnv';
@@ -1376,11 +1375,11 @@ function executeScheduleCalendarEvent(title: string, date: string, time: string,
     additionalNotes: notes || 'Booked autonomously by Sophia (AI Front-Desk Receptionist).',
     startTime: `${cleanDate}T${cleanTime}:00.000Z`,
     endTime: `${cleanDate}T${cleanTime}:00.000Z`,
-    videoLink: `https://meet.google.com/mtg-${Math.random().toString(36).substring(2, 6)}`,
-    status: 'SCHEDULED',
+    // Not a real booking: it isn't saved or plan-checked. Real meetings go through POST /api/meetings/create.
+    videoLink: '',
+    status: 'PROPOSED',
     createdAt: new Date().toISOString()
   };
-  meetingsDb.unshift(meetingRecord);
   return meetingRecord;
 }
 

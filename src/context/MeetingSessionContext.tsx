@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
-import { MEETING_PLANS, durationStatus, isMeetingPlanTier, roomCapacity, planForSize, type MeetingPlanConfig, type MeetingPlanTier } from '../lib/meetingPlans';
+import { DEFAULT_PLAN_CONFIGS, MEETING_PLAN_TIERS, capacityStatus, durationStatus, roomCapacity, type CapacityState, type MeetingPlanConfigs, type MeetingPlanTier, type PlanFeatures, type PlanLimits } from '../lib/meetingPlans';
 import { CRMContact, CalendarEvent } from '../types';
 
 export interface MeetingParticipant {
@@ -24,6 +24,8 @@ export interface MeetingParticipant {
   interests?: string[];
   isCrmContact?: boolean;
   crmContactId?: string;
+  /** Role on the server (host / co-host / guest). */
+  serverRole?: 'host' | 'cohost' | 'guest';
 }
 
 export interface MeetingChatMessage {
@@ -109,8 +111,37 @@ export interface MeetingDeviceSettings {
 }
 
 // Plans live in src/lib/meetingPlans.ts (shared with the server); re-exported for existing imports.
-export { MEETING_PLANS } from '../lib/meetingPlans';
-export type { MeetingPlanTier, MeetingPlanConfig } from '../lib/meetingPlans';
+export type { MeetingPlanTier, MeetingPlanConfig, PlanLimits, PlanFeatures } from '../lib/meetingPlans';
+
+/** GET /api/meetings/subscription */
+export interface MeetingSubscription {
+  tier: MeetingPlanTier;
+  plan: { tier: MeetingPlanTier; label: string; limits: PlanLimits; features: PlanFeatures; warnMinutesBefore: number; capacityWarnPercent: number; custom: boolean };
+  plans: MeetingPlanConfigs;
+  canRequestChange: boolean;
+  pendingRequest: { id: string; requestedTier: MeetingPlanTier; direction: 'upgrade' | 'downgrade'; createdAt: string; note?: string } | null;
+  billing: { connected: boolean; message: string };
+}
+
+/** The meeting as the server sees it (src/server/meetings/sessions.ts sessionView). */
+export interface ServerSessionView {
+  id: string; roomCode: string; title: string; tier: MeetingPlanTier; planLabel: string;
+  limits: PlanLimits; features: PlanFeatures; warnMinutesBefore: number; capacityWarnPercent: number;
+  startedAt: number; endsAt: number; serverNow: number; status: 'active' | 'ended'; endedReason: 'host' | 'time_limit' | 'admin' | null;
+  remainingSeconds: number; participantCount: number; waitingCount: number; capacityState: CapacityState;
+  waitingRoomEnabled: boolean; locked: boolean; recording: { active: boolean; startedAt: number | null };
+  host: { userId: string; name: string };
+  you: { participantId: string | null; role: 'host' | 'cohost' | 'guest' | null; status: string | null; canManage: boolean };
+  participants: Array<{ id: string; name: string; role: 'host' | 'cohost' | 'guest'; status: 'in' | 'waiting'; joinedAt: number | null; email?: string; userId?: string | null }>;
+}
+
+/** A plan limit or missing feature the person ran into (shown with an upgrade option). */
+export interface PlanNotice { message: string; feature?: string; upgradeTo?: MeetingPlanTier; upgradeLabel?: string; kind: 'feature' | 'capacity' | 'duration' | 'error' }
+
+/** Sandbox/dev builds may run meetings without a server (limits applied in this browser only). Production never does. */
+let previewAllowed: boolean = !!((import.meta as any).env?.DEV || (import.meta as any).env?.VITE_ENABLE_SANDBOX_LOGIN === 'true');
+/** Tests only. */
+export function setMeetingPreviewAllowedForTests(v: boolean) { previewAllowed = v; }
 
 export interface ActiveMeetingSession {
   id: string;
@@ -132,7 +163,8 @@ export interface ActiveMeetingSession {
   maxParticipants?: number;
   maxDurationMinutes?: number;
   /** Set when the meeting ended because the plan's time limit was reached. */
-  endedReason?: 'time_limit';
+  /** Set when the server (or the time limit) ended the meeting, not the local user. */
+  endedReason?: 'time_limit' | 'host' | 'admin';
 }
 
 interface MeetingSessionContextType {
@@ -141,22 +173,42 @@ interface MeetingSessionContextType {
   meetingViewMode: 'fullscreen' | 'workspace' | 'minimized';
   setMeetingViewMode: (mode: 'fullscreen' | 'workspace' | 'minimized') => void;
 
-  // Plan limits & capacity. The plan belongs to the organization (GET /api/meetings/plan).
-  currentPlanTier: MeetingPlanTier;
-  /** The organization's current plan. */
-  planConfig: MeetingPlanConfig;
-  /** Limits that apply right now: the active meeting's locked-in plan, otherwise the organization's. */
-  meetingLimits: MeetingPlanConfig;
-  /** 'organization' once loaded from the server; 'default' (Standard) when it couldn't be loaded. */
-  planSource: 'organization' | 'default';
-  /** Owner/Admin: may change the organization's plan. */
-  canChangePlan: boolean;
-  changeMeetingPlan: (tier: MeetingPlanTier) => Promise<{ success: boolean; message: string }>;
-  refreshMeetingPlan: () => Promise<void>;
+  // Subscription & plan limits. The organizer's plan comes from the server and every limit is enforced there.
+  subscription: MeetingSubscription | null;
+  refreshSubscription: () => Promise<void>;
+  requestPlanChange: (tier: MeetingPlanTier, note?: string) => Promise<{ success: boolean; message: string }>;
+  cancelPlanRequest: () => Promise<{ success: boolean; message: string }>;
+  /** The running meeting as the server reports it (null in offline preview). */
+  serverSession: ServerSessionView | null;
+  /** Limits and features that apply now: the running meeting's, otherwise the organization's plan. */
+  meetingLimits: PlanLimits;
+  meetingFeatures: PlanFeatures;
+  meetingPlanLabel: string;
+  meetingTier: MeetingPlanTier;
+  warnMinutesBefore: number;
+  capacityWarnPercent: number;
+  capacityState: CapacityState;
+  /** Everyone in the meeting, host included. */
+  roomCount: number;
   isDurationWarning: boolean;
   isDurationLimitReached: boolean;
-  /** Seconds until the time limit; null when the plan has none. */
-  durationSecondsLeft: number | null;
+  /** Seconds until the meeting's time limit. */
+  durationSecondsLeft: number;
+  /** You can manage this meeting (host, co-host or organization admin). */
+  canManageMeeting: boolean;
+  /** No server: sandbox preview with Free limits applied in this browser only. */
+  offlinePreview: boolean;
+  /** Joined by code and waiting for the host to admit you. */
+  awaitingAdmission: boolean;
+  isMeetingLocked: boolean;
+  setMeetingLocked: (locked: boolean) => Promise<{ success: boolean; message: string }>;
+  setCoHost: (participantId: string, on: boolean) => Promise<{ success: boolean; message: string }>;
+  /** Why the last meeting couldn't start or join. */
+  meetingError: string | null;
+  clearMeetingError: () => void;
+  /** A plan limit or missing feature the person just ran into. */
+  planNotice: PlanNotice | null;
+  clearPlanNotice: () => void;
   
   // Media streams & hardware controls
   localStream: MediaStream | null;
@@ -180,8 +232,8 @@ interface MeetingSessionContextType {
       startMuted?: boolean;
       startCamOff?: boolean;
     }
-  ) => Promise<void>;
-  joinMeeting: (codeOrLink: string, linkedContact?: CRMContact) => Promise<void>;
+  ) => Promise<{ success: boolean; message?: string }>;
+  joinMeeting: (codeOrLink: string, linkedContact?: CRMContact) => Promise<{ success: boolean; message?: string }>;
   returnToMeeting: () => void;
   minimizeToDashboard: () => void;
   leaveMeeting: () => void;
@@ -250,14 +302,14 @@ interface MeetingSessionContextType {
 
   // Waiting room & participant management (host / org admin; the UI enforces who sees these)
   isWaitingRoomEnabled: boolean;
-  setWaitingRoomEnabled: (enabled: boolean) => void;
+  setWaitingRoomEnabled: (enabled: boolean) => Promise<{ success: boolean; message: string }>;
   waitingRoom: MeetingParticipant[];
-  admitParticipant: (participantId: string) => { success: boolean; message: string };
-  admitAllWaiting: () => { success: boolean; message: string };
-  denyParticipant: (participantId: string) => void;
+  admitParticipant: (participantId: string) => Promise<{ success: boolean; message: string }>;
+  admitAllWaiting: () => Promise<{ success: boolean; message: string }>;
+  denyParticipant: (participantId: string) => Promise<void>;
   muteParticipant: (participantId: string) => void;
   muteAllParticipants: () => void;
-  removeParticipant: (participantId: string) => void;
+  removeParticipant: (participantId: string) => Promise<{ success: boolean; message: string }>;
   lowerParticipantHand: (participantId: string) => void;
   lowerAllHands: () => void;
 }
@@ -274,54 +326,152 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
   const [activeMeeting, setActiveMeeting] = useState<ActiveMeetingSession | null>(null);
   const [meetingViewMode, setMeetingViewMode] = useState<'fullscreen' | 'workspace' | 'minimized'>('workspace');
   
-  // Plan limits & capacity: Standard 100 people / 60 min, Premium 250, Enterprise 500 (src/lib/meetingPlans.ts).
-  const [currentPlanTier, setCurrentPlanTier] = useState<MeetingPlanTier>('standard');
-  const [planSource, setPlanSource] = useState<'organization' | 'default'>('default');
-  const [canChangePlan, setCanChangePlan] = useState(false);
+  // ---------------------------------------------------------------------------
+  // SUBSCRIPTION & SERVER SESSION (limits are enforced by /api/meetings; this mirrors them)
+  // ---------------------------------------------------------------------------
+  const [subscription, setSubscription] = useState<MeetingSubscription | null>(null);
+  const [serverSession, setServerSession] = useState<ServerSessionView | null>(null);
+  const serverSessionRef = useRef<ServerSessionView | null>(null);
+  /** serverNow - Date.now(): keeps the countdown on the server's clock. */
+  const clockOffsetRef = useRef(0);
+  /** True when we follow the meeting by room code (joined from outside the organizer's organization). */
+  const viaRoomRef = useRef(false);
+  const [offlinePreview, setOfflinePreview] = useState(false);
+  const [awaitingAdmission, setAwaitingAdmission] = useState(false);
+  const [isMeetingLocked, setIsMeetingLocked] = useState(false);
+  const [meetingError, setMeetingError] = useState<string | null>(null);
+  const [planNotice, setPlanNotice] = useState<PlanNotice | null>(null);
+  const clearMeetingError = useCallback(() => setMeetingError(null), []);
+  const clearPlanNotice = useCallback(() => setPlanNotice(null), []);
 
-  const refreshMeetingPlan = useCallback(async () => {
+  /** /api/meetings call. `network` = no usable server answer (offline, or a host without the API). */
+  const meetingsApi = useCallback(async (path: string, init?: RequestInit): Promise<{ ok: boolean; status: number; data: any; network: boolean }> => {
     try {
-      const res = await fetch('/api/meetings/plan');
-      const data = await res.json().catch(() => null);
-      if (res.ok && data?.success && isMeetingPlanTier(data.plan)) {
-        setCurrentPlanTier(data.plan);
-        setCanChangePlan(!!data.canChange);
-        setPlanSource('organization');
-        return;
-      }
-    } catch { /* offline or no server */ }
-    setPlanSource('default');
-  }, []);
-  useEffect(() => { refreshMeetingPlan(); }, [refreshMeetingPlan]);
-
-  const changeMeetingPlan = useCallback(async (tier: MeetingPlanTier) => {
-    try {
-      const res = await fetch('/api/meetings/plan', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ plan: tier }) });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data.success) return { success: false, message: data.error || `The plan couldn't be changed (${res.status}).` };
-      setCurrentPlanTier(tier); setPlanSource('organization');
-      return { success: true, message: `Meeting plan is now ${MEETING_PLANS[tier].label}. New meetings use it.` };
+      const res = await fetch(`/api/meetings${path}`, { ...init, headers: { 'Content-Type': 'application/json', ...(init?.headers || {}) } });
+      const type = res.headers?.get?.('content-type') || '';
+      const data = type.includes('json') ? await res.json().catch(() => null) : null;
+      if (data == null) return { ok: false, status: res.status, data: {}, network: true };
+      return { ok: res.ok && data.success !== false, status: res.status, data, network: false };
     } catch {
-      return { success: false, message: "Couldn't reach the server to change the plan." };
+      return { ok: false, status: 0, data: {}, network: true };
     }
   }, []);
 
-  const planConfig = MEETING_PLANS[currentPlanTier];
-  const meetingLimits: MeetingPlanConfig = activeMeeting?.planTier ? MEETING_PLANS[activeMeeting.planTier] : planConfig;
-  const durationInfo = durationStatus(meetingLimits, activeMeeting?.durationSeconds || 0);
+  const refreshSubscription = useCallback(async () => {
+    const r = await meetingsApi('/subscription');
+    if (r.ok) setSubscription(r.data as MeetingSubscription);
+  }, [meetingsApi]);
+  useEffect(() => { refreshSubscription(); }, [refreshSubscription]);
+
+  const requestPlanChange = useCallback(async (tier: MeetingPlanTier, note?: string) => {
+    const r = await meetingsApi('/subscription/requests', { method: 'POST', body: JSON.stringify({ tier, note }) });
+    await refreshSubscription();
+    if (!r.ok) return { success: false, message: r.data.error || (r.network ? "Couldn't reach the server." : `The request couldn't be sent (${r.status}).`) };
+    const label = subscription?.plans?.[tier]?.label ?? tier;
+    return { success: true, message: `Request sent: your account manager will move you to ${label}. You'll see the new limits as soon as it's applied, including in a meeting that's running.` };
+  }, [meetingsApi, refreshSubscription, subscription]);
+
+  const cancelPlanRequest = useCallback(async () => {
+    const id = subscription?.pendingRequest?.id;
+    if (!id) return { success: false, message: 'There is no pending request.' };
+    const r = await meetingsApi(`/subscription/requests/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    await refreshSubscription();
+    return r.ok ? { success: true, message: 'Request cancelled.' } : { success: false, message: r.data.error || "The request couldn't be cancelled." };
+  }, [meetingsApi, refreshSubscription, subscription]);
+
+  const previewPlan = DEFAULT_PLAN_CONFIGS.free;
+  const meetingLimits: PlanLimits = serverSession?.limits ?? subscription?.plan.limits ?? previewPlan.limits;
+  const meetingFeatures: PlanFeatures = serverSession?.features ?? subscription?.plan.features ?? previewPlan.features;
+  const meetingPlanLabel = serverSession?.planLabel ?? subscription?.plan.label ?? previewPlan.label;
+  const meetingTier: MeetingPlanTier = serverSession?.tier ?? subscription?.plan.tier ?? 'free';
+  const warnMinutesBefore = serverSession?.warnMinutesBefore ?? subscription?.plan.warnMinutesBefore ?? previewPlan.warnMinutesBefore;
+  const capacityWarnPercent = serverSession?.capacityWarnPercent ?? subscription?.plan.capacityWarnPercent ?? previewPlan.capacityWarnPercent;
+  const durationInfo = durationStatus(meetingLimits, activeMeeting?.durationSeconds || 0, warnMinutesBefore);
   const isDurationWarning = durationInfo.state === 'warning';
   const isDurationLimitReached = durationInfo.state === 'reached';
   const durationSecondsLeft = durationInfo.secondsLeft;
   /** Everyone in the room right now, host included. */
   const roomCount = (activeMeeting?.participants.length || 0) + 1;
-  /** Never let a participant list exceed the meeting's locked-in plan (host takes one seat). */
+  const capacityState = capacityStatus(meetingLimits, roomCount, capacityWarnPercent);
+  const canManageMeeting = offlinePreview ? !!activeMeeting?.isHost : !!serverSession?.you.canManage;
+  /** Never let a participant list exceed the meeting's limit (host takes one seat). */
   const capToPlan = (m: ActiveMeetingSession, list: MeetingParticipant[]) =>
-    list.slice(0, Math.max(0, MEETING_PLANS[m.planTier ?? 'standard'].maxParticipants - 1));
-  const fullRoomMessage = () => {
-    const next = planForSize(meetingLimits.maxParticipants + 1);
-    return `This meeting is full: the ${meetingLimits.label} plan allows ${meetingLimits.maxParticipants} participants.` +
-      (next ? ` ${MEETING_PLANS[next].label} allows ${MEETING_PLANS[next].maxParticipants}.` : '');
+    list.slice(0, Math.max(0, (m.maxParticipants ?? meetingLimits.maxParticipants) - 1));
+  const nextPlanFor = (needs: { participants?: number; feature?: keyof PlanFeatures }) => {
+    const plans = subscription?.plans ?? DEFAULT_PLAN_CONFIGS;
+    const t = MEETING_PLAN_TIERS.find((x) => (needs.participants == null || plans[x].limits.maxParticipants >= needs.participants) && (needs.feature == null || plans[x].features[needs.feature]));
+    return t ? { upgradeTo: t, upgradeLabel: plans[t].label, limit: plans[t].limits.maxParticipants } : null;
   };
+  const fullRoomMessage = () => {
+    const next = nextPlanFor({ participants: meetingLimits.maxParticipants + 1 });
+    return `This meeting is full: the ${meetingPlanLabel} plan allows ${meetingLimits.maxParticipants} participants.` + (next ? ` ${next.upgradeLabel} allows ${next.limit}.` : '');
+  };
+  /** Turns a refused API call into a plan notice (feature or capacity) or a plain message. */
+  const noticeFrom = (data: any, fallback: string): string => {
+    const message = data?.error || fallback;
+    if (data?.code === 'feature_not_in_plan') setPlanNotice({ kind: 'feature', message, feature: data.feature, upgradeTo: data.upgradeTo, upgradeLabel: data.upgradeLabel });
+    else if (data?.code === 'meeting_full') setPlanNotice({ kind: 'capacity', message, upgradeTo: data.upgradeTo, upgradeLabel: data.upgradeLabel });
+    return message;
+  };
+
+  const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join('') || '?';
+  const fromServer = (local: MeetingParticipant | undefined, p: ServerSessionView['participants'][number], joinedLabel: string): MeetingParticipant => {
+    const role = p.role === 'cohost' ? 'Co-Host' : p.role === 'host' ? 'Host' : 'Guest';
+    if (local) return { ...local, name: p.name, role, email: p.email ?? local.email, serverRole: p.role };
+    return {
+      id: p.id, name: p.name, role, title: '', company: (p.email || '').split('@')[1] || '', email: p.email || '',
+      avatar: initials(p.name), avatarColor: 'from-purple-600 to-indigo-700', isMuted: false, isVideoOff: false, isSpeaking: false,
+      joinedAt: joinedLabel, isCrmContact: false, serverRole: p.role,
+    };
+  };
+
+  /** Mirror the server's view of the meeting: clock, limits, roster, waiting room, status. */
+  const applyServerSession = useCallback((view: ServerSessionView) => {
+    clockOffsetRef.current = view.serverNow - Date.now();
+    serverSessionRef.current = view;
+    setServerSession(view);
+    setIsWaitingRoomEnabledState(view.waitingRoomEnabled);
+    setIsMeetingLocked(view.locked);
+    setAwaitingAdmission(view.you.status === 'waiting');
+    const localStart = view.startedAt - clockOffsetRef.current;
+    setActiveMeeting(prev => {
+      if (!prev || prev.id !== view.id) return prev;
+      const byId = new Map(prev.participants.map(p => [p.id, p]));
+      const others = view.participants
+        .filter(p => p.status === 'in' && p.id !== view.you.participantId && p.role !== 'host')
+        .map(p => fromServer(byId.get(p.id), p, 'Just now'));
+      const ended = view.status === 'ended' && prev.status === 'active';
+      return {
+        ...prev, startedAt: localStart, durationSeconds: Math.max(0, Math.floor((Date.now() - localStart) / 1000)),
+        planTier: view.tier, maxParticipants: view.limits.maxParticipants, maxDurationMinutes: view.limits.maxDurationMinutes,
+        participants: others, roomId: view.roomCode,
+        ...(ended ? { status: 'ended' as const, endedReason: view.endedReason ?? 'host' } : {}),
+      };
+    });
+    setWaitingRoom(prev => {
+      const byId = new Map(prev.map(p => [p.id, p]));
+      return view.participants.filter(p => p.status === 'waiting').map(p => fromServer(byId.get(p.id), p, 'Waiting'));
+    });
+  }, []);
+
+  // Heartbeat: re-sync with the server (faster while waiting to be admitted).
+  useEffect(() => {
+    const id = serverSession?.id;
+    if (!id || !activeMeeting || activeMeeting.status !== 'active') return;
+    let cancelled = false;
+    const tick = async () => {
+      const cur = serverSessionRef.current;
+      if (!cur) return;
+      const r = await meetingsApi(viaRoomRef.current ? `/rooms/${encodeURIComponent(cur.roomCode)}` : `/sessions/${encodeURIComponent(cur.id)}`);
+      if (cancelled) return;
+      if (r.ok) applyServerSession(r.data.session);
+      else if (r.status === 404 || r.status === 409) {
+        setActiveMeeting(prev => prev && prev.status === 'active' ? { ...prev, status: 'ended', endedReason: prev.endedReason ?? 'host' } : prev);
+      }
+    };
+    const t = setInterval(tick, awaitingAdmission ? 3_000 : 10_000);
+    return () => { cancelled = true; clearInterval(t); };
+  }, [serverSession?.id, activeMeeting?.status, awaitingAdmission, meetingsApi, applyServerSession]);
 
   // Media streams
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
@@ -729,52 +879,51 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
       startMuted?: boolean;
       startCamOff?: boolean;
     }
-  ) => {
+  ): Promise<{ success: boolean; message?: string }> => {
+    setMeetingError(null);
+    const cleanRoom = (roomCode || '').trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 63);
+    const meetingTitle = customTitle?.trim()
+      ? customTitle.trim()
+      : linkedContact
+        ? `Meeting with ${linkedContact.name}`
+        : 'Meeting';
+
+    // The server starts the meeting on the organizer's plan; without it, only sandbox builds may preview.
+    const r = await meetingsApi('/sessions', { method: 'POST', body: JSON.stringify({ title: meetingTitle, ...(cleanRoom.length >= 3 ? { roomCode: cleanRoom } : {}) }) });
+    if (!r.ok && r.data?.code === 'room_in_use' && cleanRoom) return joinMeeting(cleanRoom, linkedContact);
+    const view: ServerSessionView | null = r.ok ? r.data.session : null;
+    if (!view) {
+      if (!(r.network && previewAllowed)) {
+        const message = r.data?.error || (r.network ? "Couldn't reach the server, so the meeting can't start. Meetings need the server to apply your plan." : `The meeting couldn't start (${r.status}).`);
+        setMeetingError(message);
+        return { success: false, message };
+      }
+    }
+    viaRoomRef.current = false;
     cleanupMediaTracks();
     await initializeLocalMedia();
 
-    const uniqueRoomId = roomCode?.trim() || `omni-room-${Math.random().toString(36).substring(2, 7)}`;
+    const uniqueRoomId = view?.roomCode || cleanRoom || `omni-room-${Math.random().toString(36).substring(2, 7)}`;
     const now = Date.now();
-    const meetingTitle = customTitle?.trim() 
-      ? customTitle.trim() 
-      : linkedContact 
-        ? `Executive Alignment with ${linkedContact.name}` 
-        : `Live Strategy Consultation (${uniqueRoomId})`;
+    if (view) clockOffsetRef.current = view.serverNow - now;
 
     const newMeeting: ActiveMeetingSession = {
-      id: `mtg_${now}`,
+      id: view?.id ?? `mtg_${now}`,
       roomId: uniqueRoomId,
       title: meetingTitle,
       hostName: 'Camelia Rose (You)',
-      startedAt: now,
+      startedAt: view ? view.startedAt - clockOffsetRef.current : now,
       durationSeconds: 0,
       status: 'active',
       isHost: true,
       participants: DEFAULT_PARTICIPANTS,
       messages: INITIAL_CHAT_MESSAGES,
-      notes: `# Strategy & Architecture Notes\n\n**Date:** ${new Date().toLocaleDateString()}\n**Room:** ${uniqueRoomId}\n**Participants:** Camelia Rose (Host), Marcus Aurelius, Sarah Jenkins, Alex Rivera\n\n## Action Items & Discussion\n- [ ] Finalize double-encrypted sovereign data channels\n- [ ] Deliver high-throughput WebRTC benchmarks\n- [ ] Sign SLA contract addendum for Q4 rollout\n`,
-      tasks: [
-        {
-          id: 'task-1',
-          title: 'Send formal SLA security agreement',
-          dueDate: new Date(now + 86400000 * 2).toISOString().split('T')[0],
-          priority: 'high',
-          completed: false,
-          contactName: 'Marcus Aurelius'
-        },
-        {
-          id: 'task-2',
-          title: 'Review hybrid TURN server cluster capacity',
-          dueDate: new Date(now + 86400000 * 3).toISOString().split('T')[0],
-          priority: 'medium',
-          completed: false,
-          contactName: 'Sarah Jenkins'
-        }
-      ],
+      notes: `# ${meetingTitle}\n\n**Date:** ${new Date().toLocaleDateString()}\n**Room:** ${uniqueRoomId}\n\n## Notes\n`,
+      tasks: [],
       linkedContactId: linkedContact?.id || '1',
-      planTier: currentPlanTier,
-      maxParticipants: planConfig.maxParticipants,
-      maxDurationMinutes: planConfig.maxDurationMinutes
+      planTier: view?.tier ?? 'free',
+      maxParticipants: view?.limits.maxParticipants ?? previewPlan.limits.maxParticipants,
+      maxDurationMinutes: view?.limits.maxDurationMinutes ?? previewPlan.limits.maxDurationMinutes
     };
 
     if (initialOptions?.startMuted) {
@@ -791,52 +940,71 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
     }
 
     setActiveMeeting(newMeeting);
+    setOfflinePreview(!view);
+    if (view) applyServerSession(view);
+    else { serverSessionRef.current = null; setServerSession(null); }
     setMeetingViewMode('workspace');
     playChime('join');
 
-    if (initialOptions?.autoRecord) {
+    if (initialOptions?.autoRecord && (view ? view.features.recording : meetingFeatures.recording)) {
       setTimeout(() => {
         startRecording();
       }, 1000);
     }
+    return { success: true };
   };
 
-  // JOIN MEETING
-  const joinMeeting = async (codeOrLink: string, linkedContact?: CRMContact) => {
+  // JOIN MEETING (by code or invitation link; the server checks capacity, lock and waiting room)
+  const joinMeeting = async (codeOrLink: string, linkedContact?: CRMContact): Promise<{ success: boolean; message?: string }> => {
+    setMeetingError(null);
+    let cleanCode = codeOrLink.trim();
+    try {
+      if (cleanCode.includes('/meet/')) cleanCode = cleanCode.split('/meet/')[1];
+      else if (/[?&](meet|room)=/.test(cleanCode)) { const u = new URL(cleanCode, 'https://x.invalid'); cleanCode = u.searchParams.get('meet') || u.searchParams.get('room') || cleanCode; }
+    } catch { /* keep as typed */ }
+    cleanCode = cleanCode.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
+
+    const r = await meetingsApi(`/rooms/${encodeURIComponent(cleanCode)}/join`, { method: 'POST' });
+    const view: ServerSessionView | null = r.ok ? r.data.session : null;
+    if (!view) {
+      if (!(r.network && previewAllowed)) {
+        const message = r.data?.error || (r.network ? "Couldn't reach the server to join the meeting." : `Couldn't join the meeting (${r.status}).`);
+        if (r.data?.code === 'meeting_full') noticeFrom(r.data, message);
+        setMeetingError(message);
+        return { success: false, message };
+      }
+    }
+    viaRoomRef.current = !!view && !view.you.canManage;
     cleanupMediaTracks();
     await initializeLocalMedia();
 
-    // Extract room id from full URL or bare code
-    let cleanCode = codeOrLink.trim();
-    if (cleanCode.includes('/meet/')) {
-      cleanCode = cleanCode.split('/meet/')[1];
-    } else if (cleanCode.includes('room=')) {
-      cleanCode = new URL(cleanCode).searchParams.get('room') || cleanCode;
-    }
-
     const now = Date.now();
+    if (view) clockOffsetRef.current = view.serverNow - now;
     const joinedMeeting: ActiveMeetingSession = {
-      id: `mtg_${now}`,
-      roomId: cleanCode || `room-${Math.random().toString(36).substring(2, 6)}`,
-      title: `Consultation Room (${cleanCode || 'General'})`,
-      hostName: 'Marcus Aurelius (Host)',
-      startedAt: now,
+      id: view?.id ?? `mtg_${now}`,
+      roomId: view?.roomCode ?? (cleanCode || `room-${Math.random().toString(36).substring(2, 6)}`),
+      title: view?.title ?? `Meeting (${cleanCode || 'room'})`,
+      hostName: view ? `${view.host.name} (Host)` : 'Host',
+      startedAt: view ? view.startedAt - clockOffsetRef.current : now,
       durationSeconds: 0,
       status: 'active',
-      isHost: false,
+      isHost: view ? view.host.userId === view.you.participantId || view.you.role === 'host' : false,
       participants: DEFAULT_PARTICIPANTS,
       messages: INITIAL_CHAT_MESSAGES,
-      notes: `Joined session ${cleanCode} at ${new Date().toLocaleTimeString()}.\n`,
+      notes: `Joined ${cleanCode} at ${new Date().toLocaleTimeString()}.\n`,
       tasks: [],
       linkedContactId: linkedContact?.id || '1',
-      planTier: currentPlanTier,
-      maxParticipants: planConfig.maxParticipants,
-      maxDurationMinutes: planConfig.maxDurationMinutes
+      planTier: view?.tier ?? 'free',
+      maxParticipants: view?.limits.maxParticipants ?? previewPlan.limits.maxParticipants,
+      maxDurationMinutes: view?.limits.maxDurationMinutes ?? previewPlan.limits.maxDurationMinutes
     };
 
     setActiveMeeting(joinedMeeting);
+    setOfflinePreview(!view);
+    if (view) applyServerSession(view);
     setMeetingViewMode('workspace');
     playChime('join');
+    return { success: true, message: view?.you.status === 'waiting' ? 'You\'re in the waiting room. The host will let you in.' : undefined };
   };
 
   // RETURN TO MEETING
@@ -849,9 +1017,14 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
     setMeetingViewMode('minimized');
   };
 
-  // LEAVE MEETING (Self leaves, room remains if host or continues)
+  // LEAVE MEETING (Self leaves; the meeting ends if the host leaves without a co-host)
   const leaveMeeting = async () => {
     playChime('leave');
+    const cur = serverSessionRef.current;
+    if (cur && cur.status === 'active') {
+      meetingsApi(viaRoomRef.current ? `/rooms/${encodeURIComponent(cur.roomCode)}/leave` : `/sessions/${encodeURIComponent(cur.id)}/leave`, { method: 'POST' });
+    }
+    serverSessionRef.current = null; setServerSession(null); setAwaitingAdmission(false);
     if (isRecording) {
       await stopRecording();
     }
@@ -868,6 +1041,9 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
   // END MEETING FOR EVERYONE (Host terminates room)
   const endMeetingForEveryone = async () => {
     playChime('leave');
+    const cur = serverSessionRef.current;
+    if (cur && cur.status === 'active') await meetingsApi(`/sessions/${encodeURIComponent(cur.id)}/end`, { method: 'POST' });
+    serverSessionRef.current = null; setServerSession(null); setAwaitingAdmission(false);
     if (isRecording) {
       await stopRecording();
     }
@@ -1011,6 +1187,16 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
 
   // START MEETING RECORDING
   const startRecording = async (): Promise<boolean> => {
+    // The plan decides whether recording is allowed; the server must agree before anything is recorded.
+    const cur = serverSessionRef.current;
+    if (cur) {
+      const r = await meetingsApi(`/sessions/${encodeURIComponent(cur.id)}/recording`, { method: 'POST', body: JSON.stringify({ action: 'start' }) });
+      if (!r.ok) { noticeFrom(r.data, r.data?.error || "Recording couldn't start."); return false; }
+    } else if (!meetingFeatures.recording) {
+      const next = nextPlanFor({ feature: 'recording' });
+      setPlanNotice({ kind: 'feature', feature: 'recording', message: `Recording isn't included in the ${meetingPlanLabel} plan.`, ...(next ? { upgradeTo: next.upgradeTo, upgradeLabel: next.upgradeLabel } : {}) });
+      return false;
+    }
     try {
       recordedChunksRef.current = [];
       setRecordingDurationSeconds(0);
@@ -1104,6 +1290,8 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
 
   // STOP RECORDING & ARCHIVE
   const stopRecording = async (): Promise<MeetingRecordingData | null> => {
+    const curSession = serverSessionRef.current;
+    if (curSession && curSession.status === 'active') meetingsApi(`/sessions/${encodeURIComponent(curSession.id)}/recording`, { method: 'POST', body: JSON.stringify({ action: 'stop' }) });
     if (recordingIntervalRef.current) {
       clearInterval(recordingIntervalRef.current);
       recordingIntervalRef.current = null;
@@ -1510,6 +1698,28 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
    * overfill the room; with the waiting room on, everyone waits and admitting checks capacity.
    */
   const inviteParticipantsByEmail = async (emails: string[]): Promise<{ added: string[]; waiting: string[]; refused: Array<{ email: string; reason: 'invalid' | 'duplicate' | 'full' }>; message: string }> => {
+    const cur = serverSessionRef.current;
+    if (cur) {
+      const r = await meetingsApi(`/sessions/${encodeURIComponent(cur.id)}/participants`, { method: 'POST', body: JSON.stringify({ emails }) });
+      if (!r.ok) {
+        const message = noticeFrom(r.data, r.data?.error || "Couldn't add people right now.");
+        return { added: [], waiting: [], refused: emails.map(email => ({ email, reason: 'invalid' as const })), message };
+      }
+      const v: ServerSessionView = r.data.session;
+      applyServerSession(v);
+      const emailOf = (id: string) => v.participants.find(p => p.id === id)?.email || id;
+      const added: string[] = r.data.added.map(emailOf), waiting: string[] = r.data.waiting.map(emailOf);
+      const refused = (r.data.refused || []).map((x: any) => ({ email: x.email, reason: x.reason === 'invalid' || x.reason === 'duplicate' ? x.reason : 'full' }));
+      const full = refused.some((x: any) => x.reason === 'full');
+      if (full) setPlanNotice({ kind: 'capacity', message: fullRoomMessage(), upgradeTo: r.data.upgradeTo, upgradeLabel: r.data.upgradeLabel });
+      const parts: string[] = [];
+      if (added.length) parts.push(`${added.length === 1 ? added[0] + ' was' : added.length + ' people were'} added to the meeting.`);
+      if (waiting.length) parts.push(`${waiting.length === 1 ? waiting[0] + ' is' : waiting.length + ' people are'} in the waiting room.`);
+      if (added.length || waiting.length) parts.push('No emails are sent yet: share the meeting link.');
+      if (full) parts.push(fullRoomMessage());
+      if (!parts.length) parts.push(refused[0]?.reason === 'duplicate' ? `${refused[0].email} is already invited.` : r.data.refused?.[0]?.reason === 'locked' ? 'The meeting is locked: unlock it to add people.' : 'Enter a valid email address.');
+      return { added, waiting, refused, message: parts.join(' ') };
+    }
     const refused: Array<{ email: string; reason: 'invalid' | 'duplicate' | 'full' }> = [];
     const known = new Set([...(activeMeeting?.participants || []), ...waitingRoom].map(p => (p.email || '').toLowerCase()));
     const valid: string[] = [];
@@ -1520,7 +1730,7 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
       known.add(email.toLowerCase()); valid.push(email);
     }
 
-    if (isWaitingRoomEnabled) {
+    if (isWaitingRoomEnabled && meetingFeatures.waitingRoom) {
       if (valid.length) { setWaitingRoom(prev => [...prev, ...valid.map(e => ({ ...makeGuest(e), joinedAt: 'Waiting' }))]); playChime('join'); }
       return { added: [], waiting: valid, refused, message: valid.length ? `${valid.length === 1 ? valid[0] + ' is' : valid.length + ' people are'} in the waiting room until you admit them. No emails are sent yet: share the meeting link.` : 'Nobody was invited.' };
     }
@@ -1555,26 +1765,70 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
   // ---------------------------------------------------------------------------
   // WAITING ROOM & PARTICIPANT MANAGEMENT
   // ---------------------------------------------------------------------------
-  const setWaitingRoomEnabled = useCallback((enabled: boolean) => {
+  const sessionCall = async (path: string, init: RequestInit, fallback: string) => {
+    const cur = serverSessionRef.current;
+    if (!cur) return null;
+    const r = await meetingsApi(`/sessions/${encodeURIComponent(cur.id)}${path}`, init);
+    if (r.ok && r.data.session) applyServerSession(r.data.session);
+    return { ...r, message: r.ok ? '' : noticeFrom(r.data, r.data?.error || fallback) };
+  };
+  const localFeatureRefusal = (feature: keyof PlanFeatures, what: string) => {
+    const next = nextPlanFor({ feature });
+    const message = `${what} isn't included in the ${meetingPlanLabel} plan.`;
+    setPlanNotice({ kind: 'feature', feature, message, ...(next ? { upgradeTo: next.upgradeTo, upgradeLabel: next.upgradeLabel } : {}) });
+    return { success: false, message };
+  };
+
+  const setWaitingRoomEnabled = async (enabled: boolean): Promise<{ success: boolean; message: string }> => {
+    const r = await sessionCall('', { method: 'PATCH', body: JSON.stringify({ waitingRoomEnabled: enabled }) }, "The waiting room couldn't be changed.");
+    if (r) return r.ok ? { success: true, message: enabled ? 'Waiting room on: you admit invited guests from Participants.' : 'Waiting room off: invited guests join directly.' } : { success: false, message: r.message };
+    if (enabled && !meetingFeatures.waitingRoom) return localFeatureRefusal('waitingRoom', 'The waiting room');
     setIsWaitingRoomEnabledState(enabled);
     try { localStorage.setItem('obsidian_meeting_waiting_room', enabled ? 'on' : 'off'); } catch { /* storage unavailable */ }
-  }, []);
+    return { success: true, message: enabled ? 'Waiting room on.' : 'Waiting room off.' };
+  };
 
+  const setMeetingLocked = async (locked: boolean): Promise<{ success: boolean; message: string }> => {
+    const r = await sessionCall('', { method: 'PATCH', body: JSON.stringify({ locked }) }, "The meeting lock couldn't be changed.");
+    if (r) return r.ok ? { success: true, message: locked ? 'Meeting locked: nobody else can join.' : 'Meeting unlocked.' } : { success: false, message: r.message };
+    if (locked && !meetingFeatures.securityControls) return localFeatureRefusal('securityControls', 'Locking a meeting');
+    setIsMeetingLocked(locked);
+    return { success: true, message: locked ? 'Meeting locked.' : 'Meeting unlocked.' };
+  };
 
-  const admitParticipant = (participantId: string): { success: boolean; message: string } => {
+  const setCoHost = async (participantId: string, on: boolean): Promise<{ success: boolean; message: string }> => {
+    const r = await sessionCall(`/participants/${encodeURIComponent(participantId)}`, { method: 'PATCH', body: JSON.stringify({ role: on ? 'cohost' : 'guest' }) }, "The role couldn't be changed.");
+    if (r) return r.ok ? { success: true, message: on ? 'Made co-host.' : 'Co-host removed.' } : { success: false, message: r.message };
+    return localFeatureRefusal('coHosts', 'Co-hosts');
+  };
+
+  const admitParticipant = async (participantId: string): Promise<{ success: boolean; message: string }> => {
     const guest = waitingRoom.find(p => p.id === participantId);
-    if (!guest) return { success: false, message: 'That person is no longer waiting.' };
-    if (activeMeeting && roomCapacity(meetingLimits, roomCount).full) {
+    const r = await sessionCall('/admit', { method: 'POST', body: JSON.stringify({ participantIds: [participantId] }) }, "Couldn't admit them.");
+    if (r) {
+      if (!r.ok) return { success: false, message: r.message };
+      if (r.data.admitted?.length) { playChime('join'); return { success: true, message: `${guest?.name ?? 'They'} joined the meeting.` }; }
+      setPlanNotice({ kind: 'capacity', message: fullRoomMessage(), upgradeTo: r.data.upgradeTo, upgradeLabel: r.data.upgradeLabel });
       return { success: false, message: fullRoomMessage() };
     }
+    if (!guest) return { success: false, message: 'That person is no longer waiting.' };
+    if (activeMeeting && roomCapacity(meetingLimits, roomCount).full) return { success: false, message: fullRoomMessage() };
     setWaitingRoom(prev => prev.filter(p => p.id !== participantId));
     setActiveMeeting(prev => prev ? { ...prev, participants: capToPlan(prev, [...prev.participants, { ...guest, joinedAt: 'Just now' }]) } : prev);
     playChime('join');
     return { success: true, message: `${guest.name} joined the meeting.` };
   };
 
-  const admitAllWaiting = (): { success: boolean; message: string } => {
+  const admitAllWaiting = async (): Promise<{ success: boolean; message: string }> => {
     if (waitingRoom.length === 0) return { success: false, message: 'Nobody is waiting.' };
+    const r = await sessionCall('/admit', { method: 'POST', body: JSON.stringify({ all: true }) }, "Couldn't admit everyone.");
+    if (r) {
+      if (!r.ok) return { success: false, message: r.message };
+      const admitted = r.data.admitted?.length || 0, left = r.data.stillWaiting?.length || 0;
+      if (admitted) playChime('join');
+      if (left) setPlanNotice({ kind: 'capacity', message: fullRoomMessage(), upgradeTo: r.data.upgradeTo, upgradeLabel: r.data.upgradeLabel });
+      return { success: admitted > 0, message: left ? `Admitted ${admitted}. ${left} still waiting: ${fullRoomMessage()}` : `Admitted ${admitted}.` };
+    }
     const fits = activeMeeting ? roomCapacity(meetingLimits, roomCount, waitingRoom.length).fits : waitingRoom.length;
     const admitted = waitingRoom.slice(0, fits);
     if (admitted.length === 0) return { success: false, message: fullRoomMessage() };
@@ -1586,9 +1840,10 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
     return { success: true, message: left > 0 ? `Admitted ${admitted.length}. ${left} still waiting: ${fullRoomMessage()}` : `Admitted ${admitted.length}.` };
   };
 
-  const denyParticipant = useCallback((participantId: string) => {
-    setWaitingRoom(prev => prev.filter(p => p.id !== participantId));
-  }, []);
+  const denyParticipant = async (participantId: string): Promise<void> => {
+    const r = await sessionCall(`/participants/${encodeURIComponent(participantId)}/deny`, { method: 'POST' }, "Couldn't deny them.");
+    if (!r) setWaitingRoom(prev => prev.filter(p => p.id !== participantId));
+  };
 
   const updateParticipants = useCallback((fn: (list: MeetingParticipant[]) => MeetingParticipant[]) => {
     setActiveMeeting(prev => prev ? { ...prev, participants: fn(prev.participants) } : prev);
@@ -1602,10 +1857,15 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
     updateParticipants(list => list.map(p => ({ ...p, isMuted: true, isSpeaking: false })));
   }, [updateParticipants]);
 
-  const removeParticipant = useCallback((participantId: string) => {
+  const removeParticipant = async (participantId: string): Promise<{ success: boolean; message: string }> => {
+    const name = activeMeeting?.participants.find(p => p.id === participantId)?.name ?? 'They';
+    const r = await sessionCall(`/participants/${encodeURIComponent(participantId)}`, { method: 'DELETE' }, "Couldn't remove them.");
+    if (r) { if (r.ok) playChime('leave'); return r.ok ? { success: true, message: `${name} was removed from the meeting.` } : { success: false, message: r.message }; }
+    if (!meetingFeatures.hostControls) return localFeatureRefusal('hostControls', 'Removing participants');
     updateParticipants(list => list.filter(p => p.id !== participantId));
     playChime('leave');
-  }, [updateParticipants, playChime]);
+    return { success: true, message: `${name} was removed from the meeting.` };
+  };
 
   const lowerParticipantHand = useCallback((participantId: string) => {
     updateParticipants(list => list.map(p => p.id === participantId ? { ...p, isHandRaised: false, handRaisedAt: undefined } : p));
@@ -1632,8 +1892,11 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
   // saved, camera and microphone are released, and the meeting stays on screen (status 'ended') so
   // the host sees the summary; leaving or closing it clears the session as usual.
   const timeLimitHandledRef = useRef<string | null>(null);
+  const endedByServer = !!activeMeeting && activeMeeting.status === 'ended' && !!activeMeeting.endedReason;
   useEffect(() => {
-    if (!activeMeeting || activeMeeting.status !== 'active' || !isDurationLimitReached) return;
+    if (!activeMeeting) return;
+    const reachedLocally = activeMeeting.status === 'active' && isDurationLimitReached;
+    if (!reachedLocally && !endedByServer) return;
     if (timeLimitHandledRef.current === activeMeeting.id) return;
     timeLimitHandledRef.current = activeMeeting.id;
     (async () => {
@@ -1641,10 +1904,11 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
       cleanupMediaTracks();
       setIsHandRaised(false);
       setWaitingRoom([]);
-      setActiveMeeting(prev => prev && prev.id === activeMeeting.id ? { ...prev, status: 'ended', endedReason: 'time_limit' } : prev);
+      setAwaitingAdmission(false);
+      setActiveMeeting(prev => prev && prev.id === activeMeeting.id && prev.status === 'active' ? { ...prev, status: 'ended', endedReason: 'time_limit' } : prev);
       playChime('leave');
     })();
-  }, [activeMeeting?.id, activeMeeting?.status, isDurationLimitReached]);
+  }, [activeMeeting?.id, activeMeeting?.status, isDurationLimitReached, endedByServer]);
 
   return (
     <MeetingSessionContext.Provider
@@ -1653,16 +1917,32 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
         isCallActive: !!activeMeeting && activeMeeting.status === 'active',
         meetingViewMode,
         setMeetingViewMode,
-        currentPlanTier,
-        planConfig,
+        subscription,
+        refreshSubscription,
+        requestPlanChange,
+        cancelPlanRequest,
+        serverSession,
         meetingLimits,
-        planSource,
-        canChangePlan,
-        changeMeetingPlan,
-        refreshMeetingPlan,
+        meetingFeatures,
+        meetingPlanLabel,
+        meetingTier,
+        warnMinutesBefore,
+        capacityWarnPercent,
+        capacityState,
+        roomCount,
         isDurationWarning,
         isDurationLimitReached,
         durationSecondsLeft,
+        canManageMeeting,
+        offlinePreview,
+        awaitingAdmission,
+        isMeetingLocked,
+        setMeetingLocked,
+        setCoHost,
+        meetingError,
+        clearMeetingError,
+        planNotice,
+        clearPlanNotice,
         localStream,
         screenStream,
         isMicMuted,

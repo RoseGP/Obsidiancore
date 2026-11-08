@@ -6,7 +6,11 @@
  * participants, chat, More, Leave. Everything else lives in the More menu, grouped in sections.
  */
 
+import type { PlanFeatures } from '../../lib/meetingPlans';
+
 export type OrgRole = 'OWNER' | 'ADMIN' | 'MANAGER' | 'SALES_REP' | 'MARKETER' | 'READ_ONLY' | null;
+/** Per-feature explanation for features the meeting's plan doesn't include, e.g. "Included in Premium". */
+export type FeatureHints = Partial<Record<keyof PlanFeatures, string>>;
 
 export interface MeetingPermissions {
   /** End the meeting for every participant. */
@@ -48,6 +52,10 @@ export interface MeetingControlState {
   isHandRaised?: boolean;
   isWaitingRoomEnabled?: boolean;
   raisedHandsCount?: number;
+  /** The meeting plan's features (omitted = everything allowed, for older callers). */
+  features?: Partial<PlanFeatures>;
+  featureHints?: FeatureHints;
+  isLocked?: boolean;
 }
 
 export type MenuActionId =
@@ -57,7 +65,7 @@ export type MenuActionId =
   | 'record-start' | 'record-pause-resume' | 'record-stop'
   | 'open-settings'
   | 'toggle-raise-hand'
-  | 'toggle-waiting-room' | 'mute-all' | 'lower-all-hands'
+  | 'toggle-waiting-room' | 'toggle-lock' | 'mute-all' | 'lower-all-hands' | 'open-upgrade'
   | 'end-for-everyone';
 
 export interface MenuItem {
@@ -78,6 +86,11 @@ export interface MenuSection { id: string; title: string; items: MenuItem[] }
 export const REACTIONS = ['👏', '👍', '❤️', '🎉', '💡', '🚀', '🔥'];
 
 export function buildMoreMenu(state: MeetingControlState, perms: MeetingPermissions): MenuSection[] {
+  const has = (f: keyof PlanFeatures) => state.features?.[f] !== false;
+  const planReason = (f: keyof PlanFeatures) => state.featureHints?.[f] || 'Not included in this meeting\'s plan';
+  /** Disabled for a role reason first, then for a plan reason. */
+  const gate = (allowed: boolean, f: keyof PlanFeatures) =>
+    !allowed ? { disabled: true, disabledReason: perms.hostOnlyReason } : !has(f) ? { disabled: true, disabledReason: planReason(f) } : {};
   const panelOpen = (tab: SidebarTab) => state.isSidebarOpen && state.activeSidebarTab === tab;
   const sections: MenuSection[] = [
     {
@@ -109,7 +122,7 @@ export function buildMoreMenu(state: MeetingControlState, perms: MeetingPermissi
             { id: 'record-pause-resume', label: state.isRecordingPaused ? 'Resume recording' : 'Pause recording', disabled: !perms.canRecord, disabledReason: perms.canRecord ? undefined : perms.hostOnlyReason, icon: state.isRecordingPaused ? 'play' : 'pause' },
             { id: 'record-stop', label: 'Stop and save recording', disabled: !perms.canRecord, disabledReason: perms.canRecord ? undefined : perms.hostOnlyReason, icon: 'stop' },
           ]
-        : [{ id: 'record-start', label: 'Record meeting', disabled: !perms.canRecord, disabledReason: perms.canRecord ? undefined : perms.hostOnlyReason, icon: 'record' }],
+        : [{ id: 'record-start', label: 'Record meeting', icon: 'record', ...gate(perms.canRecord, 'recording') }],
     },
     { id: 'settings', title: 'Settings', items: [{ id: 'open-settings', label: 'Audio and video settings', icon: 'settings' }] },
   ];
@@ -117,7 +130,8 @@ export function buildMoreMenu(state: MeetingControlState, perms: MeetingPermissi
   const hostItems: MenuItem[] = [];
   if (perms.canManageParticipants) {
     hostItems.push(
-      { id: 'toggle-waiting-room', label: 'Waiting room', checked: !!state.isWaitingRoomEnabled, icon: 'waiting' },
+      { id: 'toggle-waiting-room', label: 'Waiting room', checked: !!state.isWaitingRoomEnabled, icon: 'waiting', ...(state.isWaitingRoomEnabled ? {} : gate(true, 'waitingRoom')) },
+      { id: 'toggle-lock', label: 'Lock meeting', checked: !!state.isLocked, icon: 'lock', ...(state.isLocked ? {} : gate(true, 'securityControls')) },
       { id: 'mute-all', label: 'Mute everyone else', icon: 'mute' },
     );
     if ((state.raisedHandsCount ?? 0) > 0) {
@@ -126,6 +140,9 @@ export function buildMoreMenu(state: MeetingControlState, perms: MeetingPermissi
   }
   if (perms.canEndForEveryone) {
     hostItems.push({ id: 'end-for-everyone', label: 'End meeting for everyone', danger: true, icon: 'end' });
+  }
+  if (perms.canManageParticipants && state.features && (['recording', 'waitingRoom', 'securityControls', 'hostControls'] as const).some((f) => !has(f))) {
+    hostItems.push({ id: 'open-upgrade', label: 'Plans and upgrades', icon: 'upgrade' });
   }
   if (hostItems.length) sections.push({ id: 'host', title: 'Host controls', items: hostItems });
   return sections;

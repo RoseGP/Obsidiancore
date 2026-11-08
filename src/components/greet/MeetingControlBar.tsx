@@ -13,13 +13,14 @@
  */
 import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
-  Briefcase, DoorOpen, Disc, FileText, Hand, LayoutGrid, MessageSquare, Mic, MicOff, MonitorOff, MonitorUp, MoreHorizontal,
+  ArrowUpCircle, Briefcase, DoorOpen, Disc, FileText, Hand, LayoutGrid, Lock, MessageSquare, Mic, MicOff, MonitorOff, MonitorUp, MoreHorizontal,
   Pause, PhoneOff, Play, Power, Settings, Sparkles, Square, Users, Video, VideoOff,
 } from 'lucide-react';
 import {
   buildMoreMenu, flattenMenu, meetingPermissions, nextMenuIndex, screenShareSupported,
-  type MenuActionId, type OrgRole, type SidebarTab,
+  type FeatureHints, type MenuActionId, type OrgRole, type SidebarTab,
 } from './meetingControls';
+import type { PlanFeatures } from '../../lib/meetingPlans';
 
 export interface MeetingControlBarProps {
   isHost: boolean;
@@ -47,6 +48,12 @@ export interface MeetingControlBarProps {
   onToggleWaitingRoom?: () => void;
   onMuteAll?: () => void;
   onLowerAllHands?: () => void;
+  /** Plan features of this meeting; items the plan lacks are shown disabled with `featureHints`. */
+  features?: Partial<PlanFeatures>;
+  featureHints?: FeatureHints;
+  isLocked?: boolean;
+  onToggleLock?: () => void;
+  onOpenUpgrade?: () => void;
   onToggleMic: () => void;
   onToggleCam: () => void;
   onToggleScreenShare: () => void;
@@ -66,10 +73,10 @@ const fmt = (s: number) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${Str
 
 const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   pause: Pause, play: Play, layout: LayoutGrid, greet: Sparkles, transcript: FileText, crm: Briefcase,
-  record: Disc, stop: Square, settings: Settings, end: Power, hand: Hand, waiting: DoorOpen, mute: MicOff,
+  record: Disc, stop: Square, settings: Settings, end: Power, hand: Hand, waiting: DoorOpen, mute: MicOff, lock: Lock, upgrade: ArrowUpCircle,
 };
 
-const DIALOG_ACTIONS = new Set<MenuActionId>(['record-start', 'open-settings', 'end-for-everyone']);
+const DIALOG_ACTIONS = new Set<MenuActionId>(['record-start', 'open-settings', 'end-for-everyone', 'open-upgrade']);
 
 const focusRing = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900';
 
@@ -116,6 +123,7 @@ export default function MeetingControlBar(p: MeetingControlBarProps) {
     isHost: p.isHost, isVideoPaused: p.isVideoPaused, isCamOff: p.isCamOff, layoutMode: p.layoutMode,
     isSidebarOpen: p.isSidebarOpen, activeSidebarTab: p.activeSidebarTab, isRecording: p.isRecording, isRecordingPaused: p.isRecordingPaused,
     isHandRaised: p.isHandRaised, isWaitingRoomEnabled: p.isWaitingRoomEnabled, raisedHandsCount: p.raisedHandsCount,
+    features: p.features, featureHints: p.featureHints, isLocked: p.isLocked,
   }, perms).map((s) => ({
     ...s,
     // Hide items whose handler wasn't provided, so the menu never offers something that does nothing.
@@ -123,9 +131,12 @@ export default function MeetingControlBar(p: MeetingControlBarProps) {
       (i.id !== 'toggle-raise-hand' || !!p.onToggleRaiseHand) &&
       (i.id !== 'toggle-waiting-room' || !!p.onToggleWaitingRoom) &&
       (i.id !== 'mute-all' || !!p.onMuteAll) &&
-      (i.id !== 'lower-all-hands' || !!p.onLowerAllHands)),
+      (i.id !== 'lower-all-hands' || !!p.onLowerAllHands) &&
+      (i.id !== 'toggle-lock' || !!p.onToggleLock) &&
+      (i.id !== 'open-upgrade' || !!p.onOpenUpgrade)),
   })).filter((s) => s.items.length > 0), [p.isHost, p.isVideoPaused, p.isCamOff, p.layoutMode, p.isSidebarOpen, p.activeSidebarTab, p.isRecording, p.isRecordingPaused,
-    p.isHandRaised, p.isWaitingRoomEnabled, p.raisedHandsCount, p.onToggleRaiseHand, p.onToggleWaitingRoom, p.onMuteAll, p.onLowerAllHands, perms]);
+    p.isHandRaised, p.isWaitingRoomEnabled, p.raisedHandsCount, p.onToggleRaiseHand, p.onToggleWaitingRoom, p.onMuteAll, p.onLowerAllHands,
+    p.features, p.featureHints, p.isLocked, p.onToggleLock, p.onOpenUpgrade, perms]);
   const items = useMemo(() => flattenMenu(sections), [sections]);
 
   const [open, setOpen] = useState(false);
@@ -205,6 +216,8 @@ export default function MeetingControlBar(p: MeetingControlBarProps) {
       case 'toggle-waiting-room': return p.onToggleWaitingRoom?.();
       case 'mute-all': return p.onMuteAll?.();
       case 'lower-all-hands': return p.onLowerAllHands?.();
+      case 'toggle-lock': return p.onToggleLock?.();
+      case 'open-upgrade': return p.onOpenUpgrade?.();
       case 'end-for-everyone': return p.onEndForEveryone();
     }
   };

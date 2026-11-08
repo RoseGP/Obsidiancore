@@ -211,6 +211,24 @@ const active = () => document.activeElement as any;
   assert.equal(t.q('#btn-tab-people').getAttribute('aria-label'), 'Participants (4)'); ok('non-hosts never see the waiting count');
 }
 
+// ---- Plan-aware menu ----
+{
+  const free = { recording: false, waitingRoom: false, securityControls: false, hostControls: false };
+  const hints = { recording: 'Included in Premium', waitingRoom: 'Included in Premium', securityControls: 'Included in Premium' };
+  const items = flattenMenu(buildMoreMenu({ ...baseState, isHost: true, features: free, featureHints: hints }, meetingPermissions({ isHost: true })));
+  const byId = (id: string) => items.find((i) => i.id === id)!;
+  assert.equal(byId('record-start').disabled, true); assert.equal(byId('record-start').disabledReason, 'Included in Premium');
+  assert.equal(byId('toggle-waiting-room').disabled, true); assert.equal(byId('toggle-lock').disabled, true);
+  assert.ok(byId('open-upgrade')); assert.equal(byId('mute-all').disabled, undefined);
+  ok('Free plan: recording, waiting room and lock are disabled with "Included in Premium"; Plans and upgrades is offered');
+  const guest = flattenMenu(buildMoreMenu({ ...baseState, features: free, featureHints: hints }, meetingPermissions({ isHost: false })));
+  assert.equal(guest.find((i) => i.id === 'record-start')!.disabledReason, 'Only the host or an admin can do this');
+  assert.ok(!guest.some((i) => i.id === 'open-upgrade')); ok('participants see the role reason first and no upgrade entry');
+  const premium = flattenMenu(buildMoreMenu({ ...baseState, isHost: true, features: { ...free, recording: true, waitingRoom: true, securityControls: true, hostControls: true } }, meetingPermissions({ isHost: true })));
+  assert.equal(premium.find((i) => i.id === 'record-start')!.disabled, undefined);
+  assert.ok(!premium.some((i) => i.id === 'open-upgrade')); ok('Premium: those controls are enabled');
+}
+
 // ---- Responsive: bottom sheet on phones, anchored popover on wide screens ----
 {
   const t = setup(); await t.render();

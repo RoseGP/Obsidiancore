@@ -29,6 +29,7 @@ Tests are plain `tsx` scripts with node:assert + supertest (React component test
 - **Social Planner (Postiz):** `src/features/social-accounts/server/*`, `src/routes/accountsApi.ts`, `src/routes/postsApi.ts`, UI `src/features/social-planner/`.
 - **Embeddable calendar:** `public/widget.js`, `src/routes/embedEventsApi.ts`, `src/server/embed/embedKeys.ts`.
 - **Meetings UI:** `src/components/greet/MeetingControlBar.tsx`, `meetingControls.ts`, `VideoMeetingWorkspace.tsx`.
+- **Meeting plans & sessions (server-enforced):** `src/lib/meetingPlans.ts` (shared rules), `src/server/meetings/` (plans, subscriptions, sessions, stats), routes `src/routes/meetings.ts`, `src/routes/meetingAdminApi.ts`. See `docs/meetings/PLANS.md`. Never hardcode limits: read the org's plan.
 - **Docs:** `docs/embed-calendar/`, `docs/api-key-auth/`, `docs/social-accounts/`.
 
 ## Rules for this codebase

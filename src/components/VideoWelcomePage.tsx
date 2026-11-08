@@ -58,8 +58,13 @@ export default function VideoWelcomePage({
     deleteMeetingHistoryItem,
     liveTranscript,
     saveCurrentMeetingTranscript,
-    startInstantMeeting
+    startInstantMeeting,
+    meetingFeatures,
+    subscription
   } = useMeetingSession();
+  // Recording depends on the organization's plan; the option says so instead of failing at start.
+  const canRecordOnPlan = meetingFeatures.recording;
+  const recordingPlanLabel = subscription ? (['premium', 'enterprise'] as const).map(t => subscription.plans[t]).find(p => p.features.recording)?.label : undefined;
 
   const [meetingCode, setMeetingCode] = useState('');
   const [customRoomName, setCustomRoomName] = useState('');
@@ -631,7 +636,7 @@ export default function VideoWelcomePage({
       ? contacts.find(c => c.id === modalLinkedContactId)
       : undefined;
     onStartInstantMeeting(modalRoomCode, linkedContact, modalMeetingTitle, {
-      autoRecord: modalAutoRecord,
+      autoRecord: modalAutoRecord && canRecordOnPlan,
       autoTranscribe: modalAutoTranscribe,
       startMuted: modalStartMuted,
       startCamOff: modalStartCamOff
@@ -2006,16 +2011,17 @@ export default function VideoWelcomePage({
                 <div className="space-y-2 pt-1 border-t border-neutral-100">
                   <span className="text-xs font-bold text-neutral-800 block">Meeting Capabilities</span>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                    <label className="flex items-center gap-2 p-2.5 rounded-xl bg-neutral-50 border border-neutral-200/80 cursor-pointer hover:bg-neutral-100/60 transition-colors">
+                    <label className={`flex items-center gap-2 p-2.5 rounded-xl bg-neutral-50 border border-neutral-200/80 transition-colors ${canRecordOnPlan ? 'cursor-pointer hover:bg-neutral-100/60' : 'opacity-60 cursor-not-allowed'}`}>
                       <input
                         type="checkbox"
-                        checked={modalAutoRecord}
+                        checked={modalAutoRecord && canRecordOnPlan}
+                        disabled={!canRecordOnPlan}
                         onChange={(e) => setModalAutoRecord(e.target.checked)}
                         className="rounded text-indigo-600 focus:ring-indigo-500 h-4 w-4"
                       />
                       <div>
                         <span className="font-semibold text-neutral-800 block">Record Meeting</span>
-                        <span className="text-[10px] text-neutral-500">Auto-save video to Greet Vault</span>
+                        <span className="text-[10px] text-neutral-500">{canRecordOnPlan ? 'Auto-save video to Greet Vault' : `Included in ${recordingPlanLabel ?? 'a higher plan'}`}</span>
                       </div>
                     </label>
 

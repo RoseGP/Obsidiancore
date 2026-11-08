@@ -1,11 +1,15 @@
 /**
- * MeetingSessionContext: raise hand, waiting room, capacity and host participant controls.
- * Mounts the real provider in happy-dom and drives it through useMeetingSession().
+ * MeetingSessionContext end to end: the real provider (happy-dom) talking to the real /api/meetings and
+ * /api/admin/meetings routes (in-process, through supertest), so client and server stay in sync.
+ * Also: raise hand, the sandbox offline preview, and that production builds refuse to start without a server.
  * Run: npx tsx src/context/__tests__/meetingSession.test.tsx
  */
 import assert from 'node:assert/strict';
 import { Window } from 'happy-dom';
+import express from 'express';
+import request from 'supertest';
 
+Object.assign(process.env, { NODE_ENV: 'test', SOCIAL_ACCOUNTS_DEV_AUTH: 'true', CRM_STORE: 'memory', PLATFORM_ADMIN_USER_IDS: 'root' });
 const win = new Window({ url: 'http://localhost/', width: 1280, height: 800 });
 const g = globalThis as any;
 for (const [k, v] of Object.entries({
@@ -14,164 +18,152 @@ for (const [k, v] of Object.entries({
   requestAnimationFrame: (cb: any) => setTimeout(() => cb(Date.now()), 0), cancelAnimationFrame: (id: any) => clearTimeout(id),
 })) Object.defineProperty(g, k, { value: v, configurable: true, writable: true });
 g.IS_REACT_ACT_ENVIRONMENT = true;
-console.warn = () => {}; // the provider logs a note when there is no camera (expected here)
+console.warn = () => {}; // no camera here (expected)
 
-// Stand-in for the organization's plan endpoint (GET/PUT /api/meetings/plan).
-let serverPlan = 'standard'; let canChange = true;
-g.fetch = async (url: string, init?: any) => {
-  const json = (status: number, body: any) => new (win as any).Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
-  if (String(url).endsWith('/api/meetings/plan')) {
-    if ((init?.method || 'GET') === 'PUT') {
-      if (!canChange) return json(403, { success: false, error: 'Only an owner or admin can do this.' });
-      serverPlan = JSON.parse(init.body).plan; return json(200, { success: true, plan: serverPlan, canChange });
-    }
-    return json(200, { success: true, plan: serverPlan, canChange });
-  }
-  return json(404, { success: false });
+// ---- The real API, in process ----
+const { MemoryDocStore, setDocStore } = await import('../../server/data/docStore');
+const store = new MemoryDocStore(); setDocStore(store);
+const { guard, PUBLIC } = await import('../../server/routeGuards');
+const meetingsRouter = (await import('../../routes/meetings')).default;
+const adminRouter = (await import('../../routes/meetingAdminApi')).default;
+const app = express(); app.use(express.json());
+app.use('/api/meetings', guard(PUBLIC.none), meetingsRouter);
+app.use('/api/admin/meetings', guard(PUBLIC.none), adminRouter);
+
+let browserUser = 'olivia';
+let serverDown = false;
+g.fetch = async (url: string, init: any = {}) => {
+  if (serverDown) throw new TypeError('Failed to fetch');
+  const method = String(init.method || 'GET').toLowerCase();
+  let r = (request(app) as any)[method](String(url)).set('X-Dev-User-Id', browserUser);
+  if (init.body) r = r.set('Content-Type', 'application/json').send(JSON.parse(init.body));
+  const res = await r;
+  return new (win as any).Response(JSON.stringify(res.body), { status: res.status, headers: { 'Content-Type': 'application/json' } });
 };
+const asAdmin = (method: 'put' | 'post', path: string, body: any = {}) => (request(app) as any)[method](path).set('X-Dev-User-Id', 'root').send(body);
 
 const React = (await import('react')).default;
 const { act } = await import('react');
 const { createRoot } = await import('react-dom/client');
-const { MeetingSessionProvider, useMeetingSession } = await import('../MeetingSessionContext');
+const { MeetingSessionProvider, useMeetingSession, setMeetingPreviewAllowedForTests } = await import('../MeetingSessionContext');
 
 let passed = 0; const ok = (n: string) => { passed++; console.log('  ✓', n); };
-
 let api: ReturnType<typeof useMeetingSession>;
 function Probe() { api = useMeetingSession(); return null; }
 const host = document.createElement('div'); document.body.appendChild(host);
 const root = createRoot(host as any);
-await act(async () => { root.render(React.createElement(MeetingSessionProvider, null, React.createElement(Probe))); });
 const run = async <T,>(fn: () => T | Promise<T>): Promise<T> => { let out!: T; await act(async () => { out = await fn(); }); return out; };
+const wait = (ms: number) => run(() => new Promise((res) => setTimeout(res, ms)));
 
-await run(() => api.startInstantMeeting('room-test'));
-assert.ok(api.activeMeeting); const startCount = api.activeMeeting!.participants.length;
-ok('meeting starts');
+await act(async () => { root.render(React.createElement(MeetingSessionProvider, null, React.createElement(Probe))); });
+await wait(50);
+const orgA = (await store.get('crm_user_memberships/olivia')).defaultOrgId;
 
-// ---- Raise hand ----
-assert.equal(api.isHandRaised, false);
+// ---- Plan comes from the server ----
+assert.equal(api.subscription?.tier, 'free'); assert.equal(api.subscription?.plans.premium.limits.maxParticipants, 250);
+assert.equal(api.meetingLimits.maxParticipants, 100); assert.equal(api.meetingFeatures.recording, false);
+ok('the organization\'s plan and the plan catalog are loaded from the server (Free)');
+
+// ---- Start: server session, server clock ----
+let r = await run(() => api.startInstantMeeting('Team Sync', undefined, 'Team sync'));
+assert.ok(r.success); assert.ok(api.serverSession); assert.equal(api.offlinePreview, false);
+assert.equal(api.activeMeeting!.id, api.serverSession!.id); assert.equal(api.activeMeeting!.roomId, 'team-sync');
+assert.ok(api.durationSecondsLeft > 3590 && api.durationSecondsLeft <= 3600); assert.equal(api.roomCount, 1);
+assert.equal(api.activeMeeting!.tasks.length, 0); assert.doesNotMatch(api.activeMeeting!.notes, /Marcus|Sarah/);
+ok('starting a meeting creates it on the server: Free limits, countdown from the server clock, no invented notes or tasks');
+
+// ---- Raise hand (local) ----
 await run(() => api.toggleRaiseHand()); assert.equal(api.isHandRaised, true);
-await run(() => api.lowerAllHands()); assert.equal(api.isHandRaised, false);
-ok('raise hand toggles; host "lower all hands" also lowers your own');
+await run(() => api.lowerAllHands()); assert.equal(api.isHandRaised, false); ok('raise hand and lower all hands');
 
-// ---- Waiting room off: invite joins directly ----
-await run(() => api.setWaitingRoomEnabled(false));
-let r = await run(() => api.inviteParticipantByEmail('ada.lovelace@example.com'));
-assert.ok(r.success); assert.equal(api.activeMeeting!.participants.length, startCount + 1); assert.equal(api.waitingRoom.length, 0);
-ok('waiting room off: invited guest joins directly');
+// ---- Capacity enforced by the server ----
+const emails = Array.from({ length: 150 }, (_, i) => `g${i}@example.com`);
+const inv = await run(() => api.inviteParticipantsByEmail(emails));
+assert.equal(inv.added.length, 99); assert.equal(inv.refused.filter((x) => x.reason === 'full').length, 51);
+assert.equal(api.roomCount, 100); assert.equal(api.capacityState, 'full'); assert.equal(api.serverSession!.participantCount, 100);
+assert.equal(api.planNotice?.kind, 'capacity'); assert.equal(api.planNotice?.upgradeTo, 'premium');
+assert.match(inv.message, /99 people were added.*full.*Free plan allows 100.*Premium allows 250/);
+ok('150 invited: the server seats 99 (100 with the host); the roster mirrors it and an upgrade notice is raised');
+await run(() => api.clearPlanNotice());
 
-// ---- Waiting room on: invite waits; admit / deny ----
-await run(() => api.setWaitingRoomEnabled(true));
-assert.equal(localStorage.getItem('obsidian_meeting_waiting_room'), 'on'); ok('waiting room setting is remembered');
-await run(() => api.inviteParticipantByEmail('grace@example.com'));
-await run(() => api.inviteParticipantByEmail('linus@example.com'));
-await run(() => api.inviteParticipantByEmail('margaret@example.com'));
-assert.equal(api.waitingRoom.length, 3); assert.equal(api.activeMeeting!.participants.length, startCount + 1);
-ok('waiting room on: invited guests wait instead of joining');
-const grace = api.waitingRoom.find((p) => p.email === 'grace@example.com')!;
-r = await run(() => api.admitParticipant(grace.id));
-assert.ok(r.success); assert.ok(api.activeMeeting!.participants.some((p) => p.id === grace.id)); assert.equal(api.waitingRoom.length, 2);
-ok('admit moves a guest into the meeting');
-const linus = api.waitingRoom.find((p) => p.email === 'linus@example.com')!;
-await run(() => api.denyParticipant(linus.id));
-assert.equal(api.waitingRoom.length, 1); assert.ok(!api.activeMeeting!.participants.some((p) => p.id === linus.id));
-ok('deny removes a guest from the waiting room without admitting them');
-r = await run(() => api.admitParticipant('nobody'));
-assert.equal(r.success, false); ok('admitting someone who already left fails gracefully');
-r = await run(() => api.admitAllWaiting());
-assert.ok(r.success); assert.equal(api.waitingRoom.length, 0); ok('admit all empties the waiting room');
+// ---- Features the plan lacks are refused by the server ----
+let w = await run(() => api.setWaitingRoomEnabled(true));
+assert.equal(w.success, false); assert.equal(api.planNotice?.feature, 'waitingRoom'); assert.equal(api.planNotice?.upgradeTo, 'premium');
+await run(() => api.clearPlanNotice());
+assert.equal(await run(() => api.startRecording()), false); assert.equal(api.planNotice?.feature, 'recording'); assert.equal(api.isRecording, false);
+await run(() => api.clearPlanNotice());
+const someone = api.activeMeeting!.participants[0];
+const rm = await run(() => api.removeParticipant(someone.id));
+assert.equal(rm.success, false); assert.equal(api.planNotice?.feature, 'hostControls'); assert.equal(api.roomCount, 100);
+await run(() => api.clearPlanNotice());
+ok('Free: waiting room, recording and removing people are refused by the server, each with the plan that includes it');
 
-// ---- Host participant controls ----
-const target = api.activeMeeting!.participants.find((p) => p.email === 'grace@example.com')!;
-assert.equal(target.isMuted, false);
-await run(() => api.muteParticipant(target.id));
-assert.equal(api.activeMeeting!.participants.find((p) => p.id === target.id)!.isMuted, true); ok('host can mute one participant');
-await run(() => api.muteAllParticipants());
-assert.ok(api.activeMeeting!.participants.every((p) => p.isMuted)); ok('mute everyone mutes every other participant');
-const before = api.activeMeeting!.participants.length;
-await run(() => api.removeParticipant(target.id));
-assert.equal(api.activeMeeting!.participants.length, before - 1); ok('host can remove a participant');
+// ---- Another person joining a full meeting ----
+browserUser = 'bea';
+const otherHost = document.createElement('div'); document.body.appendChild(otherHost);
+let api2: ReturnType<typeof useMeetingSession>;
+function Probe2() { api2 = useMeetingSession(); return null; }
+const root2 = createRoot(otherHost as any);
+await act(async () => { root2.render(React.createElement(MeetingSessionProvider, null, React.createElement(Probe2))); });
+await wait(30);
+const j = await run(() => api2!.joinMeeting('https://crm.example.com/?view=greet&meet=team-sync'));
+assert.equal(j.success, false); assert.match(j.message!, /full/); assert.equal(api2!.activeMeeting, null);
+ok('joining a full meeting from an invitation link is refused, and nothing opens');
+browserUser = 'olivia';
 
-// ---- Leaving resets per-meeting state ----
-await run(() => api.toggleRaiseHand());
-await run(async () => { await api.leaveMeeting(); await new Promise((res) => setTimeout(res, 450)); });
-assert.equal(api.isHandRaised, false); assert.equal(api.waitingRoom.length, 0); assert.equal(api.activeMeeting, null);
-ok('leaving clears the raised hand and waiting room');
+// ---- Upgrade during the meeting extends it ----
+await asAdmin('put', `/api/admin/meetings/subscriptions/${orgA}`, { tier: 'premium', reason: 'upgrade' });
+w = await run(() => api.setWaitingRoomEnabled(true));
+assert.ok(w.success, w.message); assert.equal(api.isWaitingRoomEnabled, true);
+assert.equal(api.meetingLimits.maxParticipants, 250); assert.equal(api.meetingTier, 'premium');
+assert.ok(api.durationSecondsLeft > 290 * 60); assert.equal(api.capacityState, 'ok');
+ok('after an upgrade, the running meeting gets Premium limits and features (waiting room, 250 people, 5 hours)');
+const waitInv = await run(() => api.inviteParticipantsByEmail(['late1@example.com', 'late2@example.com']));
+assert.equal(waitInv.waiting.length, 2); assert.equal(api.waitingRoom.length, 2);
+const adm = await run(() => api.admitAllWaiting());
+assert.ok(adm.success); assert.equal(api.waitingRoom.length, 0); assert.equal(api.roomCount, 102);
+ok('waiting room on the server: invitees wait, Admit all brings them in');
 
-// ---- Plans: organization plan, 100-person Standard cap, locked limits, 60-minute limit ----
-assert.equal(api.planSource, 'organization'); assert.equal(api.currentPlanTier, 'standard'); assert.equal(api.canChangePlan, true);
-ok('the plan is loaded from the organization (Standard)');
-
-await run(() => api.setWaitingRoomEnabled(false));
-await run(() => api.startInstantMeeting('room-big'));
-assert.equal(api.meetingLimits.maxParticipants, 100);
-for (let i = api.activeMeeting!.participants.length + 1; i < 100; i++) {
-  const res = await run(() => api.inviteParticipantByEmail(`guest${i}@example.com`));
-  assert.ok(res.success, res.message);
-}
-assert.equal(api.activeMeeting!.participants.length + 1, 100); ok('a Standard meeting holds 100 people (host included)');
-r = await run(() => api.inviteParticipantByEmail('one-too-many@example.com'));
-assert.equal(r.success, false); assert.match(r.message, /full.*Standard.*100.*Premium allows 250/);
-assert.equal(api.activeMeeting!.participants.length + 1, 100); ok('the 101st person is refused, with which plan fits');
-
-await run(() => api.setWaitingRoomEnabled(true));
-r = await run(() => api.inviteParticipantByEmail('waits@example.com'));
-assert.ok(r.success); assert.equal(api.waitingRoom.length, 1);
-r = await run(() => api.admitParticipant(api.waitingRoom[0].id));
-assert.equal(r.success, false); assert.equal(api.waitingRoom.length, 1); ok('a full room keeps people in the waiting room');
-const someone = api.activeMeeting!.participants[0].id;
-await run(() => api.removeParticipant(someone));
-r = await run(() => api.admitParticipant(api.waitingRoom[0].id));
-assert.ok(r.success); assert.equal(api.activeMeeting!.participants.length + 1, 100); ok('when a seat frees up, the next person can be admitted');
-
-r = await run(() => api.changeMeetingPlan('premium'));
-assert.ok(r.success); assert.equal(api.currentPlanTier, 'premium');
-assert.equal(api.meetingLimits.maxParticipants, 100); assert.equal(api.meetingLimits.maxDurationMinutes, 60);
-ok('changing the plan mid-meeting keeps this meeting\'s limits');
-await run(async () => { await api.leaveMeeting(); await new Promise((res) => setTimeout(res, 450)); });
-
-await run(() => api.startInstantMeeting('room-premium'));
-assert.equal(api.meetingLimits.maxParticipants, 250); assert.equal(api.durationSecondsLeft, null);
-ok('the next meeting uses Premium: 250 people, no time limit');
+// ---- Time limit: countdown on the server clock, meeting ends for everyone ----
+await run(async () => { await api.endMeetingForEveryone(); await new Promise((res) => setTimeout(res, 450)); });
+await asAdmin('put', `/api/admin/meetings/subscriptions/${orgA}`, { tier: 'free', reason: 'downgrade' });
+await run(() => api.refreshSubscription());
+r = await run(() => api.startInstantMeeting(undefined, undefined, 'Timed'));
+assert.ok(r.success); assert.equal(api.meetingLimits.maxDurationMinutes, 60);
 const realNow = Date.now;
-Date.now = () => realNow() + 3 * 3600 * 1000;
-await run(() => new Promise((res) => setTimeout(res, 1200)));
-assert.equal(api.activeMeeting!.status, 'active'); ok('a Premium meeting keeps going past 60 minutes');
-Date.now = realNow;
-await run(async () => { await api.leaveMeeting(); await new Promise((res) => setTimeout(res, 450)); });
-
-await run(() => api.changeMeetingPlan('standard'));
-await run(() => api.startInstantMeeting('room-timed'));
-Date.now = () => realNow() + 56 * 60 * 1000;
-await run(() => new Promise((res) => setTimeout(res, 1200)));
-assert.equal(api.isDurationWarning, true); assert.ok(api.durationSecondsLeft! > 200 && api.durationSecondsLeft! <= 240);
-assert.equal(api.activeMeeting!.status, 'active'); ok('Standard: at 56 minutes the warning shows about 4 minutes left');
-Date.now = () => realNow() + 60 * 60 * 1000 + 500;
-await run(() => new Promise((res) => setTimeout(res, 1500)));
-assert.equal(api.isDurationLimitReached, true);
+Date.now = () => realNow() + 56 * 60_000;
+await wait(1200);
+assert.equal(api.isDurationWarning, true); assert.ok(api.durationSecondsLeft <= 240 && api.durationSecondsLeft > 200);
+ok('at 56 minutes: 5-minute warning with about 4 minutes left');
+Date.now = () => realNow() + 60 * 60_000 + 500;
+await wait(1500);
 assert.equal(api.activeMeeting!.status, 'ended'); assert.equal(api.activeMeeting!.endedReason, 'time_limit');
-assert.equal(api.isHandRaised, false); ok('Standard: at 60 minutes the meeting ends for everyone (reason recorded)');
+const serverView = await (request(app) as any).get(`/api/meetings/sessions/${api.serverSession!.id}`).set('X-Dev-User-Id', 'olivia');
+assert.equal(serverView.body.session.status, 'ended'); assert.equal(serverView.body.session.endedReason, 'time_limit');
 Date.now = realNow;
-
-canChange = false;
-r = await run(() => api.changeMeetingPlan('enterprise'));
-assert.equal(r.success, false); assert.equal(api.currentPlanTier, 'standard'); ok('a refused plan change leaves the plan as it was');
-
-// ---- Batch invites can't overfill the room ----
+ok('at 60 minutes the meeting ends in the app and on the server, with the reason recorded');
 await run(async () => { await api.leaveMeeting(); await new Promise((res) => setTimeout(res, 450)); });
-await run(() => api.setWaitingRoomEnabled(false));
-await run(() => api.startInstantMeeting('room-batch'));
-assert.equal(api.meetingLimits.maxParticipants, 100);
-const batch = Array.from({ length: 150 }, (_, i) => `b${i}@example.com`);
-const br = await run(() => api.inviteParticipantsByEmail([...batch, 'b0@example.com', 'not-an-email']));
-assert.equal(br.added.length, 99); assert.equal(api.activeMeeting!.participants.length + 1, 100);
-assert.equal(br.refused.filter((x) => x.reason === 'full').length, 51);
-assert.equal(br.refused.find((x) => x.email === 'b0@example.com')?.reason, 'duplicate');
-assert.equal(br.refused.find((x) => x.email === 'not-an-email')?.reason, 'invalid');
-ok('inviting 150 at once into a Standard meeting seats 99 + host; the other 51 are listed as not added');
-await run(() => api.removeParticipant(api.activeMeeting!.participants[0].id));
-await run(async () => { await Promise.all(['x1@example.com', 'x2@example.com', 'x3@example.com'].map((e) => api.inviteParticipantByEmail(e))); });
-assert.equal(api.activeMeeting!.participants.length + 1, 100); ok('simultaneous invites still stop at 100');
+
+// ---- Host leaving ends the meeting on the server ----
+r = await run(() => api.startInstantMeeting(undefined, undefined, 'Short'));
+const sid = api.serverSession!.id;
+await run(async () => { await api.leaveMeeting(); await new Promise((res) => setTimeout(res, 450)); });
+const after = await (request(app) as any).get(`/api/meetings/sessions/${sid}`).set('X-Dev-User-Id', 'olivia');
+assert.equal(after.body.session.status, 'ended'); assert.equal(api.activeMeeting, null);
+ok('when the host leaves (no co-host), the meeting ends on the server too');
+
+// ---- No server ----
+serverDown = true;
+setMeetingPreviewAllowedForTests(false);
+r = await run(() => api.startInstantMeeting(undefined, undefined, 'Offline'));
+assert.equal(r.success, false); assert.match(r.message!, /Couldn't reach the server/); assert.equal(api.activeMeeting, null);
+ok('production: without the server a meeting does not start (limits can\'t be bypassed)');
+setMeetingPreviewAllowedForTests(true);
+r = await run(() => api.startInstantMeeting(undefined, undefined, 'Preview'));
+assert.ok(r.success); assert.equal(api.offlinePreview, true); assert.equal(api.meetingLimits.maxParticipants, 100);
+assert.equal(await run(() => api.startRecording()), false); assert.equal(api.planNotice?.feature, 'recording');
+ok('sandbox preview without a server: Free limits applied locally and labeled as a preview');
+serverDown = false;
 
 console.log(`\n${passed} passed (meeting session)`);
 process.exit(0);

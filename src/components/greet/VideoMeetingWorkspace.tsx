@@ -25,7 +25,10 @@ import {
 import { CRMContact } from '../../types';
 import MeetingControlBar, { EndMeetingConfirmDialog } from './MeetingControlBar';
 import { meetingPermissions, type OrgRole } from './meetingControls';
-import { gridColumns, pageOfTiles, prioritizeTiles, tilesPerPage } from '../../lib/meetingPlans';
+import { FEATURE_KEYS, MEETING_PLAN_TIERS, formatMinutes, gridColumns, pageOfTiles, prioritizeTiles, tilesPerPage } from '../../lib/meetingPlans';
+import { PlanUpgradeDialog } from '../meetings/PlanComparison';
+import type { PlanNotice } from '../../context/MeetingSessionContext';
+import type { FeatureHints } from './meetingControls';
 
 interface VideoMeetingWorkspaceProps {
   contacts?: CRMContact[];
@@ -45,7 +48,19 @@ export default function VideoMeetingWorkspace({
   const {
     activeMeeting,
     meetingLimits,
-    canChangePlan,
+    meetingFeatures,
+    meetingPlanLabel,
+    capacityState,
+    canManageMeeting,
+    offlinePreview,
+    awaitingAdmission,
+    isMeetingLocked,
+    setMeetingLocked,
+    setCoHost,
+    planNotice,
+    clearPlanNotice,
+    subscription,
+    serverSession,
     isDurationWarning,
     isDurationLimitReached,
     durationSecondsLeft,
@@ -483,7 +498,54 @@ export default function VideoMeetingWorkspace({
 
   const participantsList = activeMeeting?.participants || [];
   // Host or org OWNER/ADMIN: same rule as the control bar (see meetingControls.ts).
-  const meetingPerms = meetingPermissions({ isHost: !!activeMeeting?.isHost, orgRole });
+  const meetingPerms = meetingPermissions({ isHost: canManageMeeting || !!activeMeeting?.isHost, orgRole });
+  /** Advanced host controls (mute one person, remove, lower hands) depend on the plan. */
+  const canUseHostControls = meetingPerms.canManageParticipants && meetingFeatures.hostControls;
+
+  // ---- Plan limits: upgrade dialog, notifications ----
+  const [showPlans, setShowPlans] = useState(false);
+  const [dialogNotice, setDialogNotice] = useState<PlanNotice | null>(null);
+  const openPlans = (notice?: PlanNotice | null) => { setDialogNotice(notice ?? null); setShowPlans(true); };
+  useEffect(() => {
+    if (!planNotice) return;
+    showToast(planNotice.message, 'warning');
+    openPlans(planNotice);
+    clearPlanNotice();
+  }, [planNotice]);
+  const featureHints: FeatureHints = {};
+  for (const k of FEATURE_KEYS) {
+    if (meetingFeatures[k]) continue;
+    const plans = subscription?.plans;
+    const tier = plans ? MEETING_PLAN_TIERS.find(t => plans[t].features[k]) : undefined;
+    featureHints[k] = tier && plans ? `Included in ${plans[tier].label}` : 'Not included in this meeting\'s plan';
+  }
+  // Tell the host once per meeting as limits get close.
+  const notifiedRef = useRef<Record<string, boolean>>({});
+  useEffect(() => { notifiedRef.current = {}; }, [activeMeeting?.id]);
+  const notifyOnce = (key: string, message: string, type: 'info' | 'warning' = 'warning') => {
+    if (notifiedRef.current[key]) return;
+    notifiedRef.current[key] = true;
+    showToast(message, type);
+  };
+  useEffect(() => {
+    if (!activeMeeting || activeMeeting.status !== 'active') return;
+    if (isDurationWarning && durationSecondsLeft > 60) notifyOnce('time-warn', `${Math.ceil(durationSecondsLeft / 60)} minutes left: the ${meetingPlanLabel} plan ends meetings at ${formatMinutes(meetingLimits.maxDurationMinutes)}.`);
+    if (isDurationWarning && durationSecondsLeft <= 60) notifyOnce('time-last', 'Less than a minute left. The meeting will end for everyone and the recording will be saved.');
+  }, [isDurationWarning, durationSecondsLeft > 60, activeMeeting?.status]);
+  useEffect(() => {
+    if (!meetingPerms.canManageParticipants || !activeMeeting || activeMeeting.status !== 'active') return;
+    if (capacityState === 'near') notifyOnce('cap-near', `The room is almost full: ${participantsList.length + 1} of ${meetingLimits.maxParticipants} seats taken.`);
+    if (capacityState === 'full') notifyOnce('cap-full', `The room is full (${meetingLimits.maxParticipants}). New people can't join until someone leaves.`);
+  }, [capacityState, meetingPerms.canManageParticipants]);
+
+  // Custom branding (Enterprise)
+  const [branding, setBranding] = useState<{ displayName: string; accentColor: string } | null>(null);
+  useEffect(() => {
+    if (!meetingFeatures.customBranding || !serverSession) { setBranding(null); return; }
+    let cancelled = false;
+    fetch('/api/meetings/branding').then(r => (r.ok ? r.json() : null)).then(d => { if (!cancelled && d?.branding) setBranding(d.branding); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [meetingFeatures.customBranding, serverSession?.id]);
   const raisedHandsCount = participantsList.filter(p => p.isHandRaised).length + (isHandRaised ? 1 : 0);
   // Raised hands first (in the order they were raised), then everyone else as they joined.
   const rosterOrder = [...participantsList].sort((a, b) =>
@@ -492,9 +554,10 @@ export default function VideoMeetingWorkspace({
   const [rosterQuery, setRosterQuery] = useState('');
   // The plan's time limit ended the meeting (MeetingSessionContext): show the summary.
   const endedByTimeLimit = activeMeeting?.endedReason === 'time_limit';
+  const endedRemotely = !!activeMeeting?.endedReason;
   useEffect(() => {
-    if (endedByTimeLimit) { setShowEndConfirm(false); setShowEndMeetingSummaryModal(true); }
-  }, [endedByTimeLimit]);
+    if (endedRemotely) { setShowEndConfirm(false); setShowEndMeetingSummaryModal(true); }
+  }, [endedRemotely]);
   const rosterQ = rosterQuery.trim().toLowerCase();
   const rosterShown = rosterQ
     ? rosterOrder.filter(p => [p.name, p.email, p.company, p.role].some(v => (v || '').toLowerCase().includes(rosterQ)))
@@ -572,12 +635,12 @@ export default function VideoMeetingWorkspace({
         
         {/* Left: Brand + Meeting Room Title */}
         <div className="flex items-center gap-3 min-w-0">
-          <div className="flex items-center gap-2 px-2.5 py-1 rounded-xl bg-gradient-to-r from-indigo-900/60 to-purple-900/60 border border-indigo-500/30 shrink-0">
+          <div className="flex items-center gap-2 px-2.5 py-1 rounded-xl bg-gradient-to-r from-indigo-900/60 to-purple-900/60 border border-indigo-500/30 shrink-0" style={branding?.accentColor ? { borderColor: branding.accentColor } : undefined}>
             <span className="relative flex h-2.5 w-2.5">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
               <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
             </span>
-            <span className="text-xs font-bold text-white tracking-wide">GREET LIVE</span>
+            <span className="text-xs font-bold text-white tracking-wide">{branding?.displayName || 'GREET LIVE'}</span>
           </div>
 
           {/* Title and Room ID */}
@@ -636,6 +699,16 @@ export default function VideoMeetingWorkspace({
           </div>
         </div>
 
+        {/* Small screens: countdown and participant counter */}
+        <div className="flex lg:hidden items-center gap-1.5 shrink-0 text-[11px] font-mono" aria-label="Meeting status">
+          <span className={`px-2 py-0.5 rounded-full border ${isDurationWarning || isDurationLimitReached ? 'bg-amber-950/60 border-amber-500/50 text-amber-200' : 'bg-neutral-900 border-white/10 text-neutral-200'}`} title="Time left">
+            {formatDuration(durationSecondsLeft)} left
+          </span>
+          <span className={`px-2 py-0.5 rounded-full border ${capacityState === 'full' ? 'bg-rose-950/60 border-rose-500/50 text-rose-200' : capacityState === 'near' ? 'bg-amber-950/60 border-amber-500/50 text-amber-200' : 'bg-indigo-950/40 border-indigo-500/20 text-indigo-200'}`} title="Participants">
+            {participantsList.length + 1}/{meetingLimits.maxParticipants}
+          </span>
+        </div>
+
         {/* Center: Live Timer, Plan Tier & Group Capacity */}
         <div className="hidden lg:flex items-center gap-2.5 shrink-0">
           <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-mono font-medium transition-colors ${
@@ -645,9 +718,7 @@ export default function VideoMeetingWorkspace({
           }`}>
             <Clock className="h-3.5 w-3.5 text-indigo-400" />
             <span>{formatDuration(currentDuration)}</span>
-            {meetingLimits.maxDurationMinutes > 0 && (
-              <span className="text-neutral-400 font-mono text-[11px]">/ {meetingLimits.maxDurationMinutes}:00</span>
-            )}
+            <span className="text-neutral-400 font-mono text-[11px]">· {formatDuration(durationSecondsLeft)} left</span>
           </div>
 
           <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-950/40 border border-emerald-500/20 text-[11px] text-emerald-300 font-medium">
@@ -656,19 +727,23 @@ export default function VideoMeetingWorkspace({
           </div>
 
           {/* Group Capacity Counter */}
-          <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-indigo-950/40 border border-indigo-500/20 text-[11px] text-indigo-300 font-medium">
-            <Users className="h-3 w-3 text-indigo-400" />
-            <span>{participantsList.length + 1} / {meetingLimits.maxParticipants} Attendees</span>
+          <div className={`flex items-center gap-1 px-2.5 py-1 rounded-full border text-[11px] font-medium ${
+            capacityState === 'full' ? 'bg-rose-950/60 border-rose-500/50 text-rose-200' : capacityState === 'near' ? 'bg-amber-950/60 border-amber-500/50 text-amber-200' : 'bg-indigo-950/40 border-indigo-500/20 text-indigo-300'
+          }`} title={`${participantsList.length + 1} of ${meetingLimits.maxParticipants} seats on the ${meetingPlanLabel} plan`}>
+            <Users className="h-3 w-3" />
+            <span className="tabular-nums">{participantsList.length + 1} / {meetingLimits.maxParticipants}</span>
           </div>
 
-          {/* Meeting plan (read-only: the organization's plan, locked in when this meeting started) */}
-          <div
-            className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-neutral-900 border border-white/15 text-[11px] text-neutral-200 font-medium"
-            title={`${meetingLimits.label} plan: up to ${meetingLimits.maxParticipants} participants${meetingLimits.maxDurationMinutes ? `, ${meetingLimits.maxDurationMinutes}-minute meetings` : ', no time limit'}.${canChangePlan ? ' Change it in Settings → Organization.' : ''}`}
+          {/* Meeting plan (the organizer's plan; opens the plan comparison) */}
+          <button
+            type="button"
+            onClick={() => openPlans()}
+            className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-neutral-900 hover:bg-neutral-800 border border-white/15 text-[11px] text-neutral-200 font-medium cursor-pointer"
+            title={`${meetingPlanLabel} plan: up to ${meetingLimits.maxParticipants} people, ${formatMinutes(meetingLimits.maxDurationMinutes)}. See plans.`}
           >
             <Award className="h-3 w-3 text-amber-400" />
-            <span>{meetingLimits.label}</span>
-          </div>
+            <span>{meetingPlanLabel}</span>
+          </button>
         </div>
 
         {/* Right: Primary Navigation Controls */}
@@ -790,16 +865,46 @@ export default function VideoMeetingWorkspace({
             </div>
           )}
 
-          {/* Time-limit warning (last 5 minutes). At the limit the meeting ends for everyone (MeetingSessionContext). */}
-          {isDurationWarning && durationSecondsLeft != null && (
-            <div role="status" className="flex flex-wrap items-center gap-2 px-3.5 py-2 rounded-xl bg-amber-950/80 border border-amber-500/40 text-xs text-amber-200 shadow-md">
-              <AlertCircle className="h-4 w-4 text-amber-400 shrink-0" />
-              <span>
-                <strong className="font-mono">{formatDuration(durationSecondsLeft)}</strong> left. {meetingLimits.label} meetings end at {meetingLimits.maxDurationMinutes} minutes; the recording is saved automatically.
-                {' '}{canChangePlan
-                  ? 'For longer meetings, switch to Premium or Enterprise in Settings → Organization (applies to new meetings).'
-                  : 'Premium and Enterprise have no time limit; ask an owner or admin to change the plan.'}
+          {offlinePreview && (
+            <div role="status" className="px-3.5 py-2 rounded-xl bg-neutral-900/90 border border-white/10 text-xs text-neutral-300">
+              Preview without a server: {meetingPlanLabel} limits are applied in this browser only. In the app, the server applies your organization's plan.
+            </div>
+          )}
+
+          {/* Time limit: warning before the end (the server ends the meeting at the limit) */}
+          {isDurationWarning && (
+            <div role="status" className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2 rounded-xl bg-amber-950/80 border border-amber-500/40 text-xs text-amber-200 shadow-md">
+              <span className="flex items-center gap-2 min-w-0">
+                <AlertCircle className="h-4 w-4 text-amber-400 shrink-0" />
+                <span>
+                  <strong className="font-mono">{formatDuration(durationSecondsLeft)}</strong> left. The {meetingPlanLabel} plan ends meetings at {formatMinutes(meetingLimits.maxDurationMinutes)}; the recording is saved automatically.
+                </span>
               </span>
+              {meetingPerms.canManageParticipants && (
+                <span className="flex items-center gap-1.5 shrink-0">
+                  <button type="button" onClick={() => openPlans({ kind: 'duration', message: `Meetings on the ${meetingPlanLabel} plan end at ${formatMinutes(meetingLimits.maxDurationMinutes)}.` })} className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold cursor-pointer">See plans</button>
+                  <button type="button" onClick={() => setShowEndConfirm(true)} className="px-2.5 py-1 rounded-lg bg-neutral-900 hover:bg-neutral-800 text-neutral-200 border border-white/10 cursor-pointer">End meeting now</button>
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* Capacity (hosts) */}
+          {meetingPerms.canManageParticipants && capacityState !== 'ok' && (
+            <div role="status" className={`flex flex-wrap items-center justify-between gap-2 px-3.5 py-2 rounded-xl border text-xs shadow-md ${capacityState === 'full' ? 'bg-rose-950/80 border-rose-500/40 text-rose-200' : 'bg-amber-950/70 border-amber-500/40 text-amber-200'}`}>
+              <span className="flex items-center gap-2">
+                <Users className="h-4 w-4 shrink-0" />
+                {capacityState === 'full'
+                  ? `The room is full: ${meetingLimits.maxParticipants} of ${meetingLimits.maxParticipants} seats on the ${meetingPlanLabel} plan. New people can't join until someone leaves.`
+                  : `The room is almost full: ${participantsList.length + 1} of ${meetingLimits.maxParticipants} seats taken.`}
+              </span>
+              <button type="button" onClick={() => openPlans({ kind: 'capacity', message: `The ${meetingPlanLabel} plan allows ${meetingLimits.maxParticipants} people per meeting.` })} className="px-2.5 py-1 rounded-lg bg-neutral-900/80 hover:bg-neutral-800 border border-white/10 font-semibold cursor-pointer shrink-0">See plans</button>
+            </div>
+          )}
+
+          {awaitingAdmission && (
+            <div role="status" className="px-3.5 py-3 rounded-xl bg-indigo-950/80 border border-indigo-500/40 text-sm text-indigo-100">
+              You're in the waiting room. The host will let you in shortly.
             </div>
           )}
 
@@ -1199,7 +1304,12 @@ export default function VideoMeetingWorkspace({
               3. BOTTOM MEETING CONTROLS (primary controls + More menu; see MeetingControlBar)
               ========================================================================= */}
           <MeetingControlBar
-            isHost={!!activeMeeting?.isHost}
+            isHost={canManageMeeting || !!activeMeeting?.isHost}
+            features={meetingFeatures}
+            featureHints={featureHints}
+            isLocked={isMeetingLocked}
+            onToggleLock={async () => { const r = await setMeetingLocked(!isMeetingLocked); showToast(r.message, r.success ? 'info' : 'warning'); }}
+            onOpenUpgrade={() => openPlans()}
             orgRole={orgRole}
             isMicMuted={isMicMuted}
             isCamOff={isCamOff}
@@ -1218,9 +1328,9 @@ export default function VideoMeetingWorkspace({
             isWaitingRoomEnabled={isWaitingRoomEnabled}
             waitingCount={waitingRoom.length}
             onToggleRaiseHand={toggleRaiseHand}
-            onToggleWaitingRoom={() => {
-              setWaitingRoomEnabled(!isWaitingRoomEnabled);
-              showToast(isWaitingRoomEnabled ? 'Waiting room off: invited guests join directly.' : 'Waiting room on: you admit invited guests from Participants.', 'info');
+            onToggleWaitingRoom={async () => {
+              const r = await setWaitingRoomEnabled(!isWaitingRoomEnabled);
+              showToast(r.message, r.success ? 'info' : 'warning');
             }}
             onMuteAll={() => { muteAllParticipants(); showToast('Everyone else is muted. They can unmute themselves.', 'info'); }}
             onLowerAllHands={() => { lowerAllHands(); showToast('All hands lowered.', 'info'); }}
@@ -1624,7 +1734,7 @@ export default function VideoMeetingWorkspace({
                         {waitingRoom.length > 1 && (
                           <button
                             type="button"
-                            onClick={() => { const r = admitAllWaiting(); showToast(r.message, r.success ? 'success' : 'warning'); }}
+                            onClick={async () => { const r = await admitAllWaiting(); showToast(r.message, r.success ? 'success' : 'warning'); }}
                             className="px-2 py-0.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold cursor-pointer"
                           >
                             Admit all
@@ -1642,7 +1752,7 @@ export default function VideoMeetingWorkspace({
                           <div className="flex items-center gap-1 shrink-0">
                             <button
                               type="button"
-                              onClick={() => { const r = admitParticipant(w.id); showToast(r.message, r.success ? 'success' : 'warning'); }}
+                              onClick={async () => { const r = await admitParticipant(w.id); showToast(r.message, r.success ? 'success' : 'warning'); }}
                               className="px-2 py-1 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold cursor-pointer"
                             >
                               Admit
@@ -1719,7 +1829,7 @@ export default function VideoMeetingWorkspace({
 
                         <div className="flex items-center gap-1.5">
                           {p.isHandRaised && (
-                            meetingPerms.canManageParticipants ? (
+                            canUseHostControls ? (
                               <button type="button" onClick={() => lowerParticipantHand(p.id)} title={`Lower ${p.name}'s hand`} aria-label={`Lower ${p.name}'s hand`} className="text-sm leading-none cursor-pointer">✋</button>
                             ) : (
                               <span role="img" aria-label="Hand raised" title="Hand raised" className="text-sm leading-none">✋</span>
@@ -1729,7 +1839,7 @@ export default function VideoMeetingWorkspace({
                             <span className="p-1 rounded bg-rose-950/80 text-rose-400" title="Muted">
                               <MicOff className="h-3 w-3" />
                             </span>
-                          ) : meetingPerms.canManageParticipants ? (
+                          ) : canUseHostControls ? (
                             <button
                               type="button"
                               onClick={() => muteParticipant(p.id)}
@@ -1744,12 +1854,22 @@ export default function VideoMeetingWorkspace({
                               <Mic className="h-3 w-3" />
                             </span>
                           )}
-                          {meetingPerms.canManageParticipants && (
+                          {meetingPerms.canManageParticipants && meetingFeatures.coHosts && serverSession && p.serverRole && (
+                            <button
+                              type="button"
+                              onClick={async () => { const r = await setCoHost(p.id, p.serverRole !== 'cohost'); showToast(r.message, r.success ? 'info' : 'warning'); }}
+                              className={`px-1.5 py-0.5 rounded text-[10px] font-semibold cursor-pointer border ${p.serverRole === 'cohost' ? 'bg-indigo-600/30 border-indigo-500/50 text-indigo-200' : 'bg-neutral-900 border-white/10 text-neutral-300 hover:text-white'}`}
+                              title={p.serverRole === 'cohost' ? `Remove ${p.name} as co-host` : `Make ${p.name} a co-host`}
+                            >
+                              {p.serverRole === 'cohost' ? 'Co-host' : 'Make co-host'}
+                            </button>
+                          )}
+                          {canUseHostControls && (
                             confirmRemoveId === p.id ? (
                               <span className="flex items-center gap-1">
                                 <button
                                   type="button"
-                                  onClick={() => { removeParticipant(p.id); setConfirmRemoveId(null); showToast(`${p.name} was removed from the meeting.`, 'info'); }}
+                                  onClick={async () => { setConfirmRemoveId(null); const r = await removeParticipant(p.id); showToast(r.message, r.success ? 'info' : 'warning'); }}
                                   className="px-1.5 py-0.5 rounded bg-rose-600 hover:bg-rose-500 text-white text-[10px] font-bold cursor-pointer"
                                 >
                                   Remove
@@ -2130,7 +2250,7 @@ export default function VideoMeetingWorkspace({
               <div className="flex items-center justify-between text-xs">
                 <span className="text-neutral-300 font-medium flex items-center gap-1.5">
                   <Users className="h-3.5 w-3.5 text-indigo-400" />
-                  <span>Room capacity ({meetingLimits.label})</span>
+                  <span>Room capacity ({meetingPlanLabel})</span>
                 </span>
                 <span className="font-mono font-bold text-white text-[11px]">
                   {participantsList.length + 1} / {meetingLimits.maxParticipants}
@@ -2140,15 +2260,14 @@ export default function VideoMeetingWorkspace({
               <div className="w-full h-1.5 rounded-full bg-neutral-800 overflow-hidden" role="progressbar" aria-label="Room capacity" aria-valuemin={0} aria-valuemax={meetingLimits.maxParticipants} aria-valuenow={participantsList.length + 1}>
                 <div
                   className={`h-full rounded-full transition-all duration-300 ${
-                    (participantsList.length + 1) >= meetingLimits.maxParticipants ? 'bg-rose-500' : (participantsList.length + 1) >= meetingLimits.maxParticipants * 0.9 ? 'bg-amber-500' : 'bg-indigo-500'
+                    capacityState === 'full' ? 'bg-rose-500' : capacityState === 'near' ? 'bg-amber-500' : 'bg-indigo-500'
                   }`}
                   style={{ width: `${Math.min(100, ((participantsList.length + 1) / meetingLimits.maxParticipants) * 100)}%` }}
                 />
               </div>
               <p className="text-[11px] text-neutral-400">
-                {meetingLimits.maxDurationMinutes ? `Meetings on this plan end at ${meetingLimits.maxDurationMinutes} minutes. ` : 'No time limit. '}
-                Standard: 100 people · 60 min. Premium: 250. Enterprise: 500.
-                {canChangePlan ? ' Change the plan in Settings → Organization.' : ''}
+                The {meetingPlanLabel} plan allows {meetingLimits.maxParticipants} people and meetings up to {formatMinutes(meetingLimits.maxDurationMinutes)}.{' '}
+                <button type="button" onClick={() => openPlans()} className="underline underline-offset-2 text-indigo-300 hover:text-white cursor-pointer">See plans</button>
               </p>
             </div>
 
@@ -2623,7 +2742,7 @@ export default function VideoMeetingWorkspace({
                   <CheckCircle2 className="h-6 w-6 text-emerald-400" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-white">{endedByTimeLimit ? `Meeting ended at the ${meetingLimits.maxDurationMinutes}-minute limit` : 'Meeting Concluded & Archived'}</h3>
+                  <h3 className="text-base font-bold text-white">{endedByTimeLimit ? `Meeting ended at the ${formatMinutes(meetingLimits.maxDurationMinutes)} limit of the ${meetingPlanLabel} plan` : activeMeeting?.endedReason === 'admin' ? 'An administrator ended this meeting' : activeMeeting?.endedReason === 'host' ? 'The host ended the meeting' : 'Meeting Concluded & Archived'}</h3>
                   <p className="text-xs text-neutral-400">Duration: {formatDuration(currentDuration)} • Room ID: {activeMeeting?.roomId}</p>
                 </div>
               </div>
@@ -3111,6 +3230,8 @@ export default function VideoMeetingWorkspace({
           </div>
         </div>
       )}
+
+      <PlanUpgradeDialog open={showPlans} notice={dialogNotice} onClose={() => { setShowPlans(false); setDialogNotice(null); }} />
 
       <EndMeetingConfirmDialog
         open={showEndConfirm}

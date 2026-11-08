@@ -8,6 +8,7 @@ import OrganizationSettings from './OrganizationSettings';
 import ConcurrentSessionsManager from './ConcurrentSessionsManager';
 import MurmuraBillingPage from './settings/MurmuraBillingPage';
 import { UnifiedSocketInspector } from './UnifiedSocketInspector';
+import MeetingAdminPanel, { usePlatformAdmin } from './meetings/MeetingAdminPanel';
 import {
   User,
   Building2,
@@ -62,6 +63,7 @@ export type SettingsTab =
   | 'integrations'
   | 'roles-rbac'
   | 'social-db'
+  | 'plan-admin'
   | 'general';
 
 interface SettingsViewProps {
@@ -247,6 +249,8 @@ export default function SettingsView({ defaultTab = 'account' }: SettingsViewPro
     showSuccess('Workspace settings saved.');
   };
 
+  const isPlatformAdmin = usePlatformAdmin();
+
   // Navigation tabs definition
   const TABS = [
     { id: 'account' as SettingsTab, label: 'Account Settings', icon: User },
@@ -259,6 +263,8 @@ export default function SettingsView({ defaultTab = 'account' }: SettingsViewPro
     { id: 'realtime-sync' as SettingsTab, label: 'Real-Time Sync', icon: Wifi },
     { id: 'integrations' as SettingsTab, label: 'Integrations', icon: Layers },
     { id: 'social-db' as SettingsTab, label: 'Social DB Explorer', icon: Database },
+    // Platform administrators only (PLATFORM_ADMIN_USER_IDS); the server enforces it too.
+    ...(isPlatformAdmin ? [{ id: 'plan-admin' as SettingsTab, label: 'Plan Administration', icon: Sliders }] : []),
   ];
 
   return (
@@ -1210,6 +1216,8 @@ export default function SettingsView({ defaultTab = 'account' }: SettingsViewPro
       )}
 
       {/* TAB 10: Social Database Explorer */}
+      {activeTab === 'plan-admin' && isPlatformAdmin && <MeetingAdminPanel />}
+
       {activeTab === 'social-db' && (
         <div className="space-y-6">
           <div className="rounded-2xl border border-white/5 bg-neutral-900/40 p-5 backdrop-blur-md space-y-4">

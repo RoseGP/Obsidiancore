@@ -251,7 +251,8 @@ export default function QuickActionModal({
         status: 'upcoming'
       };
 
-      // Also call meetings API if guest email or location is given
+      // Schedule through the meetings API: the server checks the organizer's plan (duration, participants).
+      // If it refuses, show why and don't add the event.
       try {
         await axios.post('/api/meetings/create', {
           title: eventTitle.trim(),
@@ -259,12 +260,13 @@ export default function QuickActionModal({
           time: eventTime,
           duration: Number(eventDuration) || 30,
           locations: [eventLocation.trim() || 'Live Call Canvas'],
-          guests: eventContact.includes('@') ? [eventContact.trim()] : ['team@omnichannel.local'],
+          guests: eventContact.includes('@') ? [eventContact.trim()] : [],
           additionalNotes: eventNotes.trim()
         });
-      } catch (apiErr) {
-        // Fallback gracefully to frontend event sync
-        console.warn('[QuickActionModal Meetings API Warning]', apiErr);
+      } catch (apiErr: any) {
+        const data = apiErr?.response?.data;
+        const hint = data?.upgradeLabel ? ` ${data.upgradeLabel} allows it.` : '';
+        throw new Error(data?.error ? `${data.error}${hint}` : "Couldn't reach the server. The event wasn't scheduled.");
       }
 
       onEventCreated?.(newEvent);
