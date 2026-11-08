@@ -21,7 +21,9 @@
     "test:meeting-controls": "npx tsx src/components/greet/__tests__/meetingControls.test.tsx",
     "test:assistant": "npx tsx src/services/__tests__/assistant.test.ts",
     "test:ai": "npx tsx src/services/ai/__tests__/aiService.test.ts",
-    "test:embed": "npx tsx src/routes/__tests__/embedEvents.test.ts"
+    "test:embed": "npx tsx src/routes/__tests__/embedEvents.test.ts",
+    "key:generate": "node scripts/generate-api-key.mjs",
+    "test:api-key": "npx tsx src/server/__tests__/apiKeyAuth.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.132.1",

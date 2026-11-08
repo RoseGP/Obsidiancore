@@ -9,3 +9,7 @@ coverage/
 
 # Billing data (per-business JSON store)
 data/billing/
+
+# Local secrets for wrangler dev / Firebase emulator
+.dev.vars
+functions/.secret.local
