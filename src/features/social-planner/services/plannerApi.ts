@@ -12,7 +12,7 @@ export interface PlannerApi {
   listPosts(range: { from: Date; to: Date }): Promise<PlannerPost[]>;
   listAccounts(): Promise<ConnectedAccount[]>;
   /** One post per selected platform may be created. */
-  createPost(input: { content: string; platforms: PlatformId[]; extraPlatforms?: string[]; scheduledAt: string; mediaUrls: string[]; intent: 'draft' | 'scheduled' }): Promise<PlannerPost | PlannerPost[]>;
+  createPost(input: { content: string; platforms: PlatformId[]; extraPlatforms?: string[]; scheduledAt: string; mediaUrls: string[]; intent: 'draft' | 'scheduled' | 'now' }): Promise<PlannerPost | PlannerPost[]>;
   updatePost(id: string, patch: Partial<{ content: string; platforms: string[]; scheduledAt: string; mediaUrls: string[]; intent: 'draft' | 'scheduled' }>): Promise<PlannerPost>;
   deletePost(id: string): Promise<void>;
   retryPost(id: string): Promise<void>;
@@ -55,7 +55,7 @@ export function createPlannerApi(getHeaders: () => Promise<Record<string, string
     async createPost(input) {
       const body = await call<{ posts: any[] }>('/api/posts', {
         method: 'POST',
-        body: JSON.stringify({ content: input.content, scheduledAt: input.scheduledAt, mode: input.intent === 'draft' ? 'draft' : 'schedule', platforms: input.platforms, mediaUrls: input.mediaUrls }),
+        body: JSON.stringify({ content: input.content, scheduledAt: input.scheduledAt, mode: input.intent === 'draft' ? 'draft' : input.intent === 'now' ? 'now' : 'schedule', platforms: input.platforms, mediaUrls: input.mediaUrls }),
       });
       const list = (body.posts ?? []).map(one);
       if (!list.length) throw new PlannerApiError('The post was sent but couldn’t be read back. Refresh the calendar.', 502);

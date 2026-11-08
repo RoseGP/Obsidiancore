@@ -23,9 +23,11 @@ export default function SocialPlannerTab() {
   const userId = db?.userId || 'demo-user-123'; // same fallback the posts API uses
 
   // The server verifies the caller on every /api/accounts, /api/posts and /api/analytics call.
-  const getAuthHeaders = useMemo(() => () => getApiAuthHeaders(userId), [userId]);
+  // Same identity as every other request in the app: the signed-in Firebase user (or, in development,
+  // the sandbox identity). A planner-only fallback id would split uploads and posts between two users.
+  const getAuthHeaders = useMemo(() => () => getApiAuthHeaders(db?.userId), [db?.userId]);
   const accountsApi = useMemo(() => createAccountsApi(getAuthHeaders), [getAuthHeaders]);
-  installApiAuthInterceptor(() => userId); // older panels under Advanced tools use axios
+  installApiAuthInterceptor(() => db?.userId); // older panels under Advanced tools use axios
 
   const returningFromAuthorization = new URLSearchParams(window.location.search).has('sa');
 

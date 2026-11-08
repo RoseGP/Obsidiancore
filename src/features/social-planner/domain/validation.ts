@@ -5,7 +5,8 @@ export interface PostDraft {
   platforms: PlatformId[];
   scheduledAt: string | null; // ISO
   mediaUrls: string[];
-  intent: 'draft' | 'scheduled';
+  /** 'now' publishes immediately: no date needed, but every platform rule applies. */
+  intent: 'draft' | 'scheduled' | 'now';
 }
 
 export interface ValidationResult {
@@ -22,7 +23,7 @@ const URL_RE = /^https?:\/\/[^\s/$.?#].[^\s]*$/i;
 export function validatePost(d: PostDraft, ctx: { now: Date; accounts: ConnectedAccount[] | null }): ValidationResult {
   const errors: ValidationResult['errors'] = {};
   const warnings: string[] = [];
-  const strict = d.intent === 'scheduled';
+  const strict = d.intent === 'scheduled' || d.intent === 'now';
   const text = d.content.trim();
 
   if (!text) errors.content = 'Write something to post.';
@@ -36,7 +37,8 @@ export function validatePost(d: PostDraft, ctx: { now: Date; accounts: Connected
 
   if (d.platforms.length === 0) errors.platforms = 'Choose at least one platform.';
 
-  if (!d.scheduledAt) errors.scheduledAt = 'Choose a date and time.';
+  if (d.intent === 'now') { /* publishes immediately: the date field is ignored */ }
+  else if (!d.scheduledAt) errors.scheduledAt = 'Choose a date and time.';
   else if (strict && new Date(d.scheduledAt).getTime() < ctx.now.getTime() + 60_000) {
     errors.scheduledAt = 'Pick a time in the future to schedule.';
   }

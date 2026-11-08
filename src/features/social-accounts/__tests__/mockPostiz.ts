@@ -18,10 +18,12 @@ export interface MockState {
   lastEnterprisePayload?: any;
   posts: { id: string; group: string; integrationId: string; content: string; publishDate: string; state: 'QUEUE' | 'PUBLISHED' | 'ERROR' | 'DRAFT'; error?: string; image: any[] }[];
   lastPostBody?: any;
+  uploadFromUrlCalls: number;
+  uploadCalls: number;
 }
 
 export async function startMockPostiz(opts: { clientId: string; clientSecret: string; appRedirect: string; apiKey: string; jwtSecret: string }) {
-  const s: MockState = { integrations: [], tokens: new Set(), codes: new Map(), apiKey: opts.apiKey, jwtSecret: opts.jwtSecret, pending: new Map(), deleted: [], posts: [] };
+  const s: MockState = { integrations: [], tokens: new Set(), codes: new Map(), apiKey: opts.apiKey, jwtSecret: opts.jwtSecret, pending: new Map(), deleted: [], posts: [], uploadFromUrlCalls: 0, uploadCalls: 0 };
   const app = express();
   app.use(express.json());
   let base = '';
@@ -107,10 +109,12 @@ export async function startMockPostiz(opts: { clientId: string; clientSecret: st
   app.post('/public/v1/upload-from-url', (req, res) => {
     if (!authed(req)) return res.status(401).json({ msg: 'Invalid API key' });
     if (!/^https:\/\//.test(String(req.body?.url))) return res.status(400).json({ msg: 'Invalid URL' });
+    s.uploadFromUrlCalls++;
     res.json({ id: 'media_' + crypto.randomBytes(3).toString('hex'), path: 'https://uploads.example/' + encodeURIComponent(req.body.url.split('/').pop()) });
   });
   app.post('/public/v1/upload', (req, res) => {
     if (!authed(req)) return res.status(401).json({ msg: 'Invalid API key' });
+    s.uploadCalls++;
     res.json({ id: 'media_' + crypto.randomBytes(3).toString('hex'), path: 'https://uploads.example/uploaded_media.png' });
   });
 

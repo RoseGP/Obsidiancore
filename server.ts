@@ -30,7 +30,7 @@ import paymentWebhooksRouter from './src/routes/paymentWebhooks';
 import paymentsRouter, { invoicesRouter } from './src/routes/payments';
 import socialPlannerApiRouter from './src/routes/socialPlannerApi';
 import billingRouter from './src/routes/billing';
-import accountsApiRouter from './src/routes/accountsApi';
+import accountsApiRouter, { listIntegrations } from './src/routes/accountsApi';
 import postsApiRouter from './src/routes/postsApi';
 import analyticsApiRouter from './src/routes/analyticsApi';
 import localSeoApiRouter from './src/routes/localSeoApi';
@@ -101,6 +101,8 @@ app.use('/integrations/postiz', guard(PUBLIC.postiz), postizRouter);
 app.use('/api/social-posts', guard(PUBLIC.none), socialPostsRouter);
 app.use('/api/social-auth', guard(PUBLIC.socialAuth), socialAuthRouter);
 app.use('/api/social-connection', guard(PUBLIC.socialConnection), socialConnectionRouter);
+// Channel list for pickers (same data as /api/accounts/integrations), before the legacy /api/social router.
+app.get('/api/social/integrations', requireUser, listIntegrations as any);
 app.use('/api/social', guard(PUBLIC.socialConnection), socialConnectionRouter);
 app.use('/api/social-planner', guard(PUBLIC.none), socialPlannerApiRouter);
 app.use('/api/auth', guard(PUBLIC.auth), authRouter);

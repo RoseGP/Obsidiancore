@@ -75,23 +75,28 @@ router.get('/', async (req: AuthedRequest, res) => {
   try {
     const o = await accounts.overview(uid(req));
     res.json({ ...o, accounts: o.platforms.flatMap((c) => c.accounts.map((a) => ({ ...a, id: a.connectionId, platform: c.platform, status: c.status }))) });
-  } catch (err: any) {
-    if (err?.code === 7 || err?.message?.includes('PERMISSION_DENIED') || err?.message?.includes('permission')) {
-      log.warn('list accounts encountered PERMISSION_DENIED; responding with fallback overview', err.message);
-      try {
-        const { createFileStore } = await import('../features/social-accounts/server/store');
-        const { createAccountsService } = await import('../features/social-accounts/server/service');
-        const fileStore = createFileStore(config.dataDir);
-        const fallbackAccounts = createAccountsService(config, fileStore, gateway);
-        const o = await fallbackAccounts.overview(uid(req));
-        return res.json({ ...o, accounts: o.platforms.flatMap((c) => c.accounts.map((a) => ({ ...a, id: a.connectionId, platform: c.platform, status: c.status }))) });
-      } catch (fallbackErr) {
-        log.error('list accounts fallback failed', fallbackErr);
-      }
-    }
+  } catch (err) {
     sendError(res, err, 'list accounts');
   }
 });
+
+/**
+ * GET /api/accounts/integrations (also GET /api/social/integrations): the user's connected channels,
+ * in a flat shape for channel pickers. Only channels this user owns; no tokens or Postiz ids.
+ */
+export async function listIntegrations(req: AuthedRequest, res: Response) {
+  try {
+    const o = await accounts.overview(uid(req));
+    const integrations = o.platforms.flatMap((c) => c.accounts.map((a) => ({
+      id: a.connectionId, platform: c.platform, label: c.label, name: a.name, handle: a.handle ?? null,
+      picture: a.pictureUrl ?? null, status: c.status, method: c.method, connectedAt: a.connectedAt,
+    })));
+    res.json({ integrations, postiz: { mode: config.postizMode, configured: config.postizMode !== 'none' } });
+  } catch (err) {
+    sendError(res, err, 'list integrations');
+  }
+}
+router.get('/integrations', listIntegrations);
 
 router.post('/connect', connectLimit, async (req: AuthedRequest, res) => {
   try {

@@ -61,6 +61,8 @@ export interface PostIndexEntry {
 export interface UserDoc {
   userId: string;
   posts?: Record<string, PostIndexEntry>;
+  /** Media this user uploaded to the workspace, keyed by its Postiz path (reused instead of re-uploading). */
+  uploads?: Record<string, { id: string; path: string; at: string }>;
   /** Encrypted Postiz access token (pos_…) for this user's workspace. */
   postizWorkspace?: { token: Sealed; name?: string; authorizedAt: string; revokedAt?: string };
   connections: StoredConnection[];
