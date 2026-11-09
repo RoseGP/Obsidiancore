@@ -61,6 +61,10 @@ export default function VideoMeetingWorkspace({
     clearPlanNotice,
     subscription,
     serverSession,
+    mediaStatus,
+    mediaMessage,
+    remoteMedia,
+    localUserName,
     isDurationWarning,
     isDurationLimitReached,
     durationSecondsLeft,
@@ -217,7 +221,7 @@ export default function VideoMeetingWorkspace({
   const [scheduleFollowupTitle, setScheduleFollowupTitle] = useState('Executive Follow-Up Session');
   const [hostBio, setHostBio] = useState('Specializes in high-trust CRM automation, low-latency audio tunnels, and multi-channel pipeline security.');
   const [isEditingHostBio, setIsEditingHostBio] = useState(false);
-  const [hostTitle, setHostTitle] = useState('Lead Enterprise Partner');
+  const [hostTitle, setHostTitle] = useState('');
 
   // Post-Meeting Summary state
   const [summaryActiveTab, setSummaryActiveTab] = useState<'watch' | 'transcript' | 'details'>('watch');
@@ -498,6 +502,7 @@ export default function VideoMeetingWorkspace({
 
   const participantsList = activeMeeting?.participants || [];
   // Host or org OWNER/ADMIN: same rule as the control bar (see meetingControls.ts).
+  const localInitials = localUserName.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]!.toUpperCase()).join('') || 'ME';
   const meetingPerms = meetingPermissions({ isHost: canManageMeeting || !!activeMeeting?.isHost, orgRole });
   /** Advanced host controls (mute one person, remove, lower hands) depend on the plan. */
   const canUseHostControls = meetingPerms.canManageParticipants && meetingFeatures.hostControls;
@@ -601,7 +606,7 @@ export default function VideoMeetingWorkspace({
         body: JSON.stringify({
           title: activeMeeting.title,
           durationSeconds: currentDuration,
-          participants: ['Camelia Rose (Host)', ...participantsList.map(p => p.name)],
+          participants: [`${localUserName} (Host)`, ...participantsList.map(p => p.name)],
           notes: activeMeeting.notes || '',
           transcript: liveTranscript.map(t => ({ speakerName: t.speakerName, text: t.text })),
           tasks: activeMeeting.tasks.map(t => ({ title: t.title, contactName: t.contactName })),
@@ -721,9 +726,17 @@ export default function VideoMeetingWorkspace({
             <span className="text-neutral-400 font-mono text-[11px]">· {formatDuration(durationSecondsLeft)} left</span>
           </div>
 
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-950/40 border border-emerald-500/20 text-[11px] text-emerald-300 font-medium">
-            <Shield className="h-3 w-3 text-emerald-400" />
-            <span>Encrypted WebRTC</span>
+          {/* Real audio/video status (LiveKit): never claims a connection that isn't there */}
+          <div
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-medium ${
+              mediaStatus === 'connected' ? 'bg-emerald-950/40 border-emerald-500/20 text-emerald-300'
+                : mediaStatus === 'connecting' || mediaStatus === 'reconnecting' ? 'bg-amber-950/40 border-amber-500/30 text-amber-200'
+                : 'bg-neutral-900 border-white/10 text-neutral-400'
+            }`}
+            title={mediaStatus === 'connected' ? 'Audio and video are connected (encrypted in transit).' : mediaMessage || 'Audio and video between people are not connected.'}
+          >
+            <Shield className="h-3 w-3" />
+            <span>{mediaStatus === 'connected' ? 'Video connected' : mediaStatus === 'connecting' ? 'Connecting video…' : mediaStatus === 'reconnecting' ? 'Reconnecting…' : 'Video not connected'}</span>
           </div>
 
           {/* Group Capacity Counter */}
@@ -871,6 +884,14 @@ export default function VideoMeetingWorkspace({
             </div>
           )}
 
+          {(mediaStatus === 'not_configured' || mediaStatus === 'failed') && (
+            <div role="status" className="px-3.5 py-2 rounded-xl bg-neutral-900/90 border border-amber-500/30 text-xs text-amber-100">
+              {mediaStatus === 'not_configured'
+                ? 'Audio and video between people aren\'t connected on this server yet. You can run the meeting (roster, chat on this screen, recording, notes), but others won\'t see or hear you until an administrator sets up LiveKit.'
+                : (mediaMessage || 'Audio and video couldn\'t connect.') + ' Check your connection; the meeting itself is still running.'}
+            </div>
+          )}
+
           {/* Time limit: warning before the end (the server ends the meeting at the limit) */}
           {isDurationWarning && (
             <div role="status" className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2 rounded-xl bg-amber-950/80 border border-amber-500/40 text-xs text-amber-200 shadow-md">
@@ -945,7 +966,7 @@ export default function VideoMeetingWorkspace({
                     ) : (
                       <div className="w-full h-full flex items-center justify-center bg-gradient-to-tr from-neutral-900 to-indigo-950">
                         <div className="h-10 w-10 rounded-full bg-indigo-600 flex items-center justify-center font-bold text-white text-sm">
-                          CR
+                          {localInitials}
                         </div>
                       </div>
                     )}
@@ -1027,7 +1048,7 @@ export default function VideoMeetingWorkspace({
                         />
                       ) : (
                         <div className="h-24 w-24 rounded-full bg-indigo-600 flex items-center justify-center font-bold text-white text-3xl">
-                          CR
+                          {localInitials}
                         </div>
                       )}
                       {/* Small Muted Icon Overlay in spotlight */}
@@ -1127,7 +1148,7 @@ export default function VideoMeetingWorkspace({
                   ) : (
                     <div className="flex flex-col items-center gap-3">
                       <div className="h-20 w-20 rounded-full bg-gradient-to-tr from-indigo-600 via-indigo-700 to-purple-800 flex items-center justify-center font-bold text-white text-2xl shadow-xl shadow-indigo-950/50">
-                        CR
+                        {localInitials}
                       </div>
                       <span className="text-xs font-bold text-neutral-300">Camera Off</span>
                     </div>
@@ -1166,7 +1187,7 @@ export default function VideoMeetingWorkspace({
 
                   {/* Local User Badge */}
                   <div className="absolute bottom-3 left-3 flex items-center gap-2 px-2.5 py-1 rounded-xl bg-black/75 backdrop-blur-md border border-white/10">
-                    <span className="text-xs font-bold text-white">Camelia Rose (You)</span>
+                    <span className="text-xs font-bold text-white">{localUserName} (You)</span>
                     {isHandRaised && <span role="img" aria-label="Hand raised" title="Hand raised" className="text-sm leading-none">✋</span>}
                     <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-indigo-600 text-white">Host</span>
                   </div>
@@ -1195,8 +1216,11 @@ export default function VideoMeetingWorkspace({
                       p.isSpeaking ? 'border-emerald-500/60 shadow-[0_0_20px_rgba(16,185,129,0.15)]' : 'border-white/10'
                     }`}
                   >
-                    {/* Participant tile (avatar; no remote video until a media provider is connected) */}
-                    <div className={`flex flex-col items-center text-center ${compactTiles ? 'gap-1 p-1' : 'gap-2.5 p-4'}`}>
+                    {/* Live video (or shared screen) when connected; otherwise the avatar and connection state */}
+                    {(remoteMedia[p.id]?.screen || remoteMedia[p.id]?.video) && (
+                      <RemoteVideo track={(remoteMedia[p.id]!.screen || remoteMedia[p.id]!.video)!} fit={remoteMedia[p.id]!.screen ? 'contain' : 'cover'} />
+                    )}
+                    <div className={`flex flex-col items-center text-center ${compactTiles ? 'gap-1 p-1' : 'gap-2.5 p-4'} ${remoteMedia[p.id]?.video || remoteMedia[p.id]?.screen ? 'hidden' : ''}`}>
                       <div className="relative">
                         <div className={`${compactTiles ? 'h-10 w-10 text-sm' : 'h-20 w-20 text-2xl'} rounded-full bg-gradient-to-tr ${p.avatarColor || 'from-indigo-600 to-purple-800'} flex items-center justify-center font-bold text-white shadow-xl shadow-black/50`}>
                           {p.avatar}
@@ -1209,8 +1233,9 @@ export default function VideoMeetingWorkspace({
                       {!compactTiles && (
                       <div>
                         <h4 className="text-sm font-bold text-white">{p.name}</h4>
-                        <p className="text-xs text-neutral-400">{p.title}</p>
-                        <p className="text-[11px] text-indigo-400 font-medium">{p.company}</p>
+                        <p className="text-xs text-neutral-400">
+                          {remoteMedia[p.id] ? 'Camera off' : mediaStatus === 'connected' ? 'Not connected yet' : 'Invited'}
+                        </p>
                       </div>
                       )}
 
@@ -1452,6 +1477,11 @@ export default function VideoMeetingWorkspace({
                   ------------------------------------------------------------- */}
               {activeSidebarTab === 'chat' && (
                 <div className="flex-1 flex flex-col h-full overflow-hidden">
+                  {mediaStatus !== 'connected' && (
+                    <p className="px-3 py-2 text-[11px] text-amber-200 bg-amber-950/40 border-b border-amber-500/20">
+                      Messages reach other people once audio and video are connected. Until then they stay on this screen.
+                    </p>
+                  )}
                   
                   {/* Destination Filter (Everyone vs 1:1 Private) */}
                   <div className="p-3 border-b border-white/10 bg-neutral-900/60 flex items-center justify-between gap-2">
@@ -1584,17 +1614,14 @@ export default function VideoMeetingWorkspace({
                     </div>
                     <div className="flex items-center gap-3">
                       <div className="h-11 w-11 rounded-full bg-gradient-to-tr from-indigo-600 to-purple-700 flex items-center justify-center font-bold text-white text-base">
-                        CR
+                        {localInitials}
                       </div>
                       <div>
-                        <h4 className="text-xs font-bold text-white">Camelia Rose</h4>
-                        <p className="text-[11px] text-neutral-400">Lead Enterprise Partner</p>
-                        <p className="text-[10px] text-indigo-400">Obsidian Sovereign Cloud CRM</p>
+                        <h4 className="text-xs font-bold text-white">{localUserName}</h4>
+                        {hostTitle && <p className="text-[11px] text-neutral-400">{hostTitle}</p>}
                       </div>
                     </div>
-                    <p className="text-[11px] text-neutral-300 pt-1 leading-relaxed">
-                      Specializes in high-trust CRM automation, low-latency audio tunnels, and multi-channel pipeline security.
-                    </p>
+
                   </div>
 
                   {/* Participant Introduction Cards */}
@@ -1795,10 +1822,10 @@ export default function VideoMeetingWorkspace({
                     <div className="obsidian p-3 rounded-xl bg-[var(--obsidian-1)] border border-white/10 flex items-center justify-between">
                       <div className="flex items-center gap-2.5">
                         <div className="h-9 w-9 rounded-full bg-indigo-600 flex items-center justify-center font-bold text-white text-xs">
-                          CR
+                          {localInitials}
                         </div>
                         <div>
-                          <p className="text-xs font-bold text-white">Camelia Rose (You)</p>
+                          <p className="text-xs font-bold text-white">{localUserName} (You)</p>
                           <p className="text-[10px] text-indigo-400">Meeting Host</p>
                         </div>
                       </div>
@@ -3170,7 +3197,7 @@ export default function VideoMeetingWorkspace({
                 <div className="p-3 rounded-xl bg-neutral-900 border border-white/5 space-y-1">
                   <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Attendance Roster</span>
                   <p className="text-xs text-neutral-200">
-                    {['Camelia Rose (Host)', ...participantsList.map(p => p.name)].join(', ')}
+                    {[`${localUserName} (Host)`, ...participantsList.map(p => p.name)].join(', ')}
                   </p>
                 </div>
 
@@ -3282,4 +3309,17 @@ export default function VideoMeetingWorkspace({
 
     </div>
   );
+}
+
+/** Plays one remote video track (LiveKit) in a tile. */
+function RemoteVideo({ track, fit }: { track: MediaStreamTrack; fit: 'cover' | 'contain' }) {
+  const ref = useRef<HTMLVideoElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.srcObject = new MediaStream([track]);
+    el.play?.().catch(() => {});
+    return () => { el.srcObject = null; };
+  }, [track]);
+  return <video ref={ref} autoPlay playsInline muted className={`absolute inset-0 w-full h-full ${fit === 'cover' ? 'object-cover' : 'object-contain bg-black'}`} />;
 }

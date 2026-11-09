@@ -28,7 +28,7 @@
     "test:google": "npx tsx src/server/__tests__/googleTokens.test.ts",
     "test:meeting-session": "npx tsx src/context/__tests__/meetingSession.test.tsx",
     "test:meeting-summary": "npx tsx src/services/__tests__/meetingSummary.test.ts",
-    "test:meeting-plans": "npx tsx src/lib/__tests__/meetingPlans.test.ts && npx tsx src/server/meetings/__tests__/subscriptions.test.ts"
+    "test:meeting-plans": "npx tsx src/lib/__tests__/meetingPlans.test.ts && npx tsx src/server/meetings/__tests__/subscriptions.test.ts && npx tsx src/server/meetings/__tests__/media.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.132.1",
@@ -60,6 +60,8 @@
     "ioredis": "^6.0.0",
     "jsonwebtoken": "^9.0.2",
     "jspdf": "^4.2.1",
+    "livekit-client": "2.22.4",
+    "livekit-server-sdk": "2.19.1",
     "lucide-react": "^0.546.0",
     "luxon": "^3.7.2",
     "mailparser": "^3.9.22",

@@ -17,7 +17,7 @@ import {
 } from '../server/meetings/plans';
 import {
   MeetingError, addParticipants, admit, attendanceReport, deny, endMeeting, getByRoom, getSessionFor, joinByRoom, leave, leaveByRoom, randomRoomCode,
-  removeParticipant, sessionView, setRecording, setRole, startSession, updateSettings, type Actor,
+  mediaTokenFor, removeParticipant, sessionView, setRecording, setRole, startSession, updateSettings, type Actor,
 } from '../server/meetings/sessions';
 import { activeMeetings, orgAnalytics } from '../server/meetings/stats';
 import { generateMeetingSummary, meetingSummaryInputSchema, MeetingSummaryError } from '../services/meetingSummary';
@@ -183,6 +183,24 @@ router.get('/rooms/:roomCode', requireTenant, requirePermission('read'), session
 router.post('/rooms/:roomCode/leave', requireTenant, requirePermission('read'), async (req, res) => {
   try { res.json({ success: true, session: view(req, await leaveByRoom(actorOf(req), req.params.roomCode)) }); }
   catch (err) { sendMeetingError(res, err, 'meetings.rooms.leave'); }
+});
+
+/**
+ * POST /api/meetings/sessions/:id/media-token and /rooms/:roomCode/media-token: LiveKit token for audio/video.
+ * Only for people the roster has let in; 503 media_not_configured when LiveKit isn't set up.
+ */
+async function sendMediaToken(req: Request, res: Response, s: Parameters<typeof mediaTokenFor>[1]) {
+  const t = await mediaTokenFor(actorOf(req), s);
+  if (!t) return res.status(503).json({ success: false, code: 'media_not_configured', error: 'Audio and video between people aren\'t connected on this server yet (LiveKit isn\'t configured).' });
+  res.json({ success: true, ...t });
+}
+router.post('/sessions/:id/media-token', requireTenant, requirePermission('read'), sessionLimiter, async (req, res) => {
+  try { await sendMediaToken(req, res, await getSessionFor(actorOf(req), assertId(req.params.id))); }
+  catch (err) { sendMeetingError(res, err, 'meetings.media'); }
+});
+router.post('/rooms/:roomCode/media-token', requireTenant, requirePermission('read'), sessionLimiter, async (req, res) => {
+  try { await sendMediaToken(req, res, await getByRoom(actorOf(req), req.params.roomCode)); }
+  catch (err) { sendMeetingError(res, err, 'meetings.rooms.media'); }
 });
 
 /** GET /api/meetings/sessions/:id/attendance: Enterprise attendance report. */

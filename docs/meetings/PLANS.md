@@ -76,9 +76,20 @@ running now (with End), and usage statistics. All `/api/admin/meetings/*` endpoi
 Earlier builds stored only `organizations/{orgId}/settings/meetings.plan`; it's still read (`standard` = Free) until
 a subscription document exists.
 
+## Audio and video (LiveKit)
+
+Set `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` (LiveKit Cloud or self-hosted). The server
+(`src/server/meetings/media.ts`) issues a token only to people the roster has let in, for that meeting's room only,
+expiring at the plan's time limit; hosts/co-hosts/org admins get room-admin rights. When a meeting ends (host,
+administrator or time limit) the server deletes the LiveKit room, disconnecting everyone; removing a participant
+removes them from the room. The browser (`src/lib/meetingMedia.ts`) publishes camera, microphone and screen,
+plays remote audio, shows remote video on the participant tiles, reports active speakers, and carries chat over
+the data channel. Without the keys, `POST …/media-token` answers 503 `media_not_configured` and the meeting says
+video isn't connected; nothing is simulated.
+
 ## Limits of the current build
 
-- Other participants' audio and video still need a media provider (e.g. LiveKit). The server enforces the roster,
-  limits and features; once a provider is connected, issue its join tokens from these sessions so it enforces the same.
+- The LiveKit browser path is covered by type checks and server tests, but needs one live check with real keys
+  (this build environment can't run a LiveKit server).
 - Recordings are made in the host's browser; "advanced recording storage" needs a storage provider and isn't built.
 - Statistics scan `meeting_usage`; past ~100k meetings, keep daily aggregates.

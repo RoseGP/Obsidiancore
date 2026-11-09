@@ -22,6 +22,7 @@ import {
   type MeetingPlanTier, type PlanFeatures, type PlanLimits,
 } from '../../lib/meetingPlans';
 import { getPlanConfigs } from './plans';
+import { closeMediaRoom, createMediaToken, removeFromMediaRoom } from './media';
 
 export class MeetingError extends Error {
   constructor(public status: number, public code: string, message: string, public extra?: Record<string, unknown>) { super(message); }
@@ -181,6 +182,7 @@ async function mutate<R>(orgId: string, id: string, fn: ((s: Session, now: numbe
     const s: Session | null = await tx.get(sessionPath(orgId, id));
     if (!s) throw new MeetingError(404, 'meeting_not_found', 'Meeting not found.');
     const now = Date.now();
+    const wasActive = s.status === 'active';
     let dirty = applyPlan(s, plan);
     dirty = settleExpiry(s, now) || dirty;
     let result: R | undefined;
@@ -195,8 +197,10 @@ async function mutate<R>(orgId: string, id: string, fn: ((s: Session, now: numbe
       }
     }
     if (dirty) { s.peakParticipants = Math.max(s.peakParticipants, inCount(s)); writeSession(tx, s); }
-    return { session: s, result, endedError };
+    return { session: s, result, endedError, justEnded: wasActive && s.status === 'ended' };
   });
+  // The meeting just ended (host, admin, time limit): disconnect everyone from the media room too.
+  if (out.justEnded) await closeMediaRoom(out.session.id);
   if (out.endedError) throw Object.assign(out.endedError, { session: out.session });
   return { session: out.session, result: out.result };
 }
@@ -343,7 +347,21 @@ export async function removeParticipant(a: Actor, id: string, pid: string) {
     if (p.role === 'host') throw new MeetingError(400, 'cannot_remove_host', 'The host can\'t be removed. End the meeting instead.');
     if (p.status === 'in') p.secondsIn += Math.max(0, Math.round((now - (p.joinedAt ?? now)) / 1000));
     p.status = 'removed'; p.leftAt = now;
-  })).session;
+    return p.id;
+  }).then(async ({ session, result }) => { if (result) await removeFromMediaRoom(session.id, result); return { session }; })).session;
+}
+
+/**
+ * A LiveKit token for the caller, only if the roster has let them in. Valid for this meeting's room only,
+ * until the meeting's time limit. null = media isn't configured on this server.
+ */
+export async function mediaTokenFor(a: Actor, s: Session) {
+  if (s.status !== 'active') throw new MeetingError(409, s.endedReason === 'time_limit' ? 'meeting_time_limit' : 'meeting_ended', 'This meeting has ended.');
+  const p = s.participants.find((x) => x.userId === a.userId);
+  if (!p || p.status === 'removed' || p.status === 'denied') throw new MeetingError(403, 'not_a_participant', 'You\'re not in this meeting.');
+  if (p.status === 'waiting') throw new MeetingError(403, 'not_admitted', 'The host hasn\'t let you in yet.');
+  if (p.status !== 'in') throw new MeetingError(403, 'not_a_participant', 'Join the meeting first.');
+  return createMediaToken({ room: s.id, identity: p.id, name: p.name, role: p.role, canManage: canManage(s, a), expiresAt: s.endsAt });
 }
 
 export async function setRole(a: Actor, id: string, pid: string, role: unknown) {

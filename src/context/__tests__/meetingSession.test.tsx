@@ -72,6 +72,18 @@ assert.ok(api.durationSecondsLeft > 3590 && api.durationSecondsLeft <= 3600); as
 assert.equal(api.activeMeeting!.tasks.length, 0); assert.doesNotMatch(api.activeMeeting!.notes, /Marcus|Sarah/);
 ok('starting a meeting creates it on the server: Free limits, countdown from the server clock, no invented notes or tasks');
 
+// ---- Nothing simulated ----
+await wait(100);
+assert.equal(api.mediaStatus, 'not_configured'); assert.match(api.mediaMessage!, /LiveKit/);
+ok('without a media server the meeting says video isn\'t connected (no simulated people)');
+const before = api.activeMeeting!.messages.length;
+await run(() => api.sendChatMessage('hello, what is our SLA?'));
+await wait(1700);
+assert.equal(api.activeMeeting!.messages.length, before + 1);
+assert.equal(api.activeMeeting!.messages.at(-1)!.isYou, true); assert.doesNotMatch(JSON.stringify(api.activeMeeting!.messages), /Marcus|Sarah|Camelia/);
+assert.equal(api.meetingHistory.length, 0);
+ok('chat gets no scripted replies; history starts empty; no invented names');
+
 // ---- Raise hand (local) ----
 await run(() => api.toggleRaiseHand()); assert.equal(api.isHandRaised, true);
 await run(() => api.lowerAllHands()); assert.equal(api.isHandRaised, false); ok('raise hand and lower all hands');

@@ -1,6 +1,9 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { DEFAULT_PLAN_CONFIGS, MEETING_PLAN_TIERS, capacityStatus, durationStatus, roomCapacity, type CapacityState, type MeetingPlanConfigs, type MeetingPlanTier, type PlanFeatures, type PlanLimits } from '../lib/meetingPlans';
 import { CRMContact, CalendarEvent } from '../types';
+import { useOptionalAuth } from './AuthContext';
+import { MeetingMedia, type ChatPacket, type MediaStatus, type RemoteMedia } from '../lib/meetingMedia';
+export type { MediaStatus, RemoteMedia } from '../lib/meetingMedia';
 
 export interface MeetingParticipant {
   id: string;
@@ -209,6 +212,14 @@ interface MeetingSessionContextType {
   /** A plan limit or missing feature the person just ran into. */
   planNotice: PlanNotice | null;
   clearPlanNotice: () => void;
+
+  // Real audio/video (LiveKit). 'not_configured' = the server has no media service: nobody is simulated.
+  mediaStatus: MediaStatus;
+  mediaMessage: string | null;
+  /** Remote people's live media by roster id. */
+  remoteMedia: Record<string, RemoteMedia>;
+  /** The signed-in person's name (shown on your own tile and in chat). */
+  localUserName: string;
   
   // Media streams & hardware controls
   localStream: MediaStream | null;
@@ -342,6 +353,47 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
   const [meetingError, setMeetingError] = useState<string | null>(null);
   const [planNotice, setPlanNotice] = useState<PlanNotice | null>(null);
   const clearMeetingError = useCallback(() => setMeetingError(null), []);
+
+  // ---- Who you are, and real audio/video ----
+  const auth = useOptionalAuth();
+  const localUserName = auth?.userProfile?.displayName?.trim() || auth?.userProfile?.email || 'You';
+  const [mediaStatus, setMediaStatus] = useState<MediaStatus>('idle');
+  const [mediaMessage, setMediaMessage] = useState<string | null>(null);
+  const [remoteMedia, setRemoteMedia] = useState<Record<string, RemoteMedia>>({});
+  const mediaRef = useRef<MeetingMedia | null>(null);
+  const mediaConnectingRef = useRef(false);
+  const getMedia = () => {
+    if (!mediaRef.current) {
+      mediaRef.current = new MeetingMedia({
+        onStatus: (status, message) => { setMediaStatus(status); setMediaMessage(message ?? null); },
+        onRemote: (remote) => {
+          setRemoteMedia(remote);
+          // Speaking / muted / camera state on the roster comes from the real media.
+          setActiveMeeting(prev => prev ? {
+            ...prev,
+            participants: prev.participants.map(p => remote[p.id]
+              ? { ...p, isSpeaking: remote[p.id].isSpeaking, isMuted: remote[p.id].micMuted, isVideoOff: remote[p.id].camOff, isScreenSharing: !!remote[p.id].screen }
+              : p),
+          } : prev);
+        },
+        onChat: (packet: ChatPacket, from: string) => {
+          setActiveMeeting(prev => {
+            if (!prev) return prev;
+            const sender = prev.participants.find(p => p.id === from);
+            const name = sender?.name || packet.senderName || 'Participant';
+            const msg: MeetingChatMessage = {
+              id: packet.id, senderId: from, senderName: name, senderAvatar: name.slice(0, 2).toUpperCase(), isYou: false,
+              recipientId: packet.to ? packet.to : 'everyone', text: packet.text.slice(0, 4000),
+              timestamp: new Date(packet.sentAt || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            };
+            return { ...prev, messages: [...prev.messages, msg] };
+          });
+          playChime('chat');
+        },
+      });
+    }
+    return mediaRef.current;
+  };
   const clearPlanNotice = useCallback(() => setPlanNotice(null), []);
 
   /** /api/meetings call. `network` = no usable server answer (offline, or a host without the API). */
@@ -541,87 +593,11 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
       const saved = localStorage.getItem('obsidian_meeting_history');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        // Earlier builds seeded three invented meetings (rec-01…rec-03); never show them as history.
+        if (Array.isArray(parsed)) return parsed.filter((m: any) => !['rec-01', 'rec-02', 'rec-03'].includes(m?.id));
       }
     } catch (e) {}
-    return [
-      {
-        id: 'rec-01',
-        roomId: 'stoic-arch-2026',
-        title: 'Q3 Enterprise Architecture Alignment',
-        date: 'Yesterday',
-        time: '15:30',
-        durationSeconds: 2538,
-        durationFormatted: '42:18',
-        hostName: 'Camelia Rose',
-        participants: [
-          { name: 'Marcus Aurelius', title: 'Managing Partner', company: 'Stoic Ventures LLC', avatar: 'MA' },
-          { name: 'Sarah Jenkins', title: 'VP Infrastructure', company: 'Alpha Tech Cloud', avatar: 'SJ' },
-          { name: 'Alex Rivera', title: 'Solutions Architect', company: 'Obsidian Cloud', avatar: 'AR' }
-        ],
-        hasRecording: true,
-        recordingUrl: '',
-        recordingSize: '284 MB',
-        hasTranscript: true,
-        transcript: [
-          { id: 't1', speakerId: 'host', speakerName: 'Camelia Rose', timestamp: '00:05', timeSeconds: 5, text: 'Welcome everyone to our Q3 Enterprise Architecture Alignment consultation.', isHost: true },
-          { id: 't2', speakerId: 'p-marcus', speakerName: 'Marcus Aurelius', timestamp: '00:22', timeSeconds: 22, text: 'Thank you Camelia. Our goal today is to benchmark the WebRTC audio tunneling SLA under 45ms P99.' },
-          { id: 't3', speakerId: 'p-sarah', speakerName: 'Sarah Jenkins', timestamp: '01:05', timeSeconds: 65, text: 'We reviewed the hybrid TURN server cluster capacity. Latency profiles look exceptionally strong.' },
-          { id: 't4', speakerId: 'p-alex', speakerName: 'Alex Rivera', timestamp: '02:18', timeSeconds: 138, text: 'The encrypted data channels have passed all SOC2 and HIPAA audit compliance rules.' },
-          { id: 't5', speakerId: 'host', speakerName: 'Camelia Rose', timestamp: '03:40', timeSeconds: 220, text: 'Excellent. I have updated the CRM dossier and scheduled follow-up technical onboarding for next week.', isHost: true }
-        ],
-        notes: 'Agreed on SLA benchmarks under 45ms. Signed NDA and pre-qualified enterprise cluster deployment.',
-        tasksCount: 3
-      },
-      {
-        id: 'rec-02',
-        roomId: 'apex-sla-review',
-        title: 'SLA Contract & Legal Review',
-        date: 'June 14, 2026',
-        time: '11:00',
-        durationSeconds: 1725,
-        durationFormatted: '28:45',
-        hostName: 'Camelia Rose',
-        participants: [
-          { name: 'Elena Rostova', title: 'Chief Legal Officer', company: 'Apex Corp', avatar: 'ER' },
-          { name: 'Marcus Aurelius', title: 'Managing Partner', company: 'Stoic Ventures', avatar: 'MA' }
-        ],
-        hasRecording: true,
-        recordingUrl: '',
-        recordingSize: '195 MB',
-        hasTranscript: true,
-        transcript: [
-          { id: 't1', speakerId: 'host', speakerName: 'Camelia Rose', timestamp: '00:08', timeSeconds: 8, text: 'Good morning Elena. We are reviewing the master services agreement legal provisions.', isHost: true },
-          { id: 't2', speakerId: 'p-elena', speakerName: 'Elena Rostova', timestamp: '00:45', timeSeconds: 45, text: 'The liability limitation and data confidentiality covenants in section 9 meet all requirements.' }
-        ],
-        notes: 'Legal approved terms. Final contract signature pending board review.',
-        tasksCount: 2
-      },
-      {
-        id: 'rec-03',
-        roomId: 'cloudpeak-demo',
-        title: 'Global Omnichannel Onboarding Demo',
-        date: 'June 10, 2026',
-        time: '14:00',
-        durationSeconds: 2110,
-        durationFormatted: '35:10',
-        hostName: 'Camelia Rose',
-        participants: [
-          { name: 'David Vance', title: 'VP Growth', company: 'CloudPeak Systems', avatar: 'DV' },
-          { name: 'Sarah Jenkins', title: 'VP Infrastructure', company: 'Alpha Tech Cloud', avatar: 'SJ' }
-        ],
-        hasRecording: true,
-        recordingUrl: '',
-        recordingSize: '240 MB',
-        hasTranscript: true,
-        transcript: [
-          { id: 't1', speakerId: 'host', speakerName: 'Camelia Rose', timestamp: '00:12', timeSeconds: 12, text: 'Walking through the omnichannel customer touchpoints and real-time screen sharing.', isHost: true },
-          { id: 't2', speakerId: 'p-david', speakerName: 'David Vance', timestamp: '01:15', timeSeconds: 75, text: 'The unified CRM softphone integration will save our sales team 12 hours a week.' }
-        ],
-        notes: 'Live demonstration completed. Scheduled migration sprint for July.',
-        tasksCount: 4
-      }
-    ];
+    return [];
   });
   
   // Refs
@@ -708,21 +684,23 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
     });
   }, []);
 
-  // SEND CHAT MESSAGE
+  // SEND CHAT MESSAGE (delivered to others over the meeting's data channel when audio/video is connected)
   const sendChatMessage = useCallback((text: string, recipientId?: string, attachment?: any) => {
     if (!text.trim() && !attachment) return;
 
-    const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const sentAt = Date.now();
+    const now = new Date(sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const targetRecipient = recipientId || 'everyone';
+    const id = `msg-${sentAt}-${Math.random().toString(36).slice(2, 7)}`;
 
     setActiveMeeting(prev => {
       if (!prev) return prev;
       const recipientObj = prev.participants.find(p => p.id === targetRecipient);
       const newMessage: MeetingChatMessage = {
-        id: `msg-${Date.now()}`,
+        id,
         senderId: 'local-user',
-        senderName: 'You (Camelia Rose)',
-        senderAvatar: 'CR',
+        senderName: `You (${localUserName})`,
+        senderAvatar: localUserName.slice(0, 2).toUpperCase(),
         isYou: true,
         recipientId: targetRecipient,
         recipientName: recipientObj ? recipientObj.name : undefined,
@@ -736,42 +714,11 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
       };
     });
 
-    playChime('chat');
-
-    // Simulated interactive reply if asking a question or greeting
-    const lower = text.toLowerCase();
-    if (lower.includes('hello') || lower.includes('hi') || lower.includes('welcome') || lower.includes('sla') || lower.includes('latency')) {
-      setTimeout(() => {
-        const replyText = lower.includes('sla') || lower.includes('latency')
-          ? "Confirmed. Our engineering team requires under 45ms P99 latency across all multi-region data nodes."
-          : "Thanks Camelia! Audio and video are crystal clear on our end.";
-
-        const responder = lower.includes('sla') ? 'p-marcus' : 'p-sarah';
-        const responderName = lower.includes('sla') ? 'Marcus Aurelius' : 'Sarah Jenkins';
-        const responderAvatar = lower.includes('sla') ? 'MA' : 'SJ';
-
-        const replyMsg: MeetingChatMessage = {
-          id: `msg-${Date.now()}`,
-          senderId: responder,
-          senderName: responderName,
-          senderAvatar: responderAvatar,
-          isYou: false,
-          recipientId: targetRecipient,
-          text: replyText,
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-        };
-
-        setActiveMeeting(prev => {
-          if (!prev) return prev;
-          return {
-            ...prev,
-            messages: [...prev.messages, replyMsg]
-          };
-        });
-        playChime('chat');
-      }, 1400);
+    if (mediaRef.current?.connected && text.trim()) {
+      mediaRef.current.sendChat({ type: 'chat', id, text: text.trim(), senderName: localUserName, sentAt, ...(targetRecipient !== 'everyone' ? { to: targetRecipient } : {}) }).catch(() => {});
     }
-  }, [playChime]);
+    playChime('chat');
+  }, [playChime, localUserName]);
 
   // Update meeting duration timer
   useEffect(() => {
@@ -794,21 +741,50 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
     };
   }, [activeMeeting?.status]);
 
-  // Simulate subtle mic voice activity when unmuted
+  // Microphone level: measured from your microphone (Web Audio), not simulated.
   useEffect(() => {
-    if (activeMeeting && !isMicMuted && !isCamOff) {
-      micIntervalRef.current = setInterval(() => {
-        setMicAudioLevel(Math.floor(35 + Math.random() * 55));
-      }, 350);
-    } else {
-      setMicAudioLevel(0);
-      if (micIntervalRef.current) clearInterval(micIntervalRef.current);
-    }
+    const track = localStream?.getAudioTracks()[0];
+    if (!activeMeeting || isMicMuted || !track || typeof window === 'undefined') { setMicAudioLevel(0); return; }
+    const AC = (window as any).AudioContext || (window as any).webkitAudioContext;
+    if (!AC) { setMicAudioLevel(0); return; }
+    let ctx: AudioContext | null = null;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      ctx = new AC() as AudioContext;
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      ctx.createMediaStreamSource(new MediaStream([track])).connect(analyser);
+      const data = new Uint8Array(analyser.frequencyBinCount);
+      const tick = () => {
+        analyser.getByteTimeDomainData(data);
+        let sum = 0;
+        for (let i = 0; i < data.length; i++) { const d = (data[i] - 128) / 128; sum += d * d; }
+        setMicAudioLevel(Math.min(100, Math.round(Math.sqrt(sum / data.length) * 300)));
+        timer = setTimeout(tick, 150);
+      };
+      tick();
+    } catch { setMicAudioLevel(0); }
+    return () => { if (timer) clearTimeout(timer); ctx?.close().catch(() => {}); };
+  }, [activeMeeting?.id, isMicMuted, localStream]);
 
-    return () => {
-      if (micIntervalRef.current) clearInterval(micIntervalRef.current);
-    };
-  }, [activeMeeting, isMicMuted, isCamOff]);
+  // Connect audio/video once the server has let you in (token from the server; nothing simulated).
+  const myRosterStatus = serverSession?.you.status;
+  useEffect(() => {
+    const cur = serverSessionRef.current;
+    if (!cur || myRosterStatus !== 'in' || !activeMeeting || activeMeeting.status !== 'active') return;
+    if (mediaRef.current?.connected || mediaConnectingRef.current) return;
+    mediaConnectingRef.current = true;
+    (async () => {
+      const r = await meetingsApi(viaRoomRef.current ? `/rooms/${encodeURIComponent(cur.roomCode)}/media-token` : `/sessions/${encodeURIComponent(cur.id)}/media-token`, { method: 'POST' });
+      if (!r.ok) {
+        setMediaStatus(r.data?.code === 'media_not_configured' ? 'not_configured' : 'failed');
+        setMediaMessage(r.data?.error || "Couldn't connect audio and video.");
+      } else {
+        await getMedia().connect(r.data.url, r.data.token, localStreamRef.current);
+      }
+      mediaConnectingRef.current = false;
+    })();
+  }, [serverSession?.id, myRosterStatus, activeMeeting?.status]);
 
   // Acquire local media stream (camera + mic)
   const initializeLocalMedia = async () => {
@@ -851,6 +827,10 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
 
   // Clean up all active media tracks
   const cleanupMediaTracks = useCallback(() => {
+    mediaRef.current?.disconnect();
+    setRemoteMedia({});
+    setMediaStatus('idle');
+    setMediaMessage(null);
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach(t => {
         try { t.stop(); } catch (e) {}
@@ -911,7 +891,7 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
       id: view?.id ?? `mtg_${now}`,
       roomId: uniqueRoomId,
       title: meetingTitle,
-      hostName: 'Camelia Rose (You)',
+      hostName: `${localUserName} (You)`,
       startedAt: view ? view.startedAt - clockOffsetRef.current : now,
       durationSeconds: 0,
       status: 'active',
@@ -1064,6 +1044,7 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
         t.enabled = isMicMuted;
       });
     }
+    mediaRef.current?.setMicEnabled(isMicMuted).catch(() => {});
     setIsMicMuted(prev => !prev);
   };
 
@@ -1073,6 +1054,7 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
       // Re-enable camera track
       if (localStreamRef.current && localStreamRef.current.getVideoTracks().length > 0) {
         localStreamRef.current.getVideoTracks().forEach(t => { t.enabled = true; });
+        mediaRef.current?.setCamEnabled(true).catch(() => {});
         setIsCamOff(false);
       } else {
         await initializeLocalMedia();
@@ -1082,6 +1064,7 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
       if (localStreamRef.current) {
         localStreamRef.current.getVideoTracks().forEach(t => { t.enabled = false; });
       }
+      mediaRef.current?.setCamEnabled(false).catch(() => {});
       setIsCamOff(true);
     }
   };
@@ -1095,6 +1078,7 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
           t.enabled = !next && !isCamOff;
         });
       }
+      mediaRef.current?.setCamEnabled(!next && !isCamOff).catch(() => {});
       return next;
     });
   };
@@ -1577,6 +1561,7 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
       screenStreamRef.current = null;
       setScreenStream(null);
     }
+    mediaRef.current?.unpublishScreen().catch(() => {});
     setIsScreenSharing(false);
     setHasSystemAudio(false);
     playChime('screen');
@@ -1619,6 +1604,8 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
       screenStreamRef.current = stream;
       setScreenStream(stream);
       setIsScreenSharing(true);
+      const [shareTrack] = stream.getVideoTracks();
+      if (shareTrack && mediaRef.current?.connected) mediaRef.current.publishScreen(shareTrack).catch(() => setScreenShareError("Your screen is shared locally, but couldn't be sent to others."));
       setHasSystemAudio(stream.getAudioTracks().length > 0);
       playChime('screen');
 
@@ -1943,6 +1930,10 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
         clearMeetingError,
         planNotice,
         clearPlanNotice,
+        mediaStatus,
+        mediaMessage,
+        remoteMedia,
+        localUserName,
         localStream,
         screenStream,
         isMicMuted,

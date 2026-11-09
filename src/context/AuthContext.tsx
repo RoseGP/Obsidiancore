@@ -928,6 +928,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 }
 
+/** Like useAuth, but returns undefined outside an AuthProvider (shared providers and tests). */
+export function useOptionalAuth() {
+  return useContext(AuthContext);
+}
+
 export function useAuth() {
   const context = useContext(AuthContext);
   if (context === undefined) {
