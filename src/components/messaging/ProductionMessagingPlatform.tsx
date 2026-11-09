@@ -41,6 +41,7 @@ import {
   Briefcase
 } from 'lucide-react';
 import { useOptionalAuth } from '../../context/AuthContext';
+import { AuthedEventSource } from '../../lib/authedEventSource';
 
 export const ProductionMessagingPlatform: React.FC = () => {
   // The signed-in team member and the organization's real members (no built-in people).
@@ -241,9 +242,9 @@ export const ProductionMessagingPlatform: React.FC = () => {
   // 2. Real-Time Server-Sent Events (SSE) Connection
   // -----------------------------------------------------------------
   useEffect(() => {
-    let eventSource: EventSource | null = null;
+    let eventSource: AuthedEventSource | null = null;
     try {
-      eventSource = new EventSource('/api/messaging/stream');
+      eventSource = new AuthedEventSource('/api/messaging/stream');
 
       eventSource.addEventListener('new_message', (e: MessageEvent) => {
         try {

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { getDashboardJson, invalidateDashboard } from '../../lib/dashboardData';
 import { ArrowUpRight } from 'lucide-react';
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip,
@@ -44,9 +45,8 @@ export const SalesPerformanceWidget: React.FC<{ onNavigate?: (view: any) => void
   const [loadError, setLoadError] = useState(false);
 
   useEffect(() => {
-    fetch('/api/dashboard/deals')
-      .then(res => res.json())
-      .then(data => {
+    getDashboardJson('/api/dashboard/deals')
+      .then((data: any) => {
         if (data.success && Array.isArray(data.deals)) setDeals(data.deals);
         else setLoadError(true);
       })

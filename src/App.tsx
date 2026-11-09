@@ -33,7 +33,8 @@ import NotificationPreferencesModal from './components/notifications/Notificatio
 import QuickActionButton, { QuickActionType } from './components/QuickActionButton';
 import QuickActionModal from './components/QuickActionModal';
 import { CRMContact, CRMLead, CalendarEvent, CRMMessage, AppNotification, ActiveView } from './types';
-import { MessageSquare, X } from 'lucide-react';
+import { MessageSquare, X, Menu } from 'lucide-react';
+import HelpMenu from './components/HelpMenu';
 import { useTheme } from './context/ThemeContext';
 import ThemeSwitch from './components/ThemeSwitch';
 import { InvitationAcceptor } from './components/OrganizationSettings';
@@ -69,19 +70,16 @@ const INITIAL_NOTIFICATIONS: AppNotification[] = [];
 
 const SEARCH_NAV_ITEMS = [
   { id: 'dashboard', label: 'Dashboard', icon: 'LayoutDashboard' },
-  { id: 'deals', label: 'Sales & Leads Pipeline', icon: 'DollarSign' },
-  // 'chat' previously appeared here as "AI Chat Studio" but opened the messaging platform (duplicate of
-  // Email & Messaging). The AI assistant now lives on the Dashboard; the 'chat' route still resolves.
-  { id: 'greet', label: 'Greet Hub', icon: 'Video' },
-  { id: 'messages', label: 'Email & Messaging', icon: 'MessageSquare' },
-  { id: 'calendar', label: 'Calendar & Bookings', icon: 'Calendar' },
-  { id: 'proposals', label: 'Enterprise Proposals', icon: 'FileText' },
-  { id: 'social_planner', label: 'Social Planner', icon: 'Share2' },
-  { id: 'gbp', label: 'Local GBP & Locations', icon: 'Globe' },
-  { id: 'voice_dialer', label: 'Voice Dialer & Softphone', icon: 'Phone' },
-  { id: 'call_canvas', label: 'Live Video Call Canvas', icon: 'Video' },
-  { id: 'analytics', label: 'Analytics & Insights', icon: 'BarChart3' },
-  { id: 'settings', label: 'Workspace Settings', icon: 'Settings' }
+  { id: 'deals', label: 'Leads & deals', icon: 'DollarSign' },
+  { id: 'proposals', label: 'Proposals & invoices', icon: 'FileText' },
+  { id: 'messages', label: 'Inbox', icon: 'MessageSquare' },
+  { id: 'greet', label: 'Meetings', icon: 'Video' },
+  { id: 'calendar', label: 'Calendar', icon: 'Calendar' },
+  { id: 'voice_dialer', label: 'Phone', icon: 'Phone' },
+  { id: 'social_planner', label: 'Social planner', icon: 'Share2' },
+  { id: 'gbp', label: 'Local SEO', icon: 'Globe' },
+  { id: 'analytics', label: 'Analytics', icon: 'BarChart3' },
+  { id: 'settings', label: 'Settings', icon: 'Settings' }
 ] as const;
 
 function AppMain() {
@@ -100,6 +98,7 @@ function AppMain() {
   const [showNotificationPreferencesModal, setShowNotificationPreferencesModal] = useState<boolean>(false);
   const [settingsDefaultTab, setSettingsDefaultTab] = useState<SettingsTab>('account');
   const [isQuickActionModalOpen, setIsQuickActionModalOpen] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [quickActionInitialType, setQuickActionInitialType] = useState<QuickActionType>('lead');
 
   const handleTriggerQuickAction = useCallback((type: QuickActionType) => {
@@ -264,6 +263,8 @@ function AppMain() {
             contacts={contacts}
             onSelectContact={handleSelectContact}
             onNavigate={(v) => setActiveView(v as SemanticView)}
+            onQuickAction={handleTriggerQuickAction}
+            onOpenSettings={(tab) => { setSettingsDefaultTab(tab as SettingsTab); setActiveView('settings'); }}
           />
         );
       case 'leads':
@@ -343,6 +344,8 @@ function AppMain() {
             contacts={contacts}
             onSelectContact={handleSelectContact}
             onNavigate={(v) => setActiveView(v as SemanticView)}
+            onQuickAction={handleTriggerQuickAction}
+            onOpenSettings={(tab) => { setSettingsDefaultTab(tab as SettingsTab); setActiveView('settings'); }}
           />
         );
     }
@@ -413,15 +416,25 @@ function AppMain() {
       <DynamicSidebar
         activeId={sidebarActiveId}
         onActiveIdChange={(id) => setActiveView(id as SemanticView)}
+        mobileOpen={mobileNavOpen}
+        onMobileClose={() => setMobileNavOpen(false)}
       />
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col h-screen overflow-hidden">
         {/* Top Navbar - Clean Murmura-inspired modern executive header */}
-        <header className="h-14 px-5 flex items-center justify-between border-b border-[var(--border)] bg-[var(--surface)]/95 backdrop-blur-md shrink-0 z-30 transition-colors">
-          {/* Universal Command Search Bar & Quick Action */}
-          <div className="flex-1 max-w-2xl flex items-center gap-3">
-            <div className="flex-1 max-w-xl">
+        <header className="h-14 px-3 sm:px-5 flex items-center justify-between border-b border-[var(--border)] bg-[var(--surface)]/95 backdrop-blur-md shrink-0 z-30 transition-colors print:hidden">
+          {/* Menu (small screens) · search · quick create */}
+          <div className="flex-1 min-w-0 max-w-2xl flex items-center gap-2 sm:gap-3">
+            <button
+              type="button"
+              onClick={() => setMobileNavOpen(true)}
+              aria-label="Open navigation"
+              className="md:hidden inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-sunken)] cursor-pointer"
+            >
+              <Menu className="h-5 w-5" />
+            </button>
+            <div className="flex-1 min-w-0 max-w-xl">
               <UnifiedCommandSearchBar
                 themeMode={themeMode}
                 contacts={contacts}
@@ -433,17 +446,23 @@ function AppMain() {
                 placeholder="Search contacts, deals, calls, or type command..."
               />
             </div>
-            <QuickActionButton onTriggerAction={handleTriggerQuickAction} />
+            <div className="hidden sm:block"><QuickActionButton onTriggerAction={handleTriggerQuickAction} /></div>
           </div>
 
           {/* Right actions: Real-Time Sync + Notifications + Profile */}
-          <div className="flex items-center gap-2.5 ml-4">
-            <ThemeSwitch />
-            <RealTimeSyncBadge
-              onOpenDiagnostics={() => {
-                setSettingsDefaultTab('realtime-sync');
-                setActiveView('settings');
-              }}
+          <div className="flex items-center gap-1 sm:gap-2.5 ml-2 sm:ml-4 shrink-0">
+            <div className="hidden lg:block"><ThemeSwitch /></div>
+            <div className="hidden lg:block">
+              <RealTimeSyncBadge
+                onOpenDiagnostics={() => {
+                  setSettingsDefaultTab('realtime-sync');
+                  setActiveView('settings');
+                }}
+              />
+            </div>
+            <HelpMenu
+              onOpenDashboard={() => setActiveView('dashboard' as SemanticView)}
+              onOpenSettings={() => { setSettingsDefaultTab('workspace'); setActiveView('settings'); }}
             />
 
             <NotificationDropdown
@@ -482,7 +501,7 @@ function AppMain() {
       </div>
 
       {/* Floating Live Omnichannel Support Widget */}
-      <div className="fixed bottom-6 right-6 z-50">
+      <div className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50 print:hidden">
         {activeView !== 'messages' && (
           <button
             id="btn-open-omnichat"

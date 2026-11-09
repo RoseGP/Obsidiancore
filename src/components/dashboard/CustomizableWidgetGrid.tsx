@@ -105,7 +105,7 @@ export const CustomizableWidgetGrid: React.FC<CustomizableWidgetGridProps> = ({
     } catch {
       // Fallback
     }
-    return [];
+    return ['sales_performance']; // the dashboard's Performance chart covers this by default
   });
 
   // Layout mode: '2-col' | '1-col'
@@ -298,22 +298,22 @@ export const CustomizableWidgetGrid: React.FC<CustomizableWidgetGridProps> = ({
   };
 
   return (
-    <div className="w-full max-w-6xl flex flex-col gap-5 z-10 font-sans">
+    <div className="w-full flex flex-col gap-4 font-sans">
       
       {/* 1. SECTION HEADER & CONTROLS */}
       <div className="flex flex-wrap items-center justify-between gap-3 px-1 sm:px-2">
         <div className="flex items-center gap-2.5">
-          <div className="h-8 w-8 rounded-xl bg-gradient-to-br from-indigo-500/20 to-amber-500/20 border border-white/10 flex items-center justify-center text-indigo-400">
+          <div className="h-8 w-8 rounded-lg bg-[var(--accent-soft)] flex items-center justify-center text-[var(--accent-text)]">
             <LayoutGrid className="h-4 w-4" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-base sm:text-lg font-bold text-white tracking-tight">
-                Your dashboard
+              <h2 className="text-[14px] font-semibold text-[var(--text)] tracking-[-0.01em]">
+                Work queues
               </h2>
             </div>
-            <p className="text-xs text-neutral-400">
-              Add, remove and rearrange widgets.
+            <p className="text-[12px] text-[var(--text-muted)]">
+              Act on leads, move deals forward and answer tickets. Add, remove and rearrange widgets.
             </p>
           </div>
         </div>

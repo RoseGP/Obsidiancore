@@ -32,7 +32,7 @@
     "test:meeting-plans": "npx tsx src/lib/__tests__/meetingPlans.test.ts && npx tsx src/server/meetings/__tests__/subscriptions.test.ts && npx tsx src/server/meetings/__tests__/media.test.ts",
     "test:proposals": "npx tsx src/features/proposals/__tests__/proposals.test.ts",
     "test:messaging": "npx tsx src/routes/__tests__/messaging.test.ts",
-    "test:dashboard": "npx tsx src/components/dashboard/__tests__/widgets.test.tsx",
+    "test:dashboard": "npx tsx src/lib/__tests__/dashboardMetrics.test.ts && npx tsx src/components/dashboard/__tests__/widgets.test.tsx",
     "test:account": "npx tsx src/routes/__tests__/account.test.ts"
   },
   "dependencies": {

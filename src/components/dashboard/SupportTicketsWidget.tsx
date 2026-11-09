@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { getDashboardJson, invalidateDashboard } from '../../lib/dashboardData';
 import { 
   Headphones, MessageSquare, AlertCircle, Clock, 
   CheckCircle2, ArrowUpRight,
@@ -40,8 +41,7 @@ export const SupportTicketsWidget: React.FC<{ onNavigate?: (view: any) => void }
     setIsLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/dashboard/tickets');
-      const data = await res.json();
+      const data: any = await getDashboardJson('/api/dashboard/tickets');
       if (data.success && Array.isArray(data.tickets)) {
         const normalized = data.tickets.map((t: any, idx: number) => ({
           ...t,
@@ -82,6 +82,7 @@ export const SupportTicketsWidget: React.FC<{ onNavigate?: (view: any) => void }
       if (res.ok && data.success) {
         setTickets(prev => prev.map(t => t.id === id ? { ...t, status: 'resolved' } : t));
         setReplyTicketId(null);
+        invalidateDashboard();
       } else {
         setNotice(data.error || 'Couldn’t mark the ticket as done.');
       }

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { getDashboardJson, invalidateDashboard } from '../../lib/dashboardData';
 import { 
   Users, MessageSquare, Search, ArrowUpRight, 
   Clock, RefreshCw, AlertCircle
@@ -50,8 +51,7 @@ export const RecentLeadsWidget: React.FC<RecentLeadsWidgetProps> = ({ contacts, 
     setIsLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/dashboard/leads');
-      const data = await res.json();
+      const data: any = await getDashboardJson('/api/dashboard/leads');
       if (data.success && Array.isArray(data.leads)) {
         const normalized: LeadItem[] = data.leads.map((lead: any, idx: number) => {
           let resolvedIntent = '';

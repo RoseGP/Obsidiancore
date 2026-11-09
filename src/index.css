@@ -33,3 +33,12 @@
 .assistant-md th, .assistant-md td { border: 1px solid #e5e7eb; padding: 0.4rem 0.6rem; text-align: left; vertical-align: top; }
 .assistant-md th { background: #f9fafb; font-weight: 650; }
 .assistant-md tr:nth-child(even) td { background: #fcfcfd; }
+
+/* Print / "Save as PDF" from the dashboard: content only, full length, no app chrome. */
+@media print {
+  html, body, #root { height: auto !important; overflow: visible !important; background: #fff !important; }
+  .h-screen { height: auto !important; }
+  main, .overflow-hidden, .overflow-y-auto { overflow: visible !important; }
+  #dashboard-root [data-section="assistant"], #dashboard-root [data-section="quick_actions"], #dashboard-root [data-section="work_queues"] { display: none !important; }
+  #dashboard-root section, #dashboard-root li { break-inside: avoid; }
+}

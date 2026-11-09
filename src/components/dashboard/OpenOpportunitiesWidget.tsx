@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { getDashboardJson, invalidateDashboard } from '../../lib/dashboardData';
 import { 
   DollarSign, ArrowUpRight, Flame, 
   ChevronRight, RefreshCw, AlertCircle
@@ -40,8 +41,7 @@ export const OpenOpportunitiesWidget: React.FC<{ onNavigate?: (view: any) => voi
     setIsLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/dashboard/deals');
-      const data = await res.json();
+      const data: any = await getDashboardJson('/api/dashboard/deals');
       if (data.success && Array.isArray(data.deals)) {
         const normalized = data.deals.map((d: any, idx: number) => ({
           ...d,
@@ -101,6 +101,7 @@ export const OpenOpportunitiesWidget: React.FC<{ onNavigate?: (view: any) => voi
       if (!res.ok || !data.success) throw new Error(data.error || 'Couldn’t move the deal to the next stage.');
       const now = new Date().toISOString();
       setAllDeals(prev => prev.map(o => o.id === opp.id ? { ...o, stage: next as OpportunityItem['stage'], probability: PROBABILITY[next], updatedAt: now } as OpportunityItem : o));
+      invalidateDashboard();
     } catch (err: any) {
       setError(err.message || 'Couldn’t move the deal to the next stage.');
     } finally {

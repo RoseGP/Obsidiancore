@@ -85,6 +85,9 @@ await deal('w2', 30000, 'won', 6 * DAY, 1 * DAY, 'Sam');
 await deal('l1', 5000, 'lost', 5 * DAY, 3 * DAY);
 await deal('o1', 20000, 'proposal', 2 * DAY, 2 * DAY);
 await deal('old', 99999, 'won', 400 * DAY, 300 * DAY);
+// Records were written straight to the store (not through the API), so drop the dashboard's short-lived cache, as Refresh does.
+const { invalidateDashboard } = await import('../../../lib/dashboardData');
+invalidateDashboard();
 
 v = await render(React.createElement(SalesPerformanceWidget, {}));
 let t = v.text();
