@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { DatabaseProvider } from './context/DatabaseContext';
 import { CommandProvider, useCommand, SemanticView } from './context/CommandContext';
 import AuthFlowView from './components/auth/AuthFlowView';
+import ProposalSharePage from './features/proposals/ProposalSharePage';
 import SessionLockScreen from './components/auth/SessionLockScreen';
 import DynamicSidebar from './components/DynamicSidebar';
 import TopNavProfileDropdown from './components/TopNavProfileDropdown';
@@ -429,6 +430,10 @@ function AppMain() {
         );
     }
   };
+
+  // Proposal links (/?proposal=<token>) are for clients: no CRM account needed.
+  const proposalToken = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('proposal') : null;
+  if (proposalToken) return <ProposalSharePage token={proposalToken} />;
 
   if (!isAuthenticated && !isAuthLoading) {
     return (

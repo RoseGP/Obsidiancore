@@ -10,7 +10,6 @@ import {
 
   JWT_SECRET
 } from '../middleware/apiGatewayMiddleware';
-import { getProposalDetails } from '../utils/proposalsDb';
 
 const apiV1Router = Router();
 
@@ -67,21 +66,7 @@ apiV1Router.get('/me', (req: AuthenticatedRequest, res: Response) => {
  */
 apiV1Router.all(['/meetings', '/meetings/*'], (_req, res) => apiError(res, 'Meetings moved to /api/meetings (scheduling: POST /api/meetings/create).', 410));
 
-/**
- * GET /api/v1/proposals/:id
- * Unified proposal details fetch endpoint
- */
-apiV1Router.get('/proposals/:id', async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const proposalId = req.params.id || 'prop_101';
-    const proposal = await getProposalDetails(proposalId);
-    if (!proposal) {
-      return apiError(res, `Proposal with ID '${proposalId}' not found.`, 404);
-    }
-    return apiSuccess(res, proposal);
-  } catch (err: any) {
-    return apiError(res, `Failed to fetch proposal details: ${err.message}`, 500);
-  }
-});
+/** /api/v1/proposals: moved to /api/proposals (organization-scoped, shared by secure link). */
+apiV1Router.all(['/proposals', '/proposals/*'], (_req, res) => apiError(res, 'Proposals moved to /api/proposals.', 410));
 
 export default apiV1Router;
