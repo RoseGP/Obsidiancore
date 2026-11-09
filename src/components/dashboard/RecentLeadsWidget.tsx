@@ -17,14 +17,27 @@ interface LeadItem {
   company: string;
   email: string;
   phone: string;
-  avatar: string;
   channel: 'whatsapp' | 'instagram' | 'email' | 'web' | 'phone' | 'linkedin' | string;
-  score: number;
+  score: number | null;
   value: string;
-  status: 'new' | 'contacted' | 'qualified';
+  status: string;
+  createdAt: number;
   timeAgo: string;
   intent: string;
 }
+
+const DAY = 86_400_000;
+function ago(ms: number): string {
+  if (!ms) return '';
+  const m = Math.max(0, Math.round((Date.now() - ms) / 60000));
+  if (m < 1) return 'Just now';
+  if (m < 60) return `${m}m ago`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.round(h / 24);
+  return d < 30 ? `${d}d ago` : new Date(ms).toLocaleDateString();
+}
+const initials = (name: string) => name.split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() || '').join('') || '?';
 
 export const RecentLeadsWidget: React.FC<RecentLeadsWidgetProps> = ({ contacts, onSelectContact, onNavigate }) => {
   const [leads, setLeads] = useState<LeadItem[]>([]);
@@ -41,7 +54,7 @@ export const RecentLeadsWidget: React.FC<RecentLeadsWidgetProps> = ({ contacts, 
       const data = await res.json();
       if (data.success && Array.isArray(data.leads)) {
         const normalized: LeadItem[] = data.leads.map((lead: any, idx: number) => {
-          let resolvedIntent = 'Inbound inquiry via omnichannel router';
+          let resolvedIntent = '';
           if (typeof lead.intent === 'string' && lead.intent.trim()) {
             resolvedIntent = lead.intent;
           } else if (typeof lead.notes === 'string' && lead.notes.trim()) {
@@ -51,48 +64,31 @@ export const RecentLeadsWidget: React.FC<RecentLeadsWidgetProps> = ({ contacts, 
           } else if (typeof lead.qualification?.need === 'string') {
             resolvedIntent = lead.qualification.need;
           }
-
+          const created = new Date(lead.createdAt || lead.updatedAt || 0).getTime() || 0;
+          const budget = Number(lead.qualification?.budget);
           return {
-            id: String(lead.id || `lead-${idx}-${lead.name || 'prospect'}`),
-            name: String(lead.name || 'Anonymous Lead'),
-            company: String(lead.company || 'Enterprise Account'),
-            email: String(lead.email || 'lead@example.com'),
-            phone: String(lead.phone || '+1 (555) 000-0000'),
-            avatar: String(lead.avatar || `https://images.unsplash.com/photo-${1534528741775 + (idx % 4) * 100}?auto=format&fit=crop&q=80&w=150`),
+            id: String(lead.id || `lead-${idx}`),
+            name: String(lead.name || 'Unnamed lead'),
+            company: String(lead.company || ''),
+            email: String(lead.email || ''),
+            phone: String(lead.phone || ''),
             channel: String(lead.channel || lead.source || 'web'),
-            score: typeof lead.score === 'number' ? lead.score : 85,
-            value: String(lead.value || (lead.qualification?.budget ? `$${(lead.qualification.budget / 1000).toFixed(0)}k ARR` : '$45,000 ARR')),
-            status: (lead.status === 'qualified' ? 'qualified' : lead.status === 'contacted' ? 'contacted' : 'new'),
-            timeAgo: String(lead.timeAgo || 'Recent'),
+            score: typeof lead.score === 'number' ? lead.score : null,
+            value: lead.value ? String(lead.value) : Number.isFinite(budget) && budget > 0 ? `$${budget.toLocaleString()} budget` : '',
+            status: String(lead.status || 'new'),
+            createdAt: created,
+            timeAgo: ago(created),
             intent: resolvedIntent
           };
         });
+        normalized.sort((a, b) => b.createdAt - a.createdAt);
         setLeads(normalized);
       } else {
-        throw new Error(data.error || 'Failed to load leads');
+        throw new Error(data.error || 'Couldn’t load leads.');
       }
     } catch (err: any) {
       console.error('[RecentLeadsWidget] Error loading leads:', err);
-      // Fallback to contacts if backend route fails
-      if (contacts && contacts.length > 0) {
-        const mapped: LeadItem[] = contacts.map((c, idx) => ({
-          id: String(c.id || `contact-${idx}-${c.name || 'crm'}`),
-          name: c.name || 'Anonymous Contact',
-          company: c.company || 'Enterprise Account',
-          email: c.email || 'contact@example.com',
-          phone: c.phone || '+1 (555) 000-0000',
-          avatar: c.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=150',
-          channel: c.channel || 'web',
-          score: 85,
-          value: (c as any).pipelineValue || '$45,000 ARR',
-          status: (c.status === 'resolved' ? 'qualified' : c.status === 'pending' ? 'contacted' : 'new') as any,
-          timeAgo: c.timestamp || 'Recent',
-          intent: typeof c.lastMessage === 'string' ? c.lastMessage : 'Inbound inquiry via omnichannel router'
-        }));
-        setLeads(mapped);
-      } else {
-        setError(err.message || 'Unable to connect to leads store.');
-      }
+      setError('Couldn’t load leads. Check your connection and try again.');
     } finally {
       setIsLoading(false);
     }
@@ -100,7 +96,15 @@ export const RecentLeadsWidget: React.FC<RecentLeadsWidgetProps> = ({ contacts, 
 
   useEffect(() => {
     fetchLeads();
-  }, [contacts]);
+  }, []);
+
+  // Week-over-week from real capture dates.
+  const now = Date.now();
+  const thisWeek = leads.filter((l) => l.createdAt >= now - 7 * DAY).length;
+  const lastWeek = leads.filter((l) => l.createdAt >= now - 14 * DAY && l.createdAt < now - 7 * DAY).length;
+  const weekChange = lastWeek ? Math.round(((thisWeek - lastWeek) / lastWeek) * 100) : null;
+  const scored = leads.filter((l) => l.score != null);
+  const avgScore = scored.length ? Math.round(scored.reduce((a, l) => a + (l.score as number), 0) / scored.length) : null;
 
   const filteredLeads = leads.filter(lead => {
     const matchesChannel = filterChannel === 'all' || lead.channel.toLowerCase() === filterChannel.toLowerCase();
@@ -130,26 +134,28 @@ export const RecentLeadsWidget: React.FC<RecentLeadsWidgetProps> = ({ contacts, 
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-sm font-bold text-white tracking-tight">Recent Inbound Leads</span>
-              <span className="text-[10px] font-mono font-bold text-emerald-400 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">
-                +34% this week
-              </span>
+              <span className="text-sm font-bold text-white tracking-tight">Recent leads</span>
+              {weekChange != null && (
+                <span className="text-[10px] font-mono font-bold text-emerald-400 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20" title="Leads captured in the last 7 days vs the 7 days before">
+                  {weekChange >= 0 ? '+' : ''}{weekChange}% vs last week
+                </span>
+              )}
             </div>
             <p className="text-xs text-neutral-400 mt-0.5">
-              Live multi-channel lead capture & automated AI qualification.
+              Newest leads from every channel, newest first.
             </p>
           </div>
 
           {/* Quick Metrics Bar */}
           <div className="flex items-center gap-4 text-xs font-mono">
             <div>
-              <span className="text-[10px] text-neutral-500 block">Lead Velocity</span>
-              <span className="font-bold text-white">4.8 / hr</span>
+              <span className="text-[10px] text-neutral-500 block">Last 7 days</span>
+              <span className="font-bold text-white">{thisWeek} lead{thisWeek === 1 ? '' : 's'}</span>
             </div>
             <div className="h-6 w-px bg-white/10" />
             <div>
-              <span className="text-[10px] text-neutral-500 block">Avg Response</span>
-              <span className="font-bold text-emerald-400">1.2m</span>
+              <span className="text-[10px] text-neutral-500 block">Avg score</span>
+              <span className="font-bold text-emerald-400">{avgScore == null ? '—' : `${avgScore}/100`}</span>
             </div>
           </div>
         </div>
@@ -194,7 +200,7 @@ export const RecentLeadsWidget: React.FC<RecentLeadsWidgetProps> = ({ contacts, 
         {isLoading ? (
           <div className="py-12 flex flex-col items-center justify-center gap-2 text-neutral-400 text-xs">
             <RefreshCw className="h-5 w-5 animate-spin text-indigo-500" />
-            <span>Loading live inbound leads...</span>
+            <span>Loading leads…</span>
           </div>
         ) : error ? (
           <div className="py-8 text-center text-xs text-rose-400 bg-rose-500/10 border border-rose-500/20 rounded-xl p-3 flex flex-col items-center gap-2">
@@ -209,7 +215,7 @@ export const RecentLeadsWidget: React.FC<RecentLeadsWidgetProps> = ({ contacts, 
           </div>
         ) : filteredLeads.length === 0 ? (
           <div className="py-10 text-center text-xs text-neutral-500 rounded-xl border border-dashed border-white/10 p-4">
-            No recent leads matching your filter.
+            {leads.length === 0 ? 'No leads yet. New leads from forms, chat and calls will appear here.' : 'No leads match your filter.'}
           </div>
         ) : (
           <div className="space-y-2.5 overflow-y-auto max-h-[310px] pr-1">
@@ -220,12 +226,9 @@ export const RecentLeadsWidget: React.FC<RecentLeadsWidgetProps> = ({ contacts, 
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-center gap-2.5 min-w-0">
-                    <img 
-                      src={lead.avatar} 
-                      alt={lead.name}
-                      referrerPolicy="no-referrer"
-                      className="h-8 w-8 rounded-xl object-cover border border-white/10 shrink-0" 
-                    />
+                    <span className="h-8 w-8 rounded-xl border border-white/10 shrink-0 bg-slate-700 text-[10px] font-bold text-slate-200 flex items-center justify-center">
+                      {initials(lead.name)}
+                    </span>
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="text-xs font-bold text-white truncate">{lead.name}</span>
@@ -233,27 +236,29 @@ export const RecentLeadsWidget: React.FC<RecentLeadsWidgetProps> = ({ contacts, 
                           {lead.channel}
                         </span>
                       </div>
-                      <p className="text-[11px] text-neutral-400 truncate">{lead.company}</p>
+                      {lead.company && <p className="text-[11px] text-neutral-400 truncate">{lead.company}</p>}
                     </div>
                   </div>
 
                   {/* Score & Est Value */}
                   <div className="text-right shrink-0">
-                    <span className="text-xs font-bold text-emerald-400 font-mono block">{lead.value}</span>
-                    <span className="text-[10px] text-neutral-500 font-mono">Score {lead.score}/100</span>
+                    {lead.value && <span className="text-xs font-bold text-emerald-400 font-mono block">{lead.value}</span>}
+                    {lead.score != null && <span className="text-[10px] text-neutral-500 font-mono">Score {lead.score}/100</span>}
                   </div>
                 </div>
 
                 {/* Intent Note */}
-                <p className="text-[11px] text-neutral-300 mt-2 line-clamp-1 bg-black/20 p-1.5 rounded-lg border border-white/5 font-normal">
-                  {String(lead.intent || '')}
-                </p>
+                {lead.intent && (
+                  <p className="text-[11px] text-neutral-300 mt-2 line-clamp-1 bg-black/20 p-1.5 rounded-lg border border-white/5 font-normal">
+                    {lead.intent}
+                  </p>
+                )}
 
                 {/* Action Strip */}
                 <div className="mt-2.5 pt-2 border-t border-white/5 flex items-center justify-between text-[11px]">
                   <span className="text-[10px] text-neutral-500 font-mono flex items-center gap-1">
                     <Clock className="h-3 w-3" />
-                    <span>{lead.timeAgo}</span>
+                    <span>{lead.timeAgo || '—'}</span>
                   </span>
 
                   <div className="flex items-center gap-2">
@@ -267,11 +272,11 @@ export const RecentLeadsWidget: React.FC<RecentLeadsWidgetProps> = ({ contacts, 
                     </button>
                     <button
                       type="button"
-                      onClick={() => onNavigate && onNavigate('deals')}
+                      onClick={() => onNavigate && onNavigate('leads')}
                       className="text-neutral-400 hover:text-white flex items-center gap-1 text-[11px] font-medium transition-colors cursor-pointer"
                     >
                       <ArrowUpRight className="h-3 w-3 text-emerald-400" />
-                      <span>Convert Deal</span>
+                      <span>Open in pipeline</span>
                     </button>
                   </div>
                 </div>
@@ -283,7 +288,7 @@ export const RecentLeadsWidget: React.FC<RecentLeadsWidgetProps> = ({ contacts, 
 
       {/* Footer link to Leads Pipeline */}
       <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between text-xs text-neutral-400">
-        <span className="font-mono text-[10px]">Showing {filteredLeads.length} active leads</span>
+        <span className="font-mono text-[10px]">Showing {filteredLeads.length} of {leads.length} lead{leads.length === 1 ? '' : 's'}</span>
         <button
           type="button"
           onClick={() => onNavigate && onNavigate('leads')}

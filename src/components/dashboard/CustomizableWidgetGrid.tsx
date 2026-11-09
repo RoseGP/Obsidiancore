@@ -27,35 +27,35 @@ export interface WidgetConfig {
 export const WIDGET_REGISTRY: Record<WidgetId, WidgetConfig> = {
   recent_leads: {
     id: 'recent_leads',
-    title: 'Recent Inbound Leads',
-    subtitle: 'Multi-channel acquisition & AI qualification',
+    title: 'Recent Leads',
+    subtitle: 'Newest leads from every channel',
     category: 'growth',
     icon: Users,
-    badgeText: 'Live Stream'
+    badgeText: 'Leads'
   },
   open_opportunities: {
     id: 'open_opportunities',
     title: 'Open Opportunities',
-    subtitle: 'Stage-weighted pipeline & deal velocity',
+    subtitle: 'Open deals by stage and weighted forecast',
     category: 'sales',
     icon: DollarSign,
     badgeText: 'Pipeline'
   },
   sales_performance: {
     id: 'sales_performance',
-    title: 'Sales Performance & Revenue',
-    subtitle: 'Periodic closed quota benchmarks & top reps',
+    title: 'Sales Performance',
+    subtitle: 'Revenue from won deals and top closers',
     category: 'revenue',
     icon: TrendingUp,
     badgeText: 'Analytics'
   },
   support_tickets: {
     id: 'support_tickets',
-    title: 'Customer Support Tickets',
-    subtitle: 'SLA countdowns, sentiment analysis & triage',
+    title: 'Support Tickets',
+    subtitle: 'Open tickets: reply or mark done',
     category: 'support',
     icon: Headphones,
-    badgeText: 'SLA Guard'
+    badgeText: 'Support'
   }
 };
 
@@ -300,7 +300,7 @@ export const CustomizableWidgetGrid: React.FC<CustomizableWidgetGridProps> = ({
   return (
     <div className="w-full max-w-6xl flex flex-col gap-5 z-10 font-sans">
       
-      {/* 1. SECTION HEADER & LUXURY OBSIDIAN CONTROLS */}
+      {/* 1. SECTION HEADER & CONTROLS */}
       <div className="flex flex-wrap items-center justify-between gap-3 px-1 sm:px-2">
         <div className="flex items-center gap-2.5">
           <div className="h-8 w-8 rounded-xl bg-gradient-to-br from-indigo-500/20 to-amber-500/20 border border-white/10 flex items-center justify-center text-indigo-400">
@@ -309,14 +309,11 @@ export const CustomizableWidgetGrid: React.FC<CustomizableWidgetGridProps> = ({
           <div>
             <div className="flex items-center gap-2">
               <h2 className="text-base sm:text-lg font-bold text-white tracking-tight">
-                Customizable KPI Command Center
+                Your dashboard
               </h2>
-              <span className="text-[10px] font-mono font-bold tracking-wider text-amber-400 uppercase bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full">
-                Luxury Obsidian
-              </span>
             </div>
             <p className="text-xs text-neutral-400">
-              Live omnichannel metrics · Add, remove, and rearrange widgets to tailor your executive cockpit
+              Add, remove and rearrange widgets.
             </p>
           </div>
         </div>
@@ -461,7 +458,7 @@ export const CustomizableWidgetGrid: React.FC<CustomizableWidgetGridProps> = ({
           </div>
           <h3 className="text-sm font-bold text-white">All Dashboard Widgets Are Hidden</h3>
           <p className="text-xs text-neutral-400 max-w-sm mt-1 mb-4">
-            Customize your CRM workspace by restoring default KPI widgets or selecting specific performance cards.
+            Restore the default widgets or pick the ones you want.
           </p>
           <div className="flex items-center gap-3">
             <button
@@ -620,7 +617,7 @@ export const CustomizableWidgetGrid: React.FC<CustomizableWidgetGridProps> = ({
                 </div>
                 <div>
                   <h3 className="text-sm font-bold text-white">Add Dashboard Widgets</h3>
-                  <p className="text-xs text-neutral-400">Select performance KPI cards to display in your obsidian cockpit</p>
+                  <p className="text-xs text-neutral-400">Choose which widgets to show on your dashboard.</p>
                 </div>
               </div>
               <button

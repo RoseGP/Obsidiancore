@@ -108,7 +108,12 @@ assert.equal(r.status, 403); ok('Twilio voice webhook without signature rejected
 r = await request(ca).post('/api/communication/twilio-video-token').send({ identity: 'ceo', roomName: 'board' });
 assert.equal(r.status, 401); ok('Twilio video token requires sign-in');
 r = await request(ca).post('/api/communication/twilio-video-token').set('X-Dev-User-Id', 'alice').send({ identity: 'ceo', roomName: 'board' });
+assert.equal(r.status, 503); assert.equal(r.body.code, 'video_not_configured'); assert.equal('token' in r.body, false);
+ok('without Twilio Video credentials no token (and no fake token) is issued');
+Object.assign(process.env, { TWILIO_ACCOUNT_SID: 'AC' + '0'.repeat(32), TWILIO_API_KEY: 'SK' + '0'.repeat(32), TWILIO_API_SECRET: 'test-only-secret' });
+r = await request(ca).post('/api/communication/twilio-video-token').set('X-Dev-User-Id', 'alice').send({ identity: 'ceo', roomName: 'board' });
 assert.equal(r.body.identity, 'alice'); ok('video token identity is the signed-in user, not the requested one');
+delete process.env.TWILIO_ACCOUNT_SID; delete process.env.TWILIO_API_KEY; delete process.env.TWILIO_API_SECRET;
 
 // ---- AI chat sessions: no cross-user access ----
 const chatRouter = (await import('../../routes/chat')).default;

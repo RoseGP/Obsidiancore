@@ -259,25 +259,11 @@ export const ChatDetailColumn: React.FC<ChatDetailColumnProps> = ({
       return;
     }
 
-    // Simulate progress animation
-    setUploadProgress(15);
-    const p1 = setTimeout(() => setUploadProgress(65), 200);
-    const p2 = setTimeout(() => {
-      setUploadProgress(100);
-      if (onUploadFile) {
-        onUploadFile(file);
-      } else {
-        onSendMessage({
-          content: `Shared file: ${file.name}`,
-          contentType: 'file',
-          attachmentName: file.name,
-          attachmentUrl: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',
-          attachmentSize: `${(file.size / 1024).toFixed(1)} KB`,
-          attachmentMime: file.type || 'application/pdf'
-        });
-      }
-      setTimeout(() => setUploadProgress(null), 400);
-    }, 500);
+    if (!onUploadFile) {
+      alert('File sharing isn\'t available here yet.');
+      return;
+    }
+    onUploadFile(file);
   };
 
   const handleDrop = (e: React.DragEvent) => {

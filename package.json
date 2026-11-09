@@ -24,13 +24,16 @@
     "key:generate": "node scripts/generate-api-key.mjs",
     "test:api-key": "npx tsx src/server/__tests__/apiKeyAuth.test.ts",
     "typecheck": "tsc --noEmit",
-    "test:ci": "npm run -s test && npm run -s test:messaging && npm run -s test:stripe && npm run -s test:video && npm run -s test:invoicing && npm run -s test:proposals && npm run -s test:social-accounts && npm run -s test:local-seo && npm run -s test:voice-ivr && npm run -s test:security && npm run -s test:meeting-controls && npm run -s test:meeting-session && npm run -s test:meeting-plans && npm run -s test:meeting-summary && npm run -s test:assistant && npm run -s test:ai && npm run -s test:embed && npm run -s test:api-key && npm run -s test:google",
+    "test:communication": "npx tsx src/routes/__tests__/communication.test.ts",
+    "test:ci": "npm run -s test && npm run -s test:account && npm run -s test:dashboard && npm run -s test:communication && npm run -s test:messaging && npm run -s test:stripe && npm run -s test:video && npm run -s test:invoicing && npm run -s test:proposals && npm run -s test:social-accounts && npm run -s test:local-seo && npm run -s test:voice-ivr && npm run -s test:security && npm run -s test:meeting-controls && npm run -s test:meeting-session && npm run -s test:meeting-plans && npm run -s test:meeting-summary && npm run -s test:assistant && npm run -s test:ai && npm run -s test:embed && npm run -s test:api-key && npm run -s test:google",
     "test:google": "npx tsx src/server/__tests__/googleTokens.test.ts",
     "test:meeting-session": "npx tsx src/context/__tests__/meetingSession.test.tsx",
     "test:meeting-summary": "npx tsx src/services/__tests__/meetingSummary.test.ts",
     "test:meeting-plans": "npx tsx src/lib/__tests__/meetingPlans.test.ts && npx tsx src/server/meetings/__tests__/subscriptions.test.ts && npx tsx src/server/meetings/__tests__/media.test.ts",
     "test:proposals": "npx tsx src/features/proposals/__tests__/proposals.test.ts",
-    "test:messaging": "npx tsx src/routes/__tests__/messaging.test.ts"
+    "test:messaging": "npx tsx src/routes/__tests__/messaging.test.ts",
+    "test:dashboard": "npx tsx src/components/dashboard/__tests__/widgets.test.tsx",
+    "test:account": "npx tsx src/routes/__tests__/account.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.132.1",

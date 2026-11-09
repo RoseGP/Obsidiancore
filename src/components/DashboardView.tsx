@@ -11,7 +11,6 @@ import {
   Square, Upload, Link2, CheckSquare, FileCode, SlidersHorizontal
 } from 'lucide-react';
 import { CRMContact } from '../types';
-import { useCommand } from '../context/CommandContext';
 import Markdown from 'react-markdown';
 import UnifiedAssistant from './assistant/UnifiedAssistant';
 import CustomizableWidgetGrid from './dashboard/CustomizableWidgetGrid';
@@ -23,128 +22,16 @@ interface DashboardViewProps {
   onNavigate: (view: any) => void;
 }
 
-// Fun Motivational / Insight quotes
-const MOTIVATIONAL_INSIGHTS = [
-  "⚡ High Momentum: Pipeline velocity is up 22% this week. Close the day strong!",
-  "🎯 Focus Tip: AI Receptionist is handling 100% of front-desk triage so you can focus on high-ticket deals.",
-  "🚀 Pro-Active Strategy: 3 enterprise contacts are primed for follow-up proposals today.",
-  "✨ Dealmaker Mindset: Value is not in the price, it's in the transformation you deliver.",
-  "💡 Automation Win: Over 4.5 hours of routine outreach saved this week by your AI agents."
-];
-
-// Initial AI Daily Missions
-interface AIMission {
-  id: string;
-  title: string;
-  category: 'calls' | 'deals' | 'marketing' | 'ops';
-  rewardXP: number;
-  completed: boolean;
-  targetView: string;
-  badge: string;
-}
-
-const DEFAULT_MISSIONS: AIMission[] = [
-  {
-    id: 'm-1',
-    title: 'Qualify Marcus Chen ($120k ARR AlphaTech WhatsApp lead)',
-    category: 'deals',
-    rewardXP: 150,
-    completed: false,
-    targetView: 'deals',
-    badge: 'High Value'
-  },
-  {
-    id: 'm-2',
-    title: 'Respond to critical SLA support ticket (APAC WebRTC fallback)',
-    category: 'ops',
-    rewardXP: 100,
-    completed: false,
-    targetView: 'messages',
-    badge: 'SLA Guard'
-  },
-  {
-    id: 'm-3',
-    title: 'Follow up on Summit Logistics proposal ($65k ARR)',
-    category: 'deals',
-    rewardXP: 120,
-    completed: false,
-    targetView: 'proposals',
-    badge: 'Closing Target'
-  },
-  {
-    id: 'm-4',
-    title: 'Check AI Receptionist call transcript from Beacon Health',
-    category: 'calls',
-    rewardXP: 80,
-    completed: false,
-    targetView: 'voice_dialer',
-    badge: 'Voice Inbound'
-  }
-];
-
-// Sample AI Receptionist Inbound Message Slips
-interface InboundSlip {
-  id: string;
-  callerName: string;
-  company: string;
-  phone: string;
-  email: string;
-  timeAgo: string;
-  aiSummary: string;
-  intent: 'demo' | 'support' | 'contract' | 'inquiry';
-  resolved: boolean;
-  urgency: 'high' | 'normal';
-}
-
-// TO COMPLETE: load recent inbound items (calls, messages, form submissions) from the messaging and voice logs.
-const INITIAL_INBOUND_SLIPS: InboundSlip[] = [];
-
 export default function DashboardView({ contacts, onSelectContact, onNavigate }: DashboardViewProps) {
   const now = new Date();
   const dayGreeting = now.getHours() < 12 ? 'Good morning' : now.getHours() < 18 ? 'Good afternoon' : 'Good evening';
   const todayLabel = now.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
-  const { handleUserCommand, isProcessingCommand, isVoiceAssistantActive } = useCommand();
-  const { simulateEvent, autoStreamActive, setAutoStreamActive } = useNotifications();
-  const [commandText, setCommandText] = useState('');
-  const isSubmitting = isProcessingCommand;
-  const [assistantReply, setAssistantReply] = useState<string | null>(null);
-  const [activeVoiceSim, setActiveVoiceSim] = useState(false);
-  const [voiceTimer, setVoiceTimer] = useState(0);
+  const { simulateEvent } = useNotifications();
   const [actionAlert, setActionAlert] = useState<{ text: string; type: 'success' | 'info' | 'reward' | 'error' } | null>(null);
   const [activeSlide, setActiveSlide] = useState(0);
   const [carouselCategory, setCarouselCategory] = useState<'all' | 'sales' | 'marketing' | 'ops'>('all');
   const [isAutoPlaying, setIsAutoPlaying] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
-
-  // New Chatbot Textarea, Attachments, Options & Voice-Over state
-  const [attachedFiles, setAttachedFiles] = useState<Array<{ id: string; name: string; size: string; type: string }>>([]);
-  const [isOptionsOpen, setIsOptionsOpen] = useState(false);
-  const [isAttachMenuOpen, setIsAttachMenuOpen] = useState(false);
-  const [aiModel, setAiModel] = useState<'gemini-2.5-flash' | 'claude-3-5-sonnet' | 'deepseek-r1'>('gemini-2.5-flash');
-  const [responseLength, setResponseLength] = useState<'concise' | 'standard' | 'detailed'>('concise');
-  const [aiTone, setAiTone] = useState<'executive' | 'technical' | 'action'>('executive');
-  const [includeLeadContext, setIncludeLeadContext] = useState(true);
-  const [isSpeaking, setIsSpeaking] = useState(false);
-
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const attachMenuRef = useRef<HTMLDivElement>(null);
-  const optionsMenuRef = useRef<HTMLDivElement>(null);
-
-  // Gamification State with localStorage persistence
-  const [missions, setMissions] = useState<AIMission[]>(DEFAULT_MISSIONS);
-  const [userXP, setUserXP] = useState<number>(() => {
-    try {
-      const saved = localStorage.getItem('obsidian_crm_user_xp');
-      return saved ? parseInt(saved, 10) || 0 : 350;
-    } catch {
-      return 350;
-    }
-  });
-  const [streakDays] = useState(4);
-  const [currentInsightIdx, setCurrentInsightIdx] = useState(0);
-  const [starburstSpun, setStarburstSpun] = useState(false);
-  const [focusMood, setFocusMood] = useState<'energy' | 'zen' | 'dealmaker'>('energy');
 
   // Real Backend Dashboard Stats
   const [dashboardStats, setDashboardStats] = useState<{
@@ -169,25 +56,15 @@ export default function DashboardView({ contacts, onSelectContact, onNavigate }:
     name: '',
     client: '',
     value: '',
-    stage: 'discovery' as 'discovery' | 'qualified' | 'proposal' | 'negotiation' | 'closing',
+    stage: 'discovery' as 'lead' | 'discovery' | 'qualified' | 'proposal' | 'negotiation' | 'won',
     channelOrigin: 'whatsapp',
-    expectedClose: 'Next Month'
+    expectedClose: ''
   });
   const [isSubmittingDeal, setIsSubmittingDeal] = useState(false);
 
   // Live Omnichannel Feed & Activities
   const [activities, setActivities] = useState<Array<any>>([]);
   const [liveConversations, setLiveConversations] = useState<Array<any>>([]);
-  const [replyOpenId, setReplyOpenId] = useState<string | null>(null);
-  const [replyInput, setReplyInput] = useState('');
-  const [isSendingReply, setIsSendingReply] = useState(false);
-
-  // Persist userXP
-  useEffect(() => {
-    try {
-      localStorage.setItem('obsidian_crm_user_xp', userXP.toString());
-    } catch {}
-  }, [userXP]);
 
   // Fetch Dashboard Stats, Activities, and Inbound items
   const fetchDashboardData = async () => {
@@ -238,7 +115,7 @@ export default function DashboardView({ contacts, onSelectContact, onNavigate }:
       });
       const data = await res.json();
       if (data.success) {
-        triggerAlert(`🎉 Deal registered: $${parseFloat(newDealForm.value).toLocaleString()} for ${newDealForm.client}!`, 'reward');
+        triggerAlert(`Deal saved: $${parseFloat(newDealForm.value).toLocaleString()} for ${newDealForm.client}.`, 'success');
         setIsNewDealModalOpen(false);
         setNewDealForm({
           name: '',
@@ -246,7 +123,7 @@ export default function DashboardView({ contacts, onSelectContact, onNavigate }:
           value: '',
           stage: 'discovery',
           channelOrigin: 'whatsapp',
-          expectedClose: 'Next Month'
+          expectedClose: ''
         });
         fetchDashboardData();
       } else {
@@ -259,40 +136,14 @@ export default function DashboardView({ contacts, onSelectContact, onNavigate }:
     }
   };
 
-  const handleSendQuickReply = async (targetId: string, channel: string, customerName: string) => {
-    if (!replyInput.trim() || isSendingReply) return;
-    setIsSendingReply(true);
-    try {
-      const res = await fetch(`/api/dashboard/tickets/${targetId}/reply`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ replyText: replyInput.trim() })
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data.success) {
-        triggerAlert(data.error || `Couldn’t save the reply to ${customerName}. Your text is still in the box.`, 'error');
-        return; // keep the draft so nothing is lost
-      }
-      // The server says whether the reply was actually delivered; don't claim more than that.
-      triggerAlert(data.delivered ? `Reply sent to ${customerName} via ${channel.toUpperCase()}.` : (data.message || 'Reply saved to the ticket (not sent).'), data.delivered ? 'success' : 'info');
-      setReplyOpenId(null);
-      setReplyInput('');
-      fetchDashboardData();
-    } catch (err) {
-      triggerAlert(`Couldn’t reach the server. Your reply to ${customerName} was not saved.`, 'error');
-    } finally {
-      setIsSendingReply(false);
-    }
-  };
-
   const slides = [
     {
       id: 'video',
-      title: 'Video Dashboard & Greet',
+      title: 'Video Meetings',
       displayWord: 'connect',
       tag: 'COLLABORATION',
       category: 'sales',
-      description: 'Encrypted WebRTC video consultations, Greet welcome hub, live AI whiteboard and Call Canvas',
+      description: 'Group video meetings, waiting room and host controls',
       icon: Video,
       targetView: 'greet',
       gradient: 'from-slate-100 via-slate-200 to-[#D8B4FE]',
@@ -307,7 +158,7 @@ export default function DashboardView({ contacts, onSelectContact, onNavigate }:
       displayWord: 'vocal',
       tag: 'TELEPHONY & AI',
       category: 'sales',
-      description: 'Intelligent AI Front-Desk Receptionist, auto-call transcripts, and SIP softphone',
+      description: 'AI receptionist, call transcripts and a softphone',
       icon: Phone,
       targetView: 'voice_dialer',
       gradient: 'from-indigo-100 via-blue-200 to-[#A5B4FC]',
@@ -322,7 +173,7 @@ export default function DashboardView({ contacts, onSelectContact, onNavigate }:
       displayWord: 'creator',
       tag: 'CONTENT STUDIO',
       category: 'marketing',
-      description: 'Multi-model creative assistant, prompt templates, viral video scripts & brand intelligence',
+      description: 'AI writing assistant with prompt templates',
       icon: Sparkles,
       targetView: 'chat',
       gradient: 'from-blue-50 via-slate-100 to-blue-100',
@@ -337,7 +188,7 @@ export default function DashboardView({ contacts, onSelectContact, onNavigate }:
       displayWord: 'outreach',
       tag: 'OMNICHANNEL',
       category: 'marketing',
-      description: 'Multi-channel unified inbox, automated follow-up sequences, and AI drafts',
+      description: 'One inbox for chat and email, with AI drafts',
       icon: Mail,
       targetView: 'messages',
       gradient: 'from-blue-100 via-blue-200 to-[#7DD3FC]',
@@ -348,11 +199,11 @@ export default function DashboardView({ contacts, onSelectContact, onNavigate }:
     },
     {
       id: 'proposal',
-      title: 'Enterprise Proposals',
+      title: 'Proposals',
       displayWord: 'vetted',
-      tag: 'CONTRACT RAILS',
+      tag: 'PROPOSALS',
       category: 'sales',
-      description: 'Generate compliance-vetted SLA deals, investment term sheets, and e-signatures',
+      description: 'Build proposals, send a secure link and collect a typed signature',
       icon: FileText,
       targetView: 'proposals',
       gradient: 'from-blue-100 via-blue-200 to-[#80DEEA]',
@@ -367,7 +218,7 @@ export default function DashboardView({ contacts, onSelectContact, onNavigate }:
       displayWord: 'schedule',
       tag: 'MULTI-PUBLISHER',
       category: 'marketing',
-      description: 'Publish and schedule AI-optimized updates across LinkedIn, Meta, and X',
+      description: 'Schedule posts to LinkedIn, Meta and X',
       icon: Megaphone,
       targetView: 'social_planner',
       gradient: 'from-slate-100 via-[#FBCFE8] to-[#F9A8D4]',
@@ -378,11 +229,11 @@ export default function DashboardView({ contacts, onSelectContact, onNavigate }:
     },
     {
       id: 'calendar',
-      title: 'Calendar Matrix',
-      displayWord: 'matrix',
+      title: 'Calendar',
+      displayWord: 'calendar',
       tag: 'SCHEDULING',
       category: 'ops',
-      description: 'Executive scheduling matrix, client booking links, and time-block routing',
+      description: 'Your schedule and client booking links',
       icon: Calendar,
       targetView: 'calendar',
       gradient: 'from-[#D1FAE5] via-[#A7F3D0] to-[#6EE7B7]',
@@ -395,9 +246,9 @@ export default function DashboardView({ contacts, onSelectContact, onNavigate }:
       id: 'gbp',
       title: 'Google Profile',
       displayWord: 'local',
-      tag: 'REPUTATION SYNC',
+      tag: 'REVIEWS',
       category: 'marketing',
-      description: 'Monitor, analyze, and reply to Google reviews and location insights in real time',
+      description: 'Read and reply to Google reviews and see location insights',
       icon: Globe,
       targetView: 'gbp',
       gradient: 'from-[#FEF3C7] via-[#FDE68A] to-[#FCD34D]',
@@ -410,9 +261,9 @@ export default function DashboardView({ contacts, onSelectContact, onNavigate }:
       id: 'analytics',
       title: 'Revenue Analytics',
       displayWord: 'growth',
-      tag: 'MRR STREAMS',
+      tag: 'REPORTS',
       category: 'ops',
-      description: 'Real-time deal pipeline visualizer, conversion funnels, and MRR split metrics',
+      description: 'Pipeline and conversion reports from your CRM data',
       icon: BarChart3,
       targetView: 'analytics',
       gradient: 'from-blue-100 via-[#A5F3FC] to-[#67E8F9]',
@@ -426,8 +277,6 @@ export default function DashboardView({ contacts, onSelectContact, onNavigate }:
   const filteredSlides = carouselCategory === 'all' 
     ? slides 
     : slides.filter(s => s.category === carouselCategory);
-
-  const inputRef = useRef<HTMLInputElement>(null);
 
   // Play subtle synthesis sound effects
   const playSoundEffect = (type: 'chime' | 'success' | 'click' | 'pop') => {
@@ -474,31 +323,6 @@ export default function DashboardView({ contacts, onSelectContact, onNavigate }:
     }
   };
 
-  // Dynamic greeting based on time of day
-  const getGreeting = () => {
-    const hour = new Date().getHours();
-    if (hour < 12) return 'Good Morning';
-    if (hour < 18) return 'Good Afternoon';
-    return 'Good Evening';
-  };
-
-  // Typing effect for the main welcome heading
-  const [typedTitle, setTypedTitle] = useState('');
-  const fullTitle = getGreeting();
-
-  useEffect(() => {
-    let index = 0;
-    setTypedTitle('');
-    const interval = setInterval(() => {
-      setTypedTitle(fullTitle.slice(0, index + 1));
-      index++;
-      if (index >= fullTitle.length) {
-        clearInterval(interval);
-      }
-    }, 80);
-    return () => clearInterval(interval);
-  }, [fullTitle]);
-
   // Auto-play carousel
   useEffect(() => {
     let interval: NodeJS.Timeout;
@@ -510,242 +334,16 @@ export default function DashboardView({ contacts, onSelectContact, onNavigate }:
     return () => clearInterval(interval);
   }, [isAutoPlaying, filteredSlides.length]);
 
-  // Voice recording simulation & Speech recognition
-  useEffect(() => {
-    let interval: NodeJS.Timeout;
-    if (activeVoiceSim) {
-      interval = setInterval(() => {
-        setVoiceTimer(prev => {
-          if (prev >= 4) {
-            setActiveVoiceSim(false);
-            setCommandText("Start a video consultation in My Meet & Greet with Marcus Sterling");
-            triggerAlert("🎙️ Voice transcription captured!", "success");
-            playSoundEffect('pop');
-            return 0;
-          }
-          return prev + 1;
-        });
-      }, 1000);
-    }
-    return () => clearInterval(interval);
-  }, [activeVoiceSim]);
-
-  // Audio and voice-over playback stop/play handler
-  const stopVoiceOver = () => {
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-    }
-    setIsSpeaking(false);
-    if (activeVoiceSim) {
-      setActiveVoiceSim(false);
-    }
-    triggerAlert("🔇 Voice-over & audio playback stopped", "info");
-  };
-
-  const toggleVoiceOver = (textToSpeak?: string) => {
-    if (isSpeaking) {
-      stopVoiceOver();
-      return;
-    }
-    const text = textToSpeak || assistantReply;
-    if (!text || typeof window === 'undefined' || !('speechSynthesis' in window)) {
-      triggerAlert("Voice playback not supported in this browser.", "info");
-      return;
-    }
-    
-    try {
-      window.speechSynthesis.cancel();
-      const plainText = text.replace(/[#*`_\[\]\(\)]/g, ' ').replace(/\s+/g, ' ').trim();
-      const utterance = new SpeechSynthesisUtterance(plainText);
-      utterance.rate = 1.0;
-      utterance.pitch = 1.0;
-      utterance.onstart = () => setIsSpeaking(true);
-      utterance.onend = () => setIsSpeaking(false);
-      utterance.onerror = () => setIsSpeaking(false);
-      window.speechSynthesis.speak(utterance);
-      triggerAlert("🔊 Speaking response voice-over...", "info");
-    } catch (e) {
-      setIsSpeaking(false);
-    }
-  };
-
-  // Close menus when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (attachMenuRef.current && !attachMenuRef.current.contains(e.target as Node)) {
-        setIsAttachMenuOpen(false);
-      }
-      if (optionsMenuRef.current && !optionsMenuRef.current.contains(e.target as Node)) {
-        setIsOptionsOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-    
-    const newItems: Array<{ id: string; name: string; size: string; type: string }> = [];
-    for (let i = 0; i < files.length; i++) {
-      const f = files[i];
-      const sizeStr = f.size > 1024 * 1024 
-        ? `${(f.size / (1024 * 1024)).toFixed(1)} MB` 
-        : `${Math.round(f.size / 1024)} KB`;
-      newItems.push({
-        id: `file-${Date.now()}-${i}`,
-        name: f.name,
-        size: sizeStr,
-        type: f.type || 'document'
-      });
-    }
-
-    setAttachedFiles(prev => [...prev, ...newItems]);
-    setIsAttachMenuOpen(false);
-    playSoundEffect('pop');
-    triggerAlert(`📎 Attached ${newItems.length} file(s) to prompt context`, 'success');
-  };
-
-  const attachContextPreset = (type: 'lead' | 'proposal' | 'telemetry') => {
-    const presets = {
-      lead: { id: `preset-lead-${Date.now()}`, name: 'Lead: Marcus Chen (AlphaTech Enterprise)', size: '12 KB', type: 'lead-context' },
-      proposal: { id: `preset-prop-${Date.now()}`, name: 'Proposal Draft: Q4 Enterprise Tier ($45,000)', size: '28 KB', type: 'proposal' },
-      telemetry: { id: `preset-telem-${Date.now()}`, name: 'CRM Live Telemetry & Conversion Logs', size: '64 KB', type: 'system-log' },
-    };
-    setAttachedFiles(prev => [...prev, presets[type]]);
-    setIsAttachMenuOpen(false);
-    playSoundEffect('pop');
-    triggerAlert(`📎 Attached ${presets[type].name}`, 'success');
-  };
-
-  const removeAttachedFile = (id: string) => {
-    setAttachedFiles(prev => prev.filter(f => f.id !== id));
-    playSoundEffect('click');
-  };
-
-  const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setCommandText(e.target.value);
-    e.target.style.height = 'auto';
-    e.target.style.height = `${Math.min(Math.max(e.target.scrollHeight, 84), 260)}px`;
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSendCommand();
-    }
-  };
-
-  const handleSendCommand = async (e?: React.FormEvent, customPrompt?: string) => {
-    if (e) e.preventDefault();
-    const query = customPrompt || commandText;
-    if (!query.trim() || isSubmitting) return;
-
-    // Build context if files or custom tuning attached
-    let promptWithContext = query;
-    if (attachedFiles.length > 0) {
-      const attachmentsSummary = attachedFiles.map(f => `- ${f.name} (${f.size})`).join('\n');
-      promptWithContext = `${query}\n\n[Attached Context Files]:\n${attachmentsSummary}`;
-    }
-
-    setAssistantReply(null);
-    playSoundEffect('click');
-
-    try {
-      const res = await handleUserCommand(promptWithContext);
-      if (res.success && res.data) {
-        setAssistantReply(res.data.message);
-        playSoundEffect('chime');
-      } else {
-        setAssistantReply("I processed your query across our CRM workspace. How else can I assist?");
-      }
-    } catch (err: any) {
-      console.error('[Dashboard Assistant Error]:', err);
-      setAssistantReply(`### ⚠️ Assistant Triage\n\nI processed your request: **"${query}"**.\n\nYou can access the relevant workspace directly using the action shortcuts below.`);
-    }
-  };
-
   const triggerAlert = (text: string, type: 'success' | 'info' | 'reward' | 'error' = 'success') => {
     setActionAlert({ text, type });
     if (type === 'reward') playSoundEffect('success');
     setTimeout(() => setActionAlert(null), 4000);
   };
 
-  const startVoiceCapture = () => {
-    if (activeVoiceSim) {
-      stopVoiceOver();
-      return;
-    }
-
-    // Try browser SpeechRecognition if available
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (SpeechRecognition) {
-      try {
-        const recognition = new SpeechRecognition();
-        recognition.continuous = false;
-        recognition.interimResults = false;
-        recognition.lang = 'en-US';
-        recognition.onstart = () => {
-          setActiveVoiceSim(true);
-          triggerAlert("🎤 Listening... Speak your command", "info");
-        };
-        recognition.onresult = (event: any) => {
-          const transcript = event.results[0][0].transcript;
-          setCommandText(prev => prev ? `${prev} ${transcript}` : transcript);
-          setActiveVoiceSim(false);
-          triggerAlert(`Transcribed: "${transcript}"`, "success");
-          playSoundEffect('chime');
-          if (textareaRef.current) {
-            textareaRef.current.style.height = 'auto';
-            textareaRef.current.style.height = `${Math.min(Math.max(textareaRef.current.scrollHeight, 84), 260)}px`;
-          }
-        };
-        recognition.onerror = () => {
-          triggerAlert("🎤 Voice module active. Simulating capture...", "info");
-        };
-        recognition.start();
-        return;
-      } catch (err) {
-        // Fallback below
-      }
-    }
-
-    setActiveVoiceSim(true);
-    setVoiceTimer(0);
-    triggerAlert("🎤 Voice module active. Speak clearly into your mic...", "info");
-  };
-
-  const toggleMission = (id: string) => {
-    setMissions(prev => prev.map(m => {
-      if (m.id === id) {
-        const newState = !m.completed;
-        if (newState) {
-          setUserXP(xp => xp + m.rewardXP);
-          triggerAlert(`🎉 Mission Accomplished! +${m.rewardXP} XP`, "reward");
-        }
-        return { ...m, completed: newState };
-      }
-      return m;
-    }));
-  };
-
-  const handleSpinStarburst = () => {
-    setStarburstSpun(true);
-    playSoundEffect('chime');
-    setCurrentInsightIdx((prev) => (prev + 1) % MOTIVATIONAL_INSIGHTS.length);
-    triggerAlert("✨ Obsidian Sparkle Activated: Daily Insight Refreshed!", "reward");
-    setTimeout(() => setStarburstSpun(false), 800);
-  };
-
-  // Quick Prompt Chips
-  const QUICK_PROMPT_PILLS = [
-    { label: "🎥 Start Meet & Greet", prompt: "Start a video call in My Meet & Greet" },
-    { label: "📞 Check Receptionist Slips", prompt: "Summarize latest receptionist message slips" },
-    { label: "📅 Today's Agenda", prompt: "What meetings and appointments do I have today?" },
-    { label: "📈 Pipeline Revenue", prompt: "Give me an executive summary of current deal pipeline" },
-    { label: "✨ Draft Cold Outreach", prompt: "Draft a high-converting enterprise email proposal" }
-  ];
+  // Newest leads first (the API returns them unordered).
+  const recentLeads = [...liveConversations]
+    .sort((a: any, b: any) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+    .slice(0, 10);
 
   // Top VIP Contacts for Fast Action
   const vipContacts = contacts.slice(0, 4);
@@ -759,33 +357,20 @@ export default function DashboardView({ contacts, onSelectContact, onNavigate }:
         <div className="flex items-center gap-2.5">
           <span className="text-[10px] font-medium bg-white/70 text-neutral-600 border border-neutral-200/80 px-2.5 py-1 rounded-full shadow-xs flex items-center gap-1.5">
             <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-            Executive Workspace
+            Workspace
           </span>
 
-          {/* Sound FX & Voice-Over Control */}
+          {/* Sound effects toggle */}
           <button
+            type="button"
             onClick={() => {
-              if (isSpeaking || activeVoiceSim) {
-                stopVoiceOver();
-              } else {
-                setSoundEnabled(!soundEnabled);
-                triggerAlert(soundEnabled ? "Muted UI Sound FX" : "Enabled UI Sound FX", "info");
-              }
+              setSoundEnabled(!soundEnabled);
+              triggerAlert(soundEnabled ? "Sound effects off" : "Sound effects on", "info");
             }}
-            className={`p-1.5 rounded-full border text-xs transition shadow-xs cursor-pointer ${
-              isSpeaking
-                ? 'bg-rose-100 hover:bg-rose-200 border-rose-300 text-rose-700 animate-pulse'
-                : 'bg-white/70 hover:bg-white border-neutral-200/70 text-neutral-500 hover:text-neutral-700'
-            }`}
-            title={isSpeaking ? "Stop Voice-Over Audio" : soundEnabled ? "Mute sound FX" : "Enable sound FX"}
+            className="p-1.5 rounded-full border text-xs transition shadow-xs cursor-pointer bg-white/70 hover:bg-white border-neutral-200/70 text-neutral-500 hover:text-neutral-700"
+            title={soundEnabled ? "Mute sound effects" : "Enable sound effects"}
           >
-            {isSpeaking ? (
-              <Square className="h-3.5 w-3.5 fill-rose-600 text-rose-600" />
-            ) : soundEnabled ? (
-              <Volume2 className="h-3.5 w-3.5" />
-            ) : (
-              <VolumeX className="h-3.5 w-3.5" />
-            )}
+            {soundEnabled ? <Volume2 className="h-3.5 w-3.5" /> : <VolumeX className="h-3.5 w-3.5" />}
           </button>
 
           {/* Alert simulator (development builds only): injects test notifications, never in production. */}
@@ -829,44 +414,6 @@ export default function DashboardView({ contacts, onSelectContact, onNavigate }:
           )}
         </div>
         
-        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-          {/* Gamification Streak & XP Badge */}
-          <div className="flex items-center gap-2 bg-white/80 border border-amber-200/80 py-1 px-3 rounded-full shadow-xs">
-            <Flame className="h-3.5 w-3.5 text-amber-500 fill-amber-500 animate-bounce" />
-            <span className="text-[11px] font-bold text-neutral-700 font-mono">
-              {streakDays}D Streak
-            </span>
-            <span className="text-neutral-300">•</span>
-            <Trophy className="h-3.5 w-3.5 text-indigo-500" />
-            <span className="text-[11px] font-extrabold text-indigo-600 font-mono">
-              {userXP.toLocaleString()} XP
-            </span>
-          </div>
-
-          {/* Mood / Focus Toggle */}
-          <div className="flex items-center bg-white/70 border border-neutral-200/70 p-0.5 rounded-full shadow-xs text-[10px] font-bold text-neutral-600">
-            <button
-              onClick={() => { setFocusMood('energy'); triggerAlert("⚡ High-Energy Mode active!", "info"); }}
-              className={`px-2 py-0.5 rounded-full transition cursor-pointer ${focusMood === 'energy' ? 'bg-amber-100 text-amber-800 shadow-xs' : 'hover:text-neutral-900'}`}
-            >
-              ⚡ Fast
-            </button>
-            <button
-              onClick={() => { setFocusMood('zen'); triggerAlert("🎯 Deep Zen Focus active!", "info"); }}
-              className={`px-2 py-0.5 rounded-full transition cursor-pointer ${focusMood === 'zen' ? 'bg-indigo-100 text-indigo-800 shadow-xs' : 'hover:text-neutral-900'}`}
-            >
-              🎯 Zen
-            </button>
-          </div>
-
-          {/* Executive Officer Badge */}
-          <div className="flex items-center gap-1.5 bg-white/80 border border-neutral-200/80 py-1 px-3 rounded-full shadow-xs">
-            <div className="h-5 w-5 rounded-full bg-gradient-to-tr from-indigo-500 to-amber-500 flex items-center justify-center text-white text-[10px] font-bold">
-              ✦
-            </div>
-            <span className="text-xs font-bold text-neutral-700">Executive Officer</span>
-          </div>
-        </div>
       </div>
 
       {/* CENTRAL HERO STATEMENT & INTERACTIVE STARBURST */}
@@ -941,7 +488,7 @@ export default function DashboardView({ contacts, onSelectContact, onNavigate }:
               Video Dashboard
             </span>
             <span className="text-[10px] text-neutral-400 mt-0.5">
-              Greet & Call Canvas
+              Video meetings
             </span>
           </button>
 
@@ -975,7 +522,7 @@ export default function DashboardView({ contacts, onSelectContact, onNavigate }:
               Email Outreach
             </span>
             <span className="text-[10px] text-neutral-400 mt-0.5">
-              Smart Sequences
+              Inbox
             </span>
           </button>
 
@@ -992,7 +539,7 @@ export default function DashboardView({ contacts, onSelectContact, onNavigate }:
               Book Meeting
             </span>
             <span className="text-[10px] text-neutral-400 mt-0.5">
-              Calendar Matrix
+              Calendar
             </span>
           </button>
 
@@ -1009,7 +556,7 @@ export default function DashboardView({ contacts, onSelectContact, onNavigate }:
               New Proposal
             </span>
             <span className="text-[10px] text-neutral-400 mt-0.5">
-              SLA Term Sheets
+              Send for signature
             </span>
           </button>
 
@@ -1059,7 +606,7 @@ export default function DashboardView({ contacts, onSelectContact, onNavigate }:
               {dashboardStats?.callsToday ?? '—'}
             </span>
             <span className="text-xs font-mono font-medium text-indigo-600 dark:text-indigo-400">
-              Active Triage
+              Calls
             </span>
           </div>
           <div className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-1.5 flex items-center gap-1.5">
@@ -1115,129 +662,30 @@ export default function DashboardView({ contacts, onSelectContact, onNavigate }:
             </span>
           </div>
           <div className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-1.5 flex items-center gap-1.5">
-            <span>Calendar matrix</span>
-            <span aria-hidden="true">·</span>
-            <span>Live sync</span>
+            <span>{dashboardStats?.meetingsToday == null ? 'Meeting tracking not connected yet' : 'From your calendar'}</span>
           </div>
         </div>
 
       </div>
 
-      {/* SECTION: CUSTOMIZABLE KPI COMMAND CENTER (LUXURY OBSIDIAN WIDGETS) */}
+      {/* SECTION: CUSTOMIZABLE WIDGETS */}
       <CustomizableWidgetGrid 
         contacts={contacts} 
         onSelectContact={onSelectContact} 
         onNavigate={onNavigate} 
       />
 
-      {/* SECTION: TODAY'S AI MISSIONS (GAMIFIED PRODUCTIVITY WIDGET) */}
-      <div className="w-full max-w-5xl z-10 bg-white/80 backdrop-blur-md rounded-3xl border border-neutral-200/80 p-5 sm:p-6 shadow-md">
-        <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
-          <div className="flex items-center gap-2">
-            <div className="p-2 rounded-xl bg-amber-500/10 text-amber-600">
-              <Lightbulb className="h-4 w-4" />
-            </div>
-            <div>
-              <h3 className="text-sm font-extrabold text-neutral-900">Today&apos;s AI High-Impact Missions</h3>
-              <p className="text-[11px] text-neutral-500">Complete daily milestones to maximize deal velocity and earn XP</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-mono font-bold text-neutral-500">
-              {missions.filter(m => m.completed).length} / {missions.length} Done
-            </span>
-            <button
-              onClick={() => {
-                const newM: AIMission = {
-                  id: `m-${Date.now()}`,
-                  title: 'Publish automated Google Business Profile review response',
-                  category: 'marketing',
-                  rewardXP: 100,
-                  completed: false,
-                  targetView: 'gbp',
-                  badge: 'Local Reputation'
-                };
-                setMissions(prev => [...prev, newM]);
-                triggerAlert("✨ New AI mission added to queue!", "info");
-              }}
-              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-xs font-bold transition cursor-pointer"
-            >
-              <Plus className="h-3 w-3" />
-              Add Mission
-            </button>
-          </div>
-        </div>
-
-        {/* Progress Bar */}
-        <div className="w-full bg-neutral-100 h-2 rounded-full overflow-hidden mb-4">
-          <div 
-            className="h-full bg-gradient-to-r from-amber-400 via-pink-500 to-indigo-600 transition-all duration-500 rounded-full"
-            style={{ width: `${(missions.filter(m => m.completed).length / missions.length) * 100}%` }}
-          />
-        </div>
-
-        {/* Mission Checklist */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-          {missions.map((mission) => (
-            <div
-              key={mission.id}
-              className={`flex items-center justify-between p-3 rounded-2xl border transition-all ${
-                mission.completed 
-                  ? 'bg-emerald-50/50 border-emerald-200 text-neutral-500' 
-                  : 'bg-white hover:bg-neutral-50 border-neutral-200 text-neutral-800 shadow-2xs'
-              }`}
-            >
-              <div className="flex items-center gap-3 min-w-0 pr-2">
-                <button
-                  type="button"
-                  onClick={() => toggleMission(mission.id)}
-                  className="shrink-0 p-1 rounded-lg hover:bg-neutral-100 transition cursor-pointer text-neutral-400 hover:text-neutral-700"
-                >
-                  {mission.completed ? (
-                    <CheckCircle2 className="h-5 w-5 text-emerald-500" />
-                  ) : (
-                    <Circle className="h-5 w-5 text-neutral-300 hover:text-neutral-400" />
-                  )}
-                </button>
-                <div className="min-w-0">
-                  <div className={`text-xs font-bold truncate ${mission.completed ? 'line-through text-neutral-400' : 'text-neutral-800'}`}>
-                    {mission.title}
-                  </div>
-                  <div className="flex items-center gap-2 mt-0.5">
-                    <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-neutral-100 text-neutral-600 font-semibold">
-                      {mission.badge}
-                    </span>
-                    <span className="text-[10px] font-bold text-amber-600 font-mono">
-                      +{mission.rewardXP} XP
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => onNavigate(mission.targetView)}
-                className="shrink-0 p-2 rounded-xl bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-xs font-bold transition cursor-pointer"
-                title="Launch relevant tool"
-              >
-                <ArrowRight className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          ))}
-        </div>
-      </div>
-
       {/* SECTION: VIP RECENT CONTACTS QUICK-CONNECT ROW */}
       <div className="w-full max-w-5xl z-10">
         <div className="flex items-center justify-between px-2 mb-3">
           <span className="text-[11px] font-mono font-bold tracking-widest text-neutral-400 uppercase">
-            🤝 Top VIP Contacts
+            Recent contacts
           </span>
           <button 
             onClick={() => onNavigate('messages')}
             className="text-[11px] font-bold text-blue-600 hover:text-blue-700 transition cursor-pointer flex items-center gap-1"
           >
-            <span>View All Contacts</span>
+            <span>View all</span>
             <ArrowRight className="h-3 w-3" />
           </button>
         </div>
@@ -1249,12 +697,18 @@ export default function DashboardView({ contacts, onSelectContact, onNavigate }:
               className="p-3.5 rounded-2xl bg-white/80 border border-neutral-200/80 shadow-2xs hover:shadow-md transition flex flex-col justify-between"
             >
               <div className="flex items-center gap-2.5 mb-2.5">
-                <img 
-                  src={contact.avatar} 
-                  alt={contact.name} 
-                  className="h-9 w-9 rounded-full object-cover border border-neutral-200 shadow-2xs"
-                  referrerPolicy="no-referrer"
-                />
+                {contact.avatar ? (
+                  <img
+                    src={contact.avatar}
+                    alt={contact.name}
+                    className="h-9 w-9 rounded-full object-cover border border-neutral-200 shadow-2xs"
+                    referrerPolicy="no-referrer"
+                  />
+                ) : (
+                  <span className="h-9 w-9 rounded-full border border-neutral-200 bg-neutral-100 text-[11px] font-bold text-neutral-600 flex items-center justify-center shrink-0">
+                    {(contact.name || '?').split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() || '').join('')}
+                  </span>
+                )}
                 <div className="min-w-0 flex-1">
                   <div className="text-xs font-bold text-neutral-900 truncate">{contact.name}</div>
                   <div className="text-[10px] text-neutral-400 truncate">{contact.company}</div>
@@ -1307,7 +761,7 @@ export default function DashboardView({ contacts, onSelectContact, onNavigate }:
       {/* SECTION: LIVE OMNICHANNEL INTERACTION STREAM & INSTANT QUICK REPLY */}
       <div className="w-full max-w-5xl z-10 grid grid-cols-1 lg:grid-cols-3 gap-5">
         
-        {/* Left 2 Cols: Real-time Multi-Channel Inbound Queue */}
+        {/* Left 2 Cols: newest leads */}
         <div className="lg:col-span-2 rounded-3xl bg-white/80 backdrop-blur-md border border-neutral-200/80 p-5 sm:p-6 shadow-sm flex flex-col justify-between">
           <div>
             <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
@@ -1316,8 +770,8 @@ export default function DashboardView({ contacts, onSelectContact, onNavigate }:
                   <MessageSquare className="h-4 w-4" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-extrabold text-neutral-900">Live Omnichannel Stream</h3>
-                  <p className="text-[11px] text-neutral-500">Real-time incoming dialogues across WhatsApp, Web Chat, Phone & Email</p>
+                  <h3 className="text-sm font-extrabold text-neutral-900">New leads</h3>
+                  <p className="text-[11px] text-neutral-500">The 10 most recent leads from every channel</p>
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -1340,16 +794,20 @@ export default function DashboardView({ contacts, onSelectContact, onNavigate }:
               </div>
             </div>
 
-            {/* Conversation Stream Items */}
+            {/* Newest leads */}
             <div className="space-y-3 max-h-[360px] overflow-y-auto pr-1">
-              {liveConversations.length === 0 ? (
+              {recentLeads.length === 0 ? (
                 <div className="py-8 text-center text-xs text-neutral-500">
-                  No active incoming dialogues. All customer inquiries resolved.
+                  {isStatsLoading ? 'Loading…' : 'No leads yet. New leads from forms, chat and calls appear here.'}
                 </div>
               ) : (
-                liveConversations.map((conv: any) => {
-                  const channel = (conv.channel || 'web').toLowerCase();
-                  const isReplyOpen = replyOpenId === conv.id;
+                recentLeads.map((conv: any) => {
+                  const channel = String(conv.channel || conv.source || 'web').toLowerCase();
+                  const name = String(conv.name || 'Unnamed lead');
+                  const created = conv.createdAt ? new Date(conv.createdAt) : null;
+                  const note = typeof conv.intent === 'string' && conv.intent.trim() ? conv.intent
+                    : typeof conv.notes === 'string' && conv.notes.trim() ? conv.notes
+                    : typeof conv.qualification?.need === 'string' ? conv.qualification.need : '';
 
                   return (
                     <div
@@ -1358,101 +816,74 @@ export default function DashboardView({ contacts, onSelectContact, onNavigate }:
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex items-center gap-2.5 min-w-0">
-                          <img
-                            src={conv.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=150'}
-                            alt={conv.name}
-                            referrerPolicy="no-referrer"
-                            className="h-8 w-8 rounded-full object-cover border border-neutral-200 shrink-0"
-                          />
+                          <span className="h-8 w-8 rounded-full border border-neutral-200 shrink-0 bg-neutral-100 text-[10px] font-bold text-neutral-600 flex items-center justify-center">
+                            {name.split(/\s+/).slice(0, 2).map((w: string) => w[0]?.toUpperCase() || '').join('')}
+                          </span>
                           <div className="min-w-0">
                             <div className="flex items-center gap-2">
-                              <span className="text-xs font-bold text-neutral-900 truncate">{conv.name}</span>
-                              <span className="text-[10px] text-neutral-500 truncate">({conv.company})</span>
+                              <span className="text-xs font-bold text-neutral-900 truncate">{name}</span>
+                              {conv.company && <span className="text-[10px] text-neutral-500 truncate">({conv.company})</span>}
                             </div>
                             <div className="text-[10px] text-neutral-400 flex items-center gap-1.5 mt-0.5">
                               <span className="font-semibold text-indigo-600 uppercase font-mono">{channel}</span>
-                              <span>·</span>
-                              <span>{conv.timeAgo || 'Just now'}</span>
+                              {created && !isNaN(created.getTime()) && (
+                                <>
+                                  <span>·</span>
+                                  <span>{created.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                                </>
+                              )}
                             </div>
                           </div>
                         </div>
 
-                        <div className="text-right shrink-0">
-                          <span className="text-[10px] font-mono font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
-                            {conv.value || '$45k ARR'}
-                          </span>
-                        </div>
+                        {conv.value && (
+                          <div className="text-right shrink-0">
+                            <span className="text-[10px] font-mono font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
+                              {String(conv.value)}
+                            </span>
+                          </div>
+                        )}
                       </div>
 
-                      {/* Content snippet */}
-                      <p className="text-xs text-neutral-700 mt-2 bg-neutral-50 p-2 rounded-xl border border-neutral-100 font-normal leading-relaxed">
-                        {conv.intent || conv.lastMessage || 'Customer inquiry received via omnichannel gateway.'}
-                      </p>
-
-                      {/* Expandable Instant Quick Reply Drawer */}
-                      {isReplyOpen ? (
-                        <div className="mt-3 pt-3 border-t border-neutral-100 space-y-2 animate-in fade-in duration-150">
-                          <textarea
-                            value={replyInput}
-                            onChange={(e) => setReplyInput(e.target.value)}
-                            placeholder={`Type quick response to ${conv.name} via ${channel.toUpperCase()}...`}
-                            rows={2}
-                            className="w-full bg-white border border-neutral-200 rounded-xl p-2.5 text-xs text-neutral-900 placeholder-neutral-400 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/30"
-                          />
-                          <div className="flex items-center justify-end gap-2">
-                            <button
-                              type="button"
-                              onClick={() => { setReplyOpenId(null); setReplyInput(''); }}
-                              className="px-3 py-1 rounded-lg text-xs font-medium text-neutral-500 hover:text-neutral-800"
-                            >
-                              Cancel
-                            </button>
-                            <button
-                              type="button"
-                              disabled={isSendingReply}
-                              onClick={() => handleSendQuickReply(conv.id, channel, conv.name)}
-                              className="px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-xs"
-                            >
-                              <Send className="h-3 w-3" />
-                              <span>{isSendingReply ? 'Sending...' : 'Send Reply'}</span>
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="mt-2.5 pt-2 border-t border-neutral-100 flex items-center justify-between text-xs">
-                          <span className="text-[10px] font-mono text-neutral-400">
-                            Score: {conv.score || 90}/100
-                          </span>
-                          <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setNewDealForm({
-                                  name: `${conv.company} Solution Suite`,
-                                  client: conv.company,
-                                  value: '75000',
-                                  stage: 'qualified',
-                                  channelOrigin: channel,
-                                  expectedClose: 'Next Month'
-                                });
-                                setIsNewDealModalOpen(true);
-                              }}
-                              className="text-[11px] font-semibold text-emerald-600 hover:text-emerald-700 flex items-center gap-1 transition cursor-pointer"
-                            >
-                              <Plus className="h-3 w-3" />
-                              <span>New Deal</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => { setReplyOpenId(conv.id); setReplyInput(''); }}
-                              className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-700 flex items-center gap-1 transition cursor-pointer"
-                            >
-                              <MessageSquare className="h-3 w-3" />
-                              <span>Instant Reply</span>
-                            </button>
-                          </div>
-                        </div>
+                      {note && (
+                        <p className="text-xs text-neutral-700 mt-2 bg-neutral-50 p-2 rounded-xl border border-neutral-100 font-normal leading-relaxed line-clamp-2">
+                          {note}
+                        </p>
                       )}
+
+                      <div className="mt-2.5 pt-2 border-t border-neutral-100 flex items-center justify-between text-xs">
+                        <span className="text-[10px] font-mono text-neutral-400">
+                          {typeof conv.score === 'number' ? `Score: ${conv.score}/100` : String(conv.status || 'new')}
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setNewDealForm({
+                                name: conv.company ? `${conv.company} deal` : `${name} deal`,
+                                client: conv.company || name,
+                                value: '',
+                                stage: 'qualified',
+                                channelOrigin: channel,
+                                expectedClose: ''
+                              });
+                              setIsNewDealModalOpen(true);
+                            }}
+                            className="text-[11px] font-semibold text-emerald-600 hover:text-emerald-700 flex items-center gap-1 transition cursor-pointer"
+                          >
+                            <Plus className="h-3 w-3" />
+                            <span>New Deal</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => onNavigate('leads')}
+                            className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-700 flex items-center gap-1 transition cursor-pointer"
+                          >
+                            <ArrowRight className="h-3 w-3" />
+                            <span>Open lead</span>
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   );
                 })
@@ -1461,7 +892,7 @@ export default function DashboardView({ contacts, onSelectContact, onNavigate }:
           </div>
         </div>
 
-        {/* Right 1 Col: Real-time CRM Activity Timeline */}
+        {/* Right 1 Col: CRM activity */}
         <div className="rounded-3xl bg-white/80 backdrop-blur-md border border-neutral-200/80 p-5 sm:p-6 shadow-sm flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-4">
@@ -1470,8 +901,8 @@ export default function DashboardView({ contacts, onSelectContact, onNavigate }:
                   <Activity className="h-4 w-4" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-extrabold text-neutral-900">CRM Activity Stream</h3>
-                  <p className="text-[11px] text-neutral-500">Live operational audit trail</p>
+                  <h3 className="text-sm font-extrabold text-neutral-900">Recent activity</h3>
+                  <p className="text-[11px] text-neutral-500">Changes made in your CRM</p>
                 </div>
               </div>
             </div>
@@ -1503,7 +934,7 @@ export default function DashboardView({ contacts, onSelectContact, onNavigate }:
           </div>
 
           <div className="pt-3 border-t border-neutral-100 flex items-center justify-between text-[11px] text-neutral-500 font-mono">
-            <span>Audit Trail: Synced</span>
+            <span>{activities.length ? `Last ${activities.length} activities` : ''}</span>
             <button
               onClick={() => onNavigate('analytics')}
               className="text-indigo-600 hover:text-indigo-700 font-semibold cursor-pointer"
@@ -1520,7 +951,7 @@ export default function DashboardView({ contacts, onSelectContact, onNavigate }:
         <div className="flex flex-wrap items-center justify-between gap-3 px-6 mb-6 font-sans">
           <div className="flex items-center gap-2">
             <span className="text-[11px] font-mono font-bold tracking-widest text-neutral-400 uppercase">
-              Core Workspace Modules
+              Modules
             </span>
           </div>
 
@@ -1712,8 +1143,8 @@ export default function DashboardView({ contacts, onSelectContact, onNavigate }:
                   <Plus className="h-4 w-4" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-bold text-neutral-900">Register New Pipeline Deal</h3>
-                  <p className="text-[11px] text-neutral-500">Fast CRM pipeline ingestion</p>
+                  <h3 className="text-sm font-bold text-neutral-900">New deal</h3>
+                  <p className="text-[11px] text-neutral-500">Adds it to your pipeline</p>
                 </div>
               </div>
               <button
@@ -1751,7 +1182,7 @@ export default function DashboardView({ contacts, onSelectContact, onNavigate }:
                   />
                 </div>
                 <div>
-                  <label className="block text-[11px] font-bold text-neutral-700 mb-1">Value ($ ARR)</label>
+                  <label className="block text-[11px] font-bold text-neutral-700 mb-1">Value ($)</label>
                   <input
                     type="number"
                     required
@@ -1777,7 +1208,7 @@ export default function DashboardView({ contacts, onSelectContact, onNavigate }:
                     <option value="qualified">Qualified</option>
                     <option value="proposal">Proposal</option>
                     <option value="negotiation">Negotiation</option>
-                    <option value="closed_won">Closed Won</option>
+                    <option value="won">Won</option>
                   </select>
                 </div>
                 <div>
@@ -1839,7 +1270,7 @@ export default function DashboardView({ contacts, onSelectContact, onNavigate }:
         </div>
       )}
 
-      {/* FLOAT ACTION ALERT / XP REWARD MESSAGES */}
+      {/* FLOAT ACTION ALERT */}
       {actionAlert && (
         <div className={`fixed bottom-24 right-6 border text-white px-4 py-2.5 rounded-2xl shadow-2xl flex items-center gap-2.5 z-50 text-xs font-sans font-semibold animate-in slide-in-from-right duration-200 ${
           actionAlert.type === 'reward' 

@@ -57,6 +57,10 @@ export interface LocationItem {
   };
   photosCount: number;
   lastPhotoAdded: string;
+  /** This app's profile checks (from the server audit), not a Google metric. */
+  auditChecks?: { id: string; group: string; label: string; passed: boolean }[];
+  /** Average rating is null when the location has no reviews yet. */
+  hasRating?: boolean;
 }
 
 export interface ReviewItem {
@@ -97,6 +101,8 @@ export interface PostItem {
   isAiGenerated?: boolean;
   scheduledDate?: string; // YYYY-MM-DD
   publishedAt?: string;
+  /** ISO time Google reports for the post (used for the calendar). */
+  createdAt?: string;
   viewsCount?: number;
   clicksCount?: number;
   offerDetails?: {

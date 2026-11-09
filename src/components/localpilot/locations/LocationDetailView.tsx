@@ -14,27 +14,40 @@ export interface LocationDetailViewProps {
   onBack: () => void;
   onRunAudit: (locId: string) => void;
   onNavigateTab?: (tab: string) => void;
-  onOpenEditProfile: () => void;
+  onOpenEditProfile?: () => void;
+  /** Saves the fields Google lets owners change through the API (phone, website). */
+  onSaveProfile?: (locId: string, patch: { phone: string; website: string }) => Promise<void> | void;
 }
 
 export const LocationDetailView: React.FC<LocationDetailViewProps> = ({
   location,
   onBack,
   onRunAudit,
-  onOpenEditProfile
+  onOpenEditProfile,
+  onSaveProfile
 }) => {
+  const [phone, setPhone] = useState(location.phone);
+  const [website, setWebsite] = useState(location.website);
+  const [saving, setSaving] = useState(false);
+  React.useEffect(() => { setPhone(location.phone); setWebsite(location.website); }, [location.id, location.phone, location.website]);
   const [activeTab, setActiveTab] = useState<
     'Overview' | 'Profile' | 'Reviews' | 'Posts' | 'Analytics' | 'SEO' | 'Security'
   >('Overview');
 
-  const completenessCategories = [
-    { name: 'Business Information', score: 100, status: 'Complete', desc: 'Name, address, phone, and website verified' },
-    { name: 'Operating Hours', score: 100, status: 'Complete', desc: 'Regular and holiday hours configured' },
-    { name: 'Categories', score: 100, status: 'Complete', desc: 'Primary & 2 secondary categories indexed' },
-    { name: 'Services & Products', score: 85, status: '3 Missing', desc: '3 high-traffic services not listed' },
-    { name: 'Photos & Visuals', score: 90, status: 'Healthy', desc: '142 photos uploaded, active 3d ago' },
-    { name: 'Attributes & Badges', score: 100, status: 'Complete', desc: 'Accessibility, payment, and amenities set' },
-  ];
+  // Built from this app's profile checks (see the server audit). Nothing here is estimated.
+  const checks = location.auditChecks || [];
+  const completenessCategories = Array.from(new Set(checks.map((c) => c.group))).map((group) => {
+    const inGroup = checks.filter((c) => c.group === group);
+    const passed = inGroup.filter((c) => c.passed).length;
+    const missing = inGroup.filter((c) => !c.passed).map((c) => c.label);
+    return {
+      name: group,
+      score: inGroup.length ? Math.round((passed / inGroup.length) * 100) : 0,
+      status: missing.length ? `${missing.length} to fix` : 'Complete',
+      desc: missing.length ? `Missing: ${missing.join('; ')}` : `${passed} of ${inGroup.length} checks passed`,
+    };
+  });
+  const failedChecks = checks.filter((c) => !c.passed).length;
 
   return (
     <div className="space-y-6 animate-in fade-in duration-200" id="localpilot-location-detail-view">
@@ -97,7 +110,7 @@ export const LocationDetailView: React.FC<LocationDetailViewProps> = ({
             <Button
               variant="primary"
               size="sm"
-              onClick={onOpenEditProfile}
+              onClick={() => setActiveTab('Profile')}
               leftIcon={<Edit3 className="h-3.5 w-3.5" />}
             >
               Edit Profile
@@ -133,18 +146,15 @@ export const LocationDetailView: React.FC<LocationDetailViewProps> = ({
             
             <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-2xs">
               <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block mb-1">
-                Local Visibility Score
+                Profile health
               </span>
               <div className="flex items-baseline gap-2">
                 <span className="text-3xl font-bold text-slate-900">{location.visibilityScore}</span>
                 <span className="text-xs font-normal text-slate-400">/ 100</span>
-                <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded ml-2">
-                  +{location.visibilityChange}% vs last month
-                </span>
               </div>
               <p className="text-xs text-slate-500 mt-2 flex items-center gap-1.5">
                 <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
-                Ranked #1 for 18 primary keywords in Miami metro
+                Profile health from this app's checks. Search ranking tracking isn't available yet.
               </p>
             </div>
 
@@ -160,22 +170,22 @@ export const LocationDetailView: React.FC<LocationDetailViewProps> = ({
               </div>
               <p className="text-xs text-slate-500 mt-2 flex items-center gap-1.5">
                 <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
-                3 recommended services missing from profile
+                {failedChecks ? `${failedChecks} profile check${failedChecks === 1 ? '' : 's'} to fix` : 'All profile checks passed'}
               </p>
             </div>
 
             <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-2xs">
               <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block mb-1">
-                Review Health & Velocity
+                Reviews
               </span>
               <div className="flex items-baseline gap-2">
                 <span className="text-3xl font-bold text-slate-900 flex items-center gap-1">
-                  {location.rating} <Star className="h-5 w-5 fill-amber-400 text-amber-400" />
+                  {location.hasRating === false ? '—' : location.rating} <Star className="h-5 w-5 fill-amber-400 text-amber-400" />
                 </span>
                 <span className="text-xs text-slate-500">({location.reviewsCount} reviews)</span>
               </div>
-              <p className="text-xs text-rose-600 mt-2 font-medium">
-                {location.unansweredReviewsCount} reviews waiting for response
+              <p className={`text-xs mt-2 font-medium ${location.unansweredReviewsCount ? 'text-rose-600' : 'text-slate-500'}`}>
+                {location.unansweredReviewsCount ? `${location.unansweredReviewsCount} review${location.unansweredReviewsCount === 1 ? '' : 's'} waiting for a reply` : 'No reviews waiting for a reply'}
               </p>
             </div>
 
@@ -189,14 +199,17 @@ export const LocationDetailView: React.FC<LocationDetailViewProps> = ({
                   Profile completeness breakdown
                 </h3>
                 <p className="text-xs text-slate-500">
-                  Ensure every Google Business Profile attribute is thoroughly populated.
+                  Checks this app runs on the profile data synced from Google.
                 </p>
               </div>
-              <Button variant="outline" size="xs" onClick={onOpenEditProfile}>
-                Manage all attributes
+              <Button variant="outline" size="xs" onClick={() => setActiveTab('Profile')}>
+                Edit profile
               </Button>
             </div>
 
+            {completenessCategories.length === 0 && (
+              <p className="text-xs text-slate-500">Sync from Google to run the profile checks.</p>
+            )}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
               {completenessCategories.map((cat) => (
                 <div
@@ -233,10 +246,13 @@ export const LocationDetailView: React.FC<LocationDetailViewProps> = ({
                 <h3 className="text-sm font-semibold text-slate-900 tracking-tight">
                   Configured Services
                 </h3>
-                <span className="text-xs text-blue-600 font-semibold cursor-pointer hover:underline" onClick={onOpenEditProfile}>
-                  + Add service
-                </span>
+                <a href="https://business.google.com/" target="_blank" rel="noreferrer" className="text-xs text-blue-600 font-semibold hover:underline inline-flex items-center gap-1">
+                  Edit in Google <ExternalLink className="h-3 w-3" />
+                </a>
               </div>
+              {location.services.length === 0 && (
+                <p className="text-xs text-slate-500">Service names aren't loaded from Google here yet. Manage them in Google Business Profile.</p>
+              )}
               <div className="flex flex-wrap gap-2">
                 {location.services.map((svc) => (
                   <span
@@ -274,9 +290,7 @@ export const LocationDetailView: React.FC<LocationDetailViewProps> = ({
                 <h3 className="text-sm font-semibold text-slate-900 tracking-tight">
                   Operating Hours
                 </h3>
-                <span className="text-xs text-emerald-600 font-semibold flex items-center gap-1">
-                  <span className="h-2 w-2 rounded-full bg-emerald-500" /> Open Now
-                </span>
+                <span className="text-[11px] text-slate-500">As listed on Google</span>
               </div>
 
               <div className="space-y-1.5 text-xs">
@@ -302,11 +316,20 @@ export const LocationDetailView: React.FC<LocationDetailViewProps> = ({
                 Google Business Profile Fields
               </h3>
               <p className="text-xs text-slate-500">
-                Changes are validated and synced directly with Google Business Profile APIs upon approval.
+                Phone and website are saved to Google from here. Edit the name and category in Google Business Profile; Google may review changes before they appear.
               </p>
             </div>
-            <Button variant="primary" size="sm" onClick={onOpenEditProfile}>
-              Save Profile Changes
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={saving || !onSaveProfile || (phone === location.phone && website === location.website)}
+              onClick={async () => {
+                if (!onSaveProfile) return;
+                setSaving(true);
+                try { await onSaveProfile(location.id, { phone, website }); } finally { setSaving(false); }
+              }}
+            >
+              {saving ? 'Saving…' : 'Save to Google'}
             </Button>
           </div>
 
@@ -315,23 +338,26 @@ export const LocationDetailView: React.FC<LocationDetailViewProps> = ({
               <label className="font-medium text-slate-900 block mb-1">Business Name</label>
               <input
                 type="text"
-                defaultValue={location.name}
-                className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-900"
+                value={location.name}
+                readOnly
+                className="w-full p-2 bg-slate-100 border border-slate-200 rounded-lg text-slate-500"
               />
             </div>
             <div>
               <label className="font-medium text-slate-900 block mb-1">Primary Category</label>
               <input
                 type="text"
-                defaultValue={location.category}
-                className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-900"
+                value={location.category}
+                readOnly
+                className="w-full p-2 bg-slate-100 border border-slate-200 rounded-lg text-slate-500"
               />
             </div>
             <div>
               <label className="font-medium text-slate-900 block mb-1">Phone Number</label>
               <input
                 type="text"
-                defaultValue={location.phone}
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
                 className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-900"
               />
             </div>
@@ -339,7 +365,8 @@ export const LocationDetailView: React.FC<LocationDetailViewProps> = ({
               <label className="font-medium text-slate-900 block mb-1">Website URL</label>
               <input
                 type="text"
-                defaultValue={location.website}
+                value={website}
+                onChange={(e) => setWebsite(e.target.value)}
                 className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-900"
               />
             </div>
@@ -351,7 +378,7 @@ export const LocationDetailView: React.FC<LocationDetailViewProps> = ({
       {activeTab !== 'Overview' && activeTab !== 'Profile' && (
         <div className="bg-white rounded-xl border border-slate-200 p-10 text-center shadow-2xs">
           <p className="text-xs text-slate-500">
-            Showing filtered <strong>{activeTab}</strong> for {location.name}.
+            {activeTab} for {location.name} isn't shown per location here yet. Use the {activeTab} section in the side menu.
           </p>
         </div>
       )}

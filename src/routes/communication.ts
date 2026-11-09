@@ -1,11 +1,15 @@
 import { Router, Request, Response, NextFunction } from 'express';
-import { wsDispatcher } from '../utils/wsDispatcher';
-import { db } from '../utils/db';
 import crypto from 'crypto';
 import twilio from 'twilio';
 import axios from 'axios';
 import { GoogleGenAI, Type } from "@google/genai";
-import { receptionistKnowledgeDb } from '../utils/receptionistKnowledgeDb';
+import {
+  KnowledgeInputError, addDocument, addQA, buildKnowledgeContext, clearKnowledge, deleteDocument, deleteQA, loadKnowledge,
+  updateProfile, updateQA, upsertDepartment,
+} from '../utils/receptionistKnowledgeDb';
+import { requirePermission, requireTenant, sendError, tenantOf } from '../server/tenancy/middleware';
+import { getOrg } from '../server/tenancy/orgs';
+import { InvalidIdError, getDocStore, newId } from '../server/data/docStore';
 import { coreSecret } from '../utils/secrets';
 import { sendSecureOutboundEmail } from '../utils/secureOutboundMailer';
 import { unsignedWebhooksAllowed } from '../server/runtimeEnv';
@@ -16,6 +20,44 @@ import { loadIvrConfig } from '../features/voice/server/config';
 const twilioSignature = verifyTwilio(loadIvrConfig());
 
 const router = Router();
+
+// ---------------------------------------------------------------------------
+// Shared helpers
+// ---------------------------------------------------------------------------
+/** No AI key on the server: say so (never answer with canned text). */
+function aiUnavailable(res: Response) {
+  return res.status(503).json({ success: false, code: 'ai_not_configured', error: 'AI isn’t set up on this server (add GEMINI_API_KEY).' });
+}
+/** The AI provider failed: report it; nothing is made up in its place. */
+function aiFailed(res: Response, tag: string, err: unknown) {
+  console.error(`[communication] ${tag}: AI request failed:`, (err as any)?.status || (err as any)?.code || (err as any)?.name || 'error');
+  return res.status(502).json({ success: false, code: 'ai_error', error: 'The AI service didn’t respond correctly. Please try again.' });
+}
+function knowledgeFail(res: Response, err: unknown, tag: string) {
+  if (err instanceof KnowledgeInputError || err instanceof InvalidIdError) return res.status(400).json({ success: false, code: 'invalid_input', error: err.message });
+  return sendError(res, err, tag);
+}
+const orgName = async (orgId: string) => (await getOrg(orgId))?.name || 'our company';
+
+/**
+ * Inbound phone numbers / WhatsApp numbers → organization.
+ * inbound_routes/{kind}_{key} holds { orgId }; organizations/{orgId}/inbound_routes/{kind}_{key} mirrors it for listing.
+ * Messages and voicemails for numbers nobody registered are not stored (and never shown to any organization).
+ */
+type RouteKind = 'phone' | 'whatsapp';
+const routeKey = (v: unknown) => String(v ?? '').replace(/\D/g, '').slice(0, 20);
+async function orgForInbound(kind: RouteKind, raw: unknown): Promise<string | null> {
+  const key = routeKey(raw);
+  if (key.length < 5) return null;
+  const r = await (await getDocStore()).get(`inbound_routes/${kind}_${key}`);
+  return typeof r?.orgId === 'string' ? r.orgId : null;
+}
+async function saveForOrg(orgId: string, collection: 'inbound_messages' | 'voicemails' | 'outbound_messages', rec: Record<string, unknown>) {
+  const id = newId(collection === 'voicemails' ? 'vm' : 'msg');
+  await (await getDocStore()).set(`organizations/${orgId}/${collection}/${id}`, { ...rec, id, at: new Date().toISOString() });
+  return id;
+}
+const lastDigits = (v: unknown) => { const d = routeKey(v); return d ? `…${d.slice(-4)}` : 'unknown'; };
 
 let aiClient: GoogleGenAI | null = null;
 function getGeminiClient(): GoogleGenAI | null {
@@ -111,102 +153,32 @@ router.post('/whatsapp-webhook', verifyMetaSignature, async (req: Request, res: 
   try {
     const body = req.body;
 
-    console.log('[WhatsApp Webhook POST] Inbound payload received:', JSON.stringify(body));
-
     // Safety guards to check if payload is from a valid Whatsapp subscription changes array
     if (body.object === 'whatsapp_business_account' && Array.isArray(body.entry)) {
       for (const entry of body.entry) {
-        if (Array.isArray(entry.changes)) {
-          for (const change of entry.changes) {
-            const value = change.value;
-            // Check for potential message content payloads
-            if (value && Array.isArray(value.messages)) {
-              for (const msg of value.messages) {
-                const messageId = msg.id;
-                const fromPhoneNumber = msg.from; // Customer sender phone
-                const timestamp = msg.timestamp;
-                
-                let textBody = '';
-
-                // Extract correct text element based on message payload content class
-                if (msg.type === 'text' && msg.text) {
-                  textBody = msg.text.body;
-                } else if (msg.type === 'button' && msg.button) {
-                  textBody = msg.button.text;
-                } else if (msg.type === 'interactive' && msg.interactive) {
-                  textBody = msg.interactive.button_reply?.title || msg.interactive.list_reply?.title || 'Interactive action';
-                } else {
-                  textBody = `[Unsupported Media Format: ${msg.type}]`;
-                }
-
-                const contactName = value.contacts?.[0]?.profile?.name || `WhatsApp Contact ${fromPhoneNumber}`;
-
-                // --- DATABASE LOGIC: Match or Create Client ---
-                let client = await db.client.findFirst({
-                  where: {
-                    OR: [
-                      { phone: fromPhoneNumber },
-                      { email: `${fromPhoneNumber}@whatsapp.user` }
-                    ]
-                  }
-                });
-
-                if (!client) {
-                  client = await db.client.create({
-                    data: {
-                      name: contactName,
-                      email: `${fromPhoneNumber}@whatsapp.user`,
-                      phone: fromPhoneNumber,
-                      location: 'Inbound WhatsApp Webhook',
-                      lifecycleStatus: 'LEAD',
-                      company: 'WhatsApp Inbound Lead'
-                    }
-                  });
-                }
-
-                // --- DATABASE LOGIC: Append entry to Communications table (Message model) ---
-                const messageRecord = await db.message.create({
-                  data: {
-                    channel: 'WHATSAPP',
-                    direction: 'INBOUND',
-                    body: textBody,
-                    status: 'DELIVERED',
-                    clientId: client.id
-                  }
-                });
-
-                const payloadData = {
-                  messageId: messageRecord.id,
-                  senderPhone: fromPhoneNumber,
-                  messageBody: textBody,
-                  timestamp: timestamp ? new Date(parseInt(timestamp) * 1000).toISOString() : new Date().toISOString(),
-                  metadata: {
-                    contactsName: client.name,
-                    phoneId: value.metadata?.phone_number_id || 'unspecified'
-                  }
-                };
-
-                // Real-time Event Transmission over WebSocket pool safely
-                wsDispatcher.broadcast('WHATSAPP_MESSAGE_RECEIVED', payloadData);
-
-                // Trigger Polymorphic Linker & Gemini Classification for Inbound WhatsApp
-                try {
-                  const { onNewEmailIngested } = await import('../utils/crmActivityLinker');
-                  await onNewEmailIngested({
-                    id: `wa-${messageRecord.id}`,
-                    messageId: msg.id || `wa-msg-${Date.now()}`,
-                    threadId: `thread-wa-${fromPhoneNumber}`,
-                    subject: `WhatsApp Message from ${contactName}`,
-                    from: fromPhoneNumber,
-                    to: 'whatsapp-trunk',
-                    body: textBody,
-                    date: new Date().toISOString()
-                  });
-                } catch (linkerErr: any) {
-                  console.error('[WhatsApp Linker Sync Error]:', linkerErr.message);
-                }
-              }
-            }
+        for (const change of Array.isArray(entry?.changes) ? entry.changes : []) {
+          const value = change?.value;
+          if (!value || !Array.isArray(value.messages)) continue;
+          const orgId = await orgForInbound('whatsapp', value.metadata?.phone_number_id);
+          if (!orgId) {
+            console.warn('[WhatsApp Webhook] Message for an unregistered WhatsApp number; not stored.');
+            continue;
+          }
+          for (const msg of value.messages) {
+            let textBody = '';
+            if (msg.type === 'text' && msg.text) textBody = String(msg.text.body || '');
+            else if (msg.type === 'button' && msg.button) textBody = String(msg.button.text || '');
+            else if (msg.type === 'interactive' && msg.interactive) textBody = String(msg.interactive.button_reply?.title || msg.interactive.list_reply?.title || '');
+            else textBody = `[${String(msg.type || 'unknown').slice(0, 30)} message: open WhatsApp to view]`;
+            await saveForOrg(orgId, 'inbound_messages', {
+              channel: 'WHATSAPP',
+              direction: 'INBOUND',
+              from: String(msg.from || '').slice(0, 32),
+              contactName: String(value.contacts?.[0]?.profile?.name || '').slice(0, 120),
+              body: textBody.slice(0, 4096),
+              providerMessageId: String(msg.id || '').slice(0, 200),
+              sentAt: msg.timestamp ? new Date(parseInt(msg.timestamp, 10) * 1000).toISOString() : null,
+            });
           }
         }
       }
@@ -217,7 +189,7 @@ router.post('/whatsapp-webhook', verifyMetaSignature, async (req: Request, res: 
     // Default return for non-message callbacks (e.g., read receipts or statuses updates)
     res.status(200).send('UNHANDLED_CALLBACK_TYPE');
   } catch (error: any) {
-    console.error('[WhatsApp Webhook POST Exception]', error.message);
+    console.error('[WhatsApp Webhook POST Exception]', error?.code || error?.name || 'error');
     res.status(500).json({ error: 'Failed to process WhatsApp payload safely.' });
   }
 });
@@ -232,81 +204,22 @@ router.post('/twilio-sms', twilioSignature, async (req: Request, res: Response) 
 
     if (!From || !Body) {
       console.warn('[Twilio SMS Webhook] Received empty From or Body parameters in request.');
-      res.status(400).send('<Response><Sms>Error: Invalid SMS webhook fields.</Sms></Response>');
+      res.status(400).send('<Response></Response>');
       return;
     }
 
-    const fromPhoneNumber = From;
-    const textBody = Body;
-    const twilioId = MessageSid || `sms-${Date.now()}`;
-
-    console.log(`[Twilio SMS Webhook] Inbound message received from: ${fromPhoneNumber} | Message: "${textBody}"`);
-
-    // --- DATABASE LOGIC: Match or Create Client with phone number lookup ---
-    let client = await db.client.findFirst({
-      where: {
-        OR: [
-          { phone: fromPhoneNumber },
-          { email: `${fromPhoneNumber}@sms.user` }
-        ]
-      }
-    });
-
-    if (!client) {
-      client = await db.client.create({
-        data: {
-          name: `SMS Contact ${fromPhoneNumber}`,
-          email: `${fromPhoneNumber}@sms.user`,
-          phone: fromPhoneNumber,
-          location: 'Inbound SMS Webhook',
-          lifecycleStatus: 'LEAD',
-          company: 'SMS Inbound Lead'
-        }
-      });
-    }
-
-    // --- DATABASE LOGIC: Append entry to Communications table (Message model) ---
-    const messageRecord = await db.message.create({
-      data: {
+    const orgId = await orgForInbound('phone', req.body.To);
+    if (orgId) {
+      await saveForOrg(orgId, 'inbound_messages', {
         channel: 'SMS',
         direction: 'INBOUND',
-        body: textBody,
-        status: 'DELIVERED',
-        clientId: client.id
-      }
-    });
-
-    // Structure websocket payload mirroring UI expected keys
-    const payloadData = {
-      messageId: messageRecord.id,
-      senderPhone: fromPhoneNumber,
-      // Wrap in [SMS] format prefix to distinguish communication routes in visual layouts
-      messageBody: `[SMS] ${textBody}`,
-      timestamp: new Date().toISOString(),
-      metadata: {
-        contactsName: client.name,
-        phoneId: 'sms-trunk'
-      }
-    };
-
-    // WebSocket real-time update push to notify UI
-    wsDispatcher.broadcast('WHATSAPP_MESSAGE_RECEIVED', payloadData);
-
-    // Trigger Polymorphic Linker & Gemini Classification for Inbound SMS
-    try {
-      const { onNewEmailIngested } = await import('../utils/crmActivityLinker');
-      await onNewEmailIngested({
-        id: `sms-${messageRecord.id}`,
-        messageId: twilioId,
-        threadId: `thread-sms-${fromPhoneNumber}`,
-        subject: `SMS Message from ${client.name}`,
-        from: fromPhoneNumber,
-        to: 'sms-sub-trunk',
-        body: textBody,
-        date: new Date().toISOString()
+        from: String(From).slice(0, 32),
+        contactName: '',
+        body: String(Body).slice(0, 4096),
+        providerMessageId: String(MessageSid || '').slice(0, 200),
       });
-    } catch (linkerErr: any) {
-      console.error('[SMS Linker Sync Error]:', linkerErr.message);
+    } else {
+      console.warn(`[Twilio SMS Webhook] Message to an unregistered number (${lastDigits(req.body.To)}); not stored.`);
     }
 
     // Output empty TwiML telling Twilio all is successfully processed
@@ -314,8 +227,8 @@ router.post('/twilio-sms', twilioSignature, async (req: Request, res: Response) 
     res.header('Content-Type', 'text/xml');
     res.status(200).send(twiML);
   } catch (error: any) {
-    console.error('[Twilio SMS Webhook Exception]', error.message);
-    res.status(500).send('<Response><Sms>Error: Failed to process SMS transaction safely.</Sms></Response>');
+    console.error('[Twilio SMS Webhook Exception]', error?.code || error?.name || 'error');
+    res.status(500).send('<Response></Response>');
   }
 });
 
@@ -328,20 +241,13 @@ router.post('/incoming-call', twilioSignature, (req: Request, res: Response) => 
     const fromNumber = req.body.From || 'Unknown Caller';
     const callSid = req.body.CallSid || 'n/a';
 
-    console.log(`[Twilio Route] Inbound voice connection request from ${fromNumber}. CallSid: ${callSid}`);
-
-    // Dynamic telemetry notification for Live Omnichannel feed
-    wsDispatcher.broadcast('INCOMING_CELLULAR_CALL', {
-      from: fromNumber,
-      callSid,
-      status: 'ringing'
-    });
+    void fromNumber; void callSid;
 
     // Generate compliant TwiML to ring client softphone
     // If softphone does not answer within 18 seconds, direct call traffic to local secure voicemail flow
     const twimlXml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="alice">Connecting call to the designated Obsidian Representative.</Say>
+  <Say voice="alice">Connecting your call.</Say>
   <Dial timeout="18" action="/api/communication/twiml-fallback">
     <Client>${SOFTPHONE_CLIENT_IDENTITY}</Client>
   </Dial>
@@ -355,7 +261,7 @@ router.post('/incoming-call', twilioSignature, (req: Request, res: Response) => 
     // Safety fallback XML returned in all failure instances to bypass silent carrier drops
     const errorTwiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="alice">Our core communication trunks are currently undergoing routing adjustments. Please try call again later.</Say>
+  <Say voice="alice">Sorry, we can't take your call right now. Please try again later.</Say>
 </Response>`;
     res.header('Content-Type', 'text/xml');
     res.status(200).send(errorTwiml);
@@ -372,21 +278,14 @@ router.post('/twiml-fallback', twilioSignature, (req: Request, res: Response) =>
     const fromNumber = req.body.From || 'Unknown Caller';
     const callSid = req.body.CallSid || '';
 
-    console.log(`[Twilio Fallback] Call state evaluated as: ${dialCallStatus}. Diverting to Obsidian VM server.`);
-
-    // Transmit active softphone miss alert for internal client records
-    wsDispatcher.broadcast('CALL_REDIRECTED_TO_VOICEMAIL', {
-      from: fromNumber,
-      callSid,
-      reason: dialCallStatus || 'no_answer'
-    });
+    void dialCallStatus; void fromNumber; void callSid;
 
     // Dynamic voicemail recording instruction
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="alice">The requested Obsidian partner is currently engaged. Please record your customer update or project reference number after the tone.</Say>
+  <Say voice="alice">No one is available to take your call. Please leave a message after the tone.</Say>
   <Record maxLength="45" action="/api/communication/twiml-voicemail-saved" playBeep="true" />
-  <Say voice="alice">Thank you. Your request is registered.</Say>
+  <Say voice="alice">We didn't receive a message. Goodbye.</Say>
 </Response>`;
 
     res.header('Content-Type', 'text/xml');
@@ -406,34 +305,140 @@ router.post('/twiml-fallback', twilioSignature, (req: Request, res: Response) =>
  * 2C. TWILIO RECORDING COMPLETED EVENT (POST)
  * Twilio issues metadata to this route when a customer finishes recording a voicemail.
  */
-router.post('/twiml-voicemail-saved', twilioSignature, (req: Request, res: Response) => {
+router.post('/twiml-voicemail-saved', twilioSignature, async (req: Request, res: Response) => {
   try {
-    const recordingUrl = req.body.RecordingUrl || '';
-    const duration = req.body.RecordingDuration || '0';
-    const fromNumber = req.body.From || 'Unknown Caller';
-
-    console.log(`[Twilio CRM Voicemail Saved] Recording URL registered: ${recordingUrl} (${duration} seconds)`);
-
-    // Signal dynamic frontend update so a red voice memo dot indicates live pending messages
-    wsDispatcher.broadcast('VOICEMAIL_RECORDED', {
-      from: fromNumber,
-      recordingUrl,
-      duration,
-      savedAt: new Date().toISOString()
-    });
+    const recordingUrl = String(req.body.RecordingUrl || '');
+    const duration = Math.max(0, parseInt(String(req.body.RecordingDuration || '0'), 10) || 0);
+    const orgId = await orgForInbound('phone', req.body.To);
+    if (orgId && /^https:\/\//.test(recordingUrl)) {
+      await saveForOrg(orgId, 'voicemails', {
+        from: String(req.body.From || '').slice(0, 32),
+        recordingUrl: recordingUrl.slice(0, 500),
+        durationSeconds: duration,
+        callSid: String(req.body.CallSid || '').slice(0, 64),
+      });
+    } else if (!orgId) {
+      console.warn(`[Twilio Voicemail] Recording for an unregistered number (${lastDigits(req.body.To)}); not stored.`);
+    }
 
     const finishTwiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="alice">Your high-trust voice memo has been synced with Obsidian CRM systems. Goodbye.</Say>
+  <Say voice="alice">Thank you. Your message has been recorded. Goodbye.</Say>
   <Hangup />
 </Response>`;
 
     res.header('Content-Type', 'text/xml');
     res.status(200).send(finishTwiml);
   } catch (error: any) {
-    console.error('[Twilio Voicemail Saved Exception]', error.message);
+    console.error('[Twilio Voicemail Saved Exception]', error?.code || error?.name || 'error');
     res.status(500).end();
   }
+});
+
+// ---------------------------------------------------------------------------
+// Everything below is for signed-in members of an organization.
+// ---------------------------------------------------------------------------
+router.use(requireTenant);
+
+/** Which phone / WhatsApp numbers deliver into this organization. */
+router.get('/inbound-routes', requirePermission('read'), async (req, res) => {
+  try { res.json({ success: true, routes: await (await getDocStore()).list(`organizations/${tenantOf(req).orgId}/inbound_routes`) }); }
+  catch (err) { sendError(res, err, 'communication.routes.list'); }
+});
+router.post('/inbound-routes', requirePermission('manage_org'), async (req, res) => {
+  try {
+    const kind = req.body?.kind;
+    const key = routeKey(req.body?.number);
+    if ((kind !== 'phone' && kind !== 'whatsapp') || key.length < 5) {
+      return res.status(400).json({ success: false, code: 'invalid_input', error: 'Choose phone or whatsapp and enter the number (or WhatsApp phone number ID).' });
+    }
+    const orgId = tenantOf(req).orgId;
+    const st = await getDocStore();
+    const id = `${kind}_${key}`;
+    const route = { id, kind, number: key, orgId, addedBy: tenantOf(req).userId, addedAt: new Date().toISOString() };
+    const taken = await st.transaction(async (tx) => {
+      const cur = await tx.get(`inbound_routes/${id}`);
+      if (cur && cur.orgId !== orgId) return true;
+      tx.set(`inbound_routes/${id}`, { orgId });
+      tx.set(`organizations/${orgId}/inbound_routes/${id}`, route);
+      return false;
+    });
+    if (taken) return res.status(409).json({ success: false, code: 'number_in_use', error: 'That number is already connected to another organization.' });
+    res.status(201).json({ success: true, route });
+  } catch (err) { sendError(res, err, 'communication.routes.add'); }
+});
+router.delete('/inbound-routes/:id', requirePermission('manage_org'), async (req, res) => {
+  try {
+    const id = String(req.params.id);
+    if (!/^(phone|whatsapp)_\d{5,20}$/.test(id)) return res.status(404).json({ success: false, error: 'Not found.' });
+    const orgId = tenantOf(req).orgId;
+    const st = await getDocStore();
+    const removed = await st.transaction(async (tx) => {
+      const cur = await tx.get(`inbound_routes/${id}`);
+      if (!cur || cur.orgId !== orgId) return false;
+      tx.delete(`inbound_routes/${id}`);
+      tx.delete(`organizations/${orgId}/inbound_routes/${id}`);
+      return true;
+    });
+    if (!removed) return res.status(404).json({ success: false, error: 'Not found.' });
+    res.json({ success: true });
+  } catch (err) { sendError(res, err, 'communication.routes.delete'); }
+});
+
+/** Messages and voicemails received on this organization's numbers (newest first). */
+router.get('/inbound-messages', requirePermission('read'), async (req, res) => {
+  try {
+    const st = await getDocStore();
+    const orgId = tenantOf(req).orgId;
+    const [messages, voicemails] = await Promise.all([
+      st.list(`organizations/${orgId}/inbound_messages`, { orderBy: 'at', direction: 'desc', limit: 200 }),
+      st.list(`organizations/${orgId}/voicemails`, { orderBy: 'at', direction: 'desc', limit: 200 }),
+    ]);
+    res.json({ success: true, messages, voicemails });
+  } catch (err) { sendError(res, err, 'communication.inbound.list'); }
+});
+
+/** Message slips (call-back requests) taken by the team or the receptionist, per organization. */
+const SLIP_STATUS = ['unread', 'resolved', 'called_back'] as const;
+const SLIP_URGENCY = ['normal', 'high', 'urgent'] as const;
+router.get('/message-slips', requirePermission('read'), async (req, res) => {
+  try {
+    const slips = await (await getDocStore()).list(`organizations/${tenantOf(req).orgId}/message_slips`, { orderBy: 'createdAt', direction: 'desc', limit: 200 });
+    res.json({ success: true, slips });
+  } catch (err) { sendError(res, err, 'communication.slips.list'); }
+});
+router.post('/message-slips', requirePermission('write'), async (req, res) => {
+  try {
+    const b = req.body || {};
+    const text = (v: unknown, n: number) => (typeof v === 'string' ? v.trim().slice(0, n) : '');
+    const callerName = text(b.callerName, 120), notes = text(b.notes, 2000);
+    if (!callerName || !notes) return res.status(400).json({ success: false, code: 'invalid_input', error: 'Caller name and message are required.' });
+    const t = tenantOf(req);
+    const slip = {
+      id: newId('slip'),
+      callerName, notes,
+      callerCompany: text(b.callerCompany, 120),
+      callbackNumber: text(b.callbackNumber, 40),
+      recipient: text(b.recipient, 120),
+      urgency: SLIP_URGENCY.includes(b.urgency) ? b.urgency : 'normal',
+      status: 'unread',
+      source: b.source === 'test_call' ? 'test_call' : 'manual',
+      createdBy: t.userId,
+      createdAt: new Date().toISOString(),
+    };
+    await (await getDocStore()).set(`organizations/${t.orgId}/message_slips/${slip.id}`, slip);
+    res.status(201).json({ success: true, slip });
+  } catch (err) { sendError(res, err, 'communication.slips.add'); }
+});
+router.patch('/message-slips/:id', requirePermission('write'), async (req, res) => {
+  try {
+    const id = String(req.params.id);
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(id)) return res.status(404).json({ success: false, error: 'Not found.' });
+    if (!SLIP_STATUS.includes(req.body?.status)) return res.status(400).json({ success: false, code: 'invalid_input', error: 'Unknown status.' });
+    const updated = await (await getDocStore()).update(`organizations/${tenantOf(req).orgId}/message_slips/${id}`, { status: req.body.status, updatedAt: new Date().toISOString() });
+    if (!updated) return res.status(404).json({ success: false, error: 'Not found.' });
+    res.json({ success: true });
+  } catch (err) { sendError(res, err, 'communication.slips.update'); }
 });
 
 /**
@@ -450,25 +455,13 @@ router.all('/twilio-video-token', (req: Request, res: Response) => {
     const roomName = String(req.query.roomName || req.body?.roomName || '').trim();
     if (!/^[A-Za-z0-9_-]{1,128}$/.test(roomName)) { res.status(400).json({ success: false, error: 'A valid roomName is required.' }); return; }
 
-    console.log(`[Twilio Video Token] Request received for client identity "${identity}" in room "${roomName}"`);
 
     const accountSid = process.env.TWILIO_ACCOUNT_SID;
     const apiKey = process.env.TWILIO_API_KEY;
     const apiSecret = process.env.TWILIO_API_SECRET;
 
-    // Validate credentials presence. If missing, fall back to simulated token schema to survive preview constraints.
     if (!accountSid || !apiKey || !apiSecret || accountSid.includes('placeholder') || apiKey.includes('placeholder')) {
-      console.warn('[Twilio Video Token] Credentials missing. Serving secure simulated bypass credential to preserve calling sandbox capabilities.');
-      
-      // Return a simulated structured response with a mock signature token
-      res.status(200).json({
-        success: true,
-        identity,
-        roomName,
-        isSimulated: true,
-        token: `mock-jwt-token-part-1.${Buffer.from(JSON.stringify({ identity, roomName, exp: Date.now() + 3600000 })).toString('base64')}.mock-sig`,
-        expiresIn: 3600
-      });
+      res.status(503).json({ success: false, code: 'video_not_configured', error: 'Twilio Video isn’t set up on this server (TWILIO_ACCOUNT_SID, TWILIO_API_KEY, TWILIO_API_SECRET).' });
       return;
     }
 
@@ -487,24 +480,17 @@ router.all('/twilio-video-token', (req: Request, res: Response) => {
     token.addGrant(grant);
 
     const jwtToken = token.toJwt();
-    console.log(`[Twilio Video Token] Real JWT successfully signed and dispatched for "${identity}".`);
 
     res.status(200).json({
       success: true,
       identity,
       roomName,
-      isSimulated: false,
       token: jwtToken,
       expiresIn: 3600
     });
 
   } catch (error: any) {
-    console.error('[Twilio Video Token Generating Exception]:', error.message);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to manufacture Twilio Access Token securely.',
-      details: error.message
-    });
+    sendError(res, error, 'communication.twilio-video-token');
   }
 });
 
@@ -514,7 +500,8 @@ router.all('/twilio-video-token', (req: Request, res: Response) => {
  */
 router.post('/intake-bot', async (req: Request, res: Response) => {
   try {
-    const { contactId, messages, contactName, company, userMessage, currentState } = req.body;
+    const { contactName = '', company = '', userMessage, currentState = {} } = req.body || {};
+    if (typeof userMessage !== 'string' || !userMessage.trim()) return res.status(400).json({ success: false, error: 'userMessage is required.' });
 
     const key = process.env.GEMINI_API_KEY;
     const hasApiKey = key && !key.includes('placeholder') && !key.includes('YOUR_GEMINI_API_KEY');
@@ -523,7 +510,7 @@ router.post('/intake-bot', async (req: Request, res: Response) => {
       try {
         const client = getGeminiClient();
         
-        const systemInstruction = `You are Alex, a friendly and efficient virtual intake assistant at Obsidian Core CRM. Your single objective is to qualify inbound leads and route them appropriately.
+        const systemInstruction = `You are a friendly and efficient virtual intake assistant for ${await orgName(tenantOf(req).orgId)}. Your single objective is to qualify inbound leads and route them appropriately.
 
 Tone & Style:
 - Warm, enthusiastic, yet professional.
@@ -596,61 +583,13 @@ Provide your assessment, response, and qualify/classify this lead.`;
           ...parsedContent
         });
         return;
-      } catch (gemIniErr: any) {
-        console.warn('[Gemini SDK Run Fail] Falling back to rule simulator:', gemIniErr.message);
+      } catch (gemIniErr) {
+        return aiFailed(res, 'intake-bot', gemIniErr);
       }
     }
-
-    // Default Deterministic Intelligent Fallback Rule Engine
-    const msgLower = userMessage.toLowerCase();
-    let reply = "";
-    let challenge = currentState.challenge;
-    let budget = currentState.budget;
-    let shouldBookAppointment = false;
-    let shouldTransferToHuman = false;
-
-    // Check custom question or complex question first
-    if (msgLower.includes('how does') || msgLower.includes('why') || msgLower.includes('can you do') || msgLower.includes('pricing plans') || msgLower.includes('custom integration') || msgLower.includes('feature') || msgLower.includes('security') || msgLower.includes('what is') || msgLower.includes('cost')) {
-      reply = "That's a great question, and I want to make sure you get the exact answer. Let me connect you with one of our specialists right now.";
-      shouldTransferToHuman = true;
-    } 
-    // Step 1: Handle challenge identification
-    else if (!challenge) {
-      challenge = userMessage;
-      reply = `Got it, focusing on "${userMessage}" makes perfect sense. Next, what is your approximate monthly budget threshold (Under $1k, $1k-$5k, or Over $5k)?`;
-    } 
-    // Step 2: Handle budget identification
-    else if (!budget) {
-      if (msgLower.includes('under 1k') || msgLower.includes('under $1k') || msgLower.includes('<1') || msgLower.includes('less than') || msgLower.includes('low') || msgLower.includes('1000')) {
-        budget = "Under $1k";
-        reply = "I'm glad you shared that budget threshold with me. For our advanced custom CRM portal features, a budget of Under $1k is slightly below our minimum entry level, but we can stay in touch if your threshold shifts!";
-      } else if (msgLower.includes('1k-5k') || msgLower.includes('1k-$5k') || msgLower.includes('budget') || msgLower.includes('5000') || msgLower.includes('2000') || msgLower.includes('3000')) {
-        budget = "$1k-$5k";
-        reply = "Got it, a $1k-$5k budget threshold fits perfectly for our professional suite setups. Let's find an available session to book your CRM onboarding call!";
-        shouldBookAppointment = true;
-      } else {
-        budget = "Over $5k";
-        reply = "Fantastic, a budget over $5k unlocks our premium white-glove custom omnichannel implementation structures. Let's find a convenient time to schedule your dedicated tech review!";
-        shouldBookAppointment = true;
-      }
-    } else {
-      // Default fallback conversational reply
-      reply = "Thanks for providing that update! I'm aligning our schedule options right now to secure a seamless session for you.";
-    }
-
-    res.json({
-      success: true,
-      aiUsed: false,
-      reply,
-      challenge,
-      budget,
-      shouldBookAppointment,
-      shouldTransferToHuman
-    });
-
+    return aiUnavailable(res);
   } catch (error: any) {
-    console.error('[Intake Bot Endpoint Exception]', error.message);
-    res.status(500).json({ error: 'Failed to evaluate intake bot response.' });
+    sendError(res, error, 'communication.intake-bot');
   }
 });
 
@@ -684,7 +623,7 @@ router.post('/replyzen-assistant', async (req: Request, res: Response) => {
         Guidelines:
         - Be concise, helpful, and ultra-professional.
         - Treat user requests with high intelligence. If they want a draft, output a beautiful email draft in the 'draftResult' parameter.
-        - If they refer to a contact name or company (e.g. "Hannah Morgan" or "Dappr Design"), inspect the active threads list to match 'targetThreadId' automatically.`;
+        - If they refer to a contact name or company, inspect the active threads list to match 'targetThreadId' automatically. Only use facts present in the threads.`;
 
         const threadListSummary = Array.isArray(threads) ? threads.map((t: any) => ({
           threadId: t.id,
@@ -747,48 +686,13 @@ router.post('/replyzen-assistant', async (req: Request, res: Response) => {
           ...parsedContent
         });
         return;
-      } catch (gemIniErr: any) {
-        console.warn('[ReplyZen Gemini Fail] Falling back to intelligence simulator:', gemIniErr.message);
+      } catch (gemIniErr) {
+        return aiFailed(res, 'replyzen-assistant', gemIniErr);
       }
     }
-
-    // Default Intelligence Mock/Rule Fallback if Gemini Key is unavailable
-    const q = userPrompt.toLowerCase();
-    let replyText = "";
-    let targetThreadId = null;
-    let draftResult = null;
-    let suggestedAction = "NONE";
-
-    if (q.includes('hannah') || q.includes('morgan') || q.includes('meeting')) {
-      targetThreadId = "thread-hannah";
-      suggestedAction = "SELECT_THREAD";
-      replyText = "### Hannah Morgan: Meeting Scheduled\n\nI located a thread with **Hannah Morgan** regarding \"Meeting scheduled\". She is waiting to go over the design details.\n\nWould you like me to draft a confirmation?";
-    } else if (q.includes('megan') || q.includes('campaign') || q.includes('marketing')) {
-      targetThreadId = "thread-megan";
-      suggestedAction = "SELECT_THREAD";
-      replyText = "### Megan Clark: Marketing Campaign Update\n\nI identified a thread from **Megan Clark** at Dappr Ads. She sent an update on the marketing campaign progress.\n\nWould you like to draft a feedback reply?";
-    } else if (q.includes('draft') || q.includes('reply') || q.includes('write')) {
-      replyText = "### Draft Email Assistant\n\nI created a high-fidelity onboarding response draft. You can apply it to your compose area:\n\n*\"Hi there, happy to align on our collaboration details. Please let us know if next Tuesday works for a quick 15-minute briefing session!\"*";
-      draftResult = "Hi there, happy to align on our collaboration details. Please let us know if next Tuesday works for a quick 15-minute briefing session!";
-      suggestedAction = "REPLY_DRAFT";
-    } else if (q.includes('summarize') || q.includes('summary')) {
-      replyText = "### Email Inbox Summary\n\nHere is a quick breakdown of your active inbox:\n\n1. **Hannah Morgan**: High priority design team sync scheduled.\n2. **Megan Clark**: Marketing campaign update pending feedbacl.\n3. **Elena Rostova**: Pilot deployment contract adjustments.\n\nWould you like to compose a reply to any of them?";
-    } else {
-      replyText = `### ReplyZen Assistant\n\nI evaluated your inquiry: *"${userPrompt}"*.\n\nWe are ready to draft responses, summarize active message flows, or search specific logs dynamically. Type a request or click a command to begin!`;
-    }
-
-    res.json({
-      success: true,
-      aiUsed: false,
-      replyText,
-      targetThreadId,
-      draftResult,
-      suggestedAction
-    });
-
+    return aiUnavailable(res);
   } catch (error: any) {
-    console.error('[ReplyZen Assistant Exception]', error.message);
-    res.status(500).json({ error: 'Failed to process AI assistant inquiry.' });
+    sendError(res, error, 'communication.replyzen');
   }
 });
 
@@ -849,7 +753,8 @@ router.post('/dashboard-assistant', async (req: Request, res: Response) => {
       try {
         const client = getGeminiClient();
         const systemInstruction = `You are Obsidian AI, a helpful, extremely intelligent, and highly professional CRM virtual assistant embedded in the Obsidian customer relationship management cockpit.
-        The user is a senior Lead Account Director managing enterprise customer channels (WhatsApp, Telegram, email, GBP, SMS, and proposals).
+ The user manages customer channels (email, SMS, WhatsApp, Google Business Profile and proposals).
+        You have no access to their CRM data in this chat: never invent names, deals, numbers or statistics.
         
         Answer their inquiry precisely, using beautiful and polished markdown format with elegant spacing.
         You can suggest ideas, draft messages, or explain metrics, but keep it concise and action-oriented.`;
@@ -867,69 +772,17 @@ router.post('/dashboard-assistant', async (req: Request, res: Response) => {
           replyText = result.text;
           aiUsed = true;
         }
-      } catch (gemIniErr: any) {
-        console.warn('[Dashboard Gemini Fail] Falling back to CRM rule simulator:', gemIniErr.message);
+      } catch (gemIniErr) {
+        return aiFailed(res, 'dashboard-assistant', gemIniErr);
       }
     }
+    if (!hasApiKey) return aiUnavailable(res);
+    if (!aiUsed) return aiFailed(res, 'dashboard-assistant', new Error('empty reply'));
 
-    if (!aiUsed) {
-      // High-fidelity local rule/knowledge engine for the Seto cockpit
-      const q = userPrompt.toLowerCase();
-      if (q.includes('email') || q.includes('campaign') || q.includes('draft')) {
-        replyText = `### ✉️ AI Email Assistant Recommendation
-
-Based on your inquiry, I recommend launching the **AI Email Assistant**. Our active template library contains high-converting onboarding and SLA campaigns.
-
-**Suggested Template (SLA Draft):**
-*"Hello there, happy to align on our collaboration details. Please let us know if next Tuesday works for a quick 15-minute briefing session!"*
-
-Would you like to navigate to the **Omnichannel Inbox** to draft a response?`;
-      } else if (q.includes('voice') || q.includes('call') || q.includes('dialer') || q.includes('phone')) {
-        replyText = `### 📞 Voice Interaction Hub Analysis
-
-Active channels are healthy. You can configure AI dialers and analyze call transcripts in the **Voice Interaction Hub**.
-- **Average Outbound Sentiment:** 84% Positive
-- **Peak Performance Slot:** 2:00 PM – 4:00 PM EST
-
-Would you like to open the **AI Voice Dialer**?`;
-      } else if (q.includes('proposal') || q.includes('deal') || q.includes('contract')) {
-        replyText = `### 💼 Enterprise Proposal Insights
-
-I scanned your active high-value deals:
-1. **Quantum Finance Contract**: Pilot deployment adjustments are waiting.
-2. **Sarah Jenkins SLA**: Estimated worth is **$120,000**.
-
-Click the **Enterprise Proposal** card to review and generate secure contracts!`;
-      } else if (q.includes('meeting') || q.includes('video') || q.includes('collaborative')) {
-        replyText = `### 🎥 Collaborative Video Call Scheduler
-
-We detected scheduled sessions with clients this week.
-- **Next up:** *Sarah Jenkins Technical Assessment* at 2:00 PM.
-
-Navigate to **WebRTC Call Canvas** to launch seamless virtual meetings!`;
-      } else {
-        replyText = `### ✦ Obsidian CRM Assistant Active
-
-I received your command: *"${userPrompt}"*.
-
-As your CRM Co-pilot, I can assist with:
-- **Campaign Optimization**: Analyze customer sentiment or draft follow-ups.
-- **Workflow Automation**: Schedule auto-replies and trigger AI voice summaries.
-- **Deal Advisory**: Review contract terms and proposal statuses.
-
-Let me know how I can help you streamline your next action!`;
-      }
-    }
-
-    res.json({
-      success: true,
-      aiUsed,
-      replyText
-    });
+    res.json({ success: true, aiUsed, replyText });
 
   } catch (error: any) {
-    console.error('[Dashboard Assistant Exception]', error.message);
-    res.status(500).json({ error: 'Failed to process assistant inquiry.' });
+    sendError(res, error, 'communication.dashboard-assistant');
   }
 });
 
@@ -938,183 +791,59 @@ Let me know how I can help you streamline your next action!`;
  * Design and implement a secure, unified outbound proxy route to dispatch real WhatsApp/SMS messages.
  * Checks for credentials; if missing, falls back to simulated state gracefully with detailed logs.
  */
-router.post('/send', async (req: Request, res: Response) => {
+router.post('/send', requirePermission('write'), async (req: Request, res: Response) => {
   try {
-    const { to, channel, body, clientId } = req.body;
-
-    // Validate parameters
-    if (!to || !channel || !body) {
-      return res.status(400).json({
-        success: false,
-        error: 'Missing required parameters. "to", "channel", and "body" are required.'
-      });
+    const { to, channel, body } = req.body || {};
+    const upperChannel = String(channel || '').toUpperCase();
+    const toNumber = String(to || '').trim();
+    if (!/^\+?[1-9]\d{6,14}$/.test(toNumber.replace(/[\s()-]/g, '')) || typeof body !== 'string' || !body.trim() || body.length > 1600) {
+      return res.status(400).json({ success: false, code: 'invalid_input', error: 'Enter a phone number in international format and a message (max 1,600 characters).' });
     }
-
-    const upperChannel = channel.toUpperCase();
     if (upperChannel !== 'SMS' && upperChannel !== 'WHATSAPP') {
-      return res.status(400).json({
-        success: false,
-        error: 'Unsupported channel. Must be "SMS" or "WHATSAPP".'
-      });
+      return res.status(400).json({ success: false, code: 'invalid_input', error: 'Channel must be SMS or WHATSAPP.' });
     }
-
-    let isSimulated = false;
+    const dest = toNumber.replace(/[\s()-]/g, '');
     let externalMessageId = '';
 
     if (upperChannel === 'SMS') {
       const accountSid = process.env.TWILIO_ACCOUNT_SID;
       const authToken = process.env.TWILIO_AUTH_TOKEN;
       const fromNumber = process.env.TWILIO_PHONE_NUMBER;
-
-      const hasTwilioSecrets = 
-        accountSid && !accountSid.includes('placeholder') && accountSid.trim() !== '' &&
-        authToken && !authToken.includes('placeholder') && authToken.trim() !== '' &&
-        fromNumber && !fromNumber.includes('placeholder') && fromNumber.trim() !== '';
-
-      if (hasTwilioSecrets) {
-        console.log(`[Unified Proxy] Initiating real Twilio SMS dispatch to ${to}`);
-        try {
-          const client = twilio(accountSid, authToken);
-          const response = await client.messages.create({
-            from: fromNumber,
-            to: to,
-            body: body
-          });
-          externalMessageId = response.sid;
-          console.log(`[Unified Proxy] Twilio SMS sent successfully. SID: ${externalMessageId}`);
-        } catch (twilioErr: any) {
-          console.error(`[Unified Proxy] Twilio real sending failed: ${twilioErr.message}. Falling back to simulation.`);
-          isSimulated = true;
-          externalMessageId = `mock-sms-${Date.now()}`;
-        }
-      } else {
-        console.warn('[Unified Proxy] Twilio environment secrets are missing or contain placeholders. Gracefully falling back to simulated SMS state.');
-        isSimulated = true;
-        externalMessageId = `mock-sms-${Date.now()}`;
+      if (!accountSid || !authToken || !fromNumber || accountSid.includes('placeholder')) {
+        return res.status(503).json({ success: false, code: 'sms_not_configured', error: 'SMS sending isn’t set up on this server (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER). Nothing was sent.' });
       }
-    } else if (upperChannel === 'WHATSAPP') {
+      try {
+        const response = await twilio(accountSid, authToken).messages.create({ from: fromNumber, to: dest, body });
+        externalMessageId = response.sid;
+      } catch (err: any) {
+        console.error('[communication.send] Twilio rejected the SMS:', err?.code || err?.status || 'error');
+        return res.status(502).json({ success: false, code: 'sms_failed', error: 'The SMS provider rejected the message. Nothing was sent.' });
+      }
+    } else {
       const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID;
       const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
-
-      const hasMetaSecrets = 
-        phoneId && !phoneId.includes('placeholder') && phoneId.trim() !== '' &&
-        accessToken && !accessToken.includes('placeholder') && accessToken.trim() !== '';
-
-      if (hasMetaSecrets) {
-        console.log(`[Unified Proxy] Initiating real Meta WhatsApp dispatch to ${to}`);
-        try {
-          const url = `https://graph.facebook.com/v18.0/${phoneId}/messages`;
-          const response = await axios.post(url, {
-            messaging_product: 'whatsapp',
-            recipient_type: 'individual',
-            to: to,
-            type: 'text',
-            text: {
-              preview_url: false,
-              body: body
-            }
-          }, {
-            headers: {
-              'Authorization': `Bearer ${accessToken}`,
-              'Content-Type': 'application/json'
-            }
-          });
-          externalMessageId = response.data?.messages?.[0]?.id || `wa-${Date.now()}`;
-          console.log(`[Unified Proxy] Meta WhatsApp sent successfully. Message ID: ${externalMessageId}`);
-        } catch (metaErr: any) {
-          console.error(`[Unified Proxy] Meta WhatsApp real sending failed: ${metaErr.message}. Falling back to simulation.`);
-          isSimulated = true;
-          externalMessageId = `mock-wa-${Date.now()}`;
-        }
-      } else {
-        console.warn('[Unified Proxy] Meta WhatsApp environment secrets are missing or contain placeholders. Gracefully falling back to simulated WhatsApp state.');
-        isSimulated = true;
-        externalMessageId = `mock-wa-${Date.now()}`;
+      if (!phoneId || !accessToken || phoneId.includes('placeholder')) {
+        return res.status(503).json({ success: false, code: 'whatsapp_not_configured', error: 'WhatsApp sending isn’t set up on this server (WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_ACCESS_TOKEN). Nothing was sent.' });
+      }
+      try {
+        const response = await axios.post(`https://graph.facebook.com/v18.0/${encodeURIComponent(phoneId)}/messages`, {
+          messaging_product: 'whatsapp', recipient_type: 'individual', to: dest.replace(/^\+/, ''), type: 'text',
+          text: { preview_url: false, body },
+        }, { headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, timeout: 15000 });
+        externalMessageId = String(response.data?.messages?.[0]?.id || '');
+      } catch (err: any) {
+        console.error('[communication.send] WhatsApp rejected the message:', err?.response?.status || err?.code || 'error');
+        return res.status(502).json({ success: false, code: 'whatsapp_failed', error: 'WhatsApp rejected the message. Nothing was sent.' });
       }
     }
 
-    // --- DATABASE LOGIC: Retrieve or Create client ---
-    let client = null;
-    if (clientId) {
-      client = await db.client.findUnique({ where: { id: clientId } });
-    }
-
-    if (!client) {
-      client = await db.client.findFirst({
-        where: {
-          OR: [
-            { phone: to },
-            { email: `${to}@${upperChannel.toLowerCase()}.user` }
-          ]
-        }
-      });
-    }
-
-    if (!client) {
-      client = await db.client.create({
-        data: {
-          name: `${upperChannel} Contact ${to}`,
-          email: `${to}@${upperChannel.toLowerCase()}.user`,
-          phone: to,
-          location: `Outbound Proxy`,
-          lifecycleStatus: 'LEAD',
-          company: `${upperChannel} Outbound Lead`
-        }
-      });
-    }
-
-    // --- DATABASE LOGIC: Log message under database message logging models ---
-    const messageRecord = await db.message.create({
-      data: {
-        channel: upperChannel,
-        direction: 'OUTBOUND',
-        body: body,
-        status: 'DELIVERED',
-        clientId: client.id
-      }
+    const t = tenantOf(req);
+    const messageId = await saveForOrg(t.orgId, 'outbound_messages', {
+      channel: upperChannel, direction: 'OUTBOUND', to: dest, body, status: 'SENT_TO_PROVIDER', providerMessageId: externalMessageId, sentBy: t.userId,
     });
-
-    // --- REALTIME: Broadcast update via WebSocket pool ---
-    const wsPayload = {
-      messageId: messageRecord.id,
-      senderPhone: to,
-      messageBody: upperChannel === 'SMS' ? `[SMS] ${body}` : body,
-      timestamp: new Date().toISOString(),
-      metadata: {
-        contactsName: client.name,
-        phoneId: upperChannel === 'SMS' ? 'sms-trunk' : 'whatsapp-trunk',
-        isOutbound: true,
-        isSimulated
-      }
-    };
-
-    console.log(`[Unified Proxy] Broadcasting OUTBOUND message event via wsDispatcher.`);
-    wsDispatcher.broadcast('WHATSAPP_MESSAGE_RECEIVED', wsPayload);
-
-    // Return structured, clean response
-    res.status(200).json({
-      success: true,
-      messageId: messageRecord.id,
-      externalMessageId,
-      isSimulated,
-      channel: upperChannel,
-      direction: 'OUTBOUND',
-      body,
-      recipient: {
-        id: client.id,
-        name: client.name,
-        phone: client.phone
-      },
-      loggedAt: new Date().toISOString()
-    });
-
-  } catch (error: any) {
-    console.error('[Unified Proxy Exception] /api/communication/send failed:', error.message);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to process unified outbound message transmission.',
-      details: error.message
-    });
+    res.status(200).json({ success: true, messageId, externalMessageId, channel: upperChannel, direction: 'OUTBOUND', status: 'SENT_TO_PROVIDER' });
+  } catch (error) {
+    sendError(res, error, 'communication.send');
   }
 });
 
@@ -1122,9 +851,9 @@ router.post('/send', async (req: Request, res: Response) => {
  * 6B. AI RECEPTIONIST KNOWLEDGE BASE MANAGEMENT (GET, POST, DELETE)
  * Provides comprehensive inspection, training, and update endpoints for the AI receptionist.
  */
-router.get('/receptionist/knowledge', (req: Request, res: Response) => {
+router.get('/receptionist/knowledge', requirePermission('read'), async (req: Request, res: Response) => {
   try {
-    const store = receptionistKnowledgeDb.getStore();
+    const store = await loadKnowledge(tenantOf(req).orgId);
     return res.status(200).json({
       success: true,
       store,
@@ -1133,72 +862,60 @@ router.get('/receptionist/knowledge', (req: Request, res: Response) => {
         enabledQAs: store.qas.filter(q => q.enabled).length,
         totalDocuments: store.documents.length,
         totalDepartments: store.departments.length,
-        readinessScore: 98
       }
     });
-  } catch (error: any) {
-    console.error('[Receptionist Knowledge GET Error]', error);
-    return res.status(500).json({ success: false, error: error.message });
+  } catch (error) {
+    return knowledgeFail(res, error, 'receptionist.knowledge.get');
   }
 });
 
-router.post('/receptionist/knowledge', (req: Request, res: Response) => {
+router.post('/receptionist/knowledge', requirePermission('write'), async (req: Request, res: Response) => {
   try {
-    const { action, profile, qa, qaId, updates, departmentKey, deptUpdates, document } = req.body;
+    const orgId = tenantOf(req).orgId;
+    const { action, profile, qa, qaId, updates, departmentKey, deptUpdates, document } = req.body || {};
 
-    if (action === 'update_profile' && profile) {
-      const updatedProfile = receptionistKnowledgeDb.updateProfile(profile);
-      return res.status(200).json({ success: true, profile: updatedProfile, message: 'Company profile updated successfully.' });
+    if (action === 'update_profile' && profile && typeof profile === 'object') {
+      return res.status(200).json({ success: true, profile: await updateProfile(orgId, profile), message: 'Company profile updated.' });
     }
-
-    if (action === 'add_qa' && qa) {
-      const newQA = receptionistKnowledgeDb.addQA(qa);
-      return res.status(200).json({ success: true, qa: newQA, message: 'New Q&A pair added to knowledge base.' });
+    if (action === 'add_qa' && qa && typeof qa === 'object') {
+      return res.status(200).json({ success: true, qa: await addQA(orgId, qa), message: 'Q&A pair added.' });
     }
-
-    if (action === 'update_qa' && qaId && updates) {
-      const updatedQA = receptionistKnowledgeDb.updateQA(qaId, updates);
+    if (action === 'update_qa' && qaId && updates && typeof updates === 'object') {
+      const updatedQA = await updateQA(orgId, String(qaId), updates);
       if (!updatedQA) return res.status(404).json({ success: false, error: 'Q&A entry not found.' });
       return res.status(200).json({ success: true, qa: updatedQA, message: 'Q&A entry updated.' });
     }
-
-    if (action === 'update_dept' && departmentKey && deptUpdates) {
-      const updatedDept = receptionistKnowledgeDb.updateDepartment(departmentKey, deptUpdates);
-      return res.status(200).json({ success: true, department: updatedDept, message: 'Department routing updated.' });
+    if (action === 'update_dept' && departmentKey && deptUpdates && typeof deptUpdates === 'object') {
+      return res.status(200).json({ success: true, department: await upsertDepartment(orgId, departmentKey, deptUpdates), message: 'Department routing saved.' });
     }
-
-    if (action === 'add_doc' && document) {
-      const newDoc = receptionistKnowledgeDb.addDocument(document);
-      return res.status(200).json({ success: true, document: newDoc, message: 'Document added to knowledge base.' });
+    if (action === 'add_doc' && document && typeof document === 'object') {
+      const newDoc = await addDocument(orgId, { title: document.title, category: document.category, rawContent: document.rawContent, summary: document.summary, extractedQAsCount: 0 });
+      return res.status(200).json({ success: true, document: newDoc, message: 'Document added.' });
     }
-
     if (action === 'reset') {
-      const resetStore = receptionistKnowledgeDb.resetToDefaults();
-      return res.status(200).json({ success: true, store: resetStore, message: 'Knowledge base restored to default values.' });
+      return res.status(200).json({ success: true, store: await clearKnowledge(orgId), message: 'Knowledge base cleared.' });
     }
-
     return res.status(400).json({ success: false, error: 'Invalid action or missing parameters.' });
-  } catch (error: any) {
-    console.error('[Receptionist Knowledge POST Error]', error);
-    return res.status(500).json({ success: false, error: error.message });
+  } catch (error) {
+    return knowledgeFail(res, error, 'receptionist.knowledge.post');
   }
 });
 
-router.delete('/receptionist/knowledge/:type/:id', (req: Request, res: Response) => {
+router.delete('/receptionist/knowledge/:type/:id', requirePermission('write'), async (req: Request, res: Response) => {
   try {
+    const orgId = tenantOf(req).orgId;
     const { type, id } = req.params;
     if (type === 'qa') {
-      const ok = receptionistKnowledgeDb.deleteQA(id);
-      return res.status(200).json({ success: ok, message: ok ? 'Q&A entry deleted.' : 'Entry not found.' });
+      const ok = await deleteQA(orgId, id);
+      return res.status(ok ? 200 : 404).json({ success: ok, message: ok ? 'Q&A entry deleted.' : 'Entry not found.' });
     }
     if (type === 'doc') {
-      const ok = receptionistKnowledgeDb.deleteDocument(id);
-      return res.status(200).json({ success: ok, message: ok ? 'Document deleted.' : 'Document not found.' });
+      const ok = await deleteDocument(orgId, id);
+      return res.status(ok ? 200 : 404).json({ success: ok, message: ok ? 'Document deleted.' : 'Document not found.' });
     }
     return res.status(400).json({ success: false, error: 'Invalid type parameter.' });
-  } catch (error: any) {
-    console.error('[Receptionist Knowledge DELETE Error]', error);
-    return res.status(500).json({ success: false, error: error.message });
+  } catch (error) {
+    return knowledgeFail(res, error, 'receptionist.knowledge.delete');
   }
 });
 
@@ -1207,7 +924,7 @@ router.delete('/receptionist/knowledge/:type/:id', (req: Request, res: Response)
  * Takes unstructured text, policies, website copy, or employee guides and uses Gemini 3.7 Flash
  * to automatically synthesize production Q&As, keywords, and routing recommendations.
  */
-router.post('/receptionist/ai-train', async (req: Request, res: Response) => {
+router.post('/receptionist/ai-train', requirePermission('write'), async (req: Request, res: Response) => {
   try {
     const { rawText, documentTitle = 'Custom Document', category = 'Custom Training' } = req.body;
 
@@ -1215,6 +932,10 @@ router.post('/receptionist/ai-train', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'rawText is required for AI training.' });
     }
 
+    if (typeof rawText !== 'string' || rawText.length > 50_000) {
+      return res.status(400).json({ success: false, error: 'Training text is limited to 50,000 characters.' });
+    }
+    const orgId = tenantOf(req).orgId;
     const client = getGeminiClient();
     if (client) {
       try {
@@ -1272,7 +993,7 @@ Also output:
         const extractedQAs = parsed.extractedQAs || [];
 
         // Ingest into knowledge store
-        const createdDoc = receptionistKnowledgeDb.addDocument({
+        const createdDoc = await addDocument(orgId, {
           title: documentTitle,
           category,
           rawContent: rawText,
@@ -1280,14 +1001,11 @@ Also output:
           extractedQAsCount: extractedQAs.length
         });
 
-        const createdQAs = extractedQAs.map((q: any) => receptionistKnowledgeDb.addQA({
-          category: ['general', 'pricing', 'technical', 'security', 'routing', 'policy', 'custom'].includes(q.category) ? q.category : 'custom',
-          question: q.question,
-          answer: q.answer,
-          keywords: Array.isArray(q.keywords) ? q.keywords : ['info'],
-          priority: ['high', 'medium', 'low'].includes(q.priority) ? q.priority : 'medium',
-          enabled: true
-        }));
+        const createdQAs = [];
+        for (const q of extractedQAs.slice(0, 10)) {
+          if (!q?.question || !q?.answer) continue;
+          createdQAs.push(await addQA(orgId, { category: q.category, question: q.question, answer: q.answer, keywords: q.keywords, priority: q.priority, enabled: true }));
+        }
 
         return res.status(200).json({
           success: true,
@@ -1297,125 +1015,49 @@ Also output:
           summary: parsed.summary,
           model: 'gemini-3.7-flash'
         });
-      } catch (gemError: any) {
-        console.warn('[AI Train Gemini Error] Falling back to heuristic text extractor:', gemError.message);
+      } catch (gemError) {
+        return aiFailed(res, 'receptionist.ai-train', gemError);
       }
     }
-
-    // Heuristic extraction fallback
-    const sentences = rawText.split(/[.!?]+/).map((s: string) => s.trim()).filter((s: string) => s.length > 20);
-    const mockQAs = sentences.slice(0, 3).map((s: string, idx: number) => {
-      const q = idx === 0 ? `What is the policy regarding ${documentTitle}?` : `Can you explain the details of ${documentTitle}?`;
-      return receptionistKnowledgeDb.addQA({
-        category: 'custom',
-        question: q,
-        answer: s.slice(0, 180) + '.',
-        keywords: [documentTitle.toLowerCase().slice(0, 15), 'policy', 'details'],
-        priority: 'medium',
-        enabled: true
-      });
-    });
-
-    const doc = receptionistKnowledgeDb.addDocument({
-      title: documentTitle,
-      category,
-      rawContent: rawText,
-      summary: `Indexed ${mockQAs.length} points from ${documentTitle}.`,
-      extractedQAsCount: mockQAs.length
-    });
-
-    return res.status(200).json({
-      success: true,
-      message: `Extracted ${mockQAs.length} training items via heuristic parser.`,
-      document: doc,
-      qas: mockQAs,
-      model: 'heuristic-extractor'
-    });
+    return aiUnavailable(res);
   } catch (error: any) {
-    console.error('[Receptionist AI Train Exception]', error);
-    return res.status(500).json({ success: false, error: error.message });
+    return knowledgeFail(res, error, 'receptionist.ai-train');
   }
 });
 
 /**
- * RECEPTIONIST AUTONOMOUS ACTION HELPERS
+ * RECEPTIONIST ACTION SUGGESTIONS
+ * The AI can only suggest an action. Nothing here is created, booked or sent: a team member does that
+ * in Meetings, Calendar or Proposals. Only details the caller actually gave are passed through.
  */
+const NOT_CREATED = 'Suggested by the receptionist. Nothing has been created yet: a team member needs to confirm it.';
 function executeStartVideoCall(leadName: string, company: string) {
-  const roomId = `room_meet_greet_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-  const joinUrl = `/meet-and-greet?room=${roomId}`;
-  return {
-    roomId,
-    roomName: 'My Meet & Greet',
-    topic: `My Meet & Greet Video Consultation with ${leadName || 'Client'}`,
-    joinUrl,
-    targetView: 'call_canvas',
-    host: 'Sophia (AI Receptionist)',
-    leadName: leadName || 'Caller',
-    company: company || 'Enterprise Client',
-    status: 'ACTIVE_READY',
-    createdAt: new Date().toISOString()
-  };
+  return { status: 'suggested', note: NOT_CREATED, leadName: leadName || '', company: company || '', createdAt: new Date().toISOString() };
 }
 
 function executeScheduleCalendarEvent(title: string, date: string, time: string, duration: number, guests: string[], notes: string) {
-  const newMeetingId = `mtg_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-  const cleanDate = date || new Date(Date.now() + 86400000).toISOString().split('T')[0];
-  const cleanTime = time || '14:00';
-  const meetingRecord = {
-    id: newMeetingId,
-    title: title || 'Executive Briefing & Discovery Session',
-    locations: ['Virtual Google Meet / WebRTC Gateway', 'San Francisco HQ'],
-    guests: guests && guests.length > 0 ? guests : ['client@enterprise.com', 'alex.vance@obsidian-crm.internal'],
-    permissions: { modify: false, inviteOther: true, seeGuestList: true },
-    date: cleanDate,
-    time: cleanTime,
-    duration: duration || 30,
-    availability: 'Busy',
-    visibility: 'Default Visibility',
-    additionalNotes: notes || 'Booked autonomously by Sophia (AI Front-Desk Receptionist).',
-    startTime: `${cleanDate}T${cleanTime}:00.000Z`,
-    endTime: `${cleanDate}T${cleanTime}:00.000Z`,
-    // Not a real booking: it isn't saved or plan-checked. Real meetings go through POST /api/meetings/create.
-    videoLink: '',
-    status: 'PROPOSED',
+  return {
+    status: 'suggested',
+    note: NOT_CREATED,
+    title: title || 'Meeting',
+    date: date || '',
+    time: time || '',
+    duration: duration || null,
+    attendees: guests.filter(Boolean),
+    additionalNotes: notes || '',
     createdAt: new Date().toISOString()
   };
-  return meetingRecord;
 }
 
-function executeCreateProposal(clientName: string, title: string, price: number, deliverables: string[]) {
-  const propId = `PROP-${Math.floor(1000 + Math.random() * 9000)}`;
-  const finalPrice = price || 78000;
-  const itemsList = deliverables && deliverables.length > 0 ? deliverables : [
-    'Phase 1: Zero-Trust Security Architecture & GDPR/SOC2 Compliance Framework',
-    'Phase 2: High-Velocity WebRTC & Omnichannel Telecom Gateway Pipeline',
-    'Phase 3: Autonomous AI Receptionist & Multi-Modal Voice Agent Engine',
-    'Phase 4: Dedicated 24/7 SLA Hotline & Edge Deployment Hosting'
-  ];
-
+function executeCreateProposal(clientName: string, title: string, price: number | null, deliverables: string[]) {
   return {
-    proposalId: propId,
-    id: propId,
-    client_name: clientName || 'Enterprise Client',
-    title: title || 'Enterprise Omnichannel Platform & AI Voice SLA',
-    status: 'draft',
-    signature_name: null,
-    client_email: null,
-    signed_at: null,
-    total_price: finalPrice,
-    price: finalPrice,
-    deliverables: itemsList,
-    items: itemsList.map((d: string, idx: number) => ({
-      id: `item-${propId}-${idx + 1}`,
-      proposal_id: propId,
-      title: d,
-      description: `Production deliverable milestone: ${d}`,
-      price: Math.round(finalPrice / itemsList.length),
-      is_optional: false,
-      is_selected: true
-    })),
-    created_at: new Date().toISOString(),
-    viewUrl: `/proposals/${propId}`
+    status: 'suggested',
+    note: NOT_CREATED,
+    client_name: clientName || '',
+    title: title || 'Proposal',
+    price: typeof price === 'number' && price > 0 ? price : null,
+    deliverables: Array.isArray(deliverables) ? deliverables.slice(0, 20) : [],
+    created_at: new Date().toISOString()
   };
 }
 
@@ -1423,27 +1065,29 @@ function executeCreateProposal(clientName: string, title: string, price: number,
  * 6D. AI RECEPTIONIST CHAT QUERY ANSWERING (POST)
  * Answers any question submitted via chat or command center using the trained knowledge base.
  */
-router.post('/receptionist/chat-query', async (req: Request, res: Response) => {
+router.post('/receptionist/chat-query', requirePermission('read'), async (req: Request, res: Response) => {
   try {
     const { 
       message, 
-      leadName = 'Client', 
-      leadCompany = 'Visitor',
-      conversationHistory = [] 
-    } = req.body;
+      leadName = '',
+      leadCompany = '',
+    } = req.body || {};
 
-    if (!message || !message.trim()) {
-      return res.status(400).json({ error: 'message is required' });
+    if (typeof message !== 'string' || !message.trim() || message.length > 4000) {
+      return res.status(400).json({ success: false, error: 'message is required (max 4,000 characters).' });
     }
 
-    const dynamicKnowledge = receptionistKnowledgeDb.buildKnowledgeContext();
-    const store = receptionistKnowledgeDb.getStore();
+    const orgId = tenantOf(req).orgId;
+    const company = await orgName(orgId);
+    const store = await loadKnowledge(orgId);
+    const dynamicKnowledge = buildKnowledgeContext(store, company);
     const client = getGeminiClient();
+    if (!client) return aiUnavailable(res);
 
     if (client) {
       try {
-        const systemInstruction = `You are ${store.profile.agentName}, the trained AI Front-Desk Receptionist at ${store.profile.companyName}.
-Your job is to answer the user's questions with absolute accuracy based on the company's verified knowledge base and execute real-time business actions when requested.
+        const systemInstruction = `You are ${store.profile.agentName || 'the AI receptionist'} at ${store.profile.companyName || company}.
+Answer only from the knowledge base below. You can suggest actions, but you cannot create, book or send anything yourself.
 
 ${dynamicKnowledge}
 
@@ -1451,13 +1095,13 @@ RECEPTIONIST GUIDELINES FOR CHAT ANSWERS:
 1. Provide a direct, courteous, helpful answer formatted cleanly in markdown.
 2. Provide a 'spokenReply' field containing a concise, 1-2 sentence spoken summary (under 35 words, no markdown) suitable for speech synthesis.
 3. ACTION DETECTION:
-   - If the user asks to START A VIDEO CALL (e.g. "let's do a video call", "start video", "switch to video"): Set 'actionType' to 'start_video_call', mention that you are routing them to the 'My Meet & Greet' room, and confirm that the video conference room is ready.
-   - If the user asks to SCHEDULE A CALENDAR EVENT (e.g. "schedule a meeting", "book a demo", "schedule an appointment"): Set 'actionType' to 'schedule_calendar_event', extract 'calendarEventData', and confirm the booking.
-   - If the user asks to CREATE A CONTRACT OR PROPOSAL (e.g. "create a contract", "draft a proposal", "generate a quote"): Set 'actionType' to 'create_proposal', extract 'proposalData', and confirm the generated draft proposal.
+   - If the user asks for a VIDEO CALL: set 'actionType' to 'start_video_call' and say a team member will send a meeting link.
+   - If the user asks to SCHEDULE a meeting: set 'actionType' to 'schedule_calendar_event', extract only the details they gave into 'calendarEventData', and say the team will confirm the time.
+   - If the user asks for a PROPOSAL or quote: set 'actionType' to 'create_proposal', extract only what they asked for into 'proposalData' (no invented prices), and say the team will prepare it.
    - If the user asks for a department (Sales, Tech Support, Billing, Executive, Partnerships), set 'transferDepartment'.
    - If they want to leave a message or reach someone in a meeting, set 'isTakingMessage': true and prepare 'messageSlip'.
 4. Include 2-3 relevant follow-up questions in 'suggestedQuestions'.
-5. Evaluate 'confidenceScore' (from 50 to 100) based on how well the question matches the verified knowledge base.`;
+5. Set 'confidenceScore' (0-100) to how well the knowledge base covers the question; use a low score when it doesn't.`;
 
         const prompt = `User Name: ${leadName} (${leadCompany})
 User Question: "${message}"
@@ -1560,12 +1204,12 @@ Answer and execute actions based on the trained knowledge base.`;
           executedAction = {
             type: 'calendar_event',
             data: executeScheduleCalendarEvent(
-              cal.title || `Discovery Session: ${leadCompany || leadName}`,
-              cal.date || new Date(Date.now() + 86400000).toISOString().split('T')[0],
-              cal.time || '14:00',
-              cal.duration || 30,
-              [leadName ? `${leadName.toLowerCase().replace(/\s+/g, '.')}@${(leadCompany || 'client').toLowerCase().replace(/\s+/g, '')}.com` : 'client@enterprise.com'],
-              cal.notes || `Scheduled during Receptionist conversation for ${leadName}.`
+              cal.title || '',
+              cal.date || '',
+              cal.time || '',
+              cal.duration || 0,
+              [],
+              cal.notes || ''
             )
           };
         } else if (parsed.actionType === 'create_proposal' || parsed.intent === 'create_proposal') {
@@ -1574,8 +1218,8 @@ Answer and execute actions based on the trained knowledge base.`;
             type: 'proposal',
             data: executeCreateProposal(
               leadCompany || leadName,
-              prop.title || `Enterprise CRM & Voice Integration Proposal`,
-              prop.price || 78000,
+              prop.title || '',
+              typeof prop.price === 'number' ? prop.price : null,
               prop.deliverables || []
             )
           };
@@ -1583,109 +1227,26 @@ Answer and execute actions based on the trained knowledge base.`;
 
         return res.status(200).json({
           success: true,
-          chatReply: parsed.chatReply || "I'd be glad to assist you with that inquiry. How else can I help?",
-          spokenReply: parsed.spokenReply || "I'd be glad to assist you with that inquiry today.",
-          confidenceScore: parsed.confidenceScore || 92,
+          chatReply: String(parsed.chatReply || ''),
+          spokenReply: String(parsed.spokenReply || ''),
+          confidenceScore: typeof parsed.confidenceScore === 'number' ? parsed.confidenceScore : null,
           intent: parsed.intent || 'inquiry',
           actionType: parsed.actionType || (executedAction ? executedAction.type : null),
           executedAction,
           transferDepartment: parsed.transferDepartment || null,
           isTakingMessage: Boolean(parsed.isTakingMessage),
           messageSlip: parsed.messageSlip || null,
-          matchedKnowledgeTopic: parsed.matchedKnowledgeTopic || 'Verified Knowledge Base',
-          suggestedQuestions: parsed.suggestedQuestions || ['Start a video call with me', 'Schedule a meeting for tomorrow at 2 PM', 'Create an enterprise contract proposal'],
+          matchedKnowledgeTopic: parsed.matchedKnowledgeTopic || null,
+          suggestedQuestions: Array.isArray(parsed.suggestedQuestions) ? parsed.suggestedQuestions.slice(0, 5) : [],
           model: 'gemini-3.7-flash'
         });
-      } catch (gemError: any) {
-        console.warn('[Receptionist Chat Gemini Error]', gemError.message);
+      } catch (gemError) {
+        return aiFailed(res, 'receptionist.chat-query', gemError);
       }
     }
-
-    // Heuristic matching fallback for chat actions and questions
-    const lower = message.toLowerCase();
-    let actionType: string | null = null;
-    let executedAction: any = null;
-    let chatReply = "";
-    let spokenReply = "";
-    let intent = "inquiry";
-    let matchedTopic = "General Operations";
-
-    if (lower.includes('video') || lower.includes('video call') || lower.includes('zoom') || lower.includes('face to face') || lower.includes('camera') || lower.includes('consultation')) {
-      actionType = 'video_call';
-      intent = 'start_video_call';
-      const videoData = executeStartVideoCall(leadName, leadCompany);
-      executedAction = { type: 'video_call', data: videoData };
-      chatReply = `### 🎥 My Meet & Greet Video Consultation Initiated\n\nI have initiated a secure, encrypted WebRTC video conference in **My Meet & Greet** for **${leadCompany || leadName}**.\n\n- **Room**: \`${videoData.roomName}\`\n- **Host**: Sophia (AI Receptionist)\n- **Direct Link**: [Join My Meet & Greet](${videoData.joinUrl})\n\nClick the button below to route directly to My Meet & Greet.`;
-      spokenReply = "I have initiated your video consultation and am routing you to our My Meet & Greet room right now.";
-      matchedTopic = "My Meet & Greet Video Calling";
-    } else if (lower.includes('schedule') || lower.includes('calendar') || lower.includes('appointment') || lower.includes('book a demo') || lower.includes('meeting')) {
-      actionType = 'calendar_event';
-      intent = 'schedule_calendar_event';
-      const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
-      const eventData = executeScheduleCalendarEvent(
-        `Executive Briefing: ${leadCompany || leadName}`,
-        tomorrow,
-        '14:00',
-        30,
-        [`${(leadName || 'client').toLowerCase().replace(/\s+/g, '.')}@${(leadCompany || 'company').toLowerCase().replace(/\s+/g, '')}.com`],
-        `Autonomously scheduled via Receptionist chat by ${leadName}.`
-      );
-      executedAction = { type: 'calendar_event', data: eventData };
-      chatReply = `### 📅 Calendar Event Booked\n\nI have scheduled an appointment on our CRM agenda and Google Calendar:\n\n- **Title**: ${eventData.title}\n- **Date & Time**: ${eventData.date} at ${eventData.time} (30 mins)\n- **Meeting Link**: [Google Meet / WebRTC](${eventData.videoLink})\n- **Status**: Confirmed & Synced`;
-      spokenReply = `I have scheduled the calendar event for tomorrow at 2 PM and added it to our agenda calendar.`;
-      matchedTopic = "Calendar Scheduling";
-    } else if (lower.includes('proposal') || lower.includes('contract') || lower.includes('agreement') || lower.includes('quote') || lower.includes('sow') || lower.includes('statement of work')) {
-      actionType = 'proposal';
-      intent = 'create_proposal';
-      const propData = executeCreateProposal(
-        leadCompany || leadName,
-        `Enterprise Platform & Voice SLA Agreement for ${leadCompany || leadName}`,
-        78000,
-        [
-          'Phase 1: Zero-Trust Security Architecture & Compliance Setup ($19,500)',
-          'Phase 2: Real-Time WebRTC Voice Telephony Integration ($19,500)',
-          'Phase 3: Autonomous AI Receptionist & Automated Routing Bot ($19,500)',
-          'Phase 4: Dedicated 24/7 SLA Hosting & Continuous Operations ($19,500)'
-        ]
-      );
-      executedAction = { type: 'proposal', data: propData };
-      chatReply = `### 📄 Contract & Proposal Generated\n\nI have drafted a formal enterprise proposal for **${leadCompany || leadName}**:\n\n- **Proposal ID**: \`${propData.proposalId}\`\n- **Total Investment**: **$78,000**\n- **Scope**: Omnichannel CRM Modernization, AI Receptionist, Sub-50ms Voice Dialer\n- **Signature**: Ready for Digital E-Signature\n\nYou can review, customize, or e-sign the draft contract now.`;
-      spokenReply = "I have drafted a comprehensive enterprise contract proposal for you with full digital signature capability.";
-      matchedTopic = "Proposal & Contract Generation";
-    } else {
-      const matchedQA = store.qas.find(q => 
-        q.enabled && (
-          lower.includes(q.question.toLowerCase().slice(0, 15)) ||
-          q.keywords.some(k => lower.includes(k.toLowerCase()))
-        )
-      );
-
-      chatReply = matchedQA 
-        ? `**${matchedQA.question}**\n\n${matchedQA.answer}`
-        : `Thank you for asking, ${leadName}. ${store.profile.defaultGreeting}`;
-      spokenReply = matchedQA ? matchedQA.answer : `Thank you for asking. Our team is available during standard business hours.`;
-      matchedTopic = matchedQA ? matchedQA.category : 'General Operations';
-    }
-
-    return res.status(200).json({
-      success: true,
-      chatReply,
-      spokenReply,
-      confidenceScore: executedAction ? 98 : 85,
-      intent,
-      actionType,
-      executedAction,
-      transferDepartment: null,
-      isTakingMessage: false,
-      messageSlip: null,
-      matchedKnowledgeTopic: matchedTopic,
-      suggestedQuestions: ['Start a video call with me', 'Schedule a meeting for tomorrow at 2 PM', 'Create an enterprise contract proposal'],
-      model: 'heuristic-engine'
-    });
-
+    return aiUnavailable(res);
   } catch (error: any) {
-    console.error('[Receptionist Chat Query Exception]', error);
-    return res.status(500).json({ success: false, error: error.message });
+    return knowledgeFail(res, error, 'receptionist.chat-query');
   }
 });
 
@@ -1694,26 +1255,29 @@ Answer and execute actions based on the trained knowledge base.`;
  * Interactive conversational telephony intelligence powered by Gemini 3.7 Flash.
  * Supports both Outbound Sales Dialer and Inbound Virtual Front-Desk Receptionist.
  */
-router.post('/voice-dialer/turn', async (req: Request, res: Response) => {
+router.post('/voice-dialer/turn', requirePermission('read'), async (req: Request, res: Response) => {
   try {
     const { 
       callMode = 'receptionist', // 'receptionist' | 'dialer'
-      leadName = 'Caller', 
-      leadCompany = 'Guest Client',
-      leadDealValue = '$50,000',
-      leadStage = 'Discovery',
-      agentPersona = 'Alex AI - Unified Executive Voice Concierge',
+      leadName = 'Caller',
+      leadCompany = '',
+      leadDealValue = '',
+      leadStage = '',
+      agentPersona = '',
       userMessage = '',
       conversationHistory = [],
-      callGoal = 'Serve as the unified voice concierge: greet callers, qualify deals, answer knowledge base FAQs, execute actions or route to specialized departments'
-    } = req.body;
+      callGoal = 'Greet callers, answer from the knowledge base, suggest actions and route to the right department'
+    } = req.body || {};
 
-    if (!userMessage || !userMessage.trim()) {
-      return res.status(400).json({ error: 'userMessage is required' });
+    if (typeof userMessage !== 'string' || !userMessage.trim() || userMessage.length > 4000) {
+      return res.status(400).json({ success: false, error: 'userMessage is required (max 4,000 characters).' });
     }
 
-    const dynamicKnowledge = receptionistKnowledgeDb.buildKnowledgeContext();
-    const store = receptionistKnowledgeDb.getStore();
+    const orgId = tenantOf(req).orgId;
+    const company = await orgName(orgId);
+    const store = await loadKnowledge(orgId);
+    const dynamicKnowledge = buildKnowledgeContext(store, company);
+    const persona = String(agentPersona || store.profile.agentName || 'the AI receptionist').slice(0, 120);
 
     const key = process.env.GEMINI_API_KEY;
     const hasApiKey = key && !key.includes('placeholder') && !key.includes('YOUR_GEMINI_API_KEY');
@@ -1723,26 +1287,23 @@ router.post('/voice-dialer/turn', async (req: Request, res: Response) => {
         const client = getGeminiClient();
         if (!client) throw new Error('Gemini client unavailable');
 
-        const systemInstruction = `You are ${agentPersona}, the unified AI voice agent and executive concierge at ${store.profile.companyName}.
-Company: ${store.profile.companyName} (${store.profile.address}).
-Caller Name: ${leadName} from ${leadCompany}.
-Context / Deal Stage: ${leadStage} (${leadDealValue}).
+        const systemInstruction = `You are ${persona}, the AI voice receptionist at ${store.profile.companyName || company}.
+Caller Name: ${leadName}${leadCompany ? ` from ${leadCompany}` : ''}.
+${leadStage || leadDealValue ? `Context / Deal Stage: ${leadStage} ${leadDealValue}` : ''}
 Operational Goal: ${callGoal}.
 
 ${dynamicKnowledge}
 
 UNIFIED VOICE AGENT & SPOKEN TELEPHONY RULES:
-1. Speak naturally, warmly, and authoritatively as Alex AI on a crystal-clear phone line. Keep replies to 1-3 short spoken sentences (under 35 words total).
+1. Speak naturally and warmly on the phone. Keep replies to 1-3 short spoken sentences (under 35 words total).
 2. NEVER output markdown, bullet points, asterisks, headers, citations, emojis, or code syntax because your output is fed directly into a Text-To-Speech (TTS) synthesizer.
 3. You are an all-in-one unified agent: you expertly handle front-desk reception, sales qualification, billing inquiries, technical architecture, schedule bookings, and company routing.
 4. ACTION EXECUTION & TOOL TRIGGERING:
-   - If caller asks to START/SWITCH TO A VIDEO CALL: Confirm you are opening the 'My Meet & Greet' room. Set 'actionType' to 'start_video_call'.
-   - If caller asks to SCHEDULE A CALENDAR EVENT / MEETING: Confirm date and time, set 'actionType' to 'schedule_calendar_event', and provide 'calendarEventData'.
-   - If caller asks to CREATE A CONTRACT OR PROPOSAL: Confirm generation of draft proposal, set 'actionType' to 'create_proposal', and provide 'proposalData'.
+   - You cannot create, book or send anything. If the caller wants a video call, meeting or proposal, say a team member will follow up, set 'actionType' ('start_video_call', 'schedule_calendar_event' or 'create_proposal') and include only the details the caller gave.
 5. If caller asks to speak to or be transferred to a specific department or teammate:
-   - Acknowledge warmly and confirm the transfer (e.g. "I would be happy to transfer you to Alex in Sales right away. Please hold for just a moment.").
+   - Only offer departments listed in the knowledge base. Acknowledge warmly and say you'll pass the call or message on.
    - Set 'transferDepartment' to the department key ('sales', 'support', 'billing', 'exec', 'partnerships').
-6. If caller asks for someone in a meeting (Evelyn Sinclair / Executive Desk) or wants to leave a message:
+6. If the person they want is unavailable or they want to leave a message:
    - Offer to take down their message or schedule a callback. Collect their return contact number, name, and notes.
    - Set 'isTakingMessage' to true and fill 'messageSlip'.
 7. Evaluate caller sentiment (positive, neutral, skeptical, enthusiastic, urgent), intent, lead qualification score (0-100), and next action item.`;
@@ -1860,12 +1421,12 @@ Respond naturally for the phone call using your trained knowledge base and outpu
           executedAction = {
             type: 'calendar_event',
             data: executeScheduleCalendarEvent(
-              cal.title || `Executive Meeting: ${leadCompany || leadName}`,
-              cal.date || new Date(Date.now() + 86400000).toISOString().split('T')[0],
-              cal.time || '14:00',
-              cal.duration || 30,
-              [leadName ? `${leadName.toLowerCase().replace(/\s+/g, '.')}@${(leadCompany || 'client').toLowerCase().replace(/\s+/g, '')}.com` : 'client@enterprise.com'],
-              cal.notes || `Scheduled via Voice Phone Call by ${leadName}.`
+              cal.title || '',
+              cal.date || '',
+              cal.time || '',
+              cal.duration || 0,
+              [],
+              cal.notes || ''
             )
           };
         } else if (parsed.actionType === 'create_proposal' || parsed.intent === 'create_proposal') {
@@ -1874,8 +1435,8 @@ Respond naturally for the phone call using your trained knowledge base and outpu
             type: 'proposal',
             data: executeCreateProposal(
               leadCompany || leadName,
-              prop.title || `Enterprise CRM & Voice Integration Proposal`,
-              prop.price || 78000,
+              prop.title || '',
+              typeof prop.price === 'number' ? prop.price : null,
               prop.deliverables || []
             )
           };
@@ -1883,182 +1444,45 @@ Respond naturally for the phone call using your trained knowledge base and outpu
 
         return res.status(200).json({
           success: true,
-          replyText: parsed.replyText || `Thank you for calling ${store.profile.companyName}. How can I direct your call today?`,
-          sentiment: parsed.sentiment || 'positive',
+          replyText: String(parsed.replyText || ''),
+          sentiment: parsed.sentiment || null,
           intent: parsed.intent || (callMode === 'receptionist' ? 'routing' : 'general'),
           actionType: parsed.actionType || (executedAction ? executedAction.type : null),
           executedAction,
           transferDepartment: parsed.transferDepartment || null,
           isTakingMessage: Boolean(parsed.isTakingMessage),
           messageSlip: parsed.messageSlip || null,
-          actionItem: parsed.actionItem || (executedAction ? `Executed action: ${executedAction.type}` : null),
-          qualificationScore: parsed.qualificationScore || 75,
-          keyTakeaway: parsed.keyTakeaway || `Handled call for ${leadName}.`,
-          model: 'gemini-3.7-flash',
-          source: 'gemini-trained-knowledge'
+          actionItem: parsed.actionItem || (executedAction ? `Suggested: ${executedAction.type} (needs a team member)` : null),
+          qualificationScore: typeof parsed.qualificationScore === 'number' ? parsed.qualificationScore : null,
+          keyTakeaway: parsed.keyTakeaway || null,
+          model: 'gemini-3.7-flash'
         });
-      } catch (geminiError: any) {
-        console.warn('[Voice Dialer AI Error] Gemini call fallback triggered:', geminiError.message);
+      } catch (geminiError) {
+        return aiFailed(res, 'voice-dialer.turn', geminiError);
       }
     }
-
-    // Dynamic heuristic fallback matching trained knowledge if Gemini is offline
-    const lower = userMessage.toLowerCase();
-    let actionType: string | null = null;
-    let executedAction: any = null;
-    let reply = `Thank you for calling ${store.profile.companyName}, ${leadName}. How can I direct your call today?`;
-    let sentiment = 'neutral';
-    let intent = callMode === 'receptionist' ? 'routing' : 'general';
-    let transferDept: string | null = null;
-    let isTakingMsg = false;
-    let msgSlip: any = null;
-    let actionItem = 'Answer caller inquiry';
-    let score = 75;
-
-    // Action Execution Heuristics
-    if (lower.includes('video') || lower.includes('video call') || lower.includes('zoom') || lower.includes('switch to video')) {
-      const vid = executeStartVideoCall(leadName, leadCompany);
-      executedAction = { type: 'video_call', data: vid };
-      actionType = 'video_call';
-      intent = 'start_video_call';
-      reply = `I am starting our video consultation and routing you to our My Meet and Greet video room right now.`;
-      sentiment = 'enthusiastic';
-      actionItem = 'Initiate WebRTC Video Consultation in My Meet & Greet';
-      score = 95;
-    } else if (lower.includes('schedule') || lower.includes('calendar') || lower.includes('appointment') || lower.includes('book a demo') || lower.includes('meeting')) {
-      const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
-      const cal = executeScheduleCalendarEvent(
-        `Executive Meeting: ${leadCompany || leadName}`,
-        tomorrow,
-        '14:00',
-        30,
-        [`${(leadName || 'caller').toLowerCase().replace(/\s+/g, '.')}@${(leadCompany || 'company').toLowerCase().replace(/\s+/g, '')}.com`],
-        `Autonomously scheduled during phone call with ${leadName}.`
-      );
-      executedAction = { type: 'calendar_event', data: cal };
-      actionType = 'calendar_event';
-      intent = 'schedule_calendar_event';
-      reply = `I have booked your meeting for tomorrow at 2 PM in our calendar and sent the confirmation to your email.`;
-      sentiment = 'positive';
-      actionItem = 'Schedule CRM & Google Calendar Meeting';
-      score = 92;
-    } else if (lower.includes('proposal') || lower.includes('contract') || lower.includes('agreement') || lower.includes('quote') || lower.includes('sow')) {
-      const prop = executeCreateProposal(
-        leadCompany || leadName,
-        `Enterprise Platform & Voice SLA Agreement for ${leadCompany || leadName}`,
-        78000,
-        [
-          'Phase 1: Zero-Trust Security Architecture & Compliance Setup ($19,500)',
-          'Phase 2: Real-Time WebRTC Voice Telephony Integration ($19,500)',
-          'Phase 3: Autonomous AI Receptionist & Automated Routing Bot ($19,500)',
-          'Phase 4: Dedicated 24/7 SLA Hosting & Continuous Operations ($19,500)'
-        ]
-      );
-      executedAction = { type: 'proposal', data: prop };
-      actionType = 'proposal';
-      intent = 'create_proposal';
-      reply = `I have created a formal proposal for ${leadCompany || leadName} totaling 78,000 dollars with digital signature readiness.`;
-      sentiment = 'enthusiastic';
-      actionItem = 'Create Enterprise Contract Proposal';
-      score = 95;
-    } else if (lower.includes('sales') || lower.includes('buy') || lower.includes('enterprise quote') || lower.includes('alex')) {
-      reply = `Certainly! I am transferring you directly to Alex Vance in Sales right now. Please hold for just a moment.`;
-      intent = 'transfer';
-      transferDept = 'sales';
-      sentiment = 'enthusiastic';
-      actionItem = `Warm transfer call to Sales (Alex Vance)`;
-      score = 90;
-    } else if (lower.includes('support') || lower.includes('technical') || lower.includes('devops') || lower.includes('bug') || lower.includes('jordan') || lower.includes('api')) {
-      reply = `Connecting you to Jordan Reed in Technical Support right away. Please stay on the line.`;
-      intent = 'transfer';
-      transferDept = 'support';
-      sentiment = 'urgent';
-      actionItem = `Route to Technical Support (Jordan Reed)`;
-      score = 85;
-    } else if (lower.includes('bill') || lower.includes('invoice') || lower.includes('payment') || lower.includes('marcus') || lower.includes('refund')) {
-      reply = `I will connect you with Marcus Zhao in Billing and Accounts immediately. One moment please.`;
-      intent = 'transfer';
-      transferDept = 'billing';
-      sentiment = 'neutral';
-      actionItem = `Route to Billing & Invoicing (Marcus Zhao)`;
-      score = 70;
-    } else if (lower.includes('evelyn') || lower.includes('ceo') || lower.includes('executive') || lower.includes('management')) {
-      reply = `Evelyn Sinclair is currently in an executive briefing. May I take down your name and a detailed message so she can return your call?`;
-      intent = 'message_taking';
-      transferDept = 'exec';
-      isTakingMsg = true;
-      msgSlip = {
-        recipient: 'Evelyn Sinclair (CEO Office)',
-        urgency: 'high',
-        notes: `Caller ${leadName} requested direct line with CEO.`,
-        callbackNumber: '+1 (555) 234-8901'
-      };
-      actionItem = `Save message slip for Evelyn Sinclair`;
-      score = 85;
-    } else if (lower.includes('message') || lower.includes('leave a note') || lower.includes('tell them') || lower.includes('callback')) {
-      reply = `I would be glad to take down a message. What notes and callback number should I include for the team?`;
-      intent = 'message_taking';
-      isTakingMsg = true;
-      msgSlip = {
-        recipient: 'Front Desk Dispatch',
-        urgency: 'normal',
-        notes: `Caller ${leadName} left callback request: "${userMessage}"`,
-        callbackNumber: '+1 (555) 019-2834'
-      };
-      actionItem = `Log message slip for team`;
-      score = 80;
-    } else {
-      const matchedQA = store.qas.find(q => 
-        q.enabled && (
-          lower.includes(q.question.toLowerCase().slice(0, 15)) ||
-          q.keywords.some(k => lower.includes(k.toLowerCase()))
-        )
-      );
-      if (matchedQA) {
-        reply = matchedQA.answer;
-        score = 90;
-      }
-    }
-
-    return res.status(200).json({
-      success: true,
-      replyText: reply,
-      sentiment,
-      intent,
-      actionType,
-      executedAction,
-      transferDepartment: transferDept,
-      isTakingMessage: isTakingMsg,
-      messageSlip: msgSlip,
-      actionItem,
-      qualificationScore: score,
-      keyTakeaway: `Processed inquiry from ${leadName}.`,
-      model: 'heuristic-engine-with-knowledge'
-    });
-
+    return aiUnavailable(res);
   } catch (error: any) {
-    console.error('[Voice Dialer Turn Exception]', error);
-    return res.status(500).json({
-      success: false,
-      error: 'Failed to process voice dialer conversational turn',
-      details: error.message
-    });
+    return knowledgeFail(res, error, 'voice-dialer.turn');
   }
 });
 
 /**
  * 8. AI VOICE DIALER POST-CALL SUMMARY & CRM REPORT GENERATOR (POST)
  */
-router.post('/voice-dialer/summary', async (req: Request, res: Response) => {
+router.post('/voice-dialer/summary', requirePermission('read'), async (req: Request, res: Response) => {
   try {
     const {
-      leadName = 'Customer',
+      leadName = 'Caller',
       leadPhone = '',
-      leadCompany = 'Prospect Co',
-      leadDealValue = '$50,000',
-      durationSeconds = 60,
+      leadCompany = '',
+      leadDealValue = '',
+      durationSeconds = 0,
       transcripts = []
-    } = req.body;
+    } = req.body || {};
+    if (!Array.isArray(transcripts) || transcripts.length === 0) {
+      return res.status(400).json({ success: false, code: 'no_transcript', error: 'There is no transcript to summarize.' });
+    }
 
     const transcriptText = transcripts.map((t: any) => 
       `[${t.sender === 'user' || t.sender === 'lead' ? leadName : 'AI Agent'}]: ${t.text}`
@@ -2070,7 +1494,7 @@ router.post('/voice-dialer/summary', async (req: Request, res: Response) => {
     if (hasApiKey && transcripts.length > 0) {
       try {
         const client = getGeminiClient();
-        const systemInstruction = `You are an elite CRM Intelligence Analyst at Obsidian Core CRM.
+        const systemInstruction = `You are a CRM analyst. Use only what is in the transcript; never invent facts, owners or commitments.
 Analyze the following recorded phone call transcript between an AI voice agent and ${leadName} from ${leadCompany}.
 Generate a comprehensive, actionable Post-Call CRM Intelligence Briefing in structured JSON.`;
 
@@ -2138,44 +1562,13 @@ Generate the post-call summary and next action items.`;
           summary: parsed,
           model: 'gemini-3.7-flash'
         });
-      } catch (err: any) {
-        console.warn('[Voice Dialer Summary AI Error] Fallback triggered:', err.message);
+      } catch (err) {
+        return aiFailed(res, 'voice-dialer.summary', err);
       }
     }
-
-    // Heuristic summary fallback
-    const defaultSummary = {
-      executiveSummary: `Completed a ${Math.floor(durationSeconds / 60)}m ${durationSeconds % 60}s consultative AI voice call with ${leadName} at ${leadCompany}. The prospect engaged regarding product capabilities and scheduling next steps.`,
-      sentimentScore: 'Positive',
-      leadQuality: 'High Priority',
-      keyTopicsDiscussed: [
-        'Obsidian Core Platform Overview',
-        'Enterprise Security & Cloud Infrastructure',
-        'Calendar & Demo Scheduling',
-        'Custom Package Pricing & ROI'
-      ],
-      actionItems: [
-        `Send calendar confirmation for follow-up session to ${leadName}`,
-        `Prepare custom deployment architecture blueprint for ${leadCompany}`,
-        'Log call audio transcript into CRM audit timeline'
-      ],
-      suggestedNextStep: `Follow up via email with scheduling link for ${leadName}.`,
-      crmNote: `📞 AI Voice Call Completed (${Math.floor(durationSeconds / 60)}m ${durationSeconds % 60}s)\nLead: ${leadName} (${leadCompany})\nSentiment: Positive\nStatus: Qualified for Demonstration\nAction: Calendar invite sent.`
-    };
-
-    return res.status(200).json({
-      success: true,
-      summary: defaultSummary,
-      model: 'heuristic-engine'
-    });
-
+    return aiUnavailable(res);
   } catch (error: any) {
-    console.error('[Voice Dialer Summary Exception]', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to generate post-call summary',
-      details: error.message
-    });
+    sendError(res, error, 'voice-dialer.summary');
   }
 });
 

@@ -603,7 +603,7 @@ export const ProductionMessagingPlatform: React.FC = () => {
           attachmentSize: res.data.sizeHuman,
           attachmentMime: res.data.mimeType
         });
-        showToast(`📎 Uploaded and verified: ${file.name}`);
+        showToast(`Shared ${file.name}`);
       }
     } catch (err: any) {
       console.error('Upload failed:', err);
@@ -937,7 +937,7 @@ export const ProductionMessagingPlatform: React.FC = () => {
         onClose={() => setIsPromptLibraryOpen(false)}
         prompts={promptsList}
         clientContextName={activeConversation?.title || 'Client'}
-        companyContextName={activeConversation?.crmRecord?.companyName || 'Enterprise Partner'}
+        companyContextName={activeConversation?.crmRecord?.companyName || ''}
         onSelectPrompt={(prompt, asCard) => {
           if (asCard) {
             handleSendMessage({

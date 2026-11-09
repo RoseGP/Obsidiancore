@@ -9,26 +9,29 @@ export interface OpportunityItem {
   name: string;
   client: string;
   value: number;
-  stage: 'discovery' | 'qualified' | 'proposal' | 'negotiation' | 'closing' | 'won' | 'lost';
+  stage: 'lead' | 'discovery' | 'qualified' | 'proposal' | 'negotiation' | 'won' | 'lost';
   probability: number;
   expectedClose: string;
   momentum: 'hot' | 'steady' | 'stagnant';
   channelOrigin?: string;
   owner: string;
-  ownerAvatar: string;
 }
 
+// The server's pipeline stages (see PROBABILITY in src/routes/dashboardApi.ts), in order.
 const STAGE_CONFIG = [
+  { id: 'lead', label: 'Lead', color: 'bg-slate-500' },
   { id: 'discovery', label: 'Discovery', color: 'bg-neutral-500' },
   { id: 'qualified', label: 'Qualified', color: 'bg-indigo-500' },
   { id: 'proposal', label: 'Proposal', color: 'bg-purple-500' },
-  { id: 'negotiation', label: 'Negotiation', color: 'bg-amber-500' },
-  { id: 'closing', label: 'Closing', color: 'bg-emerald-500' }
+  { id: 'negotiation', label: 'Negotiation', color: 'bg-amber-500' }
 ];
+const NEXT_STAGE: Record<string, string> = { lead: 'discovery', discovery: 'qualified', qualified: 'proposal', proposal: 'negotiation', negotiation: 'won' };
+const PROBABILITY: Record<string, number> = { lead: 20, discovery: 30, qualified: 50, proposal: 70, negotiation: 85, won: 100, lost: 0 };
+const initials = (name: string) => (name || '?').split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() || '').join('') || '?';
 
 export const OpenOpportunitiesWidget: React.FC<{ onNavigate?: (view: any) => void }> = ({ onNavigate }) => {
   const [selectedStage, setSelectedStage] = useState<string>('all');
-  const [opportunities, setOpportunities] = useState<OpportunityItem[]>([]);
+  const [allDeals, setAllDeals] = useState<OpportunityItem[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [advancingId, setAdvancingId] = useState<string | null>(null);
@@ -44,7 +47,7 @@ export const OpenOpportunitiesWidget: React.FC<{ onNavigate?: (view: any) => voi
           ...d,
           id: String(d.id || `deal-${idx}-${d.client || 'client'}`)
         }));
-        setOpportunities(normalized);
+        setAllDeals(normalized);
       } else {
         throw new Error(data.error || 'Failed to fetch deals');
       }
@@ -60,6 +63,10 @@ export const OpenOpportunitiesWidget: React.FC<{ onNavigate?: (view: any) => voi
     fetchDeals();
   }, []);
 
+  const opportunities = allDeals.filter((d) => d.stage !== 'won' && d.stage !== 'lost');
+  const wonCount = allDeals.filter((d) => d.stage === 'won').length;
+  const lostCount = allDeals.filter((d) => d.stage === 'lost').length;
+  const winRate = wonCount + lostCount ? Math.round((wonCount / (wonCount + lostCount)) * 100) : null;
   const totalValue = opportunities.reduce((acc, curr) => acc + curr.value, 0);
   const weightedValue = opportunities.reduce((acc, curr) => acc + (curr.value * curr.probability / 100), 0);
 
@@ -79,22 +86,23 @@ export const OpenOpportunitiesWidget: React.FC<{ onNavigate?: (view: any) => voi
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(val);
   };
 
-  const advanceStage = async (id: string) => {
-    setAdvancingId(id);
+  const advanceStage = async (opp: OpportunityItem) => {
+    const next = NEXT_STAGE[opp.stage];
+    if (!next) return;
+    setAdvancingId(opp.id);
+    setError(null);
     try {
-      const res = await fetch(`/api/dashboard/deals/${id}/stage`, {
+      const res = await fetch(`/api/dashboard/deals/${encodeURIComponent(opp.id)}/stage`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({})
+        body: JSON.stringify({ stage: next })
       });
-      const data = await res.json();
-      if (data.success && data.deal) {
-        setOpportunities(prev => prev.map(o => o.id === id ? data.deal : o));
-      } else {
-        throw new Error(data.error || 'Could not advance stage');
-      }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) throw new Error(data.error || 'Couldn’t move the deal to the next stage.');
+      const now = new Date().toISOString();
+      setAllDeals(prev => prev.map(o => o.id === opp.id ? { ...o, stage: next as OpportunityItem['stage'], probability: PROBABILITY[next], updatedAt: now } as OpportunityItem : o));
     } catch (err: any) {
-      console.error('Failed to advance stage:', err);
+      setError(err.message || 'Couldn’t move the deal to the next stage.');
     } finally {
       setAdvancingId(null);
     }
@@ -109,7 +117,7 @@ export const OpenOpportunitiesWidget: React.FC<{ onNavigate?: (view: any) => voi
             <div className="flex items-center gap-2">
               <span className="text-sm font-bold text-white tracking-tight">Open Opportunities</span>
               <span className="text-[10px] font-mono font-bold text-indigo-400 px-2 py-0.5 rounded-full bg-indigo-500/10 border border-indigo-500/20">
-                {opportunities.length} Active Deals
+                {opportunities.length} open deal{opportunities.length === 1 ? '' : 's'}
               </span>
             </div>
             <p className="text-xs text-neutral-400 mt-0.5">
@@ -141,8 +149,8 @@ export const OpenOpportunitiesWidget: React.FC<{ onNavigate?: (view: any) => voi
         {/* Funnel Stage Progress Strip */}
         <div className="mb-4 p-3 rounded-xl bg-black/30 border border-white/5 space-y-2">
           <div className="flex items-center justify-between text-[11px] text-neutral-400 font-mono">
-            <span>Pipeline Funnel Velocity</span>
-            <span className="text-indigo-400 font-bold">68% Win Rate</span>
+            <span>Pipeline by stage</span>
+            <span className="text-indigo-400 font-bold" title="Won ÷ (won + lost), all time">{winRate == null ? 'Win rate: —' : `${winRate}% win rate`}</span>
           </div>
 
           {/* Progress Multi-Bar */}
@@ -151,7 +159,7 @@ export const OpenOpportunitiesWidget: React.FC<{ onNavigate?: (view: any) => voi
               <div 
                 key={st.id} 
                 className={`${st.color} h-full transition-all cursor-pointer`}
-                style={{ width: `${totalValue > 0 ? (st.value / totalValue) * 100 : 20}%` }}
+                style={{ width: `${totalValue > 0 ? (st.value / totalValue) * 100 : 100 / STAGE_CONFIG.length}%` }}
                 title={`${st.label}: ${formatCurrency(st.value)} (${st.count} deals)`}
                 onClick={() => setSelectedStage(selectedStage === st.id ? 'all' : st.id)}
               />
@@ -188,7 +196,7 @@ export const OpenOpportunitiesWidget: React.FC<{ onNavigate?: (view: any) => voi
         {isLoading ? (
           <div className="py-12 flex flex-col items-center justify-center gap-2 text-neutral-400 text-xs">
             <RefreshCw className="h-5 w-5 animate-spin text-indigo-500" />
-            <span>Syncing sales pipeline...</span>
+            <span>Loading deals…</span>
           </div>
         ) : error ? (
           <div className="py-8 text-center text-xs text-rose-400 bg-rose-500/10 border border-rose-500/20 rounded-xl p-3 flex flex-col items-center gap-2">
@@ -203,7 +211,7 @@ export const OpenOpportunitiesWidget: React.FC<{ onNavigate?: (view: any) => voi
           </div>
         ) : filtered.length === 0 ? (
           <div className="py-8 text-center text-xs text-neutral-500 rounded-xl border border-dashed border-white/10 p-4">
-            No active deals in stage: {selectedStage.toUpperCase()}.
+            {opportunities.length === 0 ? 'No open deals yet. Use New Deal to add one.' : `No open deals in the ${STAGE_CONFIG.find((s) => s.id === selectedStage)?.label ?? selectedStage} stage.`}
           </div>
         ) : (
           <div className="space-y-2.5 overflow-y-auto max-h-[260px] pr-1">
@@ -252,24 +260,24 @@ export const OpenOpportunitiesWidget: React.FC<{ onNavigate?: (view: any) => voi
                 {/* Bottom Meta & Action */}
                 <div className="mt-2.5 pt-2 border-t border-white/5 flex items-center justify-between text-[11px]">
                   <div className="flex items-center gap-2">
-                    <img 
-                      src={opp.ownerAvatar} 
-                      alt={opp.owner} 
-                      referrerPolicy="no-referrer"
-                      className="h-5 w-5 rounded-full object-cover border border-white/15" 
-                    />
+                    <span
+                      title={opp.owner || 'Unassigned'}
+                      className="h-5 w-5 rounded-full border border-white/15 bg-slate-700 text-[8px] font-bold text-slate-200 flex items-center justify-center"
+                    >
+                      {initials(opp.owner)}
+                    </span>
                     <span className="text-[10px] text-neutral-400 font-mono">{opp.expectedClose}</span>
                   </div>
 
                   <button
                     type="button"
-                    disabled={advancingId === opp.id || opp.stage === 'won'}
-                    onClick={() => advanceStage(opp.id)}
+                    disabled={advancingId === opp.id || !NEXT_STAGE[opp.stage]}
+                    onClick={() => advanceStage(opp)}
                     className={`text-[10px] font-semibold flex items-center gap-1 cursor-pointer transition-colors ${
                       advancingId === opp.id ? 'text-neutral-500' : 'text-indigo-400 hover:text-indigo-300'
                     }`}
                   >
-                    <span>{advancingId === opp.id ? 'Advancing...' : opp.stage === 'won' ? 'Won' : 'Advance Stage'}</span>
+                    <span>{advancingId === opp.id ? 'Moving…' : opp.stage === 'negotiation' ? 'Mark won' : 'Next stage'}</span>
                     <ChevronRight className="h-3 w-3" />
                   </button>
                 </div>
@@ -281,7 +289,7 @@ export const OpenOpportunitiesWidget: React.FC<{ onNavigate?: (view: any) => voi
 
       {/* Footer link to Deals */}
       <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between text-xs text-neutral-400">
-        <span className="font-mono text-[10px]">Forecast Accuracy: 94.2%</span>
+        <span className="font-mono text-[10px]">{wonCount} won · {lostCount} lost</span>
         <button
           type="button"
           onClick={() => onNavigate && onNavigate('deals')}

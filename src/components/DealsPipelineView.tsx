@@ -9,6 +9,7 @@ import {
   Award, Globe, Share2, Tag, ArrowUpRight, Download, Upload, FileUp, FileDown, CheckCheck, Table
 } from 'lucide-react';
 import axios from 'axios';
+import { useTeamMembers } from '../hooks/useTeamMembers';
 import { 
   OpportunityData, 
   SalesIntelligenceReport, 
@@ -60,6 +61,7 @@ interface DealsPipelineViewProps {
 }
 
 export default function DealsPipelineView({ initialTab = 'board' }: DealsPipelineViewProps) {
+  const team = useTeamMembers();
   // Navigation / View state
   const [activeTab, setActiveTab] = useState<'board' | 'leads' | 'analytics'>(initialTab);
 
@@ -235,7 +237,7 @@ export default function DealsPipelineView({ initialTab = 'board' }: DealsPipelin
         score: lead.score,
         source: lead.source,
         status: lead.status,
-        owner: lead.owner || 'Rene Pierrette',
+        owner: lead.owner || '',
         notes: lead.notes,
         statedProblems: lead.qualification?.need ? [lead.qualification.need] : lead.notes ? [lead.notes] : ['Multi-channel unified CRM rollout'],
         qualification: lead.qualification,
@@ -286,7 +288,7 @@ export default function DealsPipelineView({ initialTab = 'board' }: DealsPipelin
         priority: Number(deal.value) >= 80000 ? 'high' : 'medium',
         source: deal.channelOrigin || 'web',
         status: deal.stage,
-        owner: deal.owner || 'Rene Pierrette',
+        owner: deal.owner || '',
         notes: `Deal expected close: ${deal.expectedClose || 'This Quarter'}`,
         statedProblems: [deal.name],
         isConverted: true,
@@ -608,7 +610,7 @@ export default function DealsPipelineView({ initialTab = 'board' }: DealsPipelin
         title: newForm.title || 'Decision Maker',
         source: newForm.source,
         status: newForm.stage === 'qualified' ? 'qualified' : 'new',
-        owner: 'Rene Pierrette',
+        owner: team.me,
         notes: newForm.notes,
         qualification: {
           budget: parsedVal,
@@ -700,7 +702,7 @@ export default function DealsPipelineView({ initialTab = 'board' }: DealsPipelin
         action,
         leadIds: selectedLeadIds
       };
-      if (action === 'assign') payload.owner = value || 'Rene Pierrette';
+      if (action === 'assign') payload.owner = value || team.me;
       if (action === 'status') payload.status = value || 'qualified';
 
       const res = await axios.post('/api/leads/bulk', payload);
@@ -971,7 +973,7 @@ export default function DealsPipelineView({ initialTab = 'board' }: DealsPipelin
           title: item.title || 'Decision Maker',
           source: item.source || 'import',
           status: assignedStage === 'qualified' ? 'qualified' : 'new',
-          owner: 'Rene Pierrette',
+          owner: team.me,
           notes: item.notes,
           qualification: {
             budget: item.value,
@@ -1527,10 +1529,10 @@ export default function DealsPipelineView({ initialTab = 'board' }: DealsPipelin
                   </button>
                   <button
                     disabled={isBulkProcessing}
-                    onClick={() => handleBulkAction('assign', 'Rene Pierrette')}
+                    onClick={() => handleBulkAction('assign', team.me)}
                     className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white border border-white/10 rounded-lg text-xs font-bold transition-all cursor-pointer"
                   >
-                    Assign to Exec
+                    Assign to me
                   </button>
                   <button
                     disabled={isBulkProcessing}
@@ -1676,7 +1678,7 @@ export default function DealsPipelineView({ initialTab = 'board' }: DealsPipelin
                             </td>
 
                             <td className="p-3.5 text-slate-300 text-[11px]">
-                              {lead.owner || 'Rene Pierrette'}
+                              {lead.owner || 'Unassigned'}
                             </td>
 
                             <td className="p-3.5 text-right space-x-1" onClick={(e) => e.stopPropagation()}>

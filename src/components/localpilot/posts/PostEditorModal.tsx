@@ -26,36 +26,19 @@ export const PostEditorModal: React.FC<PostEditorModalProps> = ({
   const [title, setTitle] = useState(initialPost?.title || '');
   const [content, setContent] = useState(initialPost?.content || '');
   const [ctaType, setCtaType] = useState(initialPost?.ctaType || 'LEARN_MORE');
-  const [ctaUrl, setCtaUrl] = useState(initialPost?.ctaUrl || 'https://localpilot-sample.com');
-  const [locationId, setLocationId] = useState(initialPost?.locationId || locations[0]?.id || 'loc-downtown-miami');
-  const [scheduledDate, setScheduledDate] = useState(initialPost?.scheduledDate || '2026-09-04');
-  const [imageUrl, setImageUrl] = useState(
-    initialPost?.imageUrl || 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=800&auto=format&fit=crop&q=80'
-  );
-  const [isAiDraft, setIsAiDraft] = useState(initialPost?.isAiGenerated || false);
+  const [ctaUrl, setCtaUrl] = useState(initialPost?.ctaUrl || '');
+  const [locationId, setLocationId] = useState(initialPost?.locationId || locations[0]?.id || '');
+  // Photos aren't uploaded through this editor yet, so only an existing post's image is shown.
+  const imageUrl = initialPost?.imageUrl || '';
 
   const selectedLoc = locations.find((l) => l.id === locationId);
 
-  const handleGenerateAi = () => {
-    setIsAiDraft(true);
-    if (postType === 'Offer') {
-      setTitle('Mid-Week Chef Tasting Experience');
-      setContent('Enjoy 20% off all chef tasting menus every Tuesday and Wednesday throughout September. Handcrafted pairings included.');
-      setCtaType('BOOK');
-      setCtaUrl('https://localpilot-sample.com/reservations');
-    } else {
-      setTitle('Fresh Seasonal Menu Updates');
-      setContent('We just unveiled our autumn cocktail & dining additions! Featuring locally sourced organic produce and wood-fired artisan specials.');
-      setCtaType('LEARN_MORE');
-      setCtaUrl('https://localpilot-sample.com/menu');
-    }
-  };
-
-  const handlePublish = (status: 'Published' | 'Scheduled' | 'Draft') => {
+  const handlePublish = (status: 'Published') => {
     onSavePost({
-      id: initialPost?.id || `post-${Date.now()}`,
+      // Only an existing post carries an id; a new post gets its id from Google.
+      ...(initialPost?.id ? { id: initialPost.id } : {}),
       locationId,
-      locationName: selectedLoc?.name || 'Downtown Miami Flagship',
+      locationName: selectedLoc?.name || '',
       type: postType,
       title: title || undefined,
       content,
@@ -63,9 +46,7 @@ export const PostEditorModal: React.FC<PostEditorModalProps> = ({
       ctaUrl,
       imageUrl,
       status,
-      isAiGenerated: isAiDraft,
-      scheduledDate: status === 'Scheduled' ? scheduledDate : undefined,
-      publishedAt: status === 'Published' ? 'Just now' : undefined
+      isAiGenerated: false
     });
     onClose();
   };
@@ -79,32 +60,16 @@ export const PostEditorModal: React.FC<PostEditorModalProps> = ({
       size="xl"
       footer={
         <div className="flex items-center justify-between w-full">
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleGenerateAi}
-              leftIcon={<Sparkles className="h-3.5 w-3.5 text-blue-600" />}
-            >
-              Generate with AI
-            </Button>
-            <Button variant="ghost" size="sm" onClick={() => handlePublish('Draft')}>
-              Save Draft
-            </Button>
-          </div>
+          <span className="text-[11px] text-slate-500">
+            Posts are published right away. Scheduling and drafts aren't available yet.
+          </span>
 
           <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => handlePublish('Scheduled')}
-              leftIcon={<Clock className="h-3.5 w-3.5" />}
-            >
-              Schedule
-            </Button>
+            <Button variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
             <Button
               variant="primary"
               size="sm"
+              disabled={!content.trim() || !locationId}
               onClick={() => handlePublish('Published')}
               leftIcon={<Send className="h-3.5 w-3.5" />}
             >
@@ -119,19 +84,6 @@ export const PostEditorModal: React.FC<PostEditorModalProps> = ({
         {/* Left Form */}
         <div className="space-y-4">
           
-          {/* AI Banner if active */}
-          {isAiDraft && (
-            <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl flex items-center justify-between">
-              <div className="flex items-center gap-2 text-blue-800">
-                <Sparkles className="h-4 w-4 text-blue-600 shrink-0" />
-                <span className="font-semibold text-xs">✨ AI-generated draft</span>
-              </div>
-              <span className="text-[10px] text-blue-700 bg-blue-100 px-2 py-0.5 rounded font-medium">
-                Optimized for local discovery
-              </span>
-            </div>
-          )}
-
           {/* Post Type Selector */}
           <div>
             <label className="font-bold text-slate-900 block mb-1.5">Post Type</label>
@@ -175,7 +127,7 @@ export const PostEditorModal: React.FC<PostEditorModalProps> = ({
               <label className="font-bold text-slate-900 block mb-1">Headline / Title</label>
               <input
                 type="text"
-                placeholder="e.g. Labor Day Extended Brunch & Live Jazz"
+                placeholder="e.g. Holiday opening hours"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 className="w-full p-2 bg-white border border-slate-200 rounded-lg text-slate-900 focus:outline-none focus:border-blue-500"
@@ -237,14 +189,14 @@ export const PostEditorModal: React.FC<PostEditorModalProps> = ({
           <div>
             <div className="flex items-center justify-between pb-2 mb-3 border-b border-slate-200 text-xs">
               <span className="font-bold text-slate-500 uppercase tracking-wider text-[10px]">
-                Google Maps & Search Live Preview
+                How the post may look
               </span>
-              <span className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[10px] font-semibold">
-                Google Verified
+              <span className="px-1.5 py-0.5 rounded bg-slate-200 text-slate-700 text-[10px] font-semibold">
+                Preview
               </span>
             </div>
 
-            {/* Mock Google Post Card */}
+            {/* Post preview */}
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden space-y-3 p-3.5">
               {/* Media image */}
               {imageUrl && (
@@ -268,7 +220,7 @@ export const PostEditorModal: React.FC<PostEditorModalProps> = ({
                   </h4>
                 )}
                 <p className="text-xs text-slate-900 leading-relaxed line-clamp-4">
-                  {content || 'Enter post description on the left to see live mockup preview here.'}
+                  {content || 'Write the post on the left to preview it here.'}
                 </p>
               </div>
 
@@ -287,7 +239,7 @@ export const PostEditorModal: React.FC<PostEditorModalProps> = ({
           </div>
 
           <p className="text-[11px] text-slate-400 text-center mt-4">
-            Published posts stay featured on your Google Knowledge Graph panel for up to 6 months.
+            Preview only. Google decides exactly how and where the post appears.
           </p>
         </div>
 

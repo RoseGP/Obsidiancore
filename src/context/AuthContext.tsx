@@ -8,7 +8,12 @@ import {
   sendPasswordResetEmail,
   updateProfile,
   signOut as firebaseSignOut, 
-  onAuthStateChanged 
+  onAuthStateChanged,
+  OAuthProvider,
+  TwitterAuthProvider,
+  EmailAuthProvider,
+  reauthenticateWithCredential,
+  reauthenticateWithPopup,
 } from 'firebase/auth';
 import { 
   doc, 
@@ -166,7 +171,7 @@ interface AuthContextType {
 
   // Session Management
   lockSession: () => void;
-  unlockSession: (pinOrPassword?: string) => boolean;
+  unlockSession: (password?: string) => Promise<boolean>;
   updateSessionSettings: (settings: Partial<SessionSettings>) => void;
   terminateSession: (sessionId: string) => void;
   terminateAllOtherSessions: () => void;
@@ -175,13 +180,14 @@ interface AuthContextType {
   clearAuthError: () => void;
 }
 
+/** Signed-out placeholder. Real values come from the signed-in account; nothing is invented. */
 const DEFAULT_PROFILE: UserProfile = {
-  uid: 'exec-director-45',
-  displayName: 'Rene Pierrette',
-  email: 'rpierrette45@gmail.com',
-  photoURL: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=120',
-  role: 'Class-5 Executive',
-  company: 'Obsidian Enterprise Core',
+  uid: '',
+  displayName: '',
+  email: '',
+  photoURL: '',
+  role: 'Executive Director', // client-side menu permissions only; the server enforces organization roles
+  company: '',
   presence: 'online',
   isAnonymous: false,
 };
@@ -189,7 +195,7 @@ const DEFAULT_PROFILE: UserProfile = {
 const DEFAULT_SESSION_SETTINGS: SessionSettings = {
   autoLockMinutes: 30,
   rememberMe: true,
-  terminalPin: '1337',
+  terminalPin: '',
 };
 
 function getClientBrowserInfo(): { browser: string; device: string } {
@@ -216,7 +222,8 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isDemoSession, setIsDemoSession] = useState<boolean>(() => {
-    return localStorage.getItem('obsidian_auth_is_demo') === 'true';
+    // A stored flag can only restore a sandbox session where sandbox sign-in is enabled.
+    return SANDBOX_LOGIN_ENABLED && localStorage.getItem('obsidian_auth_is_demo') === 'true';
   });
   const [userProfile, setUserProfile] = useState<UserProfile>(() => {
     try {
@@ -245,36 +252,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const clientInfo = useRef(getClientBrowserInfo());
 
   // Active sessions collection
-  const [activeSessions, setActiveSessions] = useState<UserSession[]>(() => {
-    try {
-      const saved = localStorage.getItem('obsidian_active_sessions');
-      if (saved) return JSON.parse(saved);
-    } catch {
-      // fallback
-    }
-    return [
-      {
-        id: 'sess-current-01',
-        device: `${clientInfo.current.device}`,
-        browser: `${clientInfo.current.browser} (Current Session)`,
-        ip: '192.168.1.104 (United States)',
-        location: 'New York, USA',
-        lastActive: 'Active Now',
-        isCurrent: true,
-        signedInAt: new Date(Date.now() - 3600000).toLocaleString()
-      },
-      {
-        id: 'sess-mobile-02',
-        device: 'iPhone 16 Pro',
-        browser: 'Obsidian Mobile App',
-        ip: '74.125.210.14 (Mobile Gateway)',
-        location: 'Boston, USA',
-        lastActive: '2 hours ago',
-        isCurrent: false,
-        signedInAt: new Date(Date.now() - 86400000).toLocaleString()
-      }
-    ];
-  });
+  // Only this device is known in the browser (no invented devices, IPs or locations).
+  // To sign out everywhere, Settings → Security calls the server, which revokes the account's sessions.
+  const [activeSessions, setActiveSessions] = useState<UserSession[]>(() => [{
+    id: 'this-device',
+    device: clientInfo.current.device,
+    browser: clientInfo.current.browser,
+    ip: '',
+    location: '',
+    lastActive: 'Now',
+    isCurrent: true,
+    signedInAt: new Date().toLocaleString(),
+  }]);
 
   const currentSession = activeSessions.find(s => s.isCurrent) || activeSessions[0];
 
@@ -291,8 +280,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [sessionSettings]);
 
   useEffect(() => {
-    localStorage.setItem('obsidian_active_sessions', JSON.stringify(activeSessions));
-  }, [activeSessions]);
+    try { localStorage.removeItem('obsidian_active_sessions'); } catch { /* storage unavailable */ }
+  }, []);
 
   useEffect(() => {
     localStorage.setItem('obsidian_auth_is_demo', isDemoSession ? 'true' : 'false');
@@ -349,9 +338,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (currentUser) {
         setIsDemoSession(false);
         const uid = currentUser.uid;
-        const email = currentUser.email || 'rpierrette45@gmail.com';
-        const displayName = currentUser.displayName || currentUser.email?.split('@')[0] || 'Executive User';
-        const photoURL = currentUser.photoURL || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=120';
+        const email = currentUser.email || '';
+        const displayName = currentUser.displayName || currentUser.email?.split('@')[0] || 'Team member';
+        const photoURL = currentUser.photoURL || '';
 
         // Check or create Firestore document in users/{uid}
         if (db) {
@@ -467,22 +456,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Update session settings
       setSessionSettings(prev => ({ ...prev, rememberMe }));
 
-      // Add to active sessions
-      const newSession: UserSession = {
-        id: `sess-${Date.now()}`,
-        device: clientInfo.current.device,
-        browser: `${clientInfo.current.browser} (Current Session)`,
-        ip: '192.168.1.104 (United States)',
-        location: 'Local Session',
-        lastActive: 'Active Now',
-        isCurrent: true,
-        signedInAt: new Date().toLocaleString()
-      };
-
-      setActiveSessions(prev => [
-        newSession,
-        ...prev.map(s => ({ ...s, isCurrent: false }))
-      ]);
+      setActiveSessions([{ id: 'this-device', device: clientInfo.current.device, browser: clientInfo.current.browser, ip: '', location: '', lastActive: 'Now', isCurrent: true, signedInAt: new Date().toLocaleString() }]);
 
       return userCredential.user;
     } catch (err: any) {
@@ -520,10 +494,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const newUser = userCredential.user;
 
       // Update user profile in Firebase Auth
-      await updateProfile(newUser, {
-        displayName: displayName.trim(),
-        photoURL: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=120'
-      });
+      await updateProfile(newUser, { displayName: displayName.trim() });
 
       // Synchronize to Firestore
       if (db) {
@@ -533,7 +504,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             uid: newUser.uid,
             email: newUser.email,
             displayName: displayName.trim(),
-            photoURL: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=120',
+            photoURL: '',
             role: role || 'Executive Director',
             presence: 'online',
             createdAt: serverTimestamp(),
@@ -552,9 +523,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         uid: newUser.uid,
         email: newUser.email || email,
         displayName: displayName.trim(),
-        photoURL: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=120',
+        photoURL: '',
         role: role || 'Executive Director',
-        company: company || 'Enterprise Org',
+        company: company || '',
         presence: 'online',
         isAnonymous: false,
       });
@@ -626,8 +597,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             await setDoc(userDocRef, {
               uid: loggedUser.uid,
               email: loggedUser.email || '',
-              displayName: loggedUser.displayName || 'Executive Director',
-              photoURL: loggedUser.photoURL || DEFAULT_PROFILE.photoURL,
+              displayName: loggedUser.displayName || loggedUser.email?.split('@')[0] || 'Team member',
+              photoURL: loggedUser.photoURL || '',
               presence: 'online',
               role: 'Executive Director',
               createdAt: serverTimestamp(),
@@ -668,10 +639,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const selectedProfile: UserProfile = {
       uid: 'demo-sandbox-executive',
       displayName: name || 'Rene Pierrette',
-      email: email || 'rpierrette45@gmail.com',
-      photoURL: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=120',
+      email: email || 'sandbox-owner@example.com',
+      photoURL: '',
       role: role || 'Class-5 Executive',
-      company: 'Obsidian Enterprise Core',
+      company: 'Sandbox',
       presence: 'online',
       isAnonymous: false,
     };
@@ -680,80 +651,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsLoading(false);
   };
 
-  // 6. Enterprise Social Platform Authentication
+  // 6. Other sign-in providers: real Firebase providers only. Each must be enabled in the Firebase console.
   const loginWithSocial = async (platform: string) => {
     setIsLoading(true);
     setAuthError(null);
+    const key = platform.toLowerCase();
     try {
-      await new Promise(r => setTimeout(r, 600));
-      const platformUserProfiles: Record<string, Partial<UserProfile>> = {
-        linkedin: {
-          displayName: 'Sarah Jenkins',
-          email: 'sarah.jenkins@linkedin.enterprise',
-          role: 'Lead Strategist',
-          photoURL: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&q=80&w=120',
-          presence: 'online'
-        },
-        twitter: {
-          displayName: 'Alex Mercer',
-          email: 'alex.mercer@x.enterprise',
-          role: 'Chief Growth Officer',
-          photoURL: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=120',
-          presence: 'online'
-        },
-        microsoft: {
-          displayName: 'David Kojo',
-          email: 'david.kojo@corp.microsoft.com',
-          role: 'Principal Architect',
-          photoURL: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=120',
-          presence: 'online'
-        }
-      };
-
-      const selected = platformUserProfiles[platform.toLowerCase()] || {
-        displayName: `${platform.toUpperCase()} Enterprise User`,
-        email: `operator@${platform.toLowerCase()}.enterprise.crm`,
-        role: 'Verified Operator',
-        presence: 'online'
-      };
-
-      setIsDemoSession(true);
+      if (key === 'google') return await loginWithGoogle();
+      const provider = key === 'microsoft' ? new OAuthProvider('microsoft.com')
+        : key === 'twitter' || key === 'x' ? new TwitterAuthProvider()
+        : key === 'apple' ? new OAuthProvider('apple.com')
+        : null;
+      if (!provider) {
+        setAuthError(`Signing in with ${platform} isn't available. Use email or Google.`);
+        return;
+      }
+      if (!auth) throw new Error('not_configured');
+      await signInWithPopup(auth, provider);
+      setIsDemoSession(false);
       setIsSessionLocked(false);
-      setUserProfile(prev => ({
-        ...prev,
-        ...selected
-      }));
     } catch (err: any) {
-      console.error(`[Social Auth Error - ${platform}]`, err);
-      setAuthError(`Authentication with ${platform} failed.`);
+      const code = String(err?.code || err?.message || '');
+      setAuthError(code.includes('operation-not-allowed') || code === 'not_configured'
+        ? `Signing in with ${platform} isn't set up for this app yet. Use email or Google.`
+        : code.includes('popup-closed') ? 'The sign-in window was closed.'
+        : `Signing in with ${platform} didn't work. Try again.`);
     } finally {
       setIsLoading(false);
     }
   };
 
-  // 7. Enterprise SSO corporate login
-  const loginWithEnterpriseSSO = async (email: string, code?: string) => {
-    setIsLoading(true);
-    setAuthError(null);
-    try {
-      await new Promise(r => setTimeout(r, 700));
-      const parsedName = email.split('@')[0].replace(/[._]/g, ' ');
-      const formattedName = parsedName.charAt(0).toUpperCase() + parsedName.slice(1);
-
-      setIsDemoSession(true);
-      setIsSessionLocked(false);
-      setUserProfile(prev => ({
-        ...prev,
-        displayName: formattedName || 'Enterprise Director',
-        email,
-        role: 'Enterprise Director',
-        presence: 'online'
-      }));
-    } catch (err: any) {
-      setAuthError('Enterprise SSO authentication could not be completed.');
-    } finally {
-      setIsLoading(false);
-    }
+  // 7. Single sign-on (SAML/OIDC) isn't set up; say so instead of pretending to sign in.
+  const loginWithEnterpriseSSO = async (_email: string, _code?: string) => {
+    setAuthError('Single sign-on isn\'t available yet. Sign in with email or Google.');
   };
 
   // 8. Logout
@@ -781,22 +711,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsSessionLocked(true);
   }, []);
 
-  const unlockSession = useCallback((pinOrPassword?: string): boolean => {
-    // If PIN is provided, check against sessionSettings.terminalPin
-    if (pinOrPassword && pinOrPassword.trim()) {
-      const cleanInput = pinOrPassword.trim();
-      if (cleanInput === sessionSettings.terminalPin || cleanInput.length >= 4) {
-        setIsSessionLocked(false);
-        lastActivityRef.current = Date.now();
-        return true;
+  /**
+   * Unlocking needs proof it's still you: your password (email accounts) or your sign-in provider
+   * (Google etc.). Sandbox sessions have no credentials and unlock directly.
+   */
+  const unlockSession = useCallback(async (password?: string): Promise<boolean> => {
+    const done = () => { setIsSessionLocked(false); lastActivityRef.current = Date.now(); return true; };
+    const current = auth?.currentUser;
+    if (!current) return isDemoSession ? done() : false;
+    try {
+      const usesPassword = current.providerData.some((p) => p.providerId === 'password');
+      if (usesPassword) {
+        if (!password || !current.email) return false;
+        await reauthenticateWithCredential(current, EmailAuthProvider.credential(current.email, password));
+      } else {
+        const providerId = current.providerData[0]?.providerId;
+        const provider = providerId === 'google.com' ? new GoogleAuthProvider()
+          : providerId === 'twitter.com' ? new TwitterAuthProvider()
+          : providerId ? new OAuthProvider(providerId) : null;
+        if (!provider) return false;
+        await reauthenticateWithPopup(current, provider);
       }
+      return done();
+    } catch {
       return false;
     }
-    // Default unlock fallback
-    setIsSessionLocked(false);
-    lastActivityRef.current = Date.now();
-    return true;
-  }, [sessionSettings.terminalPin]);
+  }, [isDemoSession]);
 
   // 10. Update Session Settings
   const updateSessionSettings = (settings: Partial<SessionSettings>) => {
@@ -880,7 +820,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const isAuthenticated = Boolean(user) || isDemoSession;
+  const isAuthenticated = Boolean(user && !user.isAnonymous) || (SANDBOX_LOGIN_ENABLED && isDemoSession);
 
   // Tell the API client who is signed in: Firebase user, or the sandbox profile (which has no Firebase token).
 

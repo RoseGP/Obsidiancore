@@ -61,5 +61,12 @@ r = await request(chat).post('/api/chat/completions').set('X-Dev-User-Id', 'alic
   .send({ messages: [{ role: 'user', content: 'How many leads do I have?' }], model: 'gpt-4o', stream: true });
 assert.match(r.text, /"code":"ai_not_configured"/); assert.ok(!/lead/i.test(r.text.replace(/"content":"How many leads do I have\?"/, '')) || /ai_not_configured/.test(r.text)); ok('no AI provider → explicit "not configured" error, no canned answer');
 
+{
+  const { acceptedFirebaseIdentity } = await import('../../features/social-accounts/server/auth');
+  assert.equal(acceptedFirebaseIdentity({ uid: 'u1', firebase: { sign_in_provider: 'anonymous' } }), false);
+  assert.equal(acceptedFirebaseIdentity({ uid: '' }), false);
+  assert.equal(acceptedFirebaseIdentity({ uid: 'u1', firebase: { sign_in_provider: 'password' } }), true);
+  ok('anonymous Firebase sign-ins are not accepted as accounts');
+}
 console.log(`\n${passed} passed (security)`);
 process.exit(0);

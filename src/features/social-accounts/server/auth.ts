@@ -31,13 +31,18 @@ export function looksLikeFirebaseToken(token: string): boolean {
   }
 }
 
+/** Anonymous Firebase users are not accounts: they can't own organizations or data. */
+export function acceptedFirebaseIdentity(decoded: { uid?: string; firebase?: { sign_in_provider?: string } }): boolean {
+  return Boolean(decoded?.uid) && decoded.firebase?.sign_in_provider !== 'anonymous';
+}
+
 async function verifyFirebaseClaims(token: string): Promise<{ uid: string; email?: string; email_verified?: boolean; name?: string } | null> {
   const projectId = firebaseProjectId();
   if (!projectId) return null;
   try {
     const app = getApps()[0] ?? initializeApp({ projectId });
     const decoded = await getAuth(app).verifyIdToken(token, true);
-    return decoded.uid ? decoded : null;
+    return acceptedFirebaseIdentity(decoded) ? decoded : null;
   } catch {
     return null;
   }

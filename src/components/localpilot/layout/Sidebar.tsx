@@ -4,8 +4,7 @@ import {
   LayoutDashboard, MapPin, Star, Megaphone, 
   Search, TrendingUp, ShieldCheck, FileText, 
   Sparkles, Settings, ChevronDown, ChevronsUpDown,
-  Building2, Plus
-} from 'lucide-react';
+  Building2, Plus, User as UserIcon } from 'lucide-react';
 import { LocalPilotRoute } from '../types';
 
 export interface SidebarProps {
@@ -164,17 +163,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {/* User Card */}
         <div className="flex items-center justify-between p-1.5 rounded-lg">
           <div className="flex items-center gap-2 min-w-0">
-            <img
-              src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80"
-              alt="Account"
-              className="h-7 w-7 rounded-full object-cover border border-slate-200"
-            />
+            <span className="h-7 w-7 rounded-full border border-slate-200 bg-slate-100 text-slate-600 flex items-center justify-center shrink-0" aria-hidden="true">
+              <UserIcon className="h-3.5 w-3.5" />
+            </span>
             <div className="min-w-0">
               <div className="text-xs font-semibold text-slate-900 truncate">
-                {seo?.connection?.email || 'Google account'}
+                {seo?.connection?.email || 'Google not connected'}
               </div>
               <div className="text-[10px] text-slate-500 truncate">
-                Connected via Google
+                {seo?.connection?.connected ? 'Connected via Google' : 'Not connected'}
               </div>
             </div>
           </div>

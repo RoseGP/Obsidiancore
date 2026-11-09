@@ -18,7 +18,7 @@ async function call<T>(devUser: string, path: string, init: RequestInit = {}): P
   return body as T;
 }
 
-export interface Connection { configured: boolean; aiConfigured: boolean; connected: boolean; needsReconnect: boolean; email?: string; selectedCount: number; lastSync?: { at: string; reviews: number; errors: string[] } }
+export interface Connection { configured: boolean; aiConfigured: boolean; connected: boolean; needsReconnect: boolean; email?: string; selectedCount: number; lastSync?: { at: string; reviews: number; errors: string[] }; settings?: { brandVoice?: 'friendly' | 'professional' | 'casual' | 'luxury'; signOff?: string } }
 
 const DAYS = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'];
 function toLocation(o: any): LocationItem {
@@ -41,6 +41,8 @@ function toLocation(o: any): LocationItem {
     services: [], missingServices: [],
     attributes: { wheelchairAccessible: false, outdoorSeating: false, freeWifi: false, curbsidePickup: false, delivery: false, creditCards: false },
     photosCount: 0, lastPhotoAdded: '',
+    auditChecks: a.checks.map((c: any) => ({ id: c.id, group: c.group, label: c.label, passed: !!c.passed })),
+    hasRating: o.averageRating != null,
   } as LocationItem;
 }
 
@@ -57,7 +59,7 @@ function toReview(r: any): ReviewItem {
 function toOpportunities(o: any): SeoOpportunity[] {
   return o.audit.checks.filter((c: any) => !c.passed && c.fix).map((c: any) => ({
     id: `${o.location.name}:${c.id}`, title: c.fix.title, description: c.fix.description, category: c.fix.category, impact: c.fix.impact, effort: c.fix.effort,
-    estimatedTime: c.fix.effort === 'Low' ? '5 min' : c.fix.effort === 'Medium' ? '20 min' : '1 hr', locationId: o.location.name, locationName: o.location.title,
+    estimatedTime: c.fix.effort === 'Low' ? 'about 5 min' : c.fix.effort === 'Medium' ? 'about 20 min' : 'about 1 hr', locationId: o.location.name, locationName: o.location.title,
     actionType: c.fix.actionType, actionLabel: c.fix.actionLabel,
   }));
 }
@@ -108,8 +110,9 @@ function useLocalSeoState(devUser: string) {
     async createPost(location: string, p: { summary: string; topicType: string; ctaType: string; ctaUrl?: string; title?: string; startDate?: string; endDate?: string }) { return api<any>('/posts', { method: 'POST', body: JSON.stringify({ location, ...p }) }); },
     async listPosts(location: string): Promise<PostItem[]> {
       const raw = await api<any[]>(`/posts?location=${encodeURIComponent(location)}`);
-      return raw.map((p) => ({ id: p.id, locationId: location, locationName: '', type: p.topicType === 'OFFER' ? 'Offer' : p.topicType === 'EVENT' ? 'Event' : 'Update', content: p.summary, ctaType: (p.cta?.actionType || 'NONE') as any, ctaUrl: p.cta?.url, status: 'Published', publishedAt: p.createTime ? new Date(p.createTime).toLocaleDateString() : undefined }));
+      return raw.map((p) => ({ id: p.id, locationId: location, locationName: '', type: p.topicType === 'OFFER' ? 'Offer' : p.topicType === 'EVENT' ? 'Event' : 'Update', content: p.summary, ctaType: (p.cta?.actionType || 'NONE') as any, ctaUrl: p.cta?.url, status: 'Published', publishedAt: p.createTime ? new Date(p.createTime).toLocaleDateString() : undefined, createdAt: p.createTime || undefined }));
     },
+    async saveSettings(settings: { brandVoice?: 'friendly' | 'professional' | 'casual' | 'luxury'; signOff?: string }) { await api('/settings', { method: 'PUT', body: JSON.stringify(settings) }); await reload(); },
     async performance(location: string, days: number) { return api<any>(`/performance?location=${encodeURIComponent(location)}&days=${days}`); },
   };
 }

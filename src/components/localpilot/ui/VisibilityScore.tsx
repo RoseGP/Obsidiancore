@@ -14,8 +14,8 @@ export const VisibilityScore: React.FC<VisibilityScoreProps> = ({
   score,
   change,
   size = 'md',
-  showBenchmark = true,
-  benchmarkText = 'Excellent (Top 5% in Miami metro)',
+  showBenchmark = false,
+  benchmarkText = '',
   className = ''
 }) => {
   const getRatingStatus = (val: number) => {

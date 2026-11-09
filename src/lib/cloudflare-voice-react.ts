@@ -114,36 +114,38 @@ const DTMF_FREQS: Record<string, [number, number]> = {
   "#": [941, 1477],
 };
 
-const SEED_MESSAGE_SLIPS: ReceptionistMessageSlip[] = [
-  {
-    id: "slip_1",
-    callerName: "Richard Thorne",
-    callerCompany: "Apex BioTech",
-    callbackNumber: "+1 (555) 492-1049",
-    recipient: "Evelyn Sinclair (CEO Office)",
-    urgency: "high",
-    notes: "Follow-up regarding private equity partnership syndicate term sheet.",
-    timestamp: "Today, 11:20 AM",
-    status: "unread"
-  },
-  {
-    id: "slip_2",
-    callerName: "Kendra Larson",
-    callerCompany: "Nexus Retailers",
-    callbackNumber: "+1 (555) 301-8842",
-    recipient: "Billing & Invoicing (Marcus Zhao)",
-    urgency: "normal",
-    notes: "Requested updated Q3 VAT invoice and tax exemption certificate.",
-    timestamp: "Yesterday, 4:15 PM",
-    status: "called_back"
-  }
-];
+/** Message slips are stored per organization on the server (/api/communication/message-slips). */
+const slipFromServer = (s: any): ReceptionistMessageSlip => ({
+  id: String(s.id),
+  callerName: String(s.callerName || ''),
+  callerCompany: String(s.callerCompany || ''),
+  callbackNumber: String(s.callbackNumber || ''),
+  recipient: String(s.recipient || ''),
+  urgency: s.urgency === 'urgent' || s.urgency === 'high' ? s.urgency : 'normal',
+  notes: String(s.notes || ''),
+  timestamp: s.createdAt ? new Date(s.createdAt).toLocaleString() : '',
+  status: s.status === 'resolved' || s.status === 'called_back' ? s.status : 'unread',
+});
+
+/** Reads the server's error message (e.g. "AI isn't set up on this server"). */
+async function serverError(res: Response): Promise<string> {
+  const d = await res.json().catch(() => ({} as any));
+  return d?.error || `The server answered ${res.status}.`;
+}
 
 export function useVoiceAgent(options: UseVoiceAgentOptions = {}): UseVoiceAgentResult {
   const [callMode, setCallModeState] = useState<"receptionist" | "dialer">(options.callMode || "receptionist");
   const [activeDepartment, setActiveDepartment] = useState<string | null>(null);
   const [isTransferring, setIsTransferring] = useState<boolean>(false);
-  const [messageSlips, setMessageSlips] = useState<ReceptionistMessageSlip[]>(SEED_MESSAGE_SLIPS);
+  const [messageSlips, setMessageSlips] = useState<ReceptionistMessageSlip[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/communication/message-slips")
+      .then((r) => (r.ok ? r.json() : { slips: [] }))
+      .then((d) => { if (!cancelled) setMessageSlips((d.slips || []).map(slipFromServer)); })
+      .catch(() => { /* shown as empty */ });
+    return () => { cancelled = true; };
+  }, []);
   const [activeActions, setActiveActions] = useState<ReceptionistAction[]>([]);
   const [latestAction, setLatestAction] = useState<ReceptionistAction | null>(null);
 
@@ -156,8 +158,8 @@ export function useVoiceAgent(options: UseVoiceAgentOptions = {}): UseVoiceAgent
   const [isOnHold, setIsOnHold] = useState<boolean>(false);
   const [isRecording, setIsRecording] = useState<boolean>(true);
   const [callDuration, setCallDuration] = useState<number>(0);
-  const [sentiment, setSentiment] = useState<"positive" | "neutral" | "skeptical" | "enthusiastic" | "urgent">("positive");
-  const [leadScore, setLeadScore] = useState<number>(75);
+  const [sentiment, setSentiment] = useState<"positive" | "neutral" | "skeptical" | "enthusiastic" | "urgent">("neutral");
+  const [leadScore, setLeadScore] = useState<number>(0);
   const [actionItems, setActionItems] = useState<string[]>([]);
   const [postCallSummary, setPostCallSummary] = useState<PostCallSummary | null>(null);
   const [isGeneratingSummary, setIsGeneratingSummary] = useState<boolean>(false);
@@ -330,65 +332,44 @@ export function useVoiceAgent(options: UseVoiceAgentOptions = {}): UseVoiceAgent
     } catch {}
   }, []);
 
-  // Warm Department Transfer execution
+  // Department routing during a browser test call. Nothing is dialled: this only records where a real
+  // call would be transferred. Live transfers need a connected phone line (Twilio IVR).
   const triggerDepartmentTransfer = useCallback(async (deptKey: string, deptName: string) => {
     if (statusRef.current !== "active") return;
-    setIsTransferring(true);
-    setIsOnHold(true);
-    setStatus("on_hold");
-    setAgentState("on_hold");
-
-    // Announce transfer
-    const announceText = `Transferring you to ${deptName}. Please hold for just a moment.`;
-    const transferNoticeTranscript: VoiceTranscript = {
-      id: generateId(),
-      sender: "agent",
-      text: `[SYSTEM: Warm Transfer Initiated -> ${deptName}] ${announceText}`,
-      timestamp: new Date(),
-    };
-    setTranscripts(prev => [...prev, transferNoticeTranscript]);
-    playTransferChime();
-    await speakText(announceText);
-
-    // Realistic warm transfer hold delay
-    await new Promise(resolve => setTimeout(resolve, 2200));
-
-    // Complete transfer handover
+    void deptKey;
     setActiveDepartment(deptName);
-    setIsTransferring(false);
-    setIsOnHold(false);
-    setStatus("active");
-    setAgentState("speaking");
-
-    let deptGreeting = `Hello! This is ${deptName}. How can I assist you with your request today?`;
-    if (deptKey === "sales") deptGreeting = `Hello! This is Alex Vance in Sales. I understand you're interested in our enterprise platform. How can I assist?`;
-    if (deptKey === "support") deptGreeting = `Hi there! Jordan Reed in Technical Support here. I have your connection open. What technical issue or API question can I solve for you?`;
-    if (deptKey === "billing") deptGreeting = `Hello, Marcus Zhao in Billing & Accounts. I can assist you with your invoices, payment methods, or licensing right away.`;
-    if (deptKey === "exec") deptGreeting = `You've reached Evelyn Sinclair's executive line. Evelyn is currently in a meeting, but her private desk is logging this call. How can we help?`;
-
-    const handoverTranscript: VoiceTranscript = {
+    playTransferChime();
+    setTranscripts(prev => [...prev, {
       id: generateId(),
       sender: "agent",
-      text: deptGreeting,
+      text: `[Test call] A real call would now be transferred to ${deptName}. No call was placed.`,
       timestamp: new Date(),
-    };
-    setTranscripts(prev => [...prev, handoverTranscript]);
-    await speakText(deptGreeting);
-  }, [playTransferChime, speakText]);
+    }]);
+  }, [playTransferChime]);
 
   // Message slip management
-  const addManualMessageSlip = useCallback((slipData: Omit<ReceptionistMessageSlip, "id" | "timestamp" | "status">) => {
-    const newSlip: ReceptionistMessageSlip = {
-      id: `slip_${Date.now()}`,
-      ...slipData,
-      timestamp: "Just now",
-      status: "unread"
-    };
-    setMessageSlips(prev => [newSlip, ...prev]);
+  const addManualMessageSlip = useCallback(async (slipData: Omit<ReceptionistMessageSlip, "id" | "timestamp" | "status"> & { source?: "manual" | "test_call" }) => {
+    try {
+      const res = await fetch("/api/communication/message-slips", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(slipData),
+      });
+      if (!res.ok) throw new Error(await serverError(res));
+      const d = await res.json();
+      setMessageSlips(prev => [slipFromServer(d.slip), ...prev]);
+    } catch (err: any) {
+      setError(err instanceof Error ? err : new Error(String(err)));
+    }
   }, []);
 
   const markMessageSlipStatus = useCallback((id: string, newStatus: "unread" | "resolved" | "called_back") => {
     setMessageSlips(prev => prev.map(s => s.id === id ? { ...s, status: newStatus } : s));
+    fetch(`/api/communication/message-slips/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: newStatus }),
+    }).then(async (res) => { if (!res.ok) setError(new Error(await serverError(res))); }).catch(() => {});
   }, []);
 
   const setCallMode = useCallback((mode: "receptionist" | "dialer") => {
@@ -427,25 +408,25 @@ export function useVoiceAgent(options: UseVoiceAgentOptions = {}): UseVoiceAgent
         body: JSON.stringify({
           callMode: activeConfig.callMode || callMode,
           leadName: activeConfig.leadName || "Caller",
-          leadCompany: activeConfig.leadCompany || "Guest Client",
-          leadDealValue: activeConfig.leadDealValue || "$50,000",
-          leadStage: activeConfig.leadStage || "Discovery",
-          agentPersona: activeConfig.agentPersona || "Alex AI - Unified Executive Voice Concierge",
-          callGoal: activeConfig.callGoal || (callMode === "receptionist" ? "Greet caller, answer knowledge base questions, execute actions or route to department" : "Qualify lead and book executive briefing"),
+          leadCompany: activeConfig.leadCompany || "",
+          leadDealValue: activeConfig.leadDealValue || "",
+          leadStage: activeConfig.leadStage || "",
+          agentPersona: activeConfig.agentPersona || "",
+          callGoal: activeConfig.callGoal || undefined,
           userMessage: trimmed,
           conversationHistory: historyPayload
         })
       });
 
       if (!res.ok) {
-        throw new Error(`Server returned status ${res.status}`);
+        throw new Error(await serverError(res));
       }
 
       const data = await res.json();
-      const reply = data.replyText || "Thank you for letting me know. How else may I assist you today?";
+      const reply = String(data.replyText || "");
 
       if (data.sentiment) setSentiment(data.sentiment);
-      if (data.qualificationScore) setLeadScore(data.qualificationScore);
+      if (typeof data.qualificationScore === "number") setLeadScore(data.qualificationScore);
       if (data.actionItem && !actionItems.includes(data.actionItem)) {
         setActionItems(prev => [...prev, data.actionItem]);
       }
@@ -454,18 +435,18 @@ export function useVoiceAgent(options: UseVoiceAgentOptions = {}): UseVoiceAgent
       if (data.executedAction || data.actionType) {
         const actionType = data.executedAction?.type || data.actionType;
         const actionData = data.executedAction?.data || data.executedAction || {};
-        let actionTitle = "Autonomous Action Triggered";
-        let actionDesc = "Receptionist executed an autonomous business workflow.";
+        let actionTitle = "Suggested action";
+        let actionDesc = "The receptionist suggested this. Nothing was created: confirm it yourself.";
 
         if (actionType === "video_call") {
-          actionTitle = `My Meet & Greet Video Consultation`;
-          actionDesc = `Encrypted WebRTC video bridge launched with room ID: ${actionData.roomId || "meet_greet"}. Ready to route to My Meet & Greet.`;
+          actionTitle = "Suggested: video call";
+          actionDesc = "Start a meeting from Meetings to send the caller a real link.";
         } else if (actionType === "calendar_event") {
-          actionTitle = `Calendar Scheduled: ${actionData.title || "Meeting"}`;
-          actionDesc = `Event set for ${actionData.date || "Tomorrow"} at ${actionData.time || "14:00"} (${actionData.duration || 30} mins).`;
+          actionTitle = `Suggested meeting${actionData.title ? `: ${actionData.title}` : ""}`;
+          actionDesc = `${[actionData.date, actionData.time].filter(Boolean).join(" at ") || "No time given"}. Add it to the calendar to book it.`;
         } else if (actionType === "proposal") {
-          actionTitle = `Proposal Created: ${actionData.title || "Enterprise Proposal"}`;
-          actionDesc = `Formal proposal ($${Number(actionData.price || 78000).toLocaleString()}) generated for ${actionData.clientName || "Client"}.`;
+          actionTitle = `Suggested proposal${actionData.title ? `: ${actionData.title}` : ""}`;
+          actionDesc = `${typeof actionData.price === "number" ? `Mentioned amount: $${Number(actionData.price).toLocaleString()}. ` : ""}Create it in Proposals to send it.`;
         }
 
         const newAction: ReceptionistAction = {
@@ -475,7 +456,7 @@ export function useVoiceAgent(options: UseVoiceAgentOptions = {}): UseVoiceAgent
           description: actionDesc,
           data: actionData,
           timestamp: "Just now",
-          status: "executed"
+          status: "pending"
         };
 
         setActiveActions(prev => [newAction, ...prev]);
@@ -484,18 +465,15 @@ export function useVoiceAgent(options: UseVoiceAgentOptions = {}): UseVoiceAgent
 
       // If receptionist detected message taking, create message slip automatically
       if (data.isTakingMessage && data.messageSlip) {
-        const newSlip: ReceptionistMessageSlip = {
-          id: `slip_${Date.now()}`,
-          callerName: activeConfig.leadName || "Inbound Caller",
-          callerCompany: activeConfig.leadCompany || "Guest Client",
-          callbackNumber: data.messageSlip.callbackNumber || activeConfig.leadPhone || "+1 (555) 234-8901",
-          recipient: data.messageSlip.recipient || "Front Desk Inbound Queue",
-          urgency: data.messageSlip.urgency || "normal",
+        addManualMessageSlip({
+          callerName: activeConfig.leadName || "Test caller",
+          callerCompany: activeConfig.leadCompany || "",
+          callbackNumber: data.messageSlip.callbackNumber || activeConfig.leadPhone || "",
+          recipient: data.messageSlip.recipient || "",
+          urgency: data.messageSlip.urgency === "urgent" || data.messageSlip.urgency === "high" ? data.messageSlip.urgency : "normal",
           notes: data.messageSlip.notes || trimmed,
-          timestamp: "Just now",
-          status: "unread"
-        };
-        setMessageSlips(prev => [newSlip, ...prev]);
+          source: "test_call",
+        });
       }
 
       const agentTranscript: VoiceTranscript = {
@@ -508,110 +486,44 @@ export function useVoiceAgent(options: UseVoiceAgentOptions = {}): UseVoiceAgent
       setTranscripts(prev => [...prev, agentTranscript]);
       await speakText(reply);
 
-      // If receptionist triggered a warm transfer to department
+      // If the receptionist chose a department, note where a real call would go.
       if (data.transferDepartment) {
-        const deptMap: Record<string, string> = {
-          sales: "Sales & New Accounts (Alex Vance)",
-          support: "Technical Support & DevOps (Jordan Reed)",
-          billing: "Billing & Invoicing (Marcus Zhao)",
-          exec: "Executive Suite (Evelyn Sinclair Desk)",
-          partnerships: "Strategic Partnerships (David Kim)"
-        };
-        const targetDept = deptMap[data.transferDepartment] || "Department Specialist";
+        const names: Record<string, string> = { sales: "Sales", support: "Support", billing: "Billing", exec: "Management", partnerships: "Partnerships" };
+        const targetDept = names[data.transferDepartment] || String(data.transferDepartment);
         setTimeout(() => {
           triggerDepartmentTransfer(data.transferDepartment, targetDept);
         }, 800);
       }
 
     } catch (err: any) {
-      console.warn("[VoiceAgent Turn Warning] Fallback triggered:", err.message);
-
-      // Local fallback turn
-      const fallbackReply = callMode === "receptionist"
-        ? `Thank you for calling Obsidian Core. How can I direct your call today? I can connect you to Sales, Technical Support, Billing, or take a message for our executive team.`
-        : `Understood. At Obsidian Core, we customize every deployment to ensure seamless integration and sub-50ms latency. Would you like to reserve a 20-minute executive briefing next week?`;
-
-      const agentTranscript: VoiceTranscript = {
+      // No scripted reply: show what went wrong (e.g. AI not configured).
+      setAgentState("listening");
+      setError(err instanceof Error ? err : new Error(String(err)));
+      setTranscripts(prev => [...prev, {
         id: generateId(),
         sender: "agent",
-        text: fallbackReply,
+        text: `[Not answered] ${err?.message || "The AI receptionist is unavailable."}`,
         timestamp: new Date(),
-      };
-
-      setTranscripts(prev => [...prev, agentTranscript]);
-      await speakText(fallbackReply);
+      }]);
     }
-  }, [callMode, speakText, actionItems, triggerDepartmentTransfer]);
+  }, [callMode, speakText, actionItems, triggerDepartmentTransfer, addManualMessageSlip]);
 
-  // Execute an action on-demand from UI or voice commands
+  // Record an action the user wants to follow up on. Nothing is created here: the UI sends the user to
+  // Meetings, Calendar or Proposals to do it for real.
   const executeAction = useCallback(async (type: "video_call" | "calendar_event" | "proposal", customParams?: any) => {
     const activeConfig = configRef.current;
-    const clientName = activeConfig.leadCompany || activeConfig.leadName || "Client Partner";
-
-    let actionTitle = "";
-    let actionDesc = "";
-    let actionData: any = null;
-
-    if (type === "video_call") {
-      const room = `meet-greet-${Math.random().toString(36).substring(2, 7)}`;
-      actionData = {
-        roomId: `room_${Date.now()}`,
-        roomName: `My Meet & Greet`,
-        topic: `My Meet & Greet Consultation with ${clientName}`,
-        joinUrl: `/meet-and-greet?room=${room}&autojoin=true`,
-        targetView: "call_canvas",
-        participants: [activeConfig.leadName || "Executive Guest", "Sophia (AI Receptionist)", "Alex Vance (Sales VP)"],
-        scheduledTime: "Immediate / Live WebRTC",
-        recordingEnabled: true
-      };
-      actionTitle = `My Meet & Greet Video Consultation`;
-      actionDesc = `Encrypted WebRTC video bridge launched. Routed to My Meet & Greet.`;
-    } else if (type === "calendar_event") {
-      const tomorrow = new Date(Date.now() + 86400000).toISOString().split("T")[0];
-      actionData = {
-        meetingId: `cal_${Date.now()}`,
-        title: customParams?.title || `Executive Strategy Briefing: ${clientName}`,
-        date: customParams?.date || tomorrow,
-        time: customParams?.time || "14:00",
-        duration: customParams?.duration || 30,
-        calendarType: "Google Calendar & CRM Sync",
-        attendees: [
-          activeConfig.leadName ? `${activeConfig.leadName.toLowerCase().replace(/\s+/g, ".")}@${(activeConfig.leadCompany || "client").toLowerCase().replace(/\s+/g, "")}.com` : "guest@enterprise.com",
-          "reception@obsidiancore.com",
-          "evelyn.sinclair@obsidiancore.com"
-        ]
-      };
-      actionTitle = `Calendar Scheduled: ${actionData.title}`;
-      actionDesc = `Confirmed for ${actionData.date} at ${actionData.time} with Google Calendar sync.`;
-    } else if (type === "proposal") {
-      actionData = {
-        proposalId: `prop_${Date.now()}`,
-        clientName: clientName,
-        title: customParams?.title || `Obsidian Core Omnichannel SLA & Deployment Proposal`,
-        price: customParams?.price || 78000,
-        currency: "USD",
-        status: "Draft Ready for e-Signature",
-        deliverables: customParams?.deliverables || [
-          "Phase 1: Zero-Trust Security Architecture & Cloud Infrastructure ($19,500)",
-          "Phase 2: Real-Time WebRTC Telephony & AI Receptionist Training ($19,500)",
-          "Phase 3: High-Frequency Messaging & Multi-Channel Sync ($19,500)",
-          "Phase 4: 24/7 Priority SLA & Dedicated Account Engineering ($19,500)"
-        ]
-      };
-      actionTitle = `Proposal Created: ${actionData.title}`;
-      actionDesc = `Enterprise proposal ($${Number(actionData.price).toLocaleString()}) generated for ${actionData.clientName}.`;
-    }
-
+    const who = activeConfig.leadCompany || activeConfig.leadName || "";
+    const titles = { video_call: "Video call to set up", calendar_event: "Meeting to schedule", proposal: "Proposal to prepare" } as const;
+    const where = { video_call: "Meetings", calendar_event: "Calendar", proposal: "Proposals" } as const;
     const newAction: ReceptionistAction = {
       id: `act_${Date.now()}`,
       type,
-      title: actionTitle,
-      description: actionDesc,
-      data: actionData,
+      title: `${titles[type]}${who ? ` for ${who}` : ""}`,
+      description: `Open ${where[type]} to create it. Nothing has been created yet.`,
+      data: { ...(customParams || {}), status: "suggested" },
       timestamp: "Just now",
-      status: "executed"
+      status: "pending"
     };
-
     setActiveActions(prev => [newAction, ...prev]);
     setLatestAction(newAction);
     return newAction;
@@ -635,23 +547,24 @@ export function useVoiceAgent(options: UseVoiceAgentOptions = {}): UseVoiceAgent
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          leadName: activeConfig.leadName || "Sarah Jenkins",
-          leadPhone: activeConfig.leadPhone || "+1 (555) 234-8901",
-          leadCompany: activeConfig.leadCompany || "TechFlow Innovations",
-          leadDealValue: activeConfig.leadDealValue || "$120,000",
+          leadName: activeConfig.leadName || "Caller",
+          leadPhone: activeConfig.leadPhone || "",
+          leadCompany: activeConfig.leadCompany || "",
+          leadDealValue: activeConfig.leadDealValue || "",
           durationSeconds: callDuration,
           transcripts: transcriptsRef.current
         })
       });
 
+      if (!res.ok) throw new Error(await serverError(res));
       const data = await res.json();
       if (data.summary) {
         setPostCallSummary(data.summary);
         return data.summary;
       }
       return null;
-    } catch (err) {
-      console.error("Failed to generate post-call report:", err);
+    } catch (err: any) {
+      setError(err instanceof Error ? err : new Error(String(err)));
       return null;
     } finally {
       setIsGeneratingSummary(false);
@@ -694,17 +607,9 @@ export function useVoiceAgent(options: UseVoiceAgentOptions = {}): UseVoiceAgent
 
       checkVolume();
     } catch (err: any) {
-      console.warn("Microphone access unavailable or denied. Using synthetic audio activity visualizer:", err.message);
-      const simulateMic = () => {
-        if (statusRef.current === "active" && !isMutedRef.current && !isOnHoldRef.current) {
-          const rand = Math.floor(Math.sin(Date.now() / 220) * 18 + 22 + Math.random() * 8);
-          setAudioLevel(Math.max(0, Math.min(rand, 100)));
-        } else {
-          setAudioLevel(0);
-        }
-        animationFrameRef.current = requestAnimationFrame(simulateMic);
-      };
-      simulateMic();
+      // No fake meter: show 0 and tell the user the microphone isn't available (typing still works).
+      setAudioLevel(0);
+      setError(new Error("Microphone unavailable or blocked. You can type the caller's words instead."));
     }
   };
 
@@ -831,13 +736,13 @@ export function useVoiceAgent(options: UseVoiceAgentOptions = {}): UseVoiceAgent
 
       setError(null);
       setPostCallSummary(null);
+      setSentiment("neutral");
+      setLeadScore(0);
+      setActionItems([]);
       setCallDuration(0);
       setStatus("connecting");
       setAgentState("idle");
       if (options.onStateChange) options.onStateChange("connecting");
-
-      // Realistic carrier dialing / WebSocket handshake latency
-      await new Promise(resolve => setTimeout(resolve, 1100));
 
       setStatus("active");
       setAgentState("speaking");
@@ -845,11 +750,11 @@ export function useVoiceAgent(options: UseVoiceAgentOptions = {}): UseVoiceAgent
 
       const activeConfig = configRef.current;
       const isReception = (activeConfig.callMode || callMode) === "receptionist";
-      setActiveDepartment(isReception ? "Front Desk Virtual Reception" : null);
+      setActiveDepartment(isReception ? "Reception" : null);
 
       const initialGreeting = isReception
-        ? `Thank you for calling Obsidian Core. My name is Alex AI, your unified voice concierge. How may I direct your call, answer questions, or assist you today?`
-        : `Hello ${activeConfig.leadName || "there"}, this is Alex AI calling from Obsidian Core regarding ${activeConfig.leadCompany || "your team"}'s platform inquiry. How are you doing today?`;
+        ? `Hello, thanks for calling. How can I help you today?`
+        : `Hello ${activeConfig.leadName || "there"}, thanks for taking my call. How are you today?`;
 
       setTranscripts([
         {

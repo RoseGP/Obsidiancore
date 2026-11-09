@@ -82,6 +82,13 @@ assert.equal(r.status, 200); assert.equal(g.state.replies.size, 0); ok('reply de
 r = await request(app).get('/api/local-seo/overview').set(A);
 const loc = r.body.locations[0];
 assert.ok(loc.audit.score > 0 && loc.audit.score < 100); assert.ok(loc.audit.checks.some((x: any) => x.id === 'description' && !x.passed)); ok('profile health audit computed from real fields (description too short flagged)');
+r = await request(app).put('/api/local-seo/settings').set(A).send({ brandVoice: 'professional', signOff: 'The Ada team' });
+assert.equal(r.status, 200);
+assert.deepEqual((await request(app).get('/api/local-seo/connection').set(A)).body.settings, { brandVoice: 'professional', signOff: 'The Ada team' });
+assert.equal((await request(app).put('/api/local-seo/settings').set(A).send({ brandVoice: 'shouty' })).status, 400);
+assert.equal((await request(app).put('/api/local-seo/settings').set(A).send({ brandVoice: 'casual', isAdmin: true })).status, 400);
+assert.notEqual((await request(app).get('/api/local-seo/connection').set(B)).body.settings?.signOff, 'The Ada team');
+ok('reply-style settings are saved per user, validated, and shown in the connection (settings screen)');
 
 r = await request(app).get('/api/local-seo/performance').set(A).query({ location: 'locations/1001', days: 30 });
 assert.equal(r.body.totals.calls, 15); assert.equal(r.body.totals.impressions, 60); assert.equal(r.body.daily.length, 2); ok('Performance API metrics summed (impressions, calls, clicks, directions)');

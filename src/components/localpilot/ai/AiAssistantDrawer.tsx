@@ -6,6 +6,7 @@ import {
 import { Drawer } from '../ui/Dialog';
 import { Button } from '../ui/Button';
 import { AiChatMessage, LocalPilotRoute } from '../types';
+import { useOptionalLocalSeo } from '../live/localSeoClient';
 
 export interface AiAssistantDrawerProps {
   isOpen: boolean;
@@ -18,80 +19,67 @@ export const AiAssistantDrawer: React.FC<AiAssistantDrawerProps> = ({
   onClose,
   onNavigate
 }) => {
-  // TO COMPLETE: the assistant starts empty; replies should come from a real model (see components/assistant/UnifiedAssistant.tsx).
+  // Answers come only from the data synced from Google (no invented numbers, no simulated AI).
+  const seo = useOptionalLocalSeo();
   const [messages, setMessages] = useState<AiChatMessage[]>([]);
 
   const [input, setInput] = useState('');
-  const [isTyping, setIsTyping] = useState(false);
+  const [isTyping] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const suggestedPrompts = [
-    "How can I improve my visibility?",
-    "Which locations need attention?",
-    "Find my biggest SEO problems.",
-    "Draft responses to unanswered reviews.",
-    "Create this week's posts.",
-    "Why did my visibility change?"
+    'Which locations need attention?',
+    'Which reviews need a reply?',
+    'What should I fix first?',
   ];
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isTyping]);
 
+  const answer = (promptText: string): { text: string; recs?: AiChatMessage['actionableRecommendations'] } => {
+    const locations = seo?.locations || [];
+    const reviews = seo?.reviews || [];
+    const opps = seo?.opportunities || [];
+    if (!locations.length) return { text: 'No locations are connected yet. Connect Google Business Profile and choose your locations first.' };
+    const lower = promptText.toLowerCase();
+    if (lower.includes('review') || lower.includes('reply')) {
+      const waiting = reviews.filter((r) => r.status === 'unanswered');
+      if (!waiting.length) return { text: `All ${reviews.length} synced review${reviews.length === 1 ? ' has' : 's have'} a reply.` };
+      const low = waiting.filter((r) => r.rating <= 3).length;
+      return {
+        text: `${waiting.length} review${waiting.length === 1 ? '' : 's'} without a reply${low ? `, including ${low} rated 3 stars or less` : ''}. You can draft a reply for each one and publish the ones you approve.`,
+        recs: [{ id: 'r1', title: 'Open reviews', impact: 'High', buttonLabel: 'Open reviews', actionType: 'reviews' }],
+      };
+    }
+    if (lower.includes('fix') || lower.includes('problem') || lower.includes('improve') || lower.includes('seo')) {
+      if (!opps.length) return { text: 'All profile checks pass for your connected locations.' };
+      const top = [...opps].sort((a, b) => ['High', 'Medium', 'Low'].indexOf(a.impact) - ['High', 'Medium', 'Low'].indexOf(b.impact)).slice(0, 3);
+      return {
+        text: `Start with: ${top.map((o, n) => `${n + 1}) ${o.title}${o.locationName ? ` (${o.locationName})` : ''}`).join(' ')}`,
+        recs: [{ id: 's1', title: 'See all fixes', impact: top[0].impact, buttonLabel: 'Open Local SEO', actionType: 'seo' }],
+      };
+    }
+    if (lower.includes('location') || lower.includes('attention')) {
+      const weak = locations.filter((l) => l.status !== 'Healthy');
+      if (!weak.length) return { text: `All ${locations.length} location${locations.length === 1 ? ' passes' : 's pass'} most profile checks.` };
+      return {
+        text: `${weak.length} location${weak.length === 1 ? ' needs' : 's need'} attention: ${weak.slice(0, 5).map((l) => `${l.name} (profile health ${l.visibilityScore}/100, ${l.unansweredReviewsCount} review${l.unansweredReviewsCount === 1 ? '' : 's'} without a reply)`).join('; ')}.`,
+        recs: [{ id: 'l1', title: 'Open locations', impact: 'High', buttonLabel: 'Open locations', actionType: 'locations' }],
+      };
+    }
+    return { text: 'I can answer questions about locations that need attention, reviews that need a reply, and what to fix first, using your synced Google data. For other questions, use the AI assistant in the main app.' };
+  };
+
   const handleSendPrompt = (promptText: string) => {
     if (!promptText.trim()) return;
-
-    const userMsg: AiChatMessage = {
-      id: `user-${Date.now()}`,
-      sender: 'user',
-      timestamp: 'Just now',
-      text: promptText
-    };
-
-    setMessages((prev) => [...prev, userMsg]);
+    const { text, recs } = answer(promptText);
+    setMessages((prev) => [
+      ...prev,
+      { id: `user-${Date.now()}`, sender: 'user', timestamp: new Date().toLocaleTimeString(), text: promptText },
+      { id: `bot-${Date.now()}`, sender: 'assistant', timestamp: new Date().toLocaleTimeString(), text, actionableRecommendations: recs },
+    ]);
     setInput('');
-    setIsTyping(true);
-
-    setTimeout(() => {
-      let botResponse = '';
-      let recs: AiChatMessage['actionableRecommendations'] = undefined;
-
-      const lower = promptText.toLowerCase();
-      if (lower.includes('visibility') || lower.includes('improve')) {
-        botResponse = 'To improve overall visibility from 92 to 96+, I recommend: 1) adding missing specialty services to your Downtown and Westside profiles, 2) replying to all remaining 23 customer reviews within 24 hours, and 3) uploading 5+ fresh customer-centric photos weekly.';
-        recs = [
-          { id: 'v1', title: 'Open Local SEO Opportunities', impact: 'High', buttonLabel: 'View SEO Plan', actionType: 'seo' },
-          { id: 'v2', title: 'Respond to Reviews', impact: 'High', buttonLabel: 'Open Inbox', actionType: 'reviews' }
-        ];
-      } else if (lower.includes('which location') || lower.includes('attention')) {
-        botResponse = 'Currently, 2 locations require immediate attention: South Beach Oceanfront Lounge (score 68, 18 unanswered reviews, critical issue) and Northside Coastal Kitchen (score 76, 7 unanswered reviews).';
-        recs = [
-          { id: 'l1', title: 'Open South Beach Lounge Profile', impact: 'High', buttonLabel: 'Inspect Location', actionType: 'locations' }
-        ];
-      } else if (lower.includes('post') || lower.includes('content')) {
-        botResponse = 'I drafted a high-converting announcement post for your Labor Day weekend brunch and live jazz sessions. You can review, customize, and approve it before scheduling to Google.';
-        recs = [
-          { id: 'p1', title: 'Review AI Post Draft', impact: 'Medium', buttonLabel: 'Open Post Studio', actionType: 'posts' }
-        ];
-      } else {
-        botResponse = `I conducted a sweep for "${promptText}". All location profiles are synchronized with Google Business Profile APIs. You have 108 healthy locations and 19 optimizations available.`;
-        recs = [
-          { id: 'g1', title: 'Inspect Dashboard Overview', impact: 'Medium', buttonLabel: 'Go to Dashboard', actionType: 'dashboard' }
-        ];
-      }
-
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `bot-${Date.now()}`,
-          sender: 'assistant',
-          timestamp: 'Just now',
-          text: botResponse,
-          actionableRecommendations: recs
-        }
-      ]);
-      setIsTyping(false);
-    }, 700);
   };
 
   const handleActionClick = (actionType: string) => {
@@ -107,8 +95,8 @@ export const AiAssistantDrawer: React.FC<AiAssistantDrawerProps> = ({
     <Drawer
       isOpen={isOpen}
       onClose={onClose}
-      title="✨ Local SEO Assistant"
-      description="Your AI-powered local growth assistant."
+      title="Local SEO helper"
+      description="Quick answers from your synced Google data."
       icon={<Sparkles className="h-4 w-4" />}
       width="md"
       footer={
@@ -137,7 +125,7 @@ export const AiAssistantDrawer: React.FC<AiAssistantDrawerProps> = ({
           >
             <input
               type="text"
-              placeholder="Ask anything about your local rankings, reviews..."
+              placeholder="Ask about locations, reviews or fixes…"
               value={input}
               onChange={(e) => setInput(e.target.value)}
               className="flex-1 px-3 py-2 text-xs bg-white border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-blue-500 shadow-2xs"
@@ -154,12 +142,15 @@ export const AiAssistantDrawer: React.FC<AiAssistantDrawerProps> = ({
 
           <div className="flex items-center justify-center gap-1 text-[10px] text-slate-400 pt-1">
             <ShieldCheck className="h-3 w-3 text-emerald-600" />
-            <span>AI recommendations require manual confirmation prior to Google publication</span>
+            <span>Nothing is changed on Google without your approval</span>
           </div>
         </div>
       }
     >
       <div className="space-y-4 text-xs">
+        {messages.length === 0 && (
+          <p className="text-slate-500">Pick a question below. Answers use the locations and reviews synced from Google.</p>
+        )}
         {messages.map((msg) => (
           <div
             key={msg.id}

@@ -1243,12 +1243,7 @@ export default function CRMVoiceDialer({ onAddCalendarEvent, onNavigate }: CRMVo
 
           {appMode === "monitoring" && (
             <div className="space-y-4">
-              <CallMonitoringDashboard 
-                activeCallsCount={status === "active" ? 1 : 0}
-                totalCallsToday={435 + callHistory.length}
-                avgHandleTimeSeconds={174}
-                primaryTrunkName="Telnyx Inbound (Primary)"
-              />
+              <CallMonitoringDashboard />
             </div>
           )}
 

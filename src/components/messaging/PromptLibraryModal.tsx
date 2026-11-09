@@ -33,8 +33,8 @@ export const PromptLibraryModal: React.FC<PromptLibraryModalProps> = ({
   prompts,
   onSelectPrompt,
   onSelectInstruction,
-  clientContextName = 'Marcus Chen',
-  companyContextName = 'AlphaTech Cloud'
+  clientContextName = '',
+  companyContextName = ''
 }) => {
   const [activeTab, setActiveTab] = useState<'prompts' | 'sop' | 'custom'>('prompts');
   const [selectedPrompt, setSelectedPrompt] = useState<StructuredPromptData | null>(prompts[0] || null);
@@ -48,14 +48,9 @@ export const PromptLibraryModal: React.FC<PromptLibraryModalProps> = ({
   const [customTemplate, setCustomTemplate] = useState('');
 
   // SOP checklist builder state
-  const [sopTitle, setSopTitle] = useState('Client Onboarding & Validation SOP');
+  const [sopTitle, setSopTitle] = useState('');
   const [sopCategory, setSopCategory] = useState('Client Operations');
-  const [sopSteps, setSopSteps] = useState<Array<{ id: string; text: string; completed: boolean; assignee: string }>>([
-    { id: '1', text: 'Verify Enterprise Tenant SLA & Data Residency', completed: true, assignee: 'Liam Vance' },
-    { id: '2', text: 'Schedule Live WebRTC Audio/Video Consultation Walkthrough', completed: false, assignee: 'Alex Rivera' },
-    { id: '3', text: 'Deploy Mutual TLS Certificate & Verify Web Screen Sharing', completed: false, assignee: 'Liam Vance' },
-    { id: '4', text: 'Deliver Executed MSA to Customer Legal Department', completed: false, assignee: 'Sophia Sterling' }
-  ]);
+  const [sopSteps, setSopSteps] = useState<Array<{ id: string; text: string; completed: boolean; assignee: string }>>([]);
   const [newStepText, setNewStepText] = useState('');
 
   if (!isOpen) return null;
@@ -64,7 +59,7 @@ export const PromptLibraryModal: React.FC<PromptLibraryModalProps> = ({
     ? selectedPrompt.template
         .replace(/\{\{client_name\}\}/g, clientContextName)
         .replace(/\{\{company_name\}\}/g, companyContextName)
-        .replace(/\{\{project_name\}\}/g, `${companyContextName} Core Migration`)
+        .replace(/\{\{project_name\}\}/g, companyContextName ? `${companyContextName} project` : '{{project_name}}')
         .replace(/\{\{deal_value\}\}/g, '$120,000 ARR')
     : '';
 
@@ -82,7 +77,7 @@ export const PromptLibraryModal: React.FC<PromptLibraryModalProps> = ({
         id: `step_${Date.now()}`,
         text: newStepText.trim(),
         completed: false,
-        assignee: 'Alex Rivera'
+        assignee: ''
       }
     ]);
     setNewStepText('');

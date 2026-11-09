@@ -66,7 +66,7 @@ export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
     end: '07:00',
   },
   deliveryFrequency: 'instant',
-  emailRecipient: 'rpierrette45@gmail.com',
+  emailRecipient: '',
 };
 
 interface NotificationContextType {

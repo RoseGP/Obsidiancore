@@ -14,11 +14,14 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
+  // Periods are worked out from today's date.
+  const fmt = (d: Date, withYear = false) => d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', ...(withYear ? { year: 'numeric' } : {}) });
+  const span = (days: number) => { const to = new Date(); const from = new Date(); from.setDate(to.getDate() - (days - 1)); return `${fmt(from)} – ${fmt(to, true)}`; };
   const options: { id: TimeRange; label: string; period: string }[] = [
-    { id: '7D', label: 'Last 7 days', period: 'Aug 26 – Sep 1, 2026' },
-    { id: '30D', label: 'Last 30 days', period: 'Aug 3 – Sep 1, 2026' },
-    { id: '90D', label: 'Last 90 days', period: 'Jun 1 – Sep 1, 2026' },
-    { id: '1Y', label: 'Last 12 months', period: 'Sep 2025 – Sep 2026' },
+    { id: '7D', label: 'Last 7 days', period: span(7) },
+    { id: '30D', label: 'Last 30 days', period: span(30) },
+    { id: '90D', label: 'Last 90 days', period: span(90) },
+    { id: '1Y', label: 'Last 12 months', period: span(365) },
   ];
 
   useEffect(() => {

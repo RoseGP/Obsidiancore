@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { useTeamMembers } from '../../hooks/useTeamMembers';
 import {
   Users,
   Search,
@@ -39,6 +40,7 @@ interface LeadsViewProps {
 }
 
 export default function LeadsView({ onNavigateToDeal, onNavigateToContact }: LeadsViewProps) {
+  const team = useTeamMembers();
   // Primary state
   const [leads, setLeads] = useState<CRMLead[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -74,7 +76,7 @@ export default function LeadsView({ onNavigateToDeal, onNavigateToContact }: Lea
     title: '',
     source: 'whatsapp',
     status: 'new',
-    owner: 'Rene Pierrette',
+    owner: '',
     budget: '',
     authority: 'decision_maker',
     need: '',
@@ -229,7 +231,7 @@ export default function LeadsView({ onNavigateToDeal, onNavigateToContact }: Lea
           title: '',
           source: 'whatsapp',
           status: 'new',
-          owner: 'Rene Pierrette',
+          owner: '',
           budget: '',
           authority: 'decision_maker',
           need: '',
@@ -591,9 +593,7 @@ export default function LeadsView({ onNavigateToDeal, onNavigateToContact }: Lea
                 className="px-2.5 py-1 rounded-lg border border-[var(--border)] bg-[var(--app-bg)] text-xs text-[var(--text)] focus:outline-none cursor-pointer"
               >
                 <option value="all">All Reps</option>
-                <option value="Rene Pierrette">Rene Pierrette</option>
-                <option value="Sarah Jenkins">Sarah Jenkins</option>
-                <option value="Elena Rostova">Elena Rostova</option>
+                {team.names.map((n) => <option key={n} value={n}>{n}</option>)}
               </select>
             </div>
           </div>
@@ -634,9 +634,7 @@ export default function LeadsView({ onNavigateToDeal, onNavigateToContact }: Lea
                 className="px-2 py-0.5 rounded border border-blue-300 bg-white text-xs cursor-pointer"
               >
                 <option value="" disabled>Choose closer...</option>
-                <option value="Rene Pierrette">Rene Pierrette</option>
-                <option value="Sarah Jenkins">Sarah Jenkins</option>
-                <option value="Elena Rostova">Elena Rostova</option>
+                {team.names.map((n) => <option key={n} value={n}>{n}</option>)}
               </select>
             </div>
 
@@ -1237,7 +1235,7 @@ export default function LeadsView({ onNavigateToDeal, onNavigateToContact }: Lea
                   <input
                     type="text"
                     required
-                    placeholder="e.g. Marcus Chen"
+                    placeholder="Full name"
                     value={newLeadForm.name}
                     onChange={(e) => setNewLeadForm({ ...newLeadForm, name: e.target.value })}
                     className="w-full px-3 py-2 rounded-xl border border-[var(--border)] bg-neutral-50/50 text-neutral-900 focus:bg-white"
@@ -1311,9 +1309,8 @@ export default function LeadsView({ onNavigateToDeal, onNavigateToContact }: Lea
                     onChange={(e) => setNewLeadForm({ ...newLeadForm, owner: e.target.value })}
                     className="w-full px-3 py-2 rounded-xl border border-[var(--border)] bg-neutral-50/50 text-neutral-900 focus:bg-white"
                   >
-                    <option value="Rene Pierrette">Rene Pierrette</option>
-                    <option value="Sarah Jenkins">Sarah Jenkins</option>
-                    <option value="Elena Rostova">Elena Rostova</option>
+                    <option value="">Unassigned</option>
+                    {team.names.map((n) => <option key={n} value={n}>{n}</option>)}
                   </select>
                 </div>
               </div>

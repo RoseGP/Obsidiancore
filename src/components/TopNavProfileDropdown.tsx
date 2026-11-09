@@ -6,8 +6,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../context/AuthContext';
-import UserProfileModal, { ProfileModalTab } from './UserProfileModal';
-import ActiveSessionsModal from './auth/ActiveSessionsModal';
+import { initialsAvatar } from './messaging/avatar';
 
 interface TopNavProfileDropdownProps {
   themeMode: 'light' | 'dark';
@@ -28,8 +27,6 @@ export default function TopNavProfileDropdown({
 }: TopNavProfileDropdownProps) {
   const { userProfile, setPresence, logout, lockSession, isAuthenticated, isDemoSession } = useAuth();
   const [isOpen, setIsOpen] = useState<boolean>(false);
-  const [modalTab, setModalTab] = useState<ProfileModalTab | null>(null);
-  const [isSessionsModalOpen, setIsSessionsModalOpen] = useState<boolean>(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Close when clicked outside
@@ -49,18 +46,13 @@ export default function TopNavProfileDropdown({
 
   const handlePresenceSwitch = async (newPresence: 'online' | 'busy' | 'away') => {
     await setPresence(newPresence);
-    onShowToast(`Operational status set to: ${newPresence.toUpperCase()}`);
-  };
-
-  const handleOpenModal = (tab: ProfileModalTab) => {
-    setModalTab(tab);
-    setIsOpen(false);
+    onShowToast(`Status set to ${newPresence}.`);
   };
 
   const handleLogoutClick = async () => {
     setIsOpen(false);
     await logout();
-    onShowToast('Signed out of Obsidian Enterprise Console.');
+    onShowToast('Signed out.');
   };
 
   const presenceDetails = {
@@ -83,12 +75,12 @@ export default function TopNavProfileDropdown({
             ? 'bg-white hover:bg-neutral-50/90 border-neutral-200/90 text-neutral-800'
             : 'bg-neutral-900/70 hover:bg-neutral-800/80 border-white/10 text-neutral-200'
         }`}
-        title="Obsidian Executive Profile & System Navigation"
+        title="Your account"
       >
         {/* Avatar with beacon */}
         <div className="relative shrink-0">
           <img
-            src={userProfile.photoURL || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=120'}
+            src={userProfile.photoURL || initialsAvatar(userProfile.displayName || userProfile.email)}
             alt={userProfile.displayName || 'Profile'}
             className="h-8 w-8 rounded-xl object-cover border border-neutral-300 dark:border-neutral-700 shadow-2xs"
             referrerPolicy="no-referrer"
@@ -101,10 +93,10 @@ export default function TopNavProfileDropdown({
         {/* User text details */}
         <div className="hidden sm:flex flex-col text-left pr-1">
           <span className="text-xs font-bold leading-tight truncate max-w-[130px]">
-            {userProfile.displayName || 'Rene Pierrette'}
+            {userProfile.displayName || userProfile.email || 'Your account'}
           </span>
           <span className="text-[10px] text-neutral-400 font-mono leading-tight truncate max-w-[130px]">
-            {userProfile.email || 'rpierrette45@gmail.com'}
+            {userProfile.email}
           </span>
         </div>
 
@@ -133,20 +125,20 @@ export default function TopNavProfileDropdown({
             }`}>
               <div className="flex items-center gap-3">
                 <img
-                  src={userProfile.photoURL || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=120'}
+                  src={userProfile.photoURL || initialsAvatar(userProfile.displayName || userProfile.email)}
                   alt="Profile"
                   className="h-11 w-11 rounded-xl object-cover border-2 border-white dark:border-neutral-800 shadow-xs"
                   referrerPolicy="no-referrer"
                 />
                 <div className="overflow-hidden flex-1">
                   <div className="flex items-center justify-between">
-                    <h4 className="font-bold text-xs truncate">{userProfile.displayName || 'Rene Pierrette'}</h4>
+                    <h4 className="font-bold text-xs truncate">{userProfile.displayName || userProfile.email || 'Your account'}</h4>
                     <span className="text-[9px] font-mono uppercase px-1.5 py-0.2 rounded font-bold bg-indigo-600 text-white">
                       VIP
                     </span>
                   </div>
                   <p className="text-[10.5px] text-neutral-500 dark:text-neutral-300 truncate font-mono mt-0.5">
-                    {userProfile.email || 'rpierrette45@gmail.com'}
+                    {userProfile.email}
                   </p>
                   <span className="inline-block mt-1 px-1.5 py-0.2 rounded bg-emerald-100 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-300 text-[9px] font-extrabold uppercase">
                     {userProfile.role || 'Executive Director'}
@@ -195,7 +187,7 @@ export default function TopNavProfileDropdown({
               >
                 <div className="flex items-center gap-2.5">
                   <User className="h-4 w-4 text-indigo-500" />
-                  <span>Account Settings</span>
+                  <span>Your profile</span>
                 </div>
                 <span className="text-[10px] text-neutral-400">Profile & Info</span>
               </button>
@@ -211,26 +203,11 @@ export default function TopNavProfileDropdown({
               >
                 <div className="flex items-center gap-2.5">
                   <Layers className="h-4 w-4 text-purple-500" />
-                  <span>Workspace Settings</span>
+                  <span>Organization &amp; plan</span>
                 </div>
-                <span className="text-[10px] text-neutral-400">Team & Seats</span>
+                <span className="text-[10px] text-neutral-400">Members, plan</span>
               </button>
 
-              <button
-                type="button"
-                id="menu-item-preferences"
-                onClick={() => {
-                  setIsOpen(false);
-                  onNavigateToSettings('account');
-                }}
-                className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl hover:bg-neutral-100 dark:hover:bg-white/5 font-medium transition-colors cursor-pointer text-left"
-              >
-                <div className="flex items-center gap-2.5">
-                  <Sliders className="h-4 w-4 text-blue-500" />
-                  <span>User Preferences</span>
-                </div>
-                <span className="text-[10px] text-neutral-400">Display & Audio</span>
-              </button>
             </div>
 
             {/* Menu Items: Section 2 (Platform & Operations) */}
@@ -248,44 +225,9 @@ export default function TopNavProfileDropdown({
                   <Bell className="h-4 w-4 text-amber-500" />
                   <span>Notifications</span>
                 </div>
-                <span className="px-1.5 py-0.2 rounded-full bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-400 text-[9px] font-bold">
-                  Active
-                </span>
               </button>
 
-              <button
-                type="button"
-                id="menu-item-billing"
-                onClick={() => {
-                  setIsOpen(false);
-                  onNavigateToSettings('billing');
-                }}
-                className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl hover:bg-neutral-100 dark:hover:bg-white/5 font-medium transition-colors cursor-pointer text-left"
-              >
-                <div className="flex items-center gap-2.5">
-                  <CreditCard className="h-4 w-4 text-emerald-500" />
-                  <span>Billing & Subscription</span>
-                </div>
-                <span className="text-[10px] font-mono text-emerald-600 dark:text-emerald-400 font-bold">Pro Plan</span>
-              </button>
 
-              <button
-                type="button"
-                id="menu-item-sessions"
-                onClick={() => {
-                  setIsOpen(false);
-                  onNavigateToSettings('sessions');
-                }}
-                className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl hover:bg-neutral-100 dark:hover:bg-white/5 font-medium transition-colors cursor-pointer text-left"
-              >
-                <div className="flex items-center gap-2.5">
-                  <ShieldCheck className="h-4 w-4 text-emerald-500" />
-                  <span>Session Management</span>
-                </div>
-                <span className="px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 font-mono text-[9px] font-bold">
-                  Active
-                </span>
-              </button>
 
               <button
                 type="button"
@@ -298,9 +240,9 @@ export default function TopNavProfileDropdown({
               >
                 <div className="flex items-center gap-2.5">
                   <Lock className="h-4 w-4 text-teal-500" />
-                  <span>Security & Access</span>
+                  <span>Security</span>
                 </div>
-                <span className="text-[10px] text-neutral-400">2FA & RBAC</span>
+                <span className="text-[10px] text-neutral-400">Password, devices</span>
               </button>
 
               <button
@@ -314,7 +256,7 @@ export default function TopNavProfileDropdown({
               >
                 <div className="flex items-center gap-2.5">
                   <Globe className="h-4 w-4 text-cyan-500" />
-                  <span>Connected Channels</span>
+                  <span>Connected accounts</span>
                 </div>
                 <span className="text-[10px] text-neutral-400">LinkedIn, X, etc.</span>
               </button>
@@ -352,7 +294,7 @@ export default function TopNavProfileDropdown({
                 className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl hover:bg-neutral-100 dark:hover:bg-white/5 text-amber-500 dark:text-amber-400 font-medium transition-colors cursor-pointer text-left"
               >
                 <Lock className="h-4 w-4 text-amber-400" />
-                <span>Lock Console Session</span>
+                <span>Lock screen</span>
               </button>
 
               {onOpenAuthFlow && (
@@ -365,7 +307,7 @@ export default function TopNavProfileDropdown({
                   className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl hover:bg-neutral-100 dark:hover:bg-white/5 text-indigo-500 dark:text-indigo-400 font-medium transition-colors cursor-pointer text-left"
                 >
                   <Sparkles className="h-4 w-4" />
-                  <span>Switch Account / Sign In</span>
+                  <span>Switch account</span>
                 </button>
               )}
 
@@ -376,30 +318,13 @@ export default function TopNavProfileDropdown({
                 className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 font-bold transition-colors cursor-pointer text-left"
               >
                 <LogOut className="h-4 w-4" />
-                <span>Sign Out Account</span>
+                <span>Sign out</span>
               </button>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Profile Modal Triggered by any option */}
-      <UserProfileModal
-        isOpen={modalTab !== null}
-        initialTab={modalTab || 'account'}
-        onClose={() => setModalTab(null)}
-        onLogout={handleLogoutClick}
-        themeMode={themeMode}
-        onToggleTheme={onToggleTheme}
-        onShowToast={onShowToast}
-      />
-
-      {/* Active Sessions Modal */}
-      <ActiveSessionsModal
-        isOpen={isSessionsModalOpen}
-        onClose={() => setIsSessionsModalOpen(false)}
-        onShowToast={onShowToast}
-      />
     </div>
   );
 }

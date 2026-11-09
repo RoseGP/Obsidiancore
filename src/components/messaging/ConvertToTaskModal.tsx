@@ -29,7 +29,7 @@ export const ConvertToTaskModal: React.FC<ConvertToTaskModalProps> = ({
     const d = new Date(Date.now() + 86400000 * 2);
     return d.toISOString().split('T')[0];
   });
-  const [assignee, setAssignee] = useState('Alex Rivera');
+  const [assignee, setAssignee] = useState(registeredAgents[0]?.name || '');
 
   React.useEffect(() => {
     if (message) {

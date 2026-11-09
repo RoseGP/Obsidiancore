@@ -80,6 +80,7 @@ export const ChatDetailsPanel: React.FC<ChatDetailsPanelProps> = ({
   const [showAddTag, setShowAddTag] = useState(false);
 
   const meta = conversation.visitorMetadata;
+  const assignedAgentName = registeredAgents.find((a) => a.id === conversation.assignedTo)?.name || '';
   const isVisitor = conversation.channel === 'widget' || !!meta;
 
   const handleAddTag = () => {
@@ -213,7 +214,7 @@ export const ChatDetailsPanel: React.FC<ChatDetailsPanelProps> = ({
 
               <div className="flex items-center justify-between">
                 <span className="text-neutral-400">Assigned Agent</span>
-                <span className="font-medium text-white">Alex Rivera</span>
+                <span className="font-medium text-white">{assignedAgentName || 'Unassigned'}</span>
               </div>
 
               {crmRecord?.companyName && (

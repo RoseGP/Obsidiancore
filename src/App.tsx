@@ -27,7 +27,6 @@ import VideoMeetingWorkspace from './components/greet/VideoMeetingWorkspace';
 import FloatingMeetingHUD from './components/greet/FloatingMeetingHUD';
 import { MeetingSessionProvider, useMeetingSession } from './context/MeetingSessionContext';
 import PublicSchedulingPage from './components/PublicSchedulingPage';
-import ExpandableOmnichannelChat from './components/ExpandableOmnichannelChat';
 import { RealtimeSyncProvider } from './context/RealtimeSyncContext';
 import RealTimeSyncBadge from './components/RealTimeSyncBadge';
 import NotificationPreferencesModal from './components/notifications/NotificationPreferencesModal';
@@ -39,105 +38,34 @@ import { useTheme } from './context/ThemeContext';
 import ThemeSwitch from './components/ThemeSwitch';
 import { InvitationAcceptor } from './components/OrganizationSettings';
 
-// TO COMPLETE: load the signed-in user's contacts from your database (e.g. Firestore users/{uid}/contacts with onSnapshot in DatabaseContext, like channels/posts) and persist create/update/delete. Until then the CRM starts empty and changes are lost on reload.
+// Contacts are the organization's leads (/api/leads, stored per organization on the server); loaded after sign-in.
 const INITIAL_CONTACTS: CRMContact[] = [];
+
+function contactFromLead(lead: CRMLead): CRMContact {
+  return {
+    id: lead.id,
+    name: lead.name,
+    avatar: '',
+    channel: lead.source || 'website',
+    lastMessage: lead.notes || '',
+    timestamp: '',
+    unread: false,
+    status: lead.status === 'converted' ? 'resolved' : 'active',
+    sentiment: 'neutral',
+    email: lead.email,
+    phone: lead.phone || '',
+    company: lead.company || '',
+    title: lead.title || '',
+    notes: lead.notes || '',
+  };
+}
 
 // TO COMPLETE: load events from Google Calendar (/api/gcal OAuth is wired) or Firestore users/{uid}/events, and persist edits.
 const INITIAL_EVENTS: CalendarEvent[] = [];
 
-const INITIAL_MESSAGES: { [contactId: string]: CRMMessage[] } = {
-  '1': [
-    {
-      id: 'msg-1',
-      sender: 'contact',
-      text: 'Good morning Rene. We completed the preliminary review of the multi-channel gateway proposal.',
-      timestamp: '10:30 AM',
-      channel: 'whatsapp'
-    },
-    {
-      id: 'msg-2',
-      sender: 'user',
-      text: 'Great to hear Marcus! Does the 99.99% uptime SLA guarantee align with Alpha Tech requirements?',
-      timestamp: '10:36 AM',
-      channel: 'whatsapp'
-    },
-    {
-      id: 'msg-3',
-      sender: 'contact',
-      text: "Let's finalize the SLA scope next Tuesday.",
-      timestamp: '10:42 AM',
-      channel: 'whatsapp'
-    }
-  ],
-  '2': [
-    {
-      id: 'msg-4',
-      sender: 'contact',
-      text: 'Security compliance review completed for Q3 rollout. All ISO 27001 requirements are met.',
-      timestamp: '09:15 AM',
-      channel: 'email',
-      subject: 'Security Compliance Audit - Q3 Approval'
-    }
-  ],
-  '3': [
-    {
-      id: 'msg-5',
-      sender: 'contact',
-      text: 'Can we schedule a live consultation for the API team?',
-      timestamp: 'Yesterday 4:20 PM',
-      channel: 'telegram'
-    }
-  ],
-  '4': [
-    {
-      id: 'msg-6',
-      sender: 'contact',
-      text: 'Received the demo meeting link. Joining at 2pm PST.',
-      timestamp: 'Yesterday 2:05 PM',
-      channel: 'sms'
-    }
-  ],
-  '5': [
-    {
-      id: 'msg-7',
-      sender: 'contact',
-      text: 'Loved the product tour reel! What are enterprise tiers for our distributed team?',
-      timestamp: '2 days ago',
-      channel: 'instagram'
-    }
-  ]
-};
-
-const INITIAL_NOTIFICATIONS: AppNotification[] = [
-  {
-    id: 'notif-1',
-    title: 'New WhatsApp Message',
-    message: 'Marcus Chen: "Let\'s finalize the SLA scope next Tuesday."',
-    timestamp: '10:42 AM',
-    read: false,
-    type: 'message',
-    targetView: 'messages',
-    targetId: '1'
-  },
-  {
-    id: 'notif-2',
-    title: 'Meeting in 15 Minutes',
-    message: 'Enterprise SLA & Infrastructure Review with Marcus Chen',
-    timestamp: '09:45 AM',
-    read: false,
-    type: 'meeting',
-    targetView: 'calendar'
-  },
-  {
-    id: 'notif-3',
-    title: 'Security Clearance Verified',
-    message: 'Sarah Jenkins approved SOC 2 Type II data residency policy.',
-    timestamp: '09:15 AM',
-    read: true,
-    type: 'system',
-    targetView: 'proposals'
-  }
-];
+// Conversations live in the Inbox (/api/messaging); notifications arrive from real events only.
+const INITIAL_MESSAGES: { [contactId: string]: CRMMessage[] } = {};
+const INITIAL_NOTIFICATIONS: AppNotification[] = [];
 
 const SEARCH_NAV_ITEMS = [
   { id: 'dashboard', label: 'Dashboard', icon: 'LayoutDashboard' },
@@ -168,7 +96,6 @@ function AppMain() {
   const [events, setEvents] = useState<CalendarEvent[]>(INITIAL_EVENTS);
   const [messages, setMessages] = useState<{ [contactId: string]: CRMMessage[] }>(INITIAL_MESSAGES);
   const [notifications, setNotifications] = useState<AppNotification[]>(INITIAL_NOTIFICATIONS);
-  const [isOmniChatOpen, setIsOmniChatOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [showNotificationPreferencesModal, setShowNotificationPreferencesModal] = useState<boolean>(false);
   const [settingsDefaultTab, setSettingsDefaultTab] = useState<SettingsTab>('account');
@@ -181,28 +108,19 @@ function AppMain() {
   }, []);
 
   const handleLeadCreated = useCallback((newLead: CRMLead) => {
-    setContacts(prev => {
-      const exists = prev.some(c => c.email.toLowerCase() === newLead.email.toLowerCase());
-      if (exists) return prev;
-      const contactFromLead: CRMContact = {
-        id: newLead.id,
-        name: newLead.name,
-        avatar: `https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=150`,
-        channel: newLead.source || 'website',
-        lastMessage: newLead.notes || 'Inbound prospect created via Quick Action',
-        timestamp: 'Just now',
-        unread: true,
-        status: 'active',
-        sentiment: 'positive',
-        email: newLead.email,
-        phone: newLead.phone || '',
-        company: newLead.company || '',
-        title: newLead.title || '',
-        notes: newLead.notes || ''
-      };
-      return [contactFromLead, ...prev];
-    });
+    setContacts(prev => (prev.some(c => c.id === newLead.id) ? prev : [contactFromLead(newLead), ...prev]));
   }, []);
+
+  // Load the organization's contacts (leads) once signed in.
+  React.useEffect(() => {
+    if (!isAuthenticated) { setContacts([]); return; }
+    let cancelled = false;
+    fetch('/api/leads')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (!cancelled && d && Array.isArray(d.leads)) setContacts(d.leads.map(contactFromLead)); })
+      .catch(() => { /* offline: contacts stay empty */ });
+    return () => { cancelled = true; };
+  }, [isAuthenticated]);
 
   // Meeting invitation links (/?view=greet&meet=<code>): join once signed in. The server applies the
   // organizer's plan (capacity, lock, waiting room) and refuses with a reason if the meeting can't be joined.
@@ -565,38 +483,19 @@ function AppMain() {
 
       {/* Floating Live Omnichannel Support Widget */}
       <div className="fixed bottom-6 right-6 z-50">
-        {isOmniChatOpen ? (
-          <div className="w-[420px] h-[580px] rounded-2xl shadow-2xl overflow-hidden border border-white/10 bg-neutral-900 flex flex-col animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between px-4 py-3 bg-neutral-950 border-b border-white/10">
-              <span className="text-xs font-semibold text-neutral-300 flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                Live OmniChannel Gateway
-              </span>
-              <button
-                id="btn-close-omnichat"
-                onClick={() => setIsOmniChatOpen(false)}
-                className="p-1 text-neutral-400 hover:text-white rounded-lg transition-colors cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="flex-1 overflow-hidden">
-              <ExpandableOmnichannelChat currentUser="Executive Director" onClose={() => setIsOmniChatOpen(false)} />
-            </div>
-          </div>
-        ) : (
+        {activeView !== 'messages' && (
           <button
             id="btn-open-omnichat"
-            onClick={() => setIsOmniChatOpen(true)}
+            onClick={() => setActiveView('messages')}
             className="flex items-center gap-2 px-4 py-3 rounded-full bg-blue-600 hover:bg-blue-500 text-white font-medium text-xs shadow-lg shadow-blue-600/30 transition-all hover:scale-105 cursor-pointer"
           >
             <MessageSquare className="w-4 h-4" />
-            <span>OmniChannel Chat</span>
+            <span>Inbox</span>
           </button>
         )}
       </div>
 
-      {/* Luxury Obsidian Real-Time Notification Toasts */}
+      {/* Real-time notification toasts */}
       <LuxuryNotificationToasts onNavigateView={handleNavigateView} />
 
       {/* Floating Toast Notification */}

@@ -1,8 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { 
   LocalPilotRoute, LocationItem, ReviewItem, PostItem, 
-  SeoOpportunity, SeoAuditLog, SecurityActivity, SecurityRecommendation, 
-  ReportItem, TeamMember, TimeRange 
+  SeoOpportunity, SeoAuditLog, TimeRange 
 } from './types';
 import { LocalSeoProvider, useLocalSeo } from './live/localSeoClient';
 import { useDatabase } from '../../context/DatabaseContext';
@@ -45,14 +44,22 @@ const LocalPilotInner: React.FC = () => {
   const [posts, setPosts] = useState<PostItem[]>([]);
   const [opportunities, setOpportunities] = useState<SeoOpportunity[]>(seo.opportunities);
   const [auditLogs, setAuditLogs] = useState<SeoAuditLog[]>([]);
-  const [securityActivities, setSecurityActivities] = useState<SecurityActivity[]>([]);
-  const [securityRecs, setSecurityRecs] = useState<SecurityRecommendation[]>([]);
-  const [reports, setReports] = useState<ReportItem[]>([]);
-  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+  // A re-check in progress: compared with the location once the sync has reloaded the data.
+  const pendingCheck = React.useRef<{ locId: string; before: number } | null>(null);
 
   // ---- Live data (replaces the former mockData seed) ----
   React.useEffect(() => { setLocations(seo.locations); setOpportunities(seo.opportunities); }, [seo.locations, seo.opportunities]);
   React.useEffect(() => { setReviews(seo.reviews); }, [seo.reviews]);
+  React.useEffect(() => {
+    const p = pendingCheck.current; if (!p) return;
+    const loc = seo.locations.find((l) => l.id === p.locId); if (!loc) return;
+    pendingCheck.current = null;
+    setAuditLogs((prev) => [{
+      id: `check-${Date.now()}`, date: new Date().toLocaleString(), score: loc.visibilityScore, scoreDelta: loc.visibilityScore - p.before,
+      issuesCount: loc.openIssuesCount, resolvedIssuesCount: 0,
+      status: loc.openIssuesCount === 0 ? 'Passed' : loc.status === 'Critical' ? 'Critical Warnings' : 'Action Needed', auditedBy: 'You',
+    }, ...prev]);
+  }, [seo.locations]);
   React.useEffect(() => { if (seo.locations.length && !seo.locations.some((l) => l.id === selectedLocationId)) setSelectedLocationId(seo.locations[0].id); }, [seo.locations]); // eslint-disable-line react-hooks/exhaustive-deps
   React.useEffect(() => { (seo as any).selectedId = selectedLocationId; if (!selectedLocationId) return; seo.listPosts(selectedLocationId).then(setPosts).catch(() => setPosts([])); }, [selectedLocationId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -100,7 +107,7 @@ const LocalPilotInner: React.FC = () => {
   // --- Handlers ---
   const handleSelectLocation = (locId: string) => {
     setSelectedLocationId(locId);
-    showToast(`Active location switched to ${locations.find((l) => l.id === locId)?.name || 'Selected'}`, 'info');
+    showToast(`Showing ${locations.find((l) => l.id === locId)?.name || 'the selected location'}`, 'info');
   };
 
   const handleUpdateLocation = async (locId: string, updates: Partial<LocationItem>) => {
@@ -130,9 +137,12 @@ const LocalPilotInner: React.FC = () => {
     } catch (e: any) { showToast(e?.message || 'The post couldn’t be published.', 'error'); }
   };
 
-  const handleDeletePost = (postId: string) => {
-    setPosts((prev) => prev.filter((p) => p.id !== postId));
-    showToast('Post deleted.', 'info');
+  /** Re-syncs from Google, which re-runs the profile checks. */
+  const runCheck = async (locId?: string) => {
+    const loc = locations.find((l) => l.id === (locId || selectedLocationId));
+    if (loc) pendingCheck.current = { locId: loc.id, before: loc.visibilityScore };
+    try { await seo.sync(); showToast('Synced from Google and re-checked.', 'success'); }
+    catch (e: any) { pendingCheck.current = null; showToast(e?.message || 'The sync didn’t complete.', 'error'); }
   };
 
   const handleResolveOpportunity = (oppId: string) => {
@@ -148,23 +158,14 @@ const LocalPilotInner: React.FC = () => {
       setEditingPost(null);
       setIsPostEditorOpen(true);
     } else {
-      setOpportunities((prev) => prev.filter((o) => o.id !== oppId));
-      showToast(`Resolved: "${targetOpp.title}"`, 'success');
+      // Hours and similar fields are edited in Google; the check clears on the next sync.
+      setDetailLocationId(targetOpp.locationId || selectedLocationId);
+      setCurrentRoute('location-detail');
+      showToast('Make this change in Google Business Profile, then sync to re-check.', 'info');
     }
   };
 
-  /** For actions this screen can't perform yet: say so instead of pretending. */
-  const notAvailable = (what: string) => showToast(`${what} needs a connected Google Business Profile and isn’t available here yet.`, 'info');
 
-  const handleInviteMember = (member: Partial<TeamMember>) => {
-    setTeamMembers((prev) => [member as TeamMember, ...prev]);
-    showToast(`Invitation sent to ${member.email}`, 'success');
-  };
-
-  const handleRemoveMember = (memberId: string) => {
-    setTeamMembers((prev) => prev.filter((m) => m.id !== memberId));
-    showToast('Team member access revoked.', 'info');
-  };
 
   return (
     <div className="flex h-screen w-full bg-slate-50 text-slate-900 font-sans antialiased overflow-hidden select-none">
@@ -248,7 +249,7 @@ const LocalPilotInner: React.FC = () => {
                   setCurrentRoute('location-detail');
                 }}
                 onAddNewLocation={() => setIsOnboardingOpen(true)}
-                onRunAudit={() => notAvailable('A local SEO audit')}
+                onRunAudit={() => { void runCheck(); }}
                 onCreatePost={() => { setEditingPost(null); setIsPostEditorOpen(true); }}
               />
             )}
@@ -258,15 +259,8 @@ const LocalPilotInner: React.FC = () => {
               <LocationDetailView
                 location={activeDetailLocation}
                 onBack={() => setCurrentRoute('locations')}
-                onRunAudit={(locId) => {
-                  showToast(`Running instant Local SEO audit on ${activeDetailLocation.name}...`, 'info');
-                  setTimeout(() => {
-                    showToast('Audit complete! Score updated to 94/100.', 'success');
-                  }, 1200);
-                }}
-                onOpenEditProfile={() => {
-                  showToast('Profile editor loaded. All fields synchronized.', 'info');
-                }}
+                onRunAudit={(locId) => { void runCheck(locId); }}
+                onSaveProfile={(locId, patch) => handleUpdateLocation(locId, patch)}
               />
             )}
 
@@ -275,6 +269,7 @@ const LocalPilotInner: React.FC = () => {
               <ReviewsView
                 reviews={reviews}
                 onApproveAndPublish={handleReplyReview}
+                onSync={async () => { try { await seo.sync(); showToast('Reviews synced from Google.', 'success'); } catch (e: any) { showToast(e?.message || 'The sync didn’t complete.', 'error'); } }}
               />
             )}
 
@@ -296,20 +291,7 @@ const LocalPilotInner: React.FC = () => {
                 selectedLocation={selectedLocation}
                 onNavigate={(route, locId) => { if (locId) { setSelectedLocationId(locId); setDetailLocationId(locId); } setCurrentRoute(route); }}
                 onExecuteAction={(opp) => handleResolveOpportunity(opp.id)}
-                onRunAudit={() => {
-                  const newAudit: SeoAuditLog = {
-                    id: `audit-${Date.now()}`,
-                    date: 'Today',
-                    score: 93,
-                    scoreDelta: 1,
-                    issuesCount: 3,
-                    resolvedIssuesCount: 14,
-                    status: 'Passed',
-                    auditedBy: 'Alex Morgan (Manual Sweep)'
-                  };
-                  setAuditLogs([newAudit, ...auditLogs]);
-                  showToast('Fresh Local SEO Audit completed. Score: 93/100.', 'success');
-                }}
+                onRunAudit={() => runCheck()}
               />
             )}
 
@@ -321,65 +303,24 @@ const LocalPilotInner: React.FC = () => {
             {/* View 7: SECURITY & GOVERNANCE */}
             {currentRoute === 'security' && (
               <SecurityView
-                activities={securityActivities}
-                recommendations={securityRecs}
                 onNavigate={(route) => setCurrentRoute(route)}
-                onRefreshOAuth={() => notAvailable('Refreshing the Google connection')}
+                onRefreshOAuth={() => { seo.connect().catch((e: any) => showToast(e?.message || 'Google couldn’t be opened.', 'error')); }}
               />
             )}
 
             {/* View 8: REPORTS */}
             {currentRoute === 'reports' && (
               <ReportsView
-                reports={reports}
-                onDownloadPdf={() => notAvailable('Report downloads')}
-                onSendEmail={() => notAvailable('Emailing reports')}
-                onScheduleReport={() => notAvailable('Scheduled reports')}
+                locations={locations}
+                reviews={reviews}
+                onSendEmail={() => showToast('Emailing reports isn’t available yet. Print or save the report as a PDF instead.', 'info')}
+                onScheduleReport={() => showToast('Scheduled reports aren’t available yet.', 'info')}
               />
             )}
 
             {/* View 9: SETTINGS */}
             {currentRoute === 'settings' && (
-              <SettingsView
-                teamMembers={teamMembers}
-                integrations={[
-                  {
-                    id: 'int-gbp',
-                    name: 'Google Business Profile API v1',
-                    description: 'Primary bidirectional data sync for business hours, reviews, attributes, and photos.',
-                    status: 'Connected',
-                    lastSynced: '10 mins ago',
-                    icon: 'google'
-                  },
-                  {
-                    id: 'int-maps',
-                    name: 'Google Maps Local Pack Indexer',
-                    description: 'Real-time grid rank tracking and map pin telemetry.',
-                    status: 'Connected',
-                    lastSynced: '1 hour ago',
-                    icon: 'map'
-                  },
-                  {
-                    id: 'int-ai',
-                    name: 'LocalPilot AI Engine (Gemini 2.5)',
-                    description: 'Powers smart review responses, post drafting, and missing service opportunities.',
-                    status: 'Connected',
-                    lastSynced: 'Operational',
-                    icon: 'sparkles'
-                  }
-                ]}
-                billing={{
-                  planName: 'Enterprise Growth Tier',
-                  monthlyPrice: 299,
-                  locationsIncluded: 'Up to 250 locations',
-                  nextBillingDate: 'Oct 01, 2026'
-                }}
-                onInviteMember={handleInviteMember}
-                onRemoveMember={handleRemoveMember}
-                onReconnectIntegration={(id) => {
-                  showToast('API authentication token verified and refreshed.', 'success');
-                }}
-              />
+              <SettingsView />
             )}
 
           </div>
@@ -421,10 +362,6 @@ const LocalPilotInner: React.FC = () => {
       <OnboardingModal
         isOpen={isOnboardingOpen}
         onClose={() => setIsOnboardingOpen(false)}
-        onComplete={() => {
-          showToast('All Google Business Profiles connected and synchronized!', 'success');
-          setCurrentRoute('dashboard');
-        }}
       />
 
       {/* Review Detail Drawer */}
