@@ -44,6 +44,7 @@ export default function RealTimeSyncBadge({ onOpenDiagnostics }: RealTimeSyncBad
   // Color mappings based on latency and sync status
   const isHealthy = isConnected && syncStatus !== 'offline';
   const latencyBadgeColor = 
+    latencyMs == null ? 'text-neutral-400 bg-white/5 border-white/10' :
     latencyMs < 50 ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' :
     latencyMs < 150 ? 'text-amber-400 bg-amber-500/10 border-amber-500/20' :
     'text-rose-400 bg-rose-500/10 border-rose-500/20';
@@ -78,7 +79,7 @@ export default function RealTimeSyncBadge({ onOpenDiagnostics }: RealTimeSyncBad
         )}
 
         <span className="font-mono text-[11px] hidden sm:inline">
-          {isHealthy ? `${latencyMs}ms` : 'Offline'}
+          {isHealthy ? (latencyMs == null ? '…' : `${latencyMs}ms`) : 'Offline'}
         </span>
 
         {syncStatus === 'conflict_resolved' && (
@@ -120,7 +121,7 @@ export default function RealTimeSyncBadge({ onOpenDiagnostics }: RealTimeSyncBad
             <div className="p-2.5 rounded-xl bg-neutral-950/60 border border-white/5 text-center">
               <div className="text-[10px] uppercase tracking-wider text-neutral-400 font-semibold mb-0.5">Roundtrip</div>
               <div className={`text-xs font-mono font-bold px-2 py-0.5 rounded border inline-block ${latencyBadgeColor}`}>
-                {latencyMs}ms
+                {latencyMs == null ? 'Measuring…' : `${latencyMs}ms`}
               </div>
             </div>
 
@@ -176,14 +177,15 @@ export default function RealTimeSyncBadge({ onOpenDiagnostics }: RealTimeSyncBad
           {/* Interactive Actions */}
           <div className="space-y-2 pt-2 border-t border-white/5">
             <div className="grid grid-cols-2 gap-2">
-              <button
+              {/* Developer tool: sends a test edit to every connected client, so never in production builds. */}
+              {(import.meta as any).env?.DEV && <button
                 onClick={handleSimulateConflict}
                 disabled={simulating}
                 className="py-2 px-3 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 text-xs font-semibold transition-all cursor-pointer flex items-center justify-center gap-1.5"
               >
                 <Zap className="w-3.5 h-3.5 text-amber-400" />
                 <span>{simulating ? 'Testing...' : 'Test Conflict'}</span>
-              </button>
+              </button>}
 
               <button
                 onClick={triggerStateResync}

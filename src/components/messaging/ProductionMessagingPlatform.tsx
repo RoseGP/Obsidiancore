@@ -40,58 +40,34 @@ import {
   PanelLeftOpen,
   Briefcase
 } from 'lucide-react';
-
-const CURRENT_USER: MessagingUser = {
-  id: 'user_agent_1',
-  name: 'Alex Rivera',
-  email: 'alex.rivera@enterprise.io',
-  avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=150',
-  role: 'admin',
-  status: 'online',
-  department: 'Customer Operations & Solutions'
-};
-
-const REGISTERED_AGENTS: MessagingUser[] = [
-  CURRENT_USER,
-  {
-    id: 'user_agent_2',
-    name: 'Liam Vance',
-    email: 'liam.vance@enterprise.io',
-    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=150',
-    role: 'agent',
-    status: 'online',
-    department: 'Tier 2 Engineering Support'
-  },
-  {
-    id: 'user_agent_3',
-    name: 'Sophia Sterling',
-    email: 'sophia.s@enterprise.io',
-    avatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=150',
-    role: 'agent',
-    status: 'busy',
-    department: 'Enterprise Customer Success'
-  },
-  {
-    id: 'user_contact_marcus',
-    name: 'Marcus Chen',
-    email: 'marcus.c@alpha-tech.cloud',
-    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=120',
-    role: 'agent',
-    status: 'online',
-    department: 'AlphaTech Cloud (VP Infrastructure)'
-  },
-  {
-    id: 'user_contact_sarah',
-    name: 'Sarah Jenkins',
-    email: 'sarah.j@nexustelecom.io',
-    avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=120',
-    role: 'agent',
-    status: 'online',
-    department: 'Nexus Telecom (Head of SecOps)'
-  }
-];
+import { useOptionalAuth } from '../../context/AuthContext';
 
 export const ProductionMessagingPlatform: React.FC = () => {
+  // The signed-in team member and the organization's real members (no built-in people).
+  const auth = useOptionalAuth();
+  const CURRENT_USER: MessagingUser = React.useMemo(() => ({
+    id: auth?.user?.uid || auth?.userProfile?.uid || 'me',
+    name: auth?.userProfile?.displayName || auth?.user?.email || 'You',
+    email: auth?.userProfile?.email || auth?.user?.email || '',
+    avatar: auth?.userProfile?.photoURL || '',
+    role: 'admin',
+    status: 'online',
+    department: ''
+  }), [auth?.user?.uid, auth?.user?.email, auth?.userProfile?.uid, auth?.userProfile?.displayName, auth?.userProfile?.email, auth?.userProfile?.photoURL]);
+  const [orgMembers, setOrgMembers] = useState<MessagingUser[]>([]);
+  useEffect(() => {
+    axios.get('/api/orgs/current/members').then((res) => {
+      const list = Array.isArray(res.data?.members) ? res.data.members : [];
+      setOrgMembers(list.map((m: any) => ({
+        id: String(m.userId), name: m.name || m.email || 'Team member', email: m.email || '', avatar: '',
+        role: m.role === 'OWNER' || m.role === 'ADMIN' ? 'admin' : 'agent', status: 'offline', department: ''
+      })));
+    }).catch(() => setOrgMembers([]));
+  }, []);
+  const REGISTERED_AGENTS: MessagingUser[] = React.useMemo(
+    () => [CURRENT_USER, ...orgMembers.filter((m) => m.id !== CURRENT_USER.id)],
+    [CURRENT_USER, orgMembers]
+  );
   const [currentView, setCurrentView] = useState<MessagingPlatformView>('inbox');
   const [conversations, setConversations] = useState<MessagingConversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);

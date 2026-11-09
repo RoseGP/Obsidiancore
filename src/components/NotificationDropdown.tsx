@@ -215,8 +215,8 @@ export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({
               </div>
             </div>
 
-            {/* 2. Simulation Trigger Bar (Allows user to test live alerts immediately) */}
-            <div className="px-3 py-2 bg-white/[0.02] border-b border-white/5 flex items-center justify-between text-xs">
+            {/* 2. Developer tool: inject test notifications (development builds only; these events are invented) */}
+            {(import.meta as any).env?.DEV && <div className="px-3 py-2 bg-white/[0.02] border-b border-white/5 flex items-center justify-between text-xs">
               <span className="text-[10px] font-mono text-neutral-400 flex items-center gap-1.5">
                 <Radio className={`h-3 w-3 ${autoStreamActive ? 'text-emerald-400 animate-pulse' : 'text-neutral-500'}`} />
                 <span>Simulate Event:</span>
@@ -256,7 +256,7 @@ export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({
                   + Interaction
                 </button>
               </div>
-            </div>
+            </div>}
 
             {/* 3. Filter Segment Tabs */}
             <div className="p-2 border-b border-white/5 flex items-center gap-1 bg-black/20 overflow-x-auto no-scrollbar">

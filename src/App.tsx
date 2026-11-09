@@ -13,7 +13,6 @@ import { LuxuryNotificationToasts } from './components/notifications/LuxuryNotif
 import UnifiedCommandSearchBar from './components/UnifiedCommandSearchBar';
 import DashboardView from './components/DashboardView';
 import VideoWelcomePage from './components/VideoWelcomePage';
-import MessagingView from './components/MessagingView';
 import ProductionMessagingPlatform from './components/messaging/ProductionMessagingPlatform';
 import AnalyticsView from './components/AnalyticsView';
 import SettingsView, { SettingsTab } from './components/SettingsView';

@@ -1138,14 +1138,14 @@ export default function SettingsView({ defaultTab = 'account' }: SettingsViewPro
               </div>
 
               <div className="flex items-center gap-2">
-                <button
+                {(import.meta as any).env?.DEV && <button
                   type="button"
                   onClick={() => realtimeSync.simulateConcurrentConflict()}
                   className="px-3 py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5"
                 >
                   <Zap className="w-3.5 h-3.5 text-amber-400" />
                   <span>Simulate Concurrent Conflict</span>
-                </button>
+                </button>}
                 <button
                   type="button"
                   onClick={() => realtimeSync.triggerStateResync()}
@@ -1163,7 +1163,7 @@ export default function SettingsView({ defaultTab = 'account' }: SettingsViewPro
                 <div className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">Heartbeat Latency</div>
                 <div className="text-lg font-mono font-bold text-emerald-400 flex items-center gap-1.5">
                   <Activity className="w-4 h-4" />
-                  <span>{realtimeSync.latencyMs} ms</span>
+                  <span>{realtimeSync.latencyMs == null ? 'Measuring…' : `${realtimeSync.latencyMs} ms`}</span>
                 </div>
                 <div className="text-[10px] text-neutral-500">Target SLA: &lt; 50ms</div>
               </div>

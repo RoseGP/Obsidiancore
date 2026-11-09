@@ -26,7 +26,7 @@ export interface StagedEntityMutation {
 
 export interface RealtimeSyncContextType {
   isConnected: boolean;
-  latencyMs: number;
+  latencyMs: number | null;
   activeClients: number;
   syncStatus: 'synced' | 'syncing' | 'conflict_resolved' | 'offline';
   vectorClock: Record<string, { version: number; lastModified: number; updatedBy: string }>;
@@ -71,21 +71,12 @@ export const RealtimeSyncProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const { socket, isConnected } = useUnifiedSocket();
   const { pushNotification } = useNotifications();
 
-  const [latencyMs, setLatencyMs] = useState<number>(14);
+  // Measured by socket round-trip; null until the first reply (never an invented number).
+  const [latencyMs, setLatencyMs] = useState<number | null>(null);
   const [activeClients, setActiveClients] = useState<number>(1);
   const [syncStatus, setSyncStatus] = useState<'synced' | 'syncing' | 'conflict_resolved' | 'offline'>('synced');
   const [vectorClock, setVectorClock] = useState<Record<string, { version: number; lastModified: number; updatedBy: string }>>({});
-  const [conflictHistory, setConflictHistory] = useState<ConflictRecord[]>([
-    {
-      id: 'conf-init-1',
-      entityType: 'deal',
-      entityId: 'deal-alpha-sla',
-      timestamp: '10:44 AM',
-      strategy: 'Field-level 3-Way Merge (Last-Write-Wins)',
-      resolvedVersion: 4,
-      competingAuthors: ['rpierrette45@gmail.com', 'marcus.c@alpha-tech.cloud']
-    }
-  ]);
+  const [conflictHistory, setConflictHistory] = useState<ConflictRecord[]>([]);
   const [lastSyncTime, setLastSyncTime] = useState<string>(new Date().toLocaleTimeString());
 
   // Batched writes telemetry

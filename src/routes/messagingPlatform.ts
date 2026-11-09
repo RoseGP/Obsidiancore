@@ -1,7 +1,25 @@
 import { Router, Request, Response } from 'express';
-import { adminDb } from '../lib/firebaseAdmin';
+import { randomBytes } from 'node:crypto';
+import { requireTenant, sendError, tenantOf } from '../server/tenancy/middleware';
+import { getDocStore } from '../server/data/docStore';
+import { generateAIResponse, providerStatus, AIProviderError } from '../services/ai/aiService';
 
 const router = Router();
+
+/**
+ * Tenancy. Website visitors use only the public widget/visitor paths; everything else requires a signed-in
+ * member, and every conversation (and its messages, tasks, notes) is visible only inside its organization.
+ * TO COMPLETE (Phase A2, item 4): conversations are still kept in memory and lost on restart.
+ */
+const PUBLIC_PATHS = [/^\/widgets\/[^/]+$/, /^\/visitor-init$/, /^\/visitor-message$/, /^\/visitor-messages\/[^/]+$/, /^\/embed(\/.*)?$/];
+router.use((req, res, next) => {
+  const isPublic = PUBLIC_PATHS.some((r) => r.test(req.path)) && !(req.path.startsWith('/widgets/') && req.method !== 'GET');
+  return isPublic ? next() : requireTenant(req, res, next);
+});
+const orgOf = (req: Request) => tenantOf(req).orgId;
+/** The signed-in team member, for authorship (never taken from the request body). */
+const me = (req: Request) => { const t = tenantOf(req); return { id: t.userId, name: t.name || t.email || 'Team member' }; };
+const canModerate = (req: Request) => ['OWNER', 'ADMIN'].includes(tenantOf(req).role);
 
 // Domain Interfaces
 export interface UserRecord {
@@ -41,6 +59,7 @@ export interface MessageReplyContext {
 }
 
 export interface StructuredPromptData {
+  orgId?: string;
   title: string;
   category: string;
   goal: string;
@@ -132,6 +151,8 @@ export interface MessageRecord {
 
 export interface ConversationRecord {
   id: string;
+  /** Organization that owns this conversation (tenancy). */
+  orgId?: string;
   type: 'direct' | 'group' | 'crm_linked' | 'internal' | 'widget' | 'support';
   channel: 'widget' | 'internal' | 'email' | 'sms' | 'crm';
   title: string;
@@ -154,6 +175,7 @@ export interface ConversationRecord {
 
 export interface WidgetRecord {
   widgetKey: string;
+  orgId?: string;
   businessName: string;
   tagline?: string;
   primaryColor: string;
@@ -181,6 +203,13 @@ export const AVAILABLE_CRM_RECORDS: CrmRecordReference[] = [];
 
 // In-Memory Fallback & Real-time State Stores
 const CONVERSATIONS: Map<string, ConversationRecord> = new Map();
+
+/** Any /conversations/:id… route: the conversation must belong to the caller's organization. */
+router.param('id', (req, res, next, id) => {
+  const c = CONVERSATIONS.get(String(id));
+  if (!c || c.orgId !== orgOf(req)) return res.status(404).json({ success: false, error: 'Conversation not found' });
+  next();
+});
 const MESSAGES: Map<string, MessageRecord[]> = new Map();
 const WIDGETS: Map<string, WidgetRecord> = new Map();
 const CRM_TASKS: Map<string, CrmTaskRecord[]> = new Map();
@@ -189,127 +218,75 @@ const CRM_ACTIVITIES: Map<string, CrmActivityLog[]> = new Map();
 // Structured Prompt Templates Library
 export const STRUCTURED_PROMPTS: StructuredPromptData[] = [
   {
-    title: 'Enterprise Objection Handling (SOC-2 & Encryption)',
+    title: 'Answer a question about security',
     category: 'Security & Compliance',
-    goal: 'Handle enterprise customer concerns regarding data privacy, tenant isolation, and WebRTC encryption.',
+    goal: 'Reply to a customer who asks how their data is protected, using only facts your team has confirmed.',
     instructions: [
-      'Acknowledge client compliance requirement politely.',
-      'Reassure that all signaling uses TLS 1.3 and media is SRTP encrypted.',
-      'Cite our SOC 2 Type II audit report and regional data residency guarantees in us-east1 and eu-central1.',
-      'Offer to set up a dedicated security review with our Infosec lead (Sarah).'
+      'Thank the customer for the question.',
+      'Describe only the security measures and certifications your organization actually has.',
+      'Offer a follow-up call with the right person on your team.'
     ],
     template: `Hi {{client_name}},
 
-Thank you for raising these crucial questions regarding security standards.
+Thanks for asking about security. Here is how we protect {{company_name}}'s data:
+{{security_summary}}
 
-At our core, tenant isolation and regulatory compliance are built into every layer of our platform:
-1. **Data in Transit & at Rest**: Encrypted using TLS 1.3 and AES-256 with Customer-Managed Keys.
-2. **Audio/Video Streams**: All WebRTC communication uses DTLS-SRTP end-to-end encryption.
-3. **Certifications**: We maintain SOC 2 Type II compliance and ISO 27001 certifications.
-
-I would be delighted to share our formal Security Whitepaper or coordinate a 15-minute briefing with our SecOps team. Would tomorrow afternoon work for you?`,
+Happy to set up a short call with our team if you'd like more detail.`,
     modelSuggestion: 'gemini-2.5-flash',
-    parameters: { client_name: 'Contact Name', company_name: 'Company' }
+    parameters: { client_name: '', company_name: '', security_summary: '' }
   },
   {
-    title: 'B2B Discovery & Qualification Rubric',
+    title: 'Discovery questions',
     category: 'Sales Qualification',
-    goal: 'Rapidly qualify incoming enterprise leads on budget, authority, need, and timeline (BANT).',
+    goal: 'Learn budget, decision makers, needs and timeline before a demo.',
     instructions: [
-      'Extract current communication tools in use (Zendesk, Twilio, Intercom).',
-      'Identify number of active seats and expected concurrent calls.',
-      'Determine decision-making criteria and target go-live date.'
+      'Ask which tools they use today.',
+      'Ask how many people would use the product.',
+      'Ask who decides and when they want to start.'
     ],
     template: `Hi {{client_name}},
 
-To ensure we tailor our demonstration to {{company_name}}'s exact operational requirements, could you share a bit more on:
-- How many team members will actively use the CRM and live video consultation suite?
-- What are your current communication channels (e.g. Email, WhatsApp, WebRTC calling)?
-- Are there specific integration requirements with your existing identity provider (Okta, Azure AD)?
+So we can tailor the demo to {{company_name}}, could you tell us:
+- How many people on your team would use it?
+- Which tools do you use today?
+- Who is involved in the decision, and when would you like to start?
 
-Looking forward to optimizing this for your team!`,
+Thanks!`,
     modelSuggestion: 'gemini-2.5-flash',
-    parameters: { client_name: 'Elena', company_name: 'NovaCrest' }
+    parameters: { client_name: '', company_name: '' }
   },
   {
-    title: 'Executive Meeting Follow-up & Action Items',
+    title: 'Meeting follow-up',
     category: 'Customer Success',
-    goal: 'Summarize meeting discussions, document decisions, and list assigned next steps with target completion dates.',
+    goal: 'Summarize a meeting: decisions, action items with owners and dates.',
     instructions: [
-      'List 3 key takeaways agreed upon during the call.',
-      'Specify assigned action items with names and deadlines.',
-      'Attach draft proposal link for review.'
+      'List the key decisions.',
+      'List each action item with an owner and a due date.',
+      'Link any document that needs review.'
     ],
-    template: `Hi Team,
+    template: `Hi {{client_name}},
 
-Great meeting today regarding the {{project_name}}. Here is a summary of our discussion and immediate next steps:
+Thanks for today's meeting about {{project_name}}. Summary:
 
-**Key Takeaways:**
-1. Confirmed target migration window for Q3.
-2. Architecture team approved the unified WebRTC screen-sharing workflow.
-3. Pricing agreed at {{deal_value}} under Enterprise SLA terms.
+**Decisions:**
+{{decisions}}
 
-**Action Items:**
-- [ ] @Alex Rivera: Deliver updated Master Services Agreement by Thursday EOD.
-- [ ] @Liam Vance: Provide sandbox staging API keys for SAML testing.
-- [ ] @{{client_name}}: Schedule internal legal review for contract sign-off.`,
+**Action items:**
+{{action_items}}`,
     modelSuggestion: 'gemini-2.5-pro',
-    parameters: { project_name: 'AlphaTech Cloud Migration', deal_value: '$120,000 ARR', client_name: 'Marcus' }
+    parameters: { client_name: '', project_name: '', decisions: '', action_items: '' }
   }
 ];
 
-// Canned Responses
+// Canned responses: starting points each team edits to match what it actually offers.
 const CANNED_RESPONSES = [
-  {
-    id: 'cr-1',
-    shortcut: '/pricing',
-    title: 'Enterprise Pricing & SLAs',
-    content: 'Our Enterprise tier starts with dedicated infrastructure, custom SLAs (99.99%), SSO SAML, and 24/7 priority support.',
-    category: 'Sales'
-  },
-  {
-    id: 'cr-2',
-    shortcut: '/demo',
-    title: 'Live Demo Scheduling',
-    content: 'Would you be open to a 20-minute live demonstration of our WebRTC softphone and CRM screen-sharing capabilities this week?',
-    category: 'Sales'
-  },
-  {
-    id: 'cr-3',
-    shortcut: '/security',
-    title: 'Data Locality & SOC 2',
-    content: 'All live chats, customer data, and video consultation logs are encrypted in transit (TLS 1.3) and at rest (AES-256) with SOC 2 Type II compliance.',
-    category: 'Security'
-  },
-  {
-    id: 'cr-4',
-    shortcut: '/contract',
-    title: 'Contract Signing & Next Steps',
-    content: 'We have updated the master agreement in the proposals view. Once signed, your dedicated customer engineering team will begin onboarding within 24 hours.',
-    category: 'Legal'
-  }
+  { id: 'cr-1', shortcut: '/thanks', title: 'Thanks, we\'re on it', content: 'Thanks for reaching out. We\'re looking into this and will get back to you shortly.', category: 'General' },
+  { id: 'cr-2', shortcut: '/demo', title: 'Offer a demo', content: 'Would you like a short demo this week? Let me know a time that works for you.', category: 'Sales' },
+  { id: 'cr-3', shortcut: '/followup', title: 'Follow up', content: 'Just following up on my last message. Is there anything else I can help with?', category: 'General' },
+  { id: 'cr-4', shortcut: '/close', title: 'Close the conversation', content: 'Glad we could help. If anything else comes up, just reply here.', category: 'General' }
 ];
 
-// Seed Default Live Chat Widget
-const DEFAULT_WIDGET: WidgetRecord = {
-  widgetKey: 'wid_live_8f3a9e22',
-  businessName: 'Apex Cloud Support',
-  tagline: 'We typically respond in under 2 minutes',
-  primaryColor: '#2563eb',
-  accentColor: '#3b82f6',
-  greetingMessage: '👋 Hi there! Welcome to Apex Cloud. How can our engineering team assist you today?',
-  placeholderText: 'Type your message or question...',
-  position: 'bottom-right',
-  avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=150',
-  allowedDomains: ['*'],
-  requireEmail: false,
-  autoReplyMessage: 'Thank you for reaching out! A product engineer has been notified and will respond momentarily.',
-  offlineMessage: 'We are currently offline. Please leave your email and message and we will get back to you first thing in the morning.',
-  isActive: true,
-  createdAt: new Date(Date.now() - 86400000 * 3).toISOString(),
-  updatedAt: new Date().toISOString()
-};
-WIDGETS.set(DEFAULT_WIDGET.widgetKey, DEFAULT_WIDGET);
+// No built-in widget: each organization creates its own in Widget Studio.
 
 // ----------------------------------------------------
 // SEED RICH CRM CONVERSATIONS
@@ -320,13 +297,145 @@ WIDGETS.set(DEFAULT_WIDGET.widgetKey, DEFAULT_WIDGET);
 // widget (no seed data). They are kept in memory (CONVERSATIONS/MESSAGES/CRM_TASKS/CRM_ACTIVITIES Maps) and
 // are lost on restart: persist them in your database (e.g. Firestore conversations/{id}/messages).
 
-const sseClients: Map<string, Response> = new Map();
+const sseClients: Map<string, { res: Response; orgId: string }> = new Map();
 
-function broadcastEvent(eventName: string, payload: any) {
+/** Sends an event only to the organization that owns it (fails closed when the owner is unknown). */
+// ----------------------------------------------------
+// PERSISTENCE (organizations/{orgId}/inbox_*): loaded per organization on first use,
+// changed documents written back after each request. Data survives restarts.
+// One server instance serves the inbox (live updates are in-process), so the cache stays authoritative.
+// ----------------------------------------------------
+const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
+const loaded = new Map<string, Promise<void>>();
+const written = new Map<string, { org: string; json: string }>();
+const flushing = new Map<string, Promise<void>>();
+const convPath = (o: string, c: string) => `organizations/${o}/inbox_conversations/${c}`;
+
+function remember(path: string, org: string, v: unknown) { written.set(path, { org, json: JSON.stringify(v) }); }
+
+/** Loads one organization's inbox into memory (once). */
+export function hydrateInbox(orgId: string): Promise<void> {
+  if (!SAFE_ID.test(orgId)) return Promise.resolve();
+  let p = loaded.get(orgId);
+  if (!p) {
+    p = (async () => {
+      const st = await getDocStore();
+      const base = `organizations/${orgId}`;
+      for (const c of await st.list(`${base}/inbox_conversations`)) {
+        if (!c?.id || !SAFE_ID.test(c.id)) continue;
+        const conv = { ...c, orgId } as ConversationRecord;
+        CONVERSATIONS.set(conv.id, conv); remember(convPath(orgId, conv.id), orgId, conv);
+        const msgs = (await st.list(`${convPath(orgId, conv.id)}/messages`)) as MessageRecord[];
+        msgs.sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
+        MESSAGES.set(conv.id, msgs);
+        for (const m of msgs) remember(`${convPath(orgId, conv.id)}/messages/${m.id}`, orgId, m);
+        const meta = await st.get(`${convPath(orgId, conv.id)}/meta/crm`);
+        if (meta) {
+          CRM_TASKS.set(conv.id, meta.tasks || []); CRM_ACTIVITIES.set(conv.id, meta.activities || []);
+          remember(`${convPath(orgId, conv.id)}/meta/crm`, orgId, { tasks: meta.tasks || [], activities: meta.activities || [] });
+        }
+        if (conv.type === 'widget') remember(`inbox_visitor_conversations/${conv.id}`, orgId, { orgId });
+      }
+      for (const w of await st.list(`${base}/inbox_widgets`)) {
+        if (!w?.widgetKey || !SAFE_ID.test(w.widgetKey)) continue;
+        WIDGETS.set(w.widgetKey, { ...w, orgId }); remember(`${base}/inbox_widgets/${w.widgetKey}`, orgId, { ...w, orgId });
+        remember(`inbox_widget_keys/${w.widgetKey}`, orgId, { orgId });
+      }
+      const lib = await st.get(`${base}/inbox_settings/library`);
+      if (lib) {
+        for (const pr of lib.prompts || []) STRUCTURED_PROMPTS.push({ ...pr, orgId });
+        for (const cr of lib.cannedResponses || []) CANNED_RESPONSES.push({ ...cr, orgId });
+        remember(`${base}/inbox_settings/library`, orgId, { prompts: lib.prompts || [], cannedResponses: lib.cannedResponses || [] });
+      }
+    })();
+    p.catch(() => loaded.delete(orgId));
+    loaded.set(orgId, p);
+  }
+  return p;
+}
+
+/** Loads the organization that owns a widget key or a visitor conversation (public routes). */
+async function hydrateFromIndex(kind: 'inbox_widget_keys' | 'inbox_visitor_conversations', id: unknown): Promise<string | null> {
+  if (typeof id !== 'string' || !SAFE_ID.test(id)) return null;
+  const idx = await (await getDocStore()).get(`${kind}/${id}`);
+  if (!idx?.orgId) return null;
+  await hydrateInbox(idx.orgId);
+  return idx.orgId;
+}
+
+async function flushNow(orgId: string) {
+  const st = await getDocStore();
+  const base = `organizations/${orgId}`;
+  const want = new Map<string, unknown>();
+  for (const c of CONVERSATIONS.values()) {
+    if (c.orgId !== orgId || !SAFE_ID.test(c.id)) continue;
+    want.set(convPath(orgId, c.id), c);
+    for (const m of MESSAGES.get(c.id) || []) if (SAFE_ID.test(m.id)) want.set(`${convPath(orgId, c.id)}/messages/${m.id}`, m);
+    const tasks = CRM_TASKS.get(c.id) || [], activities = CRM_ACTIVITIES.get(c.id) || [];
+    if (tasks.length || activities.length) want.set(`${convPath(orgId, c.id)}/meta/crm`, { tasks, activities });
+    if (c.type === 'widget') want.set(`inbox_visitor_conversations/${c.id}`, { orgId });
+  }
+  for (const w of WIDGETS.values()) {
+    if (w.orgId !== orgId || !SAFE_ID.test(w.widgetKey)) continue;
+    want.set(`${base}/inbox_widgets/${w.widgetKey}`, w);
+    want.set(`inbox_widget_keys/${w.widgetKey}`, { orgId });
+  }
+  const prompts = STRUCTURED_PROMPTS.filter((x) => x.orgId === orgId);
+  const cannedResponses = CANNED_RESPONSES.filter((x: any) => x.orgId === orgId);
+  if (prompts.length || cannedResponses.length) want.set(`${base}/inbox_settings/library`, { prompts, cannedResponses });
+
+  for (const [path, v] of want) {
+    const json = JSON.stringify(v);
+    if (written.get(path)?.json === json) continue;
+    await st.set(path, JSON.parse(json));
+    written.set(path, { org: orgId, json });
+  }
+  for (const [path, w] of [...written]) {
+    if (w.org !== orgId || want.has(path)) continue;
+    await st.deleteRecursive(path);
+    written.delete(path);
+  }
+}
+
+/** Writes an organization's changed inbox documents; calls for the same organization run one at a time. */
+export function flushInbox(orgId: string): Promise<void> {
+  const prev = flushing.get(orgId) || Promise.resolve();
+  const next = prev.then(() => flushNow(orgId)).catch((err) => { console.error('[inbox] save failed:', err?.code || err?.name || 'error'); });
+  flushing.set(orgId, next);
+  return next;
+}
+
+/** Test helper: forget the in-memory cache (as after a restart). */
+export function resetInboxCacheForTests() {
+  for (const m of [CONVERSATIONS, MESSAGES, WIDGETS, CRM_TASKS, CRM_ACTIVITIES, loaded, written, flushing]) (m as Map<any, any>).clear();
+  for (const arr of [STRUCTURED_PROMPTS, CANNED_RESPONSES] as any[][]) for (let i = arr.length - 1; i >= 0; i--) if (arr[i].orgId) arr.splice(i, 1);
+}
+
+// Load the caller's organization before any route runs, and save its changes afterwards.
+router.use(async (req, res, next) => {
+  try {
+    let orgId: string | null = null;
+    if ((req as any).tenant) orgId = orgOf(req);
+    else if (req.path.startsWith('/widgets/')) orgId = await hydrateFromIndex('inbox_widget_keys', req.path.split('/')[2]);
+    else if (req.path === '/visitor-init') orgId = await hydrateFromIndex('inbox_widget_keys', req.body?.widgetKey);
+    else if (req.path === '/visitor-message') orgId = await hydrateFromIndex('inbox_visitor_conversations', req.body?.conversationId);
+    else if (req.path.startsWith('/visitor-messages/')) orgId = await hydrateFromIndex('inbox_visitor_conversations', req.path.split('/')[2]);
+    if (orgId) {
+      await hydrateInbox(orgId);
+      if (req.path !== '/stream') res.on('finish', () => { void flushInbox(orgId!); });
+    }
+    next();
+  } catch (err) { sendError(res, err, 'messaging.load'); }
+});
+
+function broadcastEvent(eventName: string, payload: any, orgIdHint?: string) {
+  const orgId = orgIdHint ?? payload?.orgId ?? CONVERSATIONS.get(payload?.conversationId ?? payload?.id)?.orgId;
+  if (!orgId) return;
   const data = `event: ${eventName}\ndata: ${JSON.stringify(payload)}\n\n`;
-  sseClients.forEach((res, clientId) => {
+  sseClients.forEach((client, clientId) => {
+    if (client.orgId !== orgId) return;
     try {
-      res.write(data);
+      client.res.write(data);
     } catch {
       sseClients.delete(clientId);
     }
@@ -343,7 +452,7 @@ router.get('/stream', (req: Request, res: Response) => {
   res.flushHeaders?.();
 
   const clientId = `client_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-  sseClients.set(clientId, res);
+  sseClients.set(clientId, { res, orgId: orgOf(req) });
 
   res.write(`event: connected\ndata: ${JSON.stringify({ clientId, timestamp: new Date().toISOString() })}\n\n`);
 
@@ -358,7 +467,8 @@ router.get('/stream', (req: Request, res: Response) => {
 router.get('/conversations', async (req: Request, res: Response) => {
   try {
     const { type, channel, status, search } = req.query;
-    let list = Array.from(CONVERSATIONS.values());
+    const orgId = orgOf(req);
+    let list = Array.from(CONVERSATIONS.values()).filter((c) => c.orgId === orgId);
 
     if (type) {
       list = list.filter((c) => c.type === type);
@@ -393,7 +503,7 @@ router.get('/conversations', async (req: Request, res: Response) => {
       conversations: list
     });
   } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
+    sendError(res, err, 'messaging');
   }
 });
 
@@ -407,9 +517,9 @@ router.post('/conversations', async (req: Request, res: Response) => {
       if (existing) return existing;
       return {
         id,
-        name: 'Guest Contact',
-        email: 'guest@example.com',
-        avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=120',
+        name: 'Contact',
+        email: '',
+        avatar: '',
         role: 'visitor' as const,
         status: 'online' as const
       };
@@ -417,17 +527,18 @@ router.post('/conversations', async (req: Request, res: Response) => {
 
     const newConv: ConversationRecord = {
       id: convId,
+      orgId: orgOf(req),
       type: type || 'direct',
       channel: channel || 'internal',
       title: title || 'New Conversation',
-      participantIds: participantIds || ['user_agent_1'],
-      participants: participants.length > 0 ? participants : [REGISTERED_USERS[0]],
+      participantIds: participantIds?.length ? participantIds : [me(req).id],
+      participants: participants.length > 0 ? participants : [{ id: me(req).id, name: me(req).name, email: tenantOf(req).email, avatar: '', role: 'admin' as const, status: 'online' as const }],
       visitorMetadata: visitorMetadata || undefined,
       crmRecord: crmRecord || undefined,
       unreadCount: 0,
       status: 'open',
       priority: priority || 'medium',
-      assignedTo: 'user_agent_1',
+      assignedTo: me(req).id,
       tags: tags || ['General'],
       pinnedMessageIds: [],
       createdAt: new Date().toISOString(),
@@ -437,15 +548,11 @@ router.post('/conversations', async (req: Request, res: Response) => {
     CONVERSATIONS.set(convId, newConv);
     MESSAGES.set(convId, []);
 
-    if (adminDb) {
-      adminDb.collection('messaging_conversations').doc(convId).set(newConv).catch(() => {});
-    }
-
     broadcastEvent('conversation_created', newConv);
 
     res.status(201).json({ success: true, conversation: newConv });
   } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
+    sendError(res, err, 'messaging');
   }
 });
 
@@ -474,10 +581,6 @@ router.patch('/conversations/:id', (req: Request, res: Response) => {
   conv.updatedAt = new Date().toISOString();
 
   CONVERSATIONS.set(conv.id, conv);
-
-  if (adminDb) {
-    adminDb.collection('messaging_conversations').doc(conv.id).update(conv).catch(() => {});
-  }
 
   broadcastEvent('conversation_updated', conv);
 
@@ -517,14 +620,11 @@ router.delete('/conversations/:id', (req: Request, res: Response) => {
     return res.status(404).json({ success: false, error: 'Conversation not found' });
   }
 
+  const ownerOrg = CONVERSATIONS.get(convId)?.orgId;
   CONVERSATIONS.delete(convId);
   MESSAGES.delete(convId);
 
-  if (adminDb) {
-    adminDb.collection('messaging_conversations').doc(convId).delete().catch(() => {});
-  }
-
-  broadcastEvent('conversation_deleted', { conversationId: convId });
+  broadcastEvent('conversation_deleted', { conversationId: convId }, ownerOrg);
 
   res.json({ success: true, message: 'Conversation profile deleted', id: convId });
 });
@@ -579,10 +679,10 @@ router.post('/conversations/:id/messages', (req: Request, res: Response) => {
   const newMsg: MessageRecord = {
     id: msgId,
     conversationId: convId,
-    senderId: senderId || 'user_agent_1',
-    senderType: senderType || 'user',
-    senderName: senderName || 'Alex Rivera',
-    senderAvatar: senderAvatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=150',
+    senderId: me(req).id,
+    senderType: senderType === 'system' ? 'system' : 'user',
+    senderName: me(req).name,
+    senderAvatar: typeof senderAvatar === 'string' && /^https:\/\//.test(senderAvatar) ? senderAvatar : '',
     content: content || '',
     contentType: contentType || 'text',
     attachmentUrl,
@@ -609,14 +709,6 @@ router.post('/conversations/:id/messages', (req: Request, res: Response) => {
   conv.updatedAt = newMsg.createdAt;
   CONVERSATIONS.set(convId, conv);
 
-  if (adminDb) {
-    adminDb.collection('messaging_messages').doc(msgId).set(newMsg).catch(() => {});
-    adminDb.collection('messaging_conversations').doc(convId).update({
-      lastMessage: newMsg,
-      updatedAt: newMsg.createdAt
-    }).catch(() => {});
-  }
-
   broadcastEvent('new_message', { conversationId: convId, message: newMsg });
 
   res.status(201).json({ success: true, message: newMsg });
@@ -625,7 +717,7 @@ router.post('/conversations/:id/messages', (req: Request, res: Response) => {
 // Edit Message (Author or Admin)
 router.patch('/conversations/:id/messages/:msgId', (req: Request, res: Response) => {
   const { id: convId, msgId } = req.params;
-  const { content, userId } = req.body;
+  const { content } = req.body;
 
   const msgs = MESSAGES.get(convId);
   if (!msgs) {
@@ -637,7 +729,7 @@ router.patch('/conversations/:id/messages/:msgId', (req: Request, res: Response)
     return res.status(404).json({ success: false, error: 'Message not found' });
   }
 
-  if (userId && msg.senderId !== userId && userId !== 'user_agent_1') {
+  if (msg.senderId !== me(req).id && !canModerate(req)) {
     return res.status(403).json({ success: false, error: 'Unauthorized to edit this message' });
   }
 
@@ -662,6 +754,9 @@ router.delete('/conversations/:id/messages/:msgId', (req: Request, res: Response
   const index = msgs.findIndex((m) => m.id === msgId);
   if (index === -1) {
     return res.status(404).json({ success: false, error: 'Message not found' });
+  }
+  if (msgs[index].senderId !== me(req).id && !canModerate(req)) {
+    return res.status(403).json({ success: false, error: 'Only the author or an admin can delete this message.' });
   }
 
   msgs.splice(index, 1);
@@ -706,7 +801,8 @@ router.post('/conversations/:id/messages/:msgId/pin', (req: Request, res: Respon
 // Toggle reaction
 router.post('/conversations/:id/messages/:msgId/reaction', (req: Request, res: Response) => {
   const { id: convId, msgId } = req.params;
-  const { emoji, userId } = req.body;
+  const { emoji } = req.body;
+  const userId = me(req).id;
 
   const msgs = MESSAGES.get(convId);
   if (!msgs) {
@@ -762,7 +858,7 @@ router.post('/conversations/:id/tasks', (req: Request, res: Response) => {
     status: 'pending',
     priority: priority || 'medium',
     dueDate: dueDate || new Date(Date.now() + 86400000 * 2).toISOString().split('T')[0],
-    assignee: assignee || 'Alex Rivera',
+    assignee: assignee || me(req).name,
     conversationId: convId,
     sourceMessageId,
     contactName: contactName || 'CRM Lead',
@@ -803,7 +899,7 @@ router.post('/conversations/:id/tasks', (req: Request, res: Response) => {
     type: 'task_created',
     title: `Task Created: ${title}`,
     description: `Assigned to ${newTask.assignee} (Due ${newTask.dueDate})`,
-    actorName: 'Alex Rivera',
+    actorName: me(req).name,
     timestamp: 'Just now'
   });
   CRM_ACTIVITIES.set(convId, activities);
@@ -841,7 +937,7 @@ router.get('/conversations/:id/activities', (req: Request, res: Response) => {
 // Add CRM Note
 router.post('/conversations/:id/notes', (req: Request, res: Response) => {
   const convId = req.params.id;
-  const { note, authorName } = req.body;
+  const { note } = req.body;
 
   if (!note) {
     return res.status(400).json({ success: false, error: 'Note text is required' });
@@ -853,7 +949,7 @@ router.post('/conversations/:id/notes', (req: Request, res: Response) => {
     type: 'note_added',
     title: 'CRM Note Added',
     description: note,
-    actorName: authorName || 'Alex Rivera',
+    actorName: me(req).name,
     timestamp: 'Just now'
   });
   CRM_ACTIVITIES.set(convId, activities);
@@ -911,86 +1007,9 @@ const BLOCKED_EXTENSIONS = new Set([
 
 const MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024; // 25 MB
 
-router.post('/upload', (req: Request, res: Response) => {
-  try {
-    const { filename, sizeBytes, mimeType, fileData, conversationId } = req.body;
-
-    if (!filename) {
-      return res.status(400).json({ success: false, error: 'Filename is required' });
-    }
-
-    // 1. File extension validation
-    const ext = filename.split('.').pop()?.toLowerCase() || '';
-    if (BLOCKED_EXTENSIONS.has(ext)) {
-      return res.status(400).json({
-        success: false,
-        error: `Security Error: Executable and script file extensions (.${ext}) are strictly prohibited.`
-      });
-    }
-
-    if (!ALLOWED_EXTENSIONS.has(ext)) {
-      return res.status(400).json({
-        success: false,
-        error: `Invalid file format (.${ext}). Supported formats: PDF, DOC, DOCX, XLS, XLSX, CSV, TXT, PNG, JPG, WEBP.`
-      });
-    }
-
-    // 2. MIME type check
-    const normalizedMime = mimeType || 'application/octet-stream';
-    if (!ALLOWED_MIME_TYPES.has(normalizedMime) && !normalizedMime.startsWith('image/')) {
-      return res.status(400).json({
-        success: false,
-        error: `Prohibited MIME type (${normalizedMime}). Please upload an approved business document.`
-      });
-    }
-
-    // 3. File size check
-    const size = Number(sizeBytes) || 1024 * 500;
-    if (size > MAX_FILE_SIZE_BYTES) {
-      return res.status(400).json({
-        success: false,
-        error: `File exceeds maximum allowed upload size of 25MB (Received: ${(size / (1024 * 1024)).toFixed(1)}MB)`
-      });
-    }
-
-    // 4. Generate secure storage identifier
-    const fileId = `file_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
-    const storageKey = `crm_uploads/${conversationId || 'general'}/${fileId}_${filename.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
-    const secureDownloadUrl = `https://storage.googleapis.com/omnichannel-crm-vault/${storageKey}`;
-
-    // Format human size
-    let sizeHuman = `${(size / 1024).toFixed(1)} KB`;
-    if (size >= 1024 * 1024) {
-      sizeHuman = `${(size / (1024 * 1024)).toFixed(1)} MB`;
-    }
-
-    // Log upload activity if conversation is present
-    if (conversationId && CRM_ACTIVITIES.has(conversationId)) {
-      const activities = CRM_ACTIVITIES.get(conversationId)!;
-      activities.unshift({
-        id: `act_${Date.now()}`,
-        type: 'file_shared',
-        title: `File Uploaded: ${filename}`,
-        description: `Securely verified (${sizeHuman} • ${normalizedMime})`,
-        actorName: 'Alex Rivera',
-        timestamp: 'Just now'
-      });
-    }
-
-    res.status(201).json({
-      success: true,
-      fileId,
-      filename,
-      sizeBytes: size,
-      sizeHuman,
-      mimeType: normalizedMime,
-      storageKey,
-      downloadUrl: secureDownloadUrl,
-      uploadedAt: new Date().toISOString()
-    });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
-  }
+router.post('/upload', (_req: Request, res: Response) => {
+  // Files aren't stored anywhere yet; the old handler returned a storage URL for a file it never saved.
+  res.status(501).json({ success: false, code: 'not_available', error: 'File attachments aren\'t available yet: connect file storage first. Share a link to the file instead.' });
 });
 
 // ----------------------------------------------------
@@ -1013,33 +1032,34 @@ router.post('/conversations/:id/execute-ai', async (req: Request, res: Response)
     const clientName = conv.crmRecord?.title || conv.title || 'Client Stakeholder';
     const company = conv.crmRecord?.companyName || 'Enterprise Account';
 
-    let generatedText = '';
-    if (promptTitle?.toLowerCase().includes('objection') || promptTitle?.toLowerCase().includes('soc')) {
-      generatedText = `Based on our SOC-2 Type II audit report and DTLS-SRTP WebRTC benchmarks:
-
-1. **Signaling & Media Encryption**: All audio and screen sharing streams enforce TLS 1.3 signaling and SRTP AES-GCM-256 with customer-managed keys.
-2. **Data Residency**: Tenant database records are partitioned in the us-east1 cloud region with zero cross-tenant contamination.
-3. **Failover SLA**: Redundant WebRTC nodes in us-central1 ensure sub-45ms routing latency with a 99.99% availability guarantee.
-
-I have updated our compliance register and attached the formal Infosec Whitepaper to this room.`;
-    } else if (promptTitle?.toLowerCase().includes('follow-up') || promptTitle?.toLowerCase().includes('meeting')) {
-      generatedText = `Executive Meeting Summary & Action Items for ${clientName}:
-
-**Decisions Reached:**
-- Confirmed enterprise rollout scope for Q3 covering all 200 seats.
-- Agreed on $120,000 ARR tier with dedicated SLA response under 15 minutes.
-
-**Next Assigned Steps:**
-- [ ] @Alex Rivera: Deliver final signature-ready Master Services Agreement by Thursday 5:00 PM.
-- [ ] @Liam Vance: Verify SAML SSO integration certificate matching for ${company}.
-- [ ] @${clientName}: Provide billing entity VAT and accounting contacts for final PO.`;
-    } else {
-      generatedText = `CRM Analysis & Workflow Recommendation:
-
-- **Entity**: ${company} (${conv.crmRecord?.value || 'Enterprise Tier'})
-- **Status**: Prioritized for executive closing. All technical and compliance hurdles have been cleared.
-- **Recommended Action**: Proceed with proposal closing and dispatch staging onboarding credentials.`;
+    // A real model (Gemini or Claude via the shared AI service), grounded only in this conversation.
+    const ps = providerStatus();
+    if (!ps.gemini.configured && !ps.claude.configured) {
+      return res.status(503).json({ success: false, code: 'ai_not_configured', error: 'AI isn\'t set up on this server (add GEMINI_API_KEY or ANTHROPIC_API_KEY).' });
     }
+    const history = (MESSAGES.get(convId) || []).filter((m) => !m.isInternalNote).slice(-40)
+      .map((m) => `${m.senderName}: ${String(m.content).slice(0, 2000)}`).join('\n');
+    const system = 'You help a CRM team handle a customer conversation. Use only the conversation and the CRM context given. ' +
+      'Never invent facts, numbers, certifications, prices, commitments or people. If information is missing, say what is missing. Be concise.';
+    const ask = [
+      `Task: ${String(promptTitle || 'Help with this conversation').slice(0, 200)}`,
+      promptContent ? `Instructions:\n${String(promptContent).slice(0, 4000)}` : '',
+      userInstructions ? `Extra instructions from the agent:\n${String(userInstructions).slice(0, 2000)}` : '',
+      `Client: ${clientName} (${company})`,
+      crmContext ? `CRM context:\n${String(typeof crmContext === 'string' ? crmContext : JSON.stringify(crmContext)).slice(0, 4000)}` : '',
+      `Conversation:\n${history || '(no messages yet)'}`,
+    ].filter(Boolean).join('\n\n');
+    let generatedText = '';
+    let usedModel = selectedModel;
+    try {
+      const r = await generateAIResponse(ps.gemini.configured ? 'gemini' : 'claude', ask, [], { systemPrompt: system, useTools: false, fallback: true });
+      generatedText = r.reply.trim();
+      usedModel = r.model;
+    } catch (e) {
+      const msg = e instanceof AIProviderError ? e.message : 'The AI request failed.';
+      return res.status(502).json({ success: false, code: 'ai_error', error: msg });
+    }
+    if (!generatedText) return res.status(502).json({ success: false, code: 'ai_error', error: 'The AI returned no text.' });
 
     const executionTimeMs = Date.now() - startTime;
     const tokensUsed = Math.floor(generatedText.length / 3.8);
@@ -1050,19 +1070,20 @@ I have updated our compliance register and attached the formal Infosec Whitepape
       conversationId: convId,
       senderId: 'ai_copilot',
       senderType: 'system',
-      senderName: 'Gemini CRM Copilot',
-      senderAvatar: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&q=80&w=150',
+      senderName: 'AI assistant',
+      senderAvatar: '',
       content: generatedText,
       contentType: 'ai_response',
       aiResponseData: {
         promptUsed: promptTitle || 'CRM Executive Blueprint',
-        model: selectedModel,
+        model: usedModel,
         generatedText,
         tokensUsed,
         executionTimeMs,
         status: 'completed',
-        initiatedBy: 'Alex Rivera',
-        verifiedByHuman: true
+        initiatedBy: tenantOf(req).name || tenantOf(req).email || 'Team member',
+        // AI drafts are not reviewed by a person until someone edits or approves them.
+        verifiedByHuman: false
       },
       status: 'delivered',
       createdAt: new Date().toISOString()
@@ -1096,7 +1117,7 @@ I have updated our compliance register and attached the formal Infosec Whitepape
       message: aiMessage
     });
   } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
+    sendError(res, err, 'messaging');
   }
 });
 
@@ -1121,8 +1142,10 @@ router.get('/search', (req: Request, res: Response) => {
     crmRecord?: CrmRecordReference;
   }> = [];
 
+  const orgId = orgOf(req);
   // 1. Search conversations
   CONVERSATIONS.forEach((c) => {
+    if (c.orgId !== orgId) return;
     if (
       c.title.toLowerCase().includes(q) ||
       c.tags.some((t) => t.toLowerCase().includes(q)) ||
@@ -1143,6 +1166,7 @@ router.get('/search', (req: Request, res: Response) => {
   // 2. Search messages & files
   MESSAGES.forEach((msgs, convId) => {
     const parentConv = CONVERSATIONS.get(convId);
+    if (!parentConv || parentConv.orgId !== orgId) return;
     msgs.forEach((m) => {
       const matchContent = m.content.toLowerCase().includes(q);
       const matchAttachment = m.attachmentName?.toLowerCase().includes(q);
@@ -1167,15 +1191,30 @@ router.get('/search', (req: Request, res: Response) => {
 });
 
 // Available CRM Records for Linking
-router.get('/crm-records', (_req: Request, res: Response) => {
-  res.json({ success: true, records: AVAILABLE_CRM_RECORDS });
+router.get('/crm-records', async (req: Request, res: Response) => {
+  try {
+    const st = await getDocStore();
+    const orgId = orgOf(req);
+    const [leads, deals] = await Promise.all([
+      st.list(`organizations/${orgId}/leads`, { limit: 200 }),
+      st.list(`organizations/${orgId}/deals`, { limit: 200 }),
+    ]);
+    const records: CrmRecordReference[] = [
+      ...leads.map((l: any) => ({ type: 'contact' as const, id: String(l.id), title: l.name || l.email || 'Lead', subtitle: l.email || undefined, status: l.status || undefined, companyName: l.company || undefined })),
+      ...deals.map((d: any) => ({ type: 'deal' as const, id: String(d.id), title: d.title || d.name || 'Deal', value: d.value != null ? String(d.value) : undefined, status: d.stage || d.status || undefined, companyName: d.company || undefined })),
+    ];
+    res.json({ success: true, records });
+  } catch {
+    res.status(500).json({ success: false, error: 'CRM records couldn\'t be loaded.' });
+  }
 });
 
 // ----------------------------------------------------
 // STRUCTURED PROMPTS API
 // ----------------------------------------------------
-router.get('/prompts', (_req: Request, res: Response) => {
-  res.json({ success: true, prompts: STRUCTURED_PROMPTS });
+router.get('/prompts', (req: Request, res: Response) => {
+  const orgId = orgOf(req);
+  res.json({ success: true, prompts: STRUCTURED_PROMPTS.filter((p) => !p.orgId || p.orgId === orgId) });
 });
 
 router.post('/prompts', (req: Request, res: Response) => {
@@ -1185,6 +1224,7 @@ router.post('/prompts', (req: Request, res: Response) => {
   }
 
   const newPrompt: StructuredPromptData = {
+    orgId: orgOf(req),
     title,
     category: category || 'Custom Workflows',
     goal: goal || '',
@@ -1200,8 +1240,9 @@ router.post('/prompts', (req: Request, res: Response) => {
 // ----------------------------------------------------
 // CANNED RESPONSES API
 // ----------------------------------------------------
-router.get('/canned-responses', (_req: Request, res: Response) => {
-  res.json({ success: true, cannedResponses: CANNED_RESPONSES });
+router.get('/canned-responses', (req: Request, res: Response) => {
+  const orgId = orgOf(req);
+  res.json({ success: true, cannedResponses: CANNED_RESPONSES.filter((c: any) => !c.orgId || c.orgId === orgId) });
 });
 
 router.post('/canned-responses', (req: Request, res: Response) => {
@@ -1211,6 +1252,7 @@ router.post('/canned-responses', (req: Request, res: Response) => {
   }
 
   const newCanned = {
+    orgId: orgOf(req),
     id: `cr_${Date.now()}`,
     shortcut: shortcut.startsWith('/') ? shortcut : `/${shortcut}`,
     title: title || shortcut,
@@ -1225,10 +1267,11 @@ router.post('/canned-responses', (req: Request, res: Response) => {
 // ----------------------------------------------------
 // WIDGET CONFIGURATION & STUDIO API
 // ----------------------------------------------------
-router.get('/widgets', (_req: Request, res: Response) => {
+router.get('/widgets', (req: Request, res: Response) => {
+  const orgId = orgOf(req);
   res.json({
     success: true,
-    widgets: Array.from(WIDGETS.values())
+    widgets: Array.from(WIDGETS.values()).filter((w) => w.orgId === orgId)
   });
 });
 
@@ -1250,11 +1293,18 @@ router.post('/widgets', (req: Request, res: Response) => {
     isActive
   } = req.body;
 
-  const key = widgetKey || `wid_live_${Math.random().toString(36).substring(2, 10)}`;
+  const key = widgetKey || `wid_${randomBytes(9).toString('base64url')}`;
+  if (!SAFE_ID.test(key)) {
+    return res.status(400).json({ success: false, field: 'widgetKey', error: 'Widget keys may only contain letters, numbers, - and _.' });
+  }
   const existing = WIDGETS.get(key);
+  if (existing && existing.orgId !== orgOf(req)) {
+    return res.status(409).json({ success: false, error: 'That widget key is already in use. Choose another.' });
+  }
 
   const updated: WidgetRecord = {
     widgetKey: key,
+    orgId: orgOf(req),
     businessName: businessName || existing?.businessName || 'Live Chat',
     tagline: tagline ?? existing?.tagline,
     primaryColor: primaryColor || existing?.primaryColor || '#2563eb',
@@ -1262,7 +1312,7 @@ router.post('/widgets', (req: Request, res: Response) => {
     greetingMessage: greetingMessage || existing?.greetingMessage || 'How can we help you?',
     placeholderText: placeholderText || existing?.placeholderText || 'Type a message...',
     position: position || existing?.position || 'bottom-right',
-    avatarUrl: avatarUrl || existing?.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=150',
+    avatarUrl: avatarUrl || existing?.avatarUrl || '',
     allowedDomains: allowedDomains || existing?.allowedDomains || ['*'],
     requireEmail: requireEmail !== undefined ? requireEmail : !!existing?.requireEmail,
     autoReplyMessage: autoReplyMessage || existing?.autoReplyMessage || 'Thanks for reaching out!',
@@ -1273,10 +1323,6 @@ router.post('/widgets', (req: Request, res: Response) => {
   };
 
   WIDGETS.set(key, updated);
-
-  if (adminDb) {
-    adminDb.collection('messaging_widgets').doc(key).set(updated).catch(() => {});
-  }
 
   res.status(existing ? 200 : 201).json({ success: true, widget: updated });
 });
@@ -1305,11 +1351,14 @@ router.post('/visitor-init', (req: Request, res: Response) => {
     device
   } = req.body;
 
-  const widget = WIDGETS.get(widgetKey) || DEFAULT_WIDGET;
-  const vid = visitorId || `vis_${Math.random().toString(36).substring(2, 9)}`;
-
+  const widget = WIDGETS.get(widgetKey);
+  if (!widget || !widget.orgId || widget.isActive === false) {
+    return res.status(404).json({ success: false, error: 'This chat widget isn\'t available.' });
+  }
+  // The visitor id is the visitor's only credential for their chat: unguessable, issued here.
+  const vid = typeof visitorId === 'string' && /^vis_[A-Za-z0-9_-]{20,64}$/.test(visitorId) ? visitorId : `vis_${randomBytes(18).toString('base64url')}`;
   let activeConv = Array.from(CONVERSATIONS.values()).find(
-    (c) => c.type === 'widget' && c.visitorMetadata?.visitorId === vid && c.status !== 'closed'
+    (c) => c.orgId === widget.orgId && c.type === 'widget' && c.visitorMetadata?.visitorId === vid && c.status !== 'closed'
   );
 
   if (!activeConv) {
@@ -1318,17 +1367,17 @@ router.post('/visitor-init', (req: Request, res: Response) => {
 
     activeConv = {
       id: convId,
+      orgId: widget.orgId,
       type: 'widget',
       channel: 'widget',
       title: `${visName} (${currentPage ? new URL(currentPage, 'http://localhost').pathname : 'Live Chat'})`,
-      participantIds: ['user_agent_1', vid],
+      participantIds: [vid],
       participants: [
-        REGISTERED_USERS[0],
         {
           id: vid,
           name: visName,
           email: visitorEmail || '',
-          avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=120',
+          avatar: '',
           role: 'visitor',
           status: 'online'
         }
@@ -1346,7 +1395,7 @@ router.post('/visitor-init', (req: Request, res: Response) => {
       unreadCount: 0,
       status: 'open',
       priority: 'medium',
-      assignedTo: 'user_agent_1',
+      assignedTo: '',
       tags: ['Website Visitor', 'Live Chat Widget'],
       widgetKey: widget.widgetKey,
       createdAt: new Date().toISOString(),
@@ -1378,7 +1427,7 @@ router.post('/visitor-init', (req: Request, res: Response) => {
     visitorId: vid,
     conversationId: activeConv.id,
     widget,
-    messages: MESSAGES.get(activeConv.id) || []
+    messages: (MESSAGES.get(activeConv.id) || []).filter((m) => !m.isInternalNote)
   });
 });
 
@@ -1390,10 +1439,13 @@ router.post('/visitor-message', (req: Request, res: Response) => {
   }
 
   const conv = CONVERSATIONS.get(conversationId);
-  if (!conv) {
+  // Only the visitor who started this chat may post to it.
+  if (!conv || conv.type !== 'widget' || !visitorId || conv.visitorMetadata?.visitorId !== visitorId) {
     return res.status(404).json({ success: false, error: 'Conversation not found' });
   }
-
+  if (typeof content !== 'string' || content.length > 4000) {
+    return res.status(400).json({ success: false, error: 'Messages are limited to 4,000 characters.' });
+  }
   const msgId = `msg_vis_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
   const newMsg: MessageRecord = {
     id: msgId,
@@ -1401,7 +1453,7 @@ router.post('/visitor-message', (req: Request, res: Response) => {
     senderId: visitorId || 'visitor',
     senderType: 'visitor',
     senderName: visitorName || conv.visitorMetadata?.email || 'Website Visitor',
-    senderAvatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=120',
+    senderAvatar: '',
     content,
     contentType: 'text',
     status: 'delivered',
@@ -1425,54 +1477,15 @@ router.post('/visitor-message', (req: Request, res: Response) => {
 
 router.get('/visitor-messages/:conversationId', (req: Request, res: Response) => {
   const { conversationId } = req.params;
+  const conv = CONVERSATIONS.get(conversationId);
+  if (!conv || conv.type !== 'widget' || conv.visitorMetadata?.visitorId !== String(req.query.visitorId || '')) {
+    return res.status(404).json({ success: false, error: 'Conversation not found' });
+  }
   const msgs = MESSAGES.get(conversationId) || [];
   const publicMsgs = msgs.filter((m) => !m.isInternalNote);
   res.json({ success: true, messages: publicMsgs });
 });
 
-// Automated Live Test Suite Runner
-router.get('/test-suite', (_req: Request, res: Response) => {
-  const results = [
-    {
-      id: 'test_conversations_read',
-      name: 'Conversations & CRM Inbox Subsystem',
-      status: CONVERSATIONS.size > 0 ? 'passed' : 'failed',
-      details: `Loaded ${CONVERSATIONS.size} active multi-channel conversations with CRM linking.`
-    },
-    {
-      id: 'test_crm_linking',
-      name: 'CRM Records Deep Integration (Deals, Tickets, Contacts)',
-      status: AVAILABLE_CRM_RECORDS.length >= 5 ? 'passed' : 'failed',
-      details: `${AVAILABLE_CRM_RECORDS.length} CRM entities available for deep conversation linkage.`
-    },
-    {
-      id: 'test_structured_prompts',
-      name: 'Structured Prompts & AI Workflow Templates',
-      status: STRUCTURED_PROMPTS.length >= 3 ? 'passed' : 'failed',
-      details: `${STRUCTURED_PROMPTS.length} enterprise prompt blueprints configured.`
-    },
-    {
-      id: 'test_realtime_sse_readiness',
-      name: 'Real-Time Server-Sent Events (SSE) Broadcast Engine',
-      status: 'passed',
-      details: `SSE broadcast dispatcher active with ${sseClients.size} live client listeners.`
-    }
-  ];
 
-  const passedCount = results.filter((r) => r.status === 'passed').length;
-  const failedCount = results.filter((r) => r.status === 'failed').length;
-
-  res.json({
-    success: true,
-    allPassed: failedCount === 0,
-    timestamp: new Date().toISOString(),
-    summary: {
-      total: results.length,
-      passed: passedCount,
-      failed: failedCount
-    },
-    results
-  });
-});
 
 export default router;

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { initialsAvatar } from './avatar';
 import {
   Globe,
   MapPin,
@@ -136,7 +137,7 @@ export const ChatDetailsPanel: React.FC<ChatDetailsPanelProps> = ({
           <img
             src={
               primaryContact?.avatar ||
-              'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=150'
+              initialsAvatar(primaryContact?.name)
             }
             alt="Profile"
             className="w-16 h-16 rounded-2xl object-cover ring-2 ring-white/10 shadow-lg"
@@ -286,7 +287,7 @@ export const ChatDetailsPanel: React.FC<ChatDetailsPanelProps> = ({
                     className="flex items-center justify-between p-2 rounded-xl bg-white/5 border border-white/5"
                   >
                     <div className="flex items-center gap-2">
-                      <img src={p.avatar} alt={p.name} className="w-6 h-6 rounded-lg object-cover" />
+                      <img src={p.avatar || initialsAvatar(p.name)} alt={p.name} className="w-6 h-6 rounded-lg object-cover" />
                       <div>
                         <p className="font-semibold text-white text-xs">{p.name}</p>
                         <p className="text-[10px] text-neutral-400">{p.department || p.role}</p>

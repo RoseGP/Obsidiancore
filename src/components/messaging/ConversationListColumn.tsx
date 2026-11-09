@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { initialsAvatar } from './avatar';
 import {
   Search,
   Plus,
@@ -158,7 +159,7 @@ export const ConversationListColumn: React.FC<ConversationListColumnProps> = ({
     const avatarUrl =
       secondParticipant?.avatar ||
       firstParticipant?.avatar ||
-      'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=150';
+      initialsAvatar(conv.title);
 
     return (
       <div

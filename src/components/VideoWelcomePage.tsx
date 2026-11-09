@@ -12,7 +12,6 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { CRMContact, CalendarEvent } from '../types';
-import CRMSoftphoneCanvas from './CRMSoftphoneCanvas';
 import { 
   isScreenSharingSupported, 
   getScreenShareErrorMessage,
@@ -48,7 +47,7 @@ export default function VideoWelcomePage({
   contacts = [],
 }: VideoWelcomePageProps) {
   // Main view tab inside the combined Welcome Portal
-  const [welcomeTab, setWelcomeTab] = useState<'greet' | 'canvas' | 'recordings' | 'schedule_recordings'>('greet');
+  const [welcomeTab, setWelcomeTab] = useState<'greet' | 'recordings' | 'schedule_recordings'>('greet');
 
   const { 
     isCallActive, 
@@ -856,18 +855,6 @@ export default function VideoWelcomePage({
             <span>Greet Portal</span>
           </button>
 
-          <button
-            id="tab-call-canvas-studio"
-            onClick={() => setWelcomeTab('canvas')}
-            className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-              welcomeTab === 'canvas'
-                ? 'bg-white text-indigo-900 shadow-sm border border-neutral-200/60'
-                : 'text-neutral-600 hover:text-neutral-900'
-            }`}
-          >
-            <PhoneCall className="h-3.5 w-3.5 text-purple-600" />
-            <span>Call Canvas Studio</span>
-          </button>
 
           <button
             id="tab-recordings-vault"
@@ -1298,85 +1285,10 @@ export default function VideoWelcomePage({
                   </div>
                 </div>
 
-                {/* Pre-Flight & WebRTC Readiness Strip */}
-                <div className="bg-white/90 backdrop-blur-xl border border-white/90 shadow-sm rounded-3xl p-4 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-neutral-800 flex items-center gap-1.5">
-                      <Activity className="h-3.5 w-3.5 text-emerald-600" />
-                      <span>Diagnostics & Device Readiness</span>
-                    </span>
-                    <span className="text-[10px] font-mono text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-full font-bold">
-                      OPTIMAL
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2 text-[11px] font-mono text-neutral-600">
-                    <div className="p-2 rounded-xl bg-neutral-50 border border-neutral-200/60 flex items-center gap-1.5">
-                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                      <span>Opus 48kHz Audio</span>
-                    </div>
-                    <div className="p-2 rounded-xl bg-neutral-50 border border-neutral-200/60 flex items-center gap-1.5">
-                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                      <span>DTLS 1.3 / SRTP</span>
-                    </div>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => setWelcomeTab('canvas')}
-                    className="w-full py-2.5 px-3 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-900 text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-                  >
-                    <PhoneCall className="h-3.5 w-3.5 text-indigo-900" />
-                    <span>Launch Diagnostic Studio Canvas</span>
-                    <ChevronRight className="h-3 w-3 ml-auto" />
-                  </button>
-                </div>
 
               </div>
             </div>
           </div>
-        )}
-
-        {/* ================= TAB 2: FULL CALL CANVAS STUDIO (INTEGRATED) ================= */}
-        {welcomeTab === 'canvas' && (
-          <motion.div 
-            initial={{ opacity: 0, scale: 0.98 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.3 }}
-            className="w-full max-w-6xl"
-          >
-            <div className="mb-4 flex items-center justify-between bg-white/80 backdrop-blur-md p-3.5 rounded-2xl border border-neutral-200/80 shadow-sm">
-              <div className="flex items-center gap-2.5">
-                <button
-                  onClick={() => setWelcomeTab('greet')}
-                  className="px-3 py-1.5 rounded-lg bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-xs font-semibold flex items-center gap-1 cursor-pointer transition-colors"
-                >
-                  <ArrowRight className="h-3.5 w-3.5 rotate-180" />
-                  <span>Back to Greet Portal</span>
-                </button>
-                <div className="h-4 w-px bg-neutral-200" />
-                <span className="text-xs font-bold text-neutral-800">Omnichannel Softphone & Live Workspace Canvas</span>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={handleCreateInstantRoom}
-                  className="px-3.5 py-1.5 rounded-lg bg-indigo-900 hover:bg-[#252778] text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-sm"
-                >
-                  <Video className="h-3.5 w-3.5" />
-                  <span>Launch Live Video Room</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Embedded Softphone Canvas Engine */}
-            <div className="obsidian bg-[var(--obsidian-0)] rounded-3xl overflow-hidden shadow-2xl border border-neutral-800 min-h-[640px]">
-              <CRMSoftphoneCanvas 
-                onScheduleFollowup={() => setShowScheduleModal(true)}
-                onAddCalendarEvent={onScheduleMeeting}
-              />
-            </div>
-          </motion.div>
         )}
 
         {/* ================= TAB 3: RECORDINGS & TRANSCRIPTS VAULT ================= */}
@@ -1724,16 +1636,6 @@ export default function VideoWelcomePage({
                 >
                   <Plus className="h-4 w-4 text-indigo-700" />
                   <span>Start Instant Meeting</span>
-                </button>
-                <button
-                  onClick={() => {
-                    setShowQuickActionMenu(false);
-                    setWelcomeTab('canvas');
-                  }}
-                  className="w-full text-left px-3 py-2.5 rounded-xl hover:bg-neutral-100 text-neutral-800 font-semibold flex items-center gap-2.5 transition-colors cursor-pointer"
-                >
-                  <PhoneCall className="h-4 w-4 text-purple-700" />
-                  <span>Open Call Canvas Studio</span>
                 </button>
                 <button
                   onClick={() => {

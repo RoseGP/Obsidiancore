@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { initialsAvatar } from './avatar';
 import {
   Send,
   Paperclip,
@@ -654,7 +655,7 @@ export const ChatDetailColumn: React.FC<ChatDetailColumnProps> = ({
                         <img
                           src={
                             msg.senderAvatar ||
-                            'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=150'
+                            initialsAvatar(msg.senderName)
                           }
                           alt={msg.senderName}
                           className="w-8 h-8 rounded-xl object-cover ring-1 ring-white/10 shrink-0 mt-1"
@@ -1053,7 +1054,7 @@ export const ChatDetailColumn: React.FC<ChatDetailColumnProps> = ({
                   onClick={() => handleSelectMention(u)}
                   className="w-full text-left p-1.5 rounded-lg hover:bg-white/10 flex items-center gap-2 cursor-pointer text-xs text-white"
                 >
-                  <img src={u.avatar} alt={u.name} className="w-5 h-5 rounded-full object-cover" />
+                  <img src={u.avatar || initialsAvatar(u.name)} alt={u.name} className="w-5 h-5 rounded-full object-cover" />
                   <span className="font-medium truncate">{u.name}</span>
                 </button>
               ))}
