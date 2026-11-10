@@ -37,11 +37,6 @@ jobs:
         run: npm run test:ci
       - name: Build (frontend + server bundle)
         run: npm run build
-      # Known failures until the Stripe/Square rework (Phase B): these tests exercise simulated provider
-      # connections that are being removed. Reported, but not blocking.
-      - name: Payment tests (known failing until Phase B)
-        run: npm run test:payments
-        continue-on-error: true
 
   functions:
     name: Firebase Functions — build

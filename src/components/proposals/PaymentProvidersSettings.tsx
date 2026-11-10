@@ -14,6 +14,8 @@ export interface ProviderAccountStatus {
   connected: boolean;
   environment: 'sandbox' | 'production';
   connectedAt?: string;
+  /** False when this server has no keys for the provider (connecting is then unavailable). */
+  configured?: boolean;
 }
 
 interface PaymentProvidersSettingsProps {
@@ -53,39 +55,15 @@ export default function PaymentProvidersSettings({ onGoToCreateInvoice }: Paymen
 
   const fetchStatus = async () => {
     try {
-      const [resPayments, resIntegrations] = await Promise.all([
-        fetch('/api/payments/status').catch(() => null),
-        fetch('/api/integrations/status?userId=usr_101').catch(() => null)
-      ]);
-
-      if (resIntegrations && resIntegrations.ok) {
-        const data = await resIntegrations.json();
-        if (data.success && data.providers) {
-          setProviders(prev => ({
-            ...prev,
-            ...data.providers
-          }));
-        }
+      const res = await fetch('/api/integrations/status');
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success && data.providers) {
+        setProviders(prev => ({ ...prev, ...data.providers }));
+      } else if (!res.ok) {
+        showToast(data.error || 'Couldn’t load payment providers.', 'error');
       }
-
-      if (resPayments && resPayments.ok) {
-        const pData = await resPayments.json();
-        if (pData.success) {
-          setProviders(prev => ({
-            ...prev,
-            stripe: {
-              provider: 'stripe',
-              accountId: pData.account?.providerAccountId || prev.stripe.accountId || '',
-              businessName: 'Ace Studio Enterprise',
-              connected: Boolean(pData.connected),
-              environment: 'sandbox',
-              connectedAt: pData.account?.updatedAt
-            }
-          }));
-        }
-      }
-    } catch (err: any) {
-      console.warn('Failed to fetch provider status:', err.message);
+    } catch {
+      showToast('Couldn’t reach the server. Check your connection.', 'error');
     } finally {
       setLoading(false);
     }
@@ -98,7 +76,7 @@ export default function PaymentProvidersSettings({ onGoToCreateInvoice }: Paymen
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get('connected')) {
       const provider = urlParams.get('connected');
-      showToast(`Successfully connected ${provider?.toUpperCase()} in Test Mode!`, 'success');
+      showToast(`${provider === 'square' ? 'Square' : 'Stripe'} connected.`, 'success');
       // Clean query params
       window.history.replaceState({}, document.title, window.location.pathname);
     } else if (urlParams.get('error')) {
@@ -110,23 +88,13 @@ export default function PaymentProvidersSettings({ onGoToCreateInvoice }: Paymen
   const handleConnect = async (provider: 'stripe' | 'square') => {
     setActionLoading(`connect_${provider}`);
     try {
-      if (provider === 'stripe') {
-        const res = await fetch(`/api/payments/stripe/connect?format=json`);
-        const data = await res.json();
-        if (data.success && data.onboardingUrl) {
-          window.location.href = data.onboardingUrl;
-          return;
-        }
-      }
-
-      const res = await fetch(`/api/integrations/${provider}/connect?format=json&userId=usr_101`);
-      const data = await res.json();
-      if (data.success && data.authUrl) {
-        // In preview sandbox, simulate or navigate to provider URL
+      const res = await fetch(`/api/integrations/${provider}/connect?format=json`, { headers: { Accept: 'application/json' } });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success && data.authUrl) {
         window.location.href = data.authUrl;
-      } else {
-        throw new Error(data.error || 'Failed to initiate OAuth authorization');
+        return;
       }
+      throw new Error(data.error || 'Couldn’t start the connection. Try again.');
     } catch (err: any) {
       showToast(err.message, 'error');
       setActionLoading(null);
@@ -140,16 +108,8 @@ export default function PaymentProvidersSettings({ onGoToCreateInvoice }: Paymen
 
     setActionLoading(`disconnect_${provider}`);
     try {
-      if (provider === 'stripe') {
-        await fetch(`/api/payments/stripe/disconnect`, { method: 'POST' }).catch(() => null);
-      }
-
-      const res = await fetch(`/api/integrations/${provider}/disconnect`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: 'usr_101' })
-      });
-      const data = await res.json().catch(() => ({ success: true }));
+      const res = await fetch(`/api/integrations/${provider}/disconnect`, { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
       if (data.success) {
         showToast(`${provider.toUpperCase()} disconnected.`, 'info');
         await fetchStatus();
@@ -271,10 +231,10 @@ export default function PaymentProvidersSettings({ onGoToCreateInvoice }: Paymen
                   <div className="flex items-center gap-2">
                     <h3 className="text-base font-extrabold text-slate-900">Stripe</h3>
                     <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200">
-                      Stripe Test Mode
+                      {providers.stripe.configured === false ? 'Not set up' : providers.stripe.environment === 'production' ? 'Live' : 'Test mode'}
                     </span>
                   </div>
-                  <p className="text-xs text-slate-400 font-medium">Stripe Connect Onboarding & Hosted Invoices (Test Mode)</p>
+                  <p className="text-xs text-slate-400 font-medium">Stripe Connect and hosted invoices</p>
                 </div>
               </div>
 
@@ -284,7 +244,7 @@ export default function PaymentProvidersSettings({ onGoToCreateInvoice }: Paymen
                     <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
                     <span>Status: Connected ✓</span>
                   </span>
-                  <span className="text-[10px] font-semibold text-slate-500">Mode: Test</span>
+                  <span className="text-[10px] font-semibold text-slate-500">Mode: {providers.stripe.environment === 'production' ? 'Live' : 'Test'}</span>
                 </div>
               ) : (
                 <div className="flex flex-col items-end gap-1">
@@ -292,7 +252,7 @@ export default function PaymentProvidersSettings({ onGoToCreateInvoice }: Paymen
                     <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
                     <span>Status: Not Connected</span>
                   </span>
-                  <span className="text-[10px] font-semibold text-slate-500">Mode: Test</span>
+                  <span className="text-[10px] font-semibold text-slate-500">Mode: {providers.stripe.environment === 'production' ? 'Live' : 'Test'}</span>
                 </div>
               )}
             </div>
@@ -302,8 +262,8 @@ export default function PaymentProvidersSettings({ onGoToCreateInvoice }: Paymen
               Issue global professional invoices with automatic tax, recurring schedules, and test checkout via Credit Cards, Apple Pay, Google Pay, and bank debits.
             </p>
 
-            {/* Test Card Instructions */}
-            <div className="p-3 rounded-2xl bg-amber-50/70 border border-amber-200/80 text-xs space-y-1">
+            {/* Test Card Instructions (Stripe's documented test card; only relevant in test mode) */}
+            {providers.stripe.environment !== 'production' && <div className="p-3 rounded-2xl bg-amber-50/70 border border-amber-200/80 text-xs space-y-1">
               <div className="flex items-center justify-between">
                 <span className="font-bold text-amber-900 text-[11px] flex items-center gap-1">
                   <CreditCard className="w-3 h-3 text-amber-700" />
@@ -314,7 +274,7 @@ export default function PaymentProvidersSettings({ onGoToCreateInvoice }: Paymen
               <p className="text-[11px] text-amber-800">
                 Number: <code className="bg-white/80 px-1.5 py-0.5 rounded border border-amber-200 text-slate-900 font-mono font-bold">4242 4242 4242 4242</code> &bull; Exp: Any future date &bull; CVC: 123
               </p>
-            </div>
+            </div>}
 
             {/* Connected Details Block */}
             {providers.stripe.connected ? (
@@ -323,7 +283,7 @@ export default function PaymentProvidersSettings({ onGoToCreateInvoice }: Paymen
                   <span className="text-slate-400 font-medium">Business:</span>
                   <span className="font-bold text-slate-900 flex items-center gap-1.5">
                     <Building2 className="w-3.5 h-3.5 text-slate-500" />
-                    <span>{providers.stripe.businessName || 'Ace Studio Inc.'}</span>
+                    <span>{providers.stripe.businessName || '—'}</span>
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
@@ -384,11 +344,12 @@ export default function PaymentProvidersSettings({ onGoToCreateInvoice }: Paymen
               <button
                 type="button"
                 onClick={() => handleConnect('stripe')}
-                disabled={actionLoading === 'connect_stripe'}
+                disabled={actionLoading === 'connect_stripe' || providers.stripe.configured === false}
+                title={providers.stripe.configured === false ? 'Stripe isn’t set up on this server yet. An administrator adds the Stripe keys.' : undefined}
                 className="w-full bg-[#635bff] hover:bg-[#5346e0] text-white text-xs font-bold py-3 rounded-2xl transition-all cursor-pointer flex items-center justify-center gap-2 shadow-xs"
               >
                 <Zap className="w-4 h-4" />
-                <span>{actionLoading === 'connect_stripe' ? 'Redirecting to Stripe...' : 'Connect Stripe'}</span>
+                <span>{providers.stripe.configured === false ? 'Stripe isn’t set up on this server' : actionLoading === 'connect_stripe' ? 'Redirecting to Stripe…' : 'Connect Stripe'}</span>
               </button>
             )}
           </div>
@@ -438,7 +399,7 @@ export default function PaymentProvidersSettings({ onGoToCreateInvoice }: Paymen
                   <span className="text-slate-400 font-medium">Business:</span>
                   <span className="font-bold text-slate-900 flex items-center gap-1.5">
                     <Store className="w-3.5 h-3.5 text-slate-500" />
-                    <span>{providers.square.businessName || 'Example Business'}</span>
+                    <span>{providers.square.businessName || '—'}</span>
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
@@ -499,11 +460,12 @@ export default function PaymentProvidersSettings({ onGoToCreateInvoice }: Paymen
               <button
                 type="button"
                 onClick={() => handleConnect('square')}
-                disabled={actionLoading === 'connect_square'}
+                disabled={actionLoading === 'connect_square' || providers.square.configured === false}
+                title={providers.square.configured === false ? 'Square isn’t set up on this server yet. An administrator adds the Square keys.' : undefined}
                 className="w-full bg-black hover:bg-slate-800 text-white text-xs font-bold py-3 rounded-2xl transition-all cursor-pointer flex items-center justify-center gap-2 shadow-xs"
               >
                 <Zap className="w-4 h-4 text-amber-400" />
-                <span>{actionLoading === 'connect_square' ? 'Redirecting to Square...' : 'Connect Square'}</span>
+                <span>{providers.square.configured === false ? 'Square isn’t set up on this server' : actionLoading === 'connect_square' ? 'Redirecting to Square…' : 'Connect Square'}</span>
               </button>
             )}
           </div>

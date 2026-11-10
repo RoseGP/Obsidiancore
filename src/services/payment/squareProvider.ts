@@ -1,17 +1,18 @@
 import axios from 'axios';
 import crypto from 'crypto';
-import { 
-  PaymentProvider, 
-  ConnectedAccount, 
-  ProviderAccount, 
-  Customer, 
-  Invoice, 
-  InvoiceItem, 
-  CreateCustomerInput, 
-  CreateInvoiceInput, 
-  PaymentProviderError 
+import {
+  PaymentProvider,
+  ConnectedAccount,
+  ProviderAccount,
+  Customer,
+  Invoice,
+  InvoiceItem,
+  CreateCustomerInput,
+  CreateInvoiceInput,
+  PaymentProviderError
 } from './types';
 import { encryptToken, decryptToken } from './encryption';
+import { assertProviderConfigured } from './config';
 import * as paymentDb from './paymentDb';
 
 export class SquareProvider implements PaymentProvider {
@@ -26,30 +27,16 @@ export class SquareProvider implements PaymentProvider {
     return isProd ? 'https://connect.squareup.com' : 'https://connect.squareupsandbox.com';
   }
 
+  /** Every token we hold came from Square's OAuth exchange (nothing is simulated). */
   private isLiveToken(token: string): boolean {
-    return Boolean(
-      token && 
-      !token.startsWith('mock_square_') && 
-      !token.startsWith('sq_sim_') &&
-      !token.startsWith('sq_live_at_') &&
-      process.env.SQUARE_APPLICATION_ID && 
-      process.env.SQUARE_APPLICATION_SECRET
-    );
+    return Boolean(token);
   }
 
   private async getAccessTokenAndLocation(): Promise<{ token: string; locationId: string }> {
+    assertProviderConfigured('square');
     const connected = await paymentDb.getConnectedAccount(this.userId, 'square');
     if (!connected) {
-      if (!process.env.SQUARE_ACCESS_TOKEN) {
-        return {
-          token: 'mock_square_sandbox_token',
-          locationId: 'LOC_MOCK_SANDBOX_01'
-        };
-      }
-      return {
-        token: process.env.SQUARE_ACCESS_TOKEN,
-        locationId: process.env.SQUARE_LOCATION_ID || 'main'
-      };
+      throw new PaymentProviderError('PROVIDER_NOT_CONNECTED', 'Square isn\'t connected for this business yet.', 'square', null, 400);
     }
 
     try {
@@ -62,18 +49,20 @@ export class SquareProvider implements PaymentProvider {
   }
 
   async connect(authCode: string, redirectUri: string): Promise<ConnectedAccount> {
+    assertProviderConfigured('square');
     const appId = process.env.SQUARE_APPLICATION_ID;
     const appSecret = process.env.SQUARE_APPLICATION_SECRET;
     const baseUrl = this.getBaseUrl();
+    if (!authCode) throw new PaymentProviderError('PROVIDER_VALIDATION_ERROR', 'Square didn\'t return an authorization code.', 'square', null, 400);
 
-    let merchantId = `sq_merch_${Date.now()}`;
-    let accessToken = `mock_square_sandbox_${Date.now()}`;
-    let refreshToken = `mock_square_rt_${Date.now()}`;
-    let businessName = 'Square Connected Merchant';
-    let locationId = 'LOC_MAIN_2026';
+    let merchantId = '';
+    let accessToken = '';
+    let refreshToken: string | undefined;
+    let businessName = '';
+    let locationId = process.env.SQUARE_LOCATION_ID || '';
     let expiresAt: string | undefined;
 
-    if (appId && appSecret && authCode !== 'simulated_square_code') {
+    {
       try {
         const tokenRes = await axios.post(`${baseUrl}/oauth2/token`, {
           client_id: appId,
@@ -84,8 +73,9 @@ export class SquareProvider implements PaymentProvider {
         });
 
         accessToken = tokenRes.data.access_token;
-        refreshToken = tokenRes.data.refresh_token;
-        merchantId = tokenRes.data.merchant_id || merchantId;
+        refreshToken = tokenRes.data.refresh_token || undefined;
+        merchantId = tokenRes.data.merchant_id || '';
+        if (!accessToken || !merchantId) throw new Error('incomplete token response');
         if (tokenRes.data.expires_at) {
           expiresAt = tokenRes.data.expires_at;
         }
@@ -108,17 +98,8 @@ export class SquareProvider implements PaymentProvider {
           // Keep defaults
         }
       } catch (err: any) {
-        throw new PaymentProviderError(
-          'PROVIDER_AUTH_REVOKED',
-          `Square OAuth exchange failed: ${err.response?.data?.message || err.message}`,
-          'square',
-          err.response?.data,
-          400
-        );
+        throw new PaymentProviderError('PROVIDER_AUTH_REVOKED', 'Square didn\'t accept the connection. Try connecting again.', 'square', null, 400);
       }
-    } else {
-      // Sandbox fallback
-      businessName = 'Ace Studio Invoicing (Square Sandbox)';
     }
 
     const encryptedAccessToken = encryptToken(accessToken);
@@ -221,13 +202,13 @@ export class SquareProvider implements PaymentProvider {
         } catch (err: any) {
           throw new PaymentProviderError(
             'CUSTOMER_CREATION_FAILED',
-            `Square customer creation failed: ${err.response?.data?.errors?.[0]?.detail || err.message}`,
+            'Square couldn\'t create the customer.',
             'square',
             err.response?.data
           );
         }
       } else {
-        squareCustomerId = `cust_sq_sb_${Date.now()}`;
+        throw new PaymentProviderError('PROVIDER_NOT_CONFIGURED', 'Square isn\'t set up on this server.', 'square', null, 503);
       }
     }
 
@@ -245,13 +226,7 @@ export class SquareProvider implements PaymentProvider {
       provider_customer_ids: {
         square: squareCustomerId
       },
-      billing_address: input.billing_address || {
-        address: '95-1249 Meheula Pkwy',
-        city: 'Mililani',
-        state: 'HI',
-        postal_code: '94016',
-        country: 'United States'
-      },
+      billing_address: input.billing_address,
       created_at: new Date().toISOString()
     };
 
@@ -291,7 +266,7 @@ export class SquareProvider implements PaymentProvider {
       }
       return squareOrderId;
     }
-    return `ord_sq_mock_${Date.now()}`;
+throw new PaymentProviderError('PROVIDER_NOT_CONFIGURED', 'Square isn\'t set up on this server.', 'square', null, 503);
   }
 
   /**
@@ -347,8 +322,8 @@ export class SquareProvider implements PaymentProvider {
 
     const total = subtotal + taxTotal;
     const invoiceId = `inv_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
-    let squareInvoiceId = `sq_inv_sb_${Date.now()}`;
-    let hostedInvoiceUrl = `https://squareupsandbox.com/pay/inv_${Date.now()}`;
+    let squareInvoiceId = '';
+    let hostedInvoiceUrl = '';
 
     // Format dueDate to YYYY-MM-DD
     const dueDateStr = input.dueDate || new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0];
@@ -393,12 +368,15 @@ export class SquareProvider implements PaymentProvider {
       } catch (err: any) {
         throw new PaymentProviderError(
           'INVOICE_CREATION_FAILED',
-          `Square invoice creation failed: ${err.response?.data?.errors?.[0]?.detail || err.message}`,
+          'Square couldn\'t create the invoice.',
           'square',
-          err.response?.data
+          null
         );
       }
+    } else {
+      throw new PaymentProviderError('PROVIDER_NOT_CONFIGURED', 'Square isn\'t set up on this server.', 'square', null, 503);
     }
+    if (!squareInvoiceId) throw new PaymentProviderError('INVOICE_CREATION_FAILED', 'Square didn\'t return an invoice.', 'square');
 
     const items: InvoiceItem[] = input.items.map((it, idx) => ({
       id: `item_${invoiceId}_${idx}`,
@@ -425,6 +403,7 @@ export class SquareProvider implements PaymentProvider {
       due_date: dueDateStr,
       description: input.description || `Invoice #${input.invoiceNumber}`,
       hosted_invoice_url: hostedInvoiceUrl,
+      ...(input.billingInvoiceId ? { billing_invoice_id: input.billingInvoiceId } : {}),
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
@@ -449,7 +428,7 @@ export class SquareProvider implements PaymentProvider {
     const { token } = await this.getAccessTokenAndLocation();
     let finalUrl = invoice.hosted_invoice_url;
 
-    if (this.isLiveToken(token) && !invoice.provider_invoice_id.startsWith('sq_inv_sb_')) {
+    if (this.isLiveToken(token)) {
       try {
         // In Square, to send an invoice we call /v2/invoices/{id}/publish
         // First retrieve current version
@@ -473,17 +452,16 @@ export class SquareProvider implements PaymentProvider {
       } catch (err: any) {
         throw new PaymentProviderError(
           'INVOICE_SEND_FAILED',
-          `Failed to publish Square invoice: ${err.response?.data?.errors?.[0]?.detail || err.message}`,
+          'Square couldn\'t publish the invoice.',
           'square',
-          err.response?.data
+          null
         );
       }
     } else {
-      // Sandbox mode: generate active hosted payment link
-      finalUrl = `https://squareupsandbox.com/pay/${invoice.provider_invoice_id}#amount=${invoice.total}`;
+      throw new PaymentProviderError('PROVIDER_NOT_CONFIGURED', 'Square isn\'t set up on this server.', 'square', null, 503);
     }
 
-    const updated = await paymentDb.updateInvoiceStatus(invoice.id, 'open', {
+    const updated = await paymentDb.updateInvoiceStatus(this.userId, invoice.id, 'open', {
       hosted_invoice_url: finalUrl
     });
 
@@ -509,7 +487,7 @@ export class SquareProvider implements PaymentProvider {
     }
 
     const { token } = await this.getAccessTokenAndLocation();
-    if (this.isLiveToken(token) && !invoice.provider_invoice_id.startsWith('sq_inv_sb_')) {
+    if (this.isLiveToken(token)) {
       try {
         const getRes = await axios.get(`${this.getBaseUrl()}/v2/invoices/${invoice.provider_invoice_id}`, {
           headers: { Authorization: `Bearer ${token}` }
@@ -527,11 +505,11 @@ export class SquareProvider implements PaymentProvider {
           }
         ).catch(() => null);
       } catch (err: any) {
-        console.warn('[Square cancel invoice] API warning:', err.message);
+        console.warn('[Square cancel invoice] API warning:', err?.response?.status || 'error');
       }
     }
 
-    const updated = await paymentDb.updateInvoiceStatus(invoiceId, 'void');
+    const updated = await paymentDb.updateInvoiceStatus(this.userId, invoiceId, 'void');
     return updated || invoice;
   }
 }

@@ -4,6 +4,7 @@ import Stripe from 'stripe';
 import * as paymentDb from '../services/payment/paymentDb';
 import { optionalSecret } from '../utils/secrets';
 import { unsignedWebhooksAllowed } from '../server/runtimeEnv';
+import { settleProviderInvoice } from '../services/payment/settlement';
 
 /** Constant-time comparison of two signature strings. */
 function safeEqual(a: string, b: string): boolean {
@@ -42,8 +43,8 @@ router.post('/stripe', async (req: Request, res: Response) => {
       const rawBody = (req as any).rawBody || JSON.stringify(req.body);
       event = stripe.webhooks.constructEvent(rawBody, sig, webhookSecret);
     } catch (err: any) {
-      console.error('[Stripe Webhook] Signature verification failed:', err.message);
-      return res.status(400).json({ error: `Webhook Error: ${err.message}` });
+      console.error('[Stripe Webhook] Signature verification failed:', err?.type || 'error');
+      return res.status(400).json({ error: 'Webhook signature verification failed.' });
     }
   } else {
     // In sandbox test environments without active webhook signing secret
@@ -54,14 +55,10 @@ router.post('/stripe', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Invalid webhook payload structure' });
   }
 
-  // Idempotency check: has this event already been processed?
-  const alreadyProcessed = await paymentDb.isWebhookEventProcessed('stripe', event.id);
-  if (alreadyProcessed) {
-    console.log(`[Stripe Webhook] Event ${event.id} already processed. Skipping duplicate.`);
+  // Idempotency: claim the event id atomically (persisted, so replays after a restart are ignored too).
+  if (!(await paymentDb.claimWebhookEvent('stripe', String(event.id)))) {
     return res.status(200).json({ received: true, duplicate: true });
   }
-
-  await paymentDb.markWebhookEventProcessed('stripe', event.id);
 
   console.log(`[Stripe Webhook] Processing event: ${event.type} (${event.id})`);
 
@@ -71,9 +68,7 @@ router.post('/stripe', async (req: Request, res: Response) => {
         const stripeInvoice = event.data.object;
         const localInvoice = await paymentDb.getInvoiceByProviderInvoiceId('stripe', stripeInvoice.id);
         if (localInvoice) {
-          await paymentDb.updateInvoiceStatus(localInvoice.id, 'paid', {
-            hosted_invoice_url: stripeInvoice.hosted_invoice_url || localInvoice.hosted_invoice_url
-          });
+          await settleProviderInvoice('stripe', localInvoice, { hosted_invoice_url: stripeInvoice.hosted_invoice_url || localInvoice.hosted_invoice_url });
           console.log(`[Stripe Webhook] Marked invoice ${localInvoice.id} as PAID.`);
         }
         break;
@@ -83,7 +78,7 @@ router.post('/stripe', async (req: Request, res: Response) => {
         const stripeInvoice = event.data.object;
         const localInvoice = await paymentDb.getInvoiceByProviderInvoiceId('stripe', stripeInvoice.id);
         if (localInvoice) {
-          await paymentDb.updateInvoiceStatus(localInvoice.id, 'open');
+          await paymentDb.updateInvoiceStatus(localInvoice.user_id, localInvoice.id, 'open');
           console.log(`[Stripe Webhook] Invoice ${localInvoice.id} payment failed.`);
         }
         break;
@@ -93,7 +88,7 @@ router.post('/stripe', async (req: Request, res: Response) => {
         const stripeInvoice = event.data.object;
         const localInvoice = await paymentDb.getInvoiceByProviderInvoiceId('stripe', stripeInvoice.id);
         if (localInvoice) {
-          await paymentDb.updateInvoiceStatus(localInvoice.id, 'void');
+          await paymentDb.updateInvoiceStatus(localInvoice.user_id, localInvoice.id, 'void');
           console.log(`[Stripe Webhook] Marked invoice ${localInvoice.id} as VOID.`);
         }
         break;
@@ -114,7 +109,8 @@ router.post('/stripe', async (req: Request, res: Response) => {
 
     return res.status(200).json({ received: true, eventId: event.id });
   } catch (err: any) {
-    console.error('[Stripe Webhook] Event processing error:', err.message);
+    console.error('[Stripe Webhook] Event processing error:', err?.code || err?.name || 'error');
+    await paymentDb.releaseWebhookEvent('stripe', String(event.id)).catch(() => undefined); // let Stripe retry
     return res.status(500).json({ error: 'Webhook processing encountered an error' });
   }
 });
@@ -155,14 +151,10 @@ router.post('/square', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Missing Square event_id' });
   }
 
-  // Idempotency check
-  const alreadyProcessed = await paymentDb.isWebhookEventProcessed('square', eventId);
-  if (alreadyProcessed) {
-    console.log(`[Square Webhook] Event ${eventId} already processed. Skipping duplicate.`);
+  // Idempotency: claim the event id atomically (persisted).
+  if (!(await paymentDb.claimWebhookEvent('square', String(eventId)))) {
     return res.status(200).json({ received: true, duplicate: true });
   }
-
-  await paymentDb.markWebhookEventProcessed('square', eventId);
 
   console.log(`[Square Webhook] Processing event: ${eventType} (${eventId})`);
 
@@ -175,10 +167,10 @@ router.post('/square', async (req: Request, res: Response) => {
           const localInvoice = await paymentDb.getInvoiceByProviderInvoiceId('square', sqInvoice.id);
           if (localInvoice) {
             if (sqInvoice.status === 'PAID') {
-              await paymentDb.updateInvoiceStatus(localInvoice.id, 'paid');
+              await settleProviderInvoice('square', localInvoice);
               console.log(`[Square Webhook] Marked invoice ${localInvoice.id} as PAID.`);
             } else if (sqInvoice.status === 'CANCELED') {
-              await paymentDb.updateInvoiceStatus(localInvoice.id, 'void');
+              await paymentDb.updateInvoiceStatus(localInvoice.user_id, localInvoice.id, 'void');
               console.log(`[Square Webhook] Marked invoice ${localInvoice.id} as VOID.`);
             }
           }
@@ -197,7 +189,7 @@ router.post('/square', async (req: Request, res: Response) => {
         if (sqInvoice?.id) {
           const localInvoice = await paymentDb.getInvoiceByProviderInvoiceId('square', sqInvoice.id);
           if (localInvoice) {
-            await paymentDb.updateInvoiceStatus(localInvoice.id, 'void');
+            await paymentDb.updateInvoiceStatus(localInvoice.user_id, localInvoice.id, 'void');
             console.log(`[Square Webhook] Marked invoice ${localInvoice.id} as VOID.`);
           }
         }
@@ -219,7 +211,8 @@ router.post('/square', async (req: Request, res: Response) => {
 
     return res.status(200).json({ received: true, eventId });
   } catch (err: any) {
-    console.error('[Square Webhook] Error processing event:', err.message);
+    console.error('[Square Webhook] Error processing event:', err?.code || err?.name || 'error');
+    await paymentDb.releaseWebhookEvent('square', String(eventId)).catch(() => undefined);
     return res.status(500).json({ error: 'Square webhook error' });
   }
 });

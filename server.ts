@@ -110,9 +110,6 @@ app.use('/api/v1/events', embedEventsRouter);
 app.use('/api/v1/embed-tokens', embedTokensRouter);
 app.use('/api/v1', apiV1Router);
 app.use('/api/sales-intelligence', guard(PUBLIC.salesIntel), salesIntelRouter);
-// Legacy bare '/api' mount of the payments router (catch-all routes such as GET /:invoiceId).
-// Kept LAST so it can't shadow other routers (it previously swallowed /api/posts and would block webhooks).
-app.use('/api', guard(PUBLIC.payments), paymentsRouter);
 
 // Unknown API paths get a JSON 404 instead of falling through to the single-page app (which answered
 // removed routes like /api/postiz/status with index.html and HTTP 200).
