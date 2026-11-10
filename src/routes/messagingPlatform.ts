@@ -3,6 +3,8 @@ import { randomBytes } from 'node:crypto';
 import { requireTenant, sendError, tenantOf } from '../server/tenancy/middleware';
 import { getDocStore } from '../server/data/docStore';
 import { generateAIResponse, providerStatus, AIProviderError } from '../services/ai/aiService';
+import { TaskService, inboxTaskId, priorityFrom, registerInboxTaskMirror, registerInboxTaskReader, type Task } from '../server/crm/tasks';
+import { can } from '../server/tenancy/orgs';
 
 const router = Router();
 
@@ -20,6 +22,24 @@ const orgOf = (req: Request) => tenantOf(req).orgId;
 /** The signed-in team member, for authorship (never taken from the request body). */
 const me = (req: Request) => { const t = tenantOf(req); return { id: t.userId, name: t.name || t.email || 'Team member' }; };
 const canModerate = (req: Request) => ['OWNER', 'ADMIN'].includes(tenantOf(req).role);
+/** Writing CRM data (tasks, notes) from the inbox needs a role that can write. */
+const canWrite = (req: Request) => can(tenantOf(req).role, 'write');
+const forbidden = (res: Response) => res.status(403).json({ success: false, code: 'forbidden', error: 'Your role doesn’t allow this action. Ask an admin for access.' });
+/** Timeline writes are best-effort: the inbox action has already succeeded. Loaded lazily (import cycle). */
+async function logOnLinkedRecord(orgId: string, conv: ConversationRecord | undefined, entry: { type: string; title: string; description?: string; actor?: string }) {
+  if (!conv?.crmRecord?.id) return;
+  try { const { recordLinkedActivity } = await import('../server/crm/timeline'); await recordLinkedActivity(orgId, conv.crmRecord, { ...entry, source: 'inbox' }); }
+  catch (err) { console.warn('[messaging] timeline write failed:', (err as any)?.code || (err as any)?.name || 'error'); }
+}
+const crmLinkFor = (conv: ConversationRecord | undefined) => {
+  const r = conv?.crmRecord;
+  if (!r?.id) return {};
+  if (r.type === 'lead') return { leadId: r.id };
+  if (r.type === 'contact') return { contactId: r.id };
+  if (r.type === 'deal') return { dealId: r.id };
+  if (r.type === 'company') return { companyId: r.id };
+  return {};
+};
 
 // Domain Interfaces
 export interface UserRecord {
@@ -84,7 +104,7 @@ export interface StructuredInstructionData {
 }
 
 export interface CrmRecordReference {
-  type: 'contact' | 'company' | 'deal' | 'ticket' | 'task' | 'project';
+  type: 'lead' | 'contact' | 'company' | 'deal' | 'ticket' | 'task' | 'project';
   id: string;
   title: string;
   subtitle?: string;
@@ -104,6 +124,8 @@ export interface CrmTaskRecord {
   conversationId?: string;
   sourceMessageId?: string;
   contactName?: string;
+  /** Id of the same task in the organization's task list (organizations/{orgId}/tasks). */
+  unifiedTaskId?: string;
   createdAt: string;
 }
 
@@ -480,6 +502,35 @@ export async function inboxMessagesByEmail(orgId: string) {
   }
   return out;
 }
+
+// The organization task list reads inbox tasks it hasn't copied yet, and mirrors its changes back here so the
+// conversation's Tasks tab always matches /api/tasks.
+registerInboxTaskReader(async (orgId) => {
+  await hydrateInbox(orgId);
+  const out: Array<{ conversationId: string; task: any }> = [];
+  for (const c of CONVERSATIONS.values()) if (c.orgId === orgId) for (const t of CRM_TASKS.get(c.id) || []) out.push({ conversationId: c.id, task: t });
+  return out;
+});
+registerInboxTaskMirror(async (orgId: string, t: Task) => {
+  if (!t.conversationId) return;
+  await hydrateInbox(orgId);
+  const conv = CONVERSATIONS.get(t.conversationId);
+  if (!conv || conv.orgId !== orgId) return;
+  const list = CRM_TASKS.get(conv.id) || [];
+  const i = list.findIndex((x) => x.unifiedTaskId === t.id || inboxTaskId(conv.id, x.id) === t.id);
+  if (t.deletedAt) { if (i >= 0) list.splice(i, 1); }
+  else {
+    const row: CrmTaskRecord = {
+      ...(i >= 0 ? list[i] : { id: t.id, conversationId: conv.id, createdAt: t.createdAt }),
+      title: t.title, status: t.status === 'done' ? 'completed' : t.status === 'in_progress' ? 'in_progress' : 'pending',
+      priority: t.priority === 'normal' ? 'medium' : t.priority, dueDate: t.dueDate || undefined, assignee: t.assignedTo || undefined, unifiedTaskId: t.id,
+    };
+    if (i >= 0) list[i] = row; else list.unshift(row);
+  }
+  CRM_TASKS.set(conv.id, list);
+  broadcastEvent('task_updated', { conversationId: conv.id, task: t }, orgId);
+  await flushInbox(orgId);
+});
 
 // Load the caller's organization before any route runs, and save its changes afterwards.
 router.use(async (req, res, next) => {
@@ -913,7 +964,8 @@ router.get('/conversations/:id/tasks', (req: Request, res: Response) => {
   res.json({ success: true, tasks });
 });
 
-router.post('/conversations/:id/tasks', (req: Request, res: Response) => {
+router.post('/conversations/:id/tasks', async (req: Request, res: Response) => {
+  if (!canWrite(req)) return forbidden(res);
   const convId = req.params.id;
   const { title, priority, dueDate, assignee, sourceMessageId, contactName } = req.body;
 
@@ -935,9 +987,21 @@ router.post('/conversations/:id/tasks', (req: Request, res: Response) => {
     createdAt: new Date().toISOString()
   };
 
+  // The task also goes on the organization's task list (same record, linked to this conversation and its CRM record).
+  const conv = CONVERSATIONS.get(convId);
+  try {
+    const unified = await (await TaskService.forOrg(orgOf(req))).create({
+      title: String(title).slice(0, 300), type: 'follow_up', priority: priorityFrom(newTask.priority), dueDate: newTask.dueDate,
+      assignedTo: newTask.assignee, assigneeId: assignee ? null : me(req).id, conversationId: convId,
+      description: newTask.contactName ? `Contact: ${newTask.contactName}` : '', ...crmLinkFor(conv),
+    }, { userId: me(req).id, name: me(req).name }, { id: inboxTaskId(convId, taskId), source: 'inbox', legacy: { kind: 'inbox', conversationId: convId, taskId }, skipInboxMirror: true });
+    newTask.unifiedTaskId = unified.id;
+  } catch (err) { return sendError(res, err, 'messaging.task'); }
+
   const tasks = CRM_TASKS.get(convId) || [];
   tasks.unshift(newTask);
   CRM_TASKS.set(convId, tasks);
+  void logOnLinkedRecord(orgOf(req), conv, { type: 'task_created', title: `Task added from the inbox: ${String(title).slice(0, 200)}`, description: `Assigned to ${newTask.assignee}, due ${newTask.dueDate}.`, actor: me(req).name });
 
   // Automatically insert a system activity message in the conversation timeline
   const systemMsgId = `msg_act_${Date.now()}`;
@@ -980,7 +1044,8 @@ router.post('/conversations/:id/tasks', (req: Request, res: Response) => {
   res.status(201).json({ success: true, task: newTask, message: systemMsg });
 });
 
-router.patch('/conversations/:id/tasks/:taskId', (req: Request, res: Response) => {
+router.patch('/conversations/:id/tasks/:taskId', async (req: Request, res: Response) => {
+  if (!canWrite(req)) return forbidden(res);
   const { id: convId, taskId } = req.params;
   const { status, priority, assignee, dueDate } = req.body;
 
@@ -989,11 +1054,23 @@ router.patch('/conversations/:id/tasks/:taskId', (req: Request, res: Response) =
   if (!task) {
     return res.status(404).json({ success: false, error: 'Task not found' });
   }
+  if (status !== undefined && !['pending', 'in_progress', 'completed'].includes(status)) return res.status(400).json({ success: false, error: 'Status must be pending, in_progress or completed.' });
 
   if (status) task.status = status;
   if (priority) task.priority = priority;
   if (assignee) task.assignee = assignee;
   if (dueDate) task.dueDate = dueDate;
+
+  // Keep the organization's task list in step (copies the task there first if it was created before it existed).
+  try {
+    const svc = await TaskService.forOrg(orgOf(req));
+    const uid = task.unifiedTaskId || inboxTaskId(convId, task.id);
+    if (await svc.adopt(uid)) {
+      await svc.update(uid, { ...(status ? { status: status === 'completed' ? 'done' : status === 'in_progress' ? 'in_progress' : 'open' } : {}), ...(priority ? { priority: priorityFrom(priority) } : {}), ...(assignee ? { assignedTo: String(assignee).slice(0, 120) } : {}), ...(dueDate ? { dueDate } : {}) },
+        { userId: me(req).id, name: me(req).name }, { skipInboxMirror: true });
+      task.unifiedTaskId = uid;
+    }
+  } catch (err) { return sendError(res, err, 'messaging.taskUpdate'); }
 
   broadcastEvent('task_updated', { conversationId: convId, task });
   res.json({ success: true, task });
@@ -1005,7 +1082,8 @@ router.get('/conversations/:id/activities', (req: Request, res: Response) => {
 });
 
 // Add CRM Note
-router.post('/conversations/:id/notes', (req: Request, res: Response) => {
+router.post('/conversations/:id/notes', async (req: Request, res: Response) => {
+  if (!canWrite(req)) return forbidden(res);
   const convId = req.params.id;
   const { note } = req.body;
 
@@ -1023,6 +1101,9 @@ router.post('/conversations/:id/notes', (req: Request, res: Response) => {
     timestamp: 'Just now'
   });
   CRM_ACTIVITIES.set(convId, activities);
+  // Also on the linked lead/contact/company timeline and the organization feed.
+  const conv = CONVERSATIONS.get(convId);
+  await logOnLinkedRecord(orgOf(req), conv, { type: 'note_added', title: `Note from the inbox: ${conv?.title || 'conversation'}`, description: String(note).slice(0, 10_000), actor: me(req).name });
 
   res.status(201).json({ success: true, message: 'CRM Note logged successfully' });
 });
@@ -1408,7 +1489,7 @@ router.get('/widgets/:key', (req: Request, res: Response) => {
 // ----------------------------------------------------
 // VISITOR LIVE CHAT WIDGET ENDPOINTS
 // ----------------------------------------------------
-router.post('/visitor-init', (req: Request, res: Response) => {
+router.post('/visitor-init', async (req: Request, res: Response) => {
   const {
     widgetKey,
     visitorId,
@@ -1490,6 +1571,21 @@ router.post('/visitor-init', (req: Request, res: Response) => {
     MESSAGES.set(convId, [welcomeMsg]);
 
     broadcastEvent('conversation_created', activeConv);
+  }
+
+  // A visitor who gave an email is linked to the person the organization already knows (contact or lead with
+  // that email), or becomes a new lead (source "website_chat"). Never a second lead for the same email.
+  if (visitorEmail && !activeConv.crmRecord && widget.orgId) {
+    try {
+      const { matchOrCreateVisitorLead } = await import('../server/crm/timeline');
+      const page = typeof currentPage === 'string' ? currentPage.slice(0, 300) : undefined;
+      const match = await matchOrCreateVisitorLead(widget.orgId, { email: String(visitorEmail), name: typeof visitorName === 'string' ? visitorName : undefined, page, conversationId: activeConv.id });
+      if (match) {
+        activeConv.crmRecord = { type: match.type, id: match.id, title: match.title, subtitle: match.subtitle, status: (match as any).status, companyName: (match as any).companyName };
+        if (!activeConv.tags.includes('CRM Linked')) activeConv.tags = [...activeConv.tags, 'CRM Linked'];
+        broadcastEvent('conversation_updated', activeConv);
+      }
+    } catch (err) { console.warn('[messaging] visitor CRM match failed:', (err as any)?.code || (err as any)?.name || 'error'); }
   }
 
   res.json({

@@ -215,8 +215,9 @@ export async function executeCrmTool(
       case 'search_contacts': {
         const q = s(args.query, 200).toLowerCase();
         const limit = Math.min(Math.max(Number(args.limit) || 10, 1), 50);
-        const matches = (await repo.listContacts()).filter((c: any) =>
-          ['name', 'email', 'company'].some((f) => typeof c[f] === 'string' && c[f].toLowerCase().includes(q))).slice(0, limit);
+        const { ContactService } = await import('../server/crm/contacts');
+        const matches = (await (await ContactService.forOrg(context.orgId)).list({ q })).slice(0, limit)
+          .map((c: any) => ({ id: c.id, name: c.name, email: c.email, phone: c.phone, company: c.company, title: c.title, tags: c.tags, owner: c.owner }));
         return { count: matches.length, contacts: matches.length ? matches : 'No contacts matched your search query in CRM.' };
       }
 
@@ -286,10 +287,16 @@ export async function executeCrmTool(
         const title = s(args.title, 300);
         if (!title) return { error: 'A task needs a title.' };
         const leadId = typeof args.leadId === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(args.leadId) ? args.leadId : null;
-        const task = { title, dueDate: s(args.dueDate, 40) || 'Tomorrow', priority: ['low', 'normal', 'high', 'urgent'].includes(args.priority) ? args.priority : 'high', completed: false, createdById: context.userId, createdAt: new Date().toISOString() };
+        const priority = ['low', 'normal', 'high', 'urgent'].includes(args.priority) ? args.priority : 'high';
+        const dueRaw = s(args.dueDate, 40);
+        const dueDate = dueRaw && Number.isFinite(Date.parse(dueRaw)) ? new Date(dueRaw).toISOString() : new Date(Date.now() + 86_400_000).toISOString();
         // A lead id from the model is only used if that lead exists in THIS organization.
-        const saved = leadId && (await repo.getLead(leadId)) ? await repo.addLeadTask(leadId, task) : await repo.createTask({ ...task, leadId: null });
-        return { success: true, taskId: saved.id, title, dueDate: task.dueDate, message: `Scheduled task: "${title}" (Due: ${task.dueDate}, Priority: ${task.priority.toUpperCase()}).` };
+        const linkLead = leadId && (await repo.getLead(leadId)) ? leadId : null;
+        const { TaskService } = await import('../server/crm/tasks');
+        const saved = await (await TaskService.forOrg(context.orgId)).create({ title, type: 'follow_up', priority, dueDate, leadId: linkLead },
+          { userId: context.userId, name: 'AI Assistant' }, { source: 'assistant' });
+        const when = new Date(dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        return { success: true, taskId: saved.id, title, dueDate, message: `Scheduled task: "${title}" (Due: ${when}, Priority: ${priority.toUpperCase()}). It's in Tasks.` };
       }
 
       case 'search_knowledge_base': {
