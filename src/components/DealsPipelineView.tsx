@@ -18,6 +18,7 @@ import {
   ActionPriority
 } from '../services/salesIntelligenceService';
 import { CRMLead, CRMLeadTask, CRMLeadActivity, LeadQualification } from '../types';
+import { BOARD_COLUMNS, BOARD_COLUMN_LABELS, DEAL_STAGE_PROBABILITY, columnForDealStage, columnForLeadStatus, dealStageForColumn, isBoardColumn, leadStatusForColumn, type BoardColumn } from '../lib/pipelineStages';
 
 export interface PipelineItem {
   id: string;
@@ -28,8 +29,12 @@ export interface PipelineItem {
   email?: string;
   phone?: string;
   businessType?: string;
-  value: number; // in USD ARR
-  stage: 'new_leads' | 'qualified' | 'proposal_sent' | 'negotiation' | 'closed_won';
+  value: number; // in USD (0 when not set)
+  /** False when nobody entered a value or budget: shown as "Not set", never an invented number. */
+  valueSet: boolean;
+  /** Title of the deal this card represents (converted leads show their deal). */
+  dealName?: string;
+  stage: BoardColumn;
   probability: number;
   priority: 'high' | 'medium' | 'low';
   score?: number; // Lead BANT score (0-100)
@@ -48,13 +53,18 @@ export interface PipelineItem {
   missingInformation?: string[];
 }
 
-const STAGES = [
-  { id: 'new_leads', label: 'Inbound Leads', sublabel: 'New & Contacted', color: 'border-t-blue-500 bg-blue-500/5', badge: 'bg-blue-500/10 text-blue-400 border-blue-500/20' },
-  { id: 'qualified', label: 'Qualified / Review', sublabel: 'BANT Validated', color: 'border-t-indigo-500 bg-indigo-500/5', badge: 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20' },
-  { id: 'proposal_sent', label: 'Proposal Sent', sublabel: 'SLA & Scope Under Review', color: 'border-t-purple-500 bg-purple-500/5', badge: 'bg-purple-500/10 text-purple-400 border-purple-500/20' },
-  { id: 'negotiation', label: 'In Negotiation', sublabel: 'Terms & Commercials', color: 'border-t-amber-500 bg-amber-500/5', badge: 'bg-amber-500/10 text-amber-400 border-amber-500/20' },
-  { id: 'closed_won', label: 'Closed Won', sublabel: 'Active Onboarding', color: 'border-t-emerald-500 bg-emerald-500/5', badge: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' }
-] as const;
+const STAGE_STYLE: Record<BoardColumn, { color: string; badge: string }> = {
+  new_leads: { color: 'border-t-blue-500 bg-blue-500/5', badge: 'bg-blue-500/10 text-blue-400 border-blue-500/20' },
+  qualified: { color: 'border-t-indigo-500 bg-indigo-500/5', badge: 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20' },
+  proposal_sent: { color: 'border-t-purple-500 bg-purple-500/5', badge: 'bg-purple-500/10 text-purple-400 border-purple-500/20' },
+  negotiation: { color: 'border-t-amber-500 bg-amber-500/5', badge: 'bg-amber-500/10 text-amber-400 border-amber-500/20' },
+  closed_won: { color: 'border-t-emerald-500 bg-emerald-500/5', badge: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' },
+  closed_lost: { color: 'border-t-rose-500 bg-rose-500/5', badge: 'bg-rose-500/10 text-rose-400 border-rose-500/20' },
+  unqualified: { color: 'border-t-slate-500 bg-slate-500/5', badge: 'bg-slate-500/10 text-slate-300 border-slate-500/20' },
+};
+/** Board columns (one vocabulary with the lead and deal APIs: src/lib/pipelineStages.ts). */
+const STAGES = BOARD_COLUMNS.map((id) => ({ id, ...BOARD_COLUMN_LABELS[id], ...STAGE_STYLE[id] }));
+const money = (item: { value: number; valueSet: boolean }) => (item.valueSet ? `$${item.value.toLocaleString()}` : 'Not set');
 
 interface DealsPipelineViewProps {
   initialTab?: 'board' | 'leads' | 'analytics';
@@ -134,12 +144,12 @@ export default function DealsPipelineView({ initialTab = 'board' }: DealsPipelin
     phone: '',
     company: '',
     title: '',
-    businessType: 'Enterprise B2B',
-    value: '50000',
+    businessType: '',
+    value: '',
     stage: 'new_leads' as PipelineItem['stage'],
     priority: 'medium' as PipelineItem['priority'],
     source: 'whatsapp',
-    budget: '50000',
+    budget: '',
     authority: 'decision_maker',
     need: '',
     timeline: '1-3 months',
@@ -151,9 +161,9 @@ export default function DealsPipelineView({ initialTab = 'board' }: DealsPipelin
     dealTitle: '',
     dealValue: '',
     dealStage: 'qualified',
-    expectedClose: 'Next Month',
+    expectedClose: '',
     companyIndustry: 'Technology',
-    companyTier: 'Enterprise Tier'
+    companyTier: ''
   });
 
   // Analytics State
@@ -205,41 +215,32 @@ export default function DealsPipelineView({ initialTab = 'board' }: DealsPipelin
   const pipelineItems: PipelineItem[] = useMemo(() => {
     const items: PipelineItem[] = [];
 
-    // 1. Process Leads
+    // 1. Process Leads (only what was recorded: no invented values, companies or needs)
     leads.forEach(lead => {
-      let stage: PipelineItem['stage'] = 'new_leads';
-      if (lead.status === 'qualified') {
-        stage = 'qualified';
-      } else if (lead.isConverted || lead.status === 'converted') {
-        // Converted leads that have a deal will be represented by the deal card, or in won/proposal stage
-        stage = 'closed_won';
-      } else {
-        stage = 'new_leads';
-      }
-
-      // Map priority based on score or default
+      const stage = columnForLeadStatus(lead.isConverted ? 'converted' : lead.status);
       const priority: PipelineItem['priority'] = lead.score >= 85 ? 'high' : lead.score >= 60 ? 'medium' : 'low';
-      const estimatedVal = Number(lead.qualification?.budget) || 45000;
+      const budget = Number(lead.qualification?.budget) || 0;
 
       items.push({
         id: lead.id,
         type: 'lead',
         name: lead.name,
-        title: lead.title || 'Contact Person',
-        company: lead.company || 'Enterprise Prospect',
+        title: lead.title || '',
+        company: lead.company || '',
         email: lead.email,
         phone: lead.phone,
-        businessType: lead.source ? `${lead.source.toUpperCase()} Inbound Lead` : 'Prospect',
-        value: estimatedVal,
+        businessType: lead.source ? `${lead.source.replace(/_/g, ' ')} lead` : '',
+        value: budget,
+        valueSet: budget > 0,
         stage,
-        probability: stage === 'new_leads' ? 35 : stage === 'qualified' ? 50 : 85,
+        probability: stage === 'qualified' ? DEAL_STAGE_PROBABILITY.qualified : stage === 'unqualified' ? 0 : DEAL_STAGE_PROBABILITY.lead,
         priority,
         score: lead.score,
         source: lead.source,
         status: lead.status,
         owner: lead.owner || '',
         notes: lead.notes,
-        statedProblems: lead.qualification?.need ? [lead.qualification.need] : lead.notes ? [lead.notes] : ['Multi-channel unified CRM rollout'],
+        statedProblems: lead.qualification?.need ? [lead.qualification.need] : lead.notes ? [lead.notes] : [],
         qualification: lead.qualification,
         isConverted: lead.isConverted,
         convertedDealId: lead.convertedDealId,
@@ -247,31 +248,28 @@ export default function DealsPipelineView({ initialTab = 'board' }: DealsPipelin
         updatedAt: lead.updatedAt,
         daysSinceLastActivity: Math.max(0, Math.floor((Date.now() - new Date(lead.updatedAt || lead.createdAt || Date.now()).getTime()) / 86400000)),
         recentActivity: `Lead status is ${lead.status}. Score: ${lead.score}/100.`,
-        missingInformation: !lead.qualification?.budget ? ['Budget not confirmed'] : []
+        missingInformation: !budget ? ['Budget not confirmed'] : []
       });
     });
 
-    // 2. Process Deals (avoiding duplicates if converted from a known lead)
+    // 2. Process Deals. A converted lead's card becomes its deal (stage, value, title), so it shows once.
     deals.forEach(deal => {
-      // Map deal stages to STAGES ids
-      let mappedStage: PipelineItem['stage'] = 'proposal_sent';
-      const s = String(deal.stage).toLowerCase();
-      if (s === 'lead' || s === 'discovery' || s === 'new_leads') mappedStage = 'new_leads';
-      else if (s === 'qualified') mappedStage = 'qualified';
-      else if (s === 'proposal' || s === 'proposal_sent') mappedStage = 'proposal_sent';
-      else if (s === 'negotiation') mappedStage = 'negotiation';
-      else if (s === 'won' || s === 'closed_won') mappedStage = 'closed_won';
+      const mappedStage = columnForDealStage(deal.stage);
+      const hasValue = deal.value !== undefined && deal.value !== null && deal.value !== '' && Number.isFinite(Number(deal.value));
+      const value = hasValue ? Number(deal.value) : 0;
+      const probability = Number.isFinite(Number(deal.probability)) ? Number(deal.probability) : (DEAL_STAGE_PROBABILITY as Record<string, number>)[deal.stage] ?? 0;
 
-      // Avoid displaying both lead and deal if lead was converted to this deal
-      const alreadyHasLead = items.some(item => item.convertedDealId === deal.id);
-      if (alreadyHasLead) {
-        // Upgrade that item to the deal's current stage and value
-        const idx = items.findIndex(item => item.convertedDealId === deal.id);
-        if (idx !== -1) {
-          items[idx].stage = mappedStage;
-          items[idx].value = Number(deal.value) || items[idx].value;
-          items[idx].probability = Number(deal.probability) || items[idx].probability;
-        }
+      const idx = items.findIndex(item => item.convertedDealId === deal.id || (deal.leadId && item.id === deal.leadId && item.isConverted));
+      if (idx !== -1) {
+        items[idx] = {
+          ...items[idx],
+          stage: mappedStage,
+          value, valueSet: hasValue,
+          probability,
+          dealName: deal.name,
+          statedProblems: [deal.name, ...(items[idx].statedProblems || [])].filter(Boolean),
+          status: deal.stage,
+        };
         return;
       }
 
@@ -279,23 +277,24 @@ export default function DealsPipelineView({ initialTab = 'board' }: DealsPipelin
         id: deal.id,
         type: 'deal',
         name: deal.client || deal.name,
-        title: 'Primary Stakeholder',
+        title: '',
         company: deal.client || deal.name,
-        businessType: deal.channelOrigin ? `${deal.channelOrigin.toUpperCase()} Opportunity` : 'Enterprise Client',
-        value: Number(deal.value) || 50000,
+        businessType: deal.channelOrigin ? `${String(deal.channelOrigin).replace(/_/g, ' ')} opportunity` : '',
+        value, valueSet: hasValue,
+        dealName: deal.name,
         stage: mappedStage,
-        probability: Number(deal.probability) || 70,
-        priority: Number(deal.value) >= 80000 ? 'high' : 'medium',
-        source: deal.channelOrigin || 'web',
+        probability,
+        priority: value >= 80000 ? 'high' : 'medium',
+        source: deal.channelOrigin || '',
         status: deal.stage,
         owner: deal.owner || '',
-        notes: `Deal expected close: ${deal.expectedClose || 'This Quarter'}`,
+        notes: deal.expectedClose ? `Expected close: ${deal.expectedClose}` : '',
         statedProblems: [deal.name],
         isConverted: true,
         createdAt: deal.createdAt,
         updatedAt: deal.updatedAt,
-        daysSinceLastActivity: 1,
-        recentActivity: `Active opportunity in ${deal.stage} stage.`
+        daysSinceLastActivity: Math.max(0, Math.floor((Date.now() - new Date(deal.updatedAt || deal.createdAt || Date.now()).getTime()) / 86400000)),
+        recentActivity: `Opportunity in the ${deal.stage} stage.`
       });
     });
 
@@ -310,7 +309,7 @@ export default function DealsPipelineView({ initialTab = 'board' }: DealsPipelin
         name: item.name,
         title: item.title,
         company: item.company,
-        businessType: item.businessType || 'Enterprise',
+        businessType: item.businessType || '',
         value: item.value,
         stage: item.stage,
         probability: item.probability,
@@ -351,13 +350,7 @@ export default function DealsPipelineView({ initialTab = 'board' }: DealsPipelin
 
   // Stage statistics
   const stageStats = useMemo(() => {
-    const stats: Record<PipelineItem['stage'], { count: number; totalValue: number }> = {
-      new_leads: { count: 0, totalValue: 0 },
-      qualified: { count: 0, totalValue: 0 },
-      proposal_sent: { count: 0, totalValue: 0 },
-      negotiation: { count: 0, totalValue: 0 },
-      closed_won: { count: 0, totalValue: 0 }
-    };
+    const stats = Object.fromEntries(BOARD_COLUMNS.map((c) => [c, { count: 0, totalValue: 0 }])) as Record<BoardColumn, { count: number; totalValue: number }>;
 
     filteredItems.forEach(item => {
       if (stats[item.stage]) {
@@ -406,7 +399,7 @@ export default function DealsPipelineView({ initialTab = 'board' }: DealsPipelin
       name: selectedItem.name,
       title: selectedItem.title,
       company: selectedItem.company,
-      businessType: selectedItem.businessType || 'Enterprise',
+      businessType: selectedItem.businessType || '',
       value: selectedItem.value,
       stage: selectedItem.stage,
       probability: selectedItem.probability,
@@ -502,33 +495,26 @@ export default function DealsPipelineView({ initialTab = 'board' }: DealsPipelin
 
     if (item.stage === targetStage) return;
 
-    // If moving an unconverted lead into a proposal or negotiation stage, open conversion modal
-    if (item.type === 'lead' && !item.isConverted && (targetStage === 'proposal_sent' || targetStage === 'negotiation' || targetStage === 'closed_won')) {
+    // A lead without a deal can't be in Proposal / Negotiation / Won: ask to convert it into a deal first.
+    const leadStatus = item.type === 'lead' && !item.isConverted ? leadStatusForColumn(targetStage) : null;
+    if (item.type === 'lead' && !item.isConverted && !leadStatus) {
       initiateConversion(item, targetStage);
       return;
     }
 
     try {
-      if (item.type === 'lead') {
-        // Update lead status on backend
-        const newStatus = targetStage === 'qualified' ? 'qualified' : targetStage === 'new_leads' ? 'contacted' : 'qualifying';
-        await axios.put(`/api/leads/${item.id}`, { status: newStatus });
+      if (item.type === 'lead' && !item.isConverted) {
+        await axios.patch(`/api/leads/${encodeURIComponent(item.id)}/status`, { status: leadStatus });
       } else {
-        // Update deal stage on backend
-        const dealStageMap: Record<string, string> = {
-          new_leads: 'discovery',
-          qualified: 'qualified',
-          proposal_sent: 'proposal',
-          negotiation: 'negotiation',
-          closed_won: 'won'
-        };
-        await axios.patch(`/api/dashboard/deals/${item.id}/stage`, { stage: dealStageMap[targetStage] || targetStage });
+        const dealId = item.type === 'deal' ? item.id : item.convertedDealId;
+        if (!dealId) throw new Error('missing deal');
+        await axios.patch(`/api/dashboard/deals/${encodeURIComponent(dealId)}/stage`, { stage: dealStageForColumn(targetStage) });
       }
 
-      showToast(`Moved to ${targetStage.replace('_', ' ')} stage.`, 'success');
+      showToast(`Moved to ${BOARD_COLUMN_LABELS[targetStage].label}.`, 'success');
       await fetchData(true);
     } catch (err: any) {
-      showToast('Failed to advance stage on server.', 'error');
+      showToast(err?.response?.data?.error || 'Couldn’t move the card. Try again.', 'error');
     }
   };
 
@@ -550,12 +536,12 @@ export default function DealsPipelineView({ initialTab = 'board' }: DealsPipelin
   const initiateConversion = (item: PipelineItem, suggestedStage: PipelineItem['stage'] = 'proposal_sent') => {
     setConvertingItem(item);
     setConvertForm({
-      dealTitle: `${item.company} Enterprise OmniRoute Solution`,
-      dealValue: String(item.value || 50000),
+      dealTitle: `${item.company || item.name} opportunity`,
+      dealValue: item.valueSet ? String(item.value) : '',
       dealStage: suggestedStage === 'closed_won' ? 'won' : suggestedStage === 'negotiation' ? 'negotiation' : 'proposal',
-      expectedClose: 'Next Month',
-      companyIndustry: 'Technology & Enterprise Communications',
-      companyTier: 'Enterprise Tier'
+      expectedClose: '',
+      companyIndustry: '',
+      companyTier: ''
     });
     setShowConvertModal(true);
   };
@@ -600,22 +586,22 @@ export default function DealsPipelineView({ initialTab = 'board' }: DealsPipelin
     }
 
     try {
-      const parsedVal = parseInt(newForm.value.replace(/[^0-9]/g, '')) || 50000;
+      const parsedVal = parseInt(newForm.value.replace(/[^0-9]/g, '')) || 0;
       
       const payload = {
         name: newForm.name,
         email: newForm.email,
         phone: newForm.phone,
         company: newForm.company,
-        title: newForm.title || 'Decision Maker',
+        title: newForm.title || '',
         source: newForm.source,
         status: newForm.stage === 'qualified' ? 'qualified' : 'new',
         owner: team.me,
         notes: newForm.notes,
         qualification: {
-          budget: parsedVal,
+          budget: parsedVal || undefined,
           authority: newForm.authority,
-          need: newForm.need || 'Omnichannel communication & call canvas integration',
+          need: newForm.need || '',
           timeline: newForm.timeline
         }
       };
@@ -630,12 +616,12 @@ export default function DealsPipelineView({ initialTab = 'board' }: DealsPipelin
           phone: '',
           company: '',
           title: '',
-          businessType: 'Enterprise B2B',
-          value: '50000',
+          businessType: '',
+          value: '',
           stage: 'new_leads',
           priority: 'medium',
           source: 'whatsapp',
-          budget: '50000',
+          budget: '',
           authority: 'decision_maker',
           need: '',
           timeline: '1-3 months',
@@ -734,7 +720,7 @@ export default function DealsPipelineView({ initialTab = 'board' }: DealsPipelin
       name: selectedItem.name,
       title: selectedItem.title,
       company: selectedItem.company,
-      businessType: selectedItem.businessType || 'Enterprise',
+      businessType: selectedItem.businessType || '',
       value: selectedItem.value,
       stage: selectedItem.stage,
       probability: selectedItem.probability,
@@ -758,7 +744,7 @@ export default function DealsPipelineView({ initialTab = 'board' }: DealsPipelin
     } catch {
       setChatReplies(prev => [...prev, {
         q: userQ,
-        a: `Based on CRM records for ${selectedItem.company}: Align with their stated need: "${selectedItem.statedProblems?.[0] || 'Enterprise communication'}". Emphasize 99.99% SLA uptime, WebRTC Call Canvas capabilities, and ISO compliance. Confirm budget and decision makers before committing to customized terms.`,
+        a: 'The assistant couldn’t answer right now. Try again in a moment.',
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       }]);
     } finally {
@@ -856,11 +842,11 @@ export default function DealsPipelineView({ initialTab = 'board' }: DealsPipelin
           }
           const normalized = list.map((item: any, idx: number) => ({
             name: item.name || item.fullName || item.contact || `Lead ${idx + 1}`,
-            company: item.company || item.organization || item.account || 'Enterprise Prospect',
+            company: item.company || item.organization || item.account || '',
             email: item.email || '',
             phone: item.phone || '',
-            title: item.title || 'Decision Maker',
-            value: Number(item.value || item.budget || item.dealValue || 50000),
+            title: item.title || '',
+            value: Number(item.value || item.budget || item.dealValue || 0),
             stage: item.stage || 'new_leads',
             priority: item.priority || 'medium',
             source: item.source || 'import',
@@ -922,16 +908,16 @@ export default function DealsPipelineView({ initialTab = 'board' }: DealsPipelin
             if (cols.length === 0 || (cols.length === 1 && !cols[0])) continue;
             
             const rawVal = valIdx !== -1 ? cols[valIdx] : '';
-            const parsedVal = parseInt(String(rawVal).replace(/[^0-9]/g, '')) || 50000;
+            const parsedVal = parseInt(String(rawVal).replace(/[^0-9]/g, '')) || 0;
             const rowName = nameIdx !== -1 && cols[nameIdx] ? cols[nameIdx] : `Lead Prospect #${i}`;
-            const rowCompany = compIdx !== -1 && cols[compIdx] ? cols[compIdx] : 'Enterprise Account';
+            const rowCompany = compIdx !== -1 && cols[compIdx] ? cols[compIdx] : '';
 
             parsedRows.push({
               name: rowName,
               company: rowCompany,
               email: emailIdx !== -1 ? cols[emailIdx] : '',
               phone: phoneIdx !== -1 ? cols[phoneIdx] : '',
-              title: 'Decision Maker',
+              title: '',
               value: parsedVal,
               stage: stageIdx !== -1 && cols[stageIdx] ? cols[stageIdx].toLowerCase().replace(/\s+/g, '_') : 'new_leads',
               priority: priorityIdx !== -1 && cols[priorityIdx] ? cols[priorityIdx].toLowerCase() : 'medium',
@@ -962,7 +948,7 @@ export default function DealsPipelineView({ initialTab = 'board' }: DealsPipelin
     try {
       for (const item of importPreviewData) {
         const assignedStage = importTargetStage === 'auto' 
-          ? (['new_leads', 'qualified', 'proposal_sent', 'negotiation', 'closed_won'].includes(item.stage) ? item.stage : 'new_leads')
+          ? (isBoardColumn(item.stage) ? item.stage : 'new_leads')
           : importTargetStage;
 
         const payload = {
@@ -970,16 +956,16 @@ export default function DealsPipelineView({ initialTab = 'board' }: DealsPipelin
           company: item.company,
           email: item.email || undefined,
           phone: item.phone || undefined,
-          title: item.title || 'Decision Maker',
+          title: item.title || '',
           source: item.source || 'import',
-          status: assignedStage === 'qualified' ? 'qualified' : 'new',
+          status: assignedStage === 'qualified' ? 'qualified' : assignedStage === 'unqualified' || assignedStage === 'closed_lost' ? 'unqualified' : 'new',
           owner: team.me,
           notes: item.notes,
           qualification: {
-            budget: item.value,
-            authority: 'decision_maker',
-            need: item.notes || 'Omnichannel lead qualification pipeline',
-            timeline: '1-3 months'
+            budget: Number(item.value) || undefined,
+            authority: undefined,
+            need: item.notes || '',
+            timeline: undefined
           }
         };
 
@@ -1092,7 +1078,7 @@ export default function DealsPipelineView({ initialTab = 'board' }: DealsPipelin
           {/* Quick HUD Metrics Bar */}
           <div className="flex items-center gap-3 overflow-x-auto pb-1 lg:pb-0">
             <div className="px-3.5 py-2 rounded-xl bg-slate-800/80 border border-white/5 flex items-center gap-3">
-              <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Pipeline ARR</span>
+              <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Pipeline value</span>
               <span className="text-sm font-black font-mono text-emerald-400">
                 ${grandTotalValue.toLocaleString()}
               </span>
@@ -1327,7 +1313,7 @@ export default function DealsPipelineView({ initialTab = 'board' }: DealsPipelin
                       </span>
                     </div>
                     <div className="flex items-center justify-between text-[11px] font-mono text-slate-400">
-                      <span>${stats.totalValue.toLocaleString()} ARR</span>
+                      <span>${stats.totalValue.toLocaleString()}</span>
                       <span className="text-[10px] text-slate-500">{stage.sublabel}</span>
                     </div>
                   </div>
@@ -1407,8 +1393,11 @@ export default function DealsPipelineView({ initialTab = 'board' }: DealsPipelin
                             {/* Company & Contact Header */}
                             <div>
                               <h4 className="text-xs font-black text-white leading-tight flex items-center justify-between">
-                                <span className="truncate">{item.company}</span>
+                                <span className="truncate">{item.company || item.name}</span>
                               </h4>
+                              {item.dealName && item.type === 'lead' && (
+                                <p className="text-[10px] text-emerald-400 font-semibold truncate mt-0.5">Deal: {item.dealName}</p>
+                              )}
                               <p className="text-[11px] text-slate-400 font-semibold flex items-center gap-1 mt-0.5">
                                 <Building2 className="h-3 w-3 shrink-0 text-blue-400" />
                                 <span className="truncate">{item.name}</span>
@@ -1444,7 +1433,7 @@ export default function DealsPipelineView({ initialTab = 'board' }: DealsPipelin
                             {/* Value & Activity Date */}
                             <div className="flex items-baseline justify-between pt-1 border-t border-white/5 text-[11px]">
                               <span className="text-emerald-400 font-mono font-bold">
-                                ${item.value.toLocaleString()} <span className="text-[9px] text-slate-500 font-normal">ARR</span>
+                                {money(item)}
                               </span>
                               <span className="text-[10px] text-slate-500 flex items-center gap-1">
                                 <Clock className="h-2.5 w-2.5" />
@@ -1485,7 +1474,7 @@ export default function DealsPipelineView({ initialTab = 'board' }: DealsPipelin
                                   <ChevronLeft className="h-3.5 w-3.5" />
                                 </button>
                                 <button
-                                  disabled={stage.id === 'closed_won'}
+                                  disabled={stage.id === STAGES[STAGES.length - 1].id}
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     handleMoveStage(item.id, 'right');
@@ -1632,7 +1621,7 @@ export default function DealsPipelineView({ initialTab = 'board' }: DealsPipelin
 
                             <td className="p-3.5">
                               <div className="font-semibold text-slate-200">{lead.company || '—'}</div>
-                              <div className="text-[10px] text-slate-500">{lead.title || 'Decision Maker'}</div>
+                              <div className="text-[10px] text-slate-500">{lead.title || '—'}</div>
                             </td>
 
                             <td className="p-3.5">
@@ -1660,7 +1649,7 @@ export default function DealsPipelineView({ initialTab = 'board' }: DealsPipelin
                             </td>
 
                             <td className="p-3.5 font-mono text-emerald-400 font-bold">
-                              ${(Number(lead.qualification?.budget) || 50000).toLocaleString()}
+                              {Number(lead.qualification?.budget) ? `$${Number(lead.qualification?.budget).toLocaleString()}` : 'Not set'}
                             </td>
 
                             <td className="p-3.5">
@@ -1727,7 +1716,7 @@ export default function DealsPipelineView({ initialTab = 'board' }: DealsPipelin
               </div>
 
               <div className="p-5 rounded-2xl bg-slate-900/80 border border-white/5 space-y-2">
-                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Total Pipeline ARR</span>
+                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Total Pipeline value</span>
                 <div className="text-3xl font-black font-mono text-blue-400">
                   ${grandTotalValue.toLocaleString()}
                 </div>
@@ -1747,7 +1736,7 @@ export default function DealsPipelineView({ initialTab = 'board' }: DealsPipelin
                 <div className="text-3xl font-black font-mono text-amber-400">
                   ${(analyticsData?.totalConvertedValue || 365000).toLocaleString()}
                 </div>
-                <p className="text-[10px] text-slate-500">Realized pipeline closed won ARR</p>
+                <p className="text-[10px] text-slate-500">Value of won deals</p>
               </div>
             </div>
 
@@ -1836,8 +1825,8 @@ export default function DealsPipelineView({ initialTab = 'board' }: DealsPipelin
                 </h3>
                 <p className="text-[10px] text-slate-400 flex items-center gap-2 mt-0.5">
                   <span>{selectedItem.name}</span>
-                  <span>• Stage: {selectedItem.stage.replace('_', ' ')}</span>
-                  <span>• ${selectedItem.value.toLocaleString()} ARR</span>
+                  <span>• Stage: {BOARD_COLUMN_LABELS[selectedItem.stage].label}</span>
+                  <span>• {money(selectedItem)}</span>
                 </p>
               </div>
             </div>
@@ -2096,7 +2085,7 @@ export default function DealsPipelineView({ initialTab = 'board' }: DealsPipelin
                   <div className="bg-slate-950 p-3.5 rounded-xl border border-white/10 space-y-1">
                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Authority (A)</span>
                     <p className="text-xs font-bold text-slate-200 capitalize">
-                      {selectedItem.qualification?.authority?.replace('_', ' ') || 'Decision Maker'}
+                      {selectedItem.qualification?.authority?.replace('_', ' ') || 'Not recorded'}
                     </p>
                     <span className="text-[10px] text-slate-500">{selectedItem.title || 'Executive'}</span>
                   </div>
@@ -2104,7 +2093,7 @@ export default function DealsPipelineView({ initialTab = 'board' }: DealsPipelin
                   <div className="bg-slate-950 p-3.5 rounded-xl border border-white/10 space-y-1 col-span-2">
                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Need (N)</span>
                     <p className="text-xs text-slate-200 leading-relaxed">
-                      {selectedItem.qualification?.need || selectedItem.statedProblems?.[0] || 'Enterprise omnichannel communications and WebRTC Call Canvas integration'}
+                      {selectedItem.qualification?.need || selectedItem.statedProblems?.[0] || 'Not recorded'}
                     </p>
                   </div>
 
@@ -2380,12 +2369,12 @@ export default function DealsPipelineView({ initialTab = 'board' }: DealsPipelin
                   </select>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Estimated ARR Value ($)</label>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Estimated value ($)</label>
                   <input
                     type="text"
                     value={newForm.value}
                     onChange={(e) => setNewForm({ ...newForm, value: e.target.value })}
-                    placeholder="50000"
+                    placeholder="e.g. 5000"
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white placeholder-slate-600 focus:outline-none focus:border-blue-500 font-mono"
                   />
                 </div>
@@ -2432,7 +2421,7 @@ export default function DealsPipelineView({ initialTab = 'board' }: DealsPipelin
                     type="text"
                     value={newForm.need}
                     onChange={(e) => setNewForm({ ...newForm, need: e.target.value })}
-                    placeholder="e.g. Unified CRM with WebRTC Call Canvas and SLA compliance"
+                    placeholder="What do they need?"
                     className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-white placeholder-slate-600 focus:outline-none"
                   />
                 </div>
@@ -2505,7 +2494,7 @@ export default function DealsPipelineView({ initialTab = 'board' }: DealsPipelin
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Deal Value ($ ARR)</label>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Deal value ($)</label>
                   <input
                     type="text"
                     required
@@ -2608,7 +2597,7 @@ export default function DealsPipelineView({ initialTab = 'board' }: DealsPipelin
                       {importFile ? importFile.name : 'Click to select CSV or JSON file'}
                     </span>
                     <p className="text-[11px] text-slate-400 mt-0.5">
-                      Supports columns: Name, Company, Email, Phone, Stage, Value (ARR), Source, Notes
+                      Supports columns: Name, Company, Email, Phone, Stage, Value, Source, Notes
                     </p>
                   </div>
                   {importFile && (
@@ -2643,7 +2632,9 @@ export default function DealsPipelineView({ initialTab = 'board' }: DealsPipelin
                     <option value="qualified">Stage: Qualified / Review</option>
                     <option value="proposal_sent">Stage: Proposal Sent</option>
                     <option value="negotiation">Stage: In Negotiation</option>
-                    <option value="closed_won">Stage: Closed Won</option>
+                    <option value="closed_won">Stage: Won</option>
+                    <option value="closed_lost">Stage: Lost</option>
+                    <option value="unqualified">Stage: Unqualified</option>
                   </select>
                 </div>
               )}
@@ -2669,7 +2660,7 @@ export default function DealsPipelineView({ initialTab = 'board' }: DealsPipelin
                             <th className="px-3 py-2">Name</th>
                             <th className="px-3 py-2">Company</th>
                             <th className="px-3 py-2">Email</th>
-                            <th className="px-3 py-2">Value ARR</th>
+                            <th className="px-3 py-2">Value</th>
                             <th className="px-3 py-2">Stage</th>
                           </tr>
                         </thead>
