@@ -355,7 +355,7 @@ export default function DashboardView({ contacts, onSelectContact, onNavigate, o
   const unreadNotifications = notificationsCtx.notifications;
 
   return (
-    <div className="cc min-h-full w-full" data-theme="dark" id="dashboard-root">
+    <div className="cc min-h-full shrink-0 w-full" data-theme="dark" id="dashboard-root">
       <div className="mx-auto w-full max-w-[1440px] px-4 sm:px-6 lg:px-8 py-5 sm:py-7 space-y-5">
         <WelcomeHeader
           name={firstName} photoURL={auth?.userProfile?.photoURL || undefined} greeting={greeting}

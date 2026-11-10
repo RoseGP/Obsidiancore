@@ -68,6 +68,10 @@ const INITIAL_EVENTS: CalendarEvent[] = [];
 const INITIAL_MESSAGES: { [contactId: string]: CRMMessage[] } = {};
 const INITIAL_NOTIFICATIONS: AppNotification[] = [];
 
+// Views laid out as one long page scroll the main area; the others (inbox, calendar, meetings, proposals…)
+// fill the viewport and scroll inside their own panels.
+const PAGE_SCROLL_VIEWS = new Set<string>(['dashboard', 'home', 'analytics', 'settings']);
+
 const SEARCH_NAV_ITEMS = [
   { id: 'dashboard', label: 'Dashboard', icon: 'LayoutDashboard' },
   { id: 'deals', label: 'Leads & deals', icon: 'DollarSign' },
@@ -315,9 +319,9 @@ function AppMain() {
         );
       case 'analytics':
         // Built as a dark console: shown in the graphite frame in both themes (light variant: future work).
-        return <div className="obsidian min-h-full p-6 bg-[var(--obsidian-1)] text-neutral-200"><AnalyticsView /></div>;
+        return <div className="obsidian min-h-full shrink-0 p-6 bg-[var(--obsidian-1)] text-neutral-200"><AnalyticsView /></div>;
       case 'settings':
-        return <div className="obsidian min-h-full bg-[var(--obsidian-1)] text-neutral-200"><SettingsView defaultTab={settingsDefaultTab} /></div>;
+        return <div className="obsidian min-h-full shrink-0 bg-[var(--obsidian-1)] text-neutral-200"><SettingsView defaultTab={settingsDefaultTab} /></div>;
       case 'calendar':
         return (
           <CalendarView
@@ -519,7 +523,7 @@ function AppMain() {
         </header>
 
         {/* Dynamic Viewport */}
-        <main className="flex-1 overflow-hidden relative flex flex-col">
+        <main className={`flex-1 min-h-0 relative flex flex-col ${PAGE_SCROLL_VIEWS.has(activeView) ? 'overflow-y-auto overflow-x-hidden' : 'overflow-hidden'}`}>
           {renderActiveView()}
         </main>
       </div>
