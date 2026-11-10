@@ -13,6 +13,7 @@ import { initializeSignalingServer } from './src/utils/signalingServer';
 import chatRouter from './src/routes/chat';
 import commRouter from './src/routes/communication';
 import meetingsRouter from './src/routes/meetings';
+import greetRouter, { startRecordingRetentionSweeper } from './src/routes/greetApi';
 import meetingNotesRouter from './src/routes/meetingNotes';
 import meetingAdminRouter from './src/routes/meetingAdminApi';
 import { startMeetingSweeper } from './src/server/meetings/sessions';
@@ -79,6 +80,7 @@ app.use('/api/widget', guard(PUBLIC.messaging), messagingPlatformRouter);
 app.use('/api/chat', guard(PUBLIC.none), chatRouter);
 app.use('/api/communication', guard(PUBLIC.communication), commRouter);
 app.use('/api/meetings', guard(PUBLIC.none), meetingsRouter);
+app.use('/api/greet', guard(PUBLIC.greet), greetRouter);
 app.use('/api/meeting-notes', guard(PUBLIC.none), meetingNotesRouter);
 app.use('/api/admin/meetings', guard(PUBLIC.none), meetingAdminRouter);
 app.use('/api/proposals', guard(PUBLIC.proposals), proposalsRouter);
@@ -141,6 +143,8 @@ async function startServer() {
 
   // Ends meetings whose plan time limit has passed, even if nobody is connected.
   startMeetingSweeper();
+  // Deletes GREET cloud recordings past the organization's retention period.
+  startRecordingRetentionSweeper();
   httpServer.listen(PORT, '0.0.0.0', () => {
     console.log(`[OmniChannel CRM Server] Running on http://0.0.0.0:${PORT} (WebSocket + HTTP)`);
   });

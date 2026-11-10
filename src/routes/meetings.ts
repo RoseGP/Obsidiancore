@@ -5,7 +5,7 @@
  * Every limit is enforced here (src/server/meetings/*); the UI only mirrors it. See docs/meetings/PLANS.md.
  */
 import { Router, Request, Response } from 'express';
-import { DateTime } from 'luxon';
+import crypto from 'crypto';
 import { z } from 'zod';
 import { rateLimit } from '../features/social-accounts/server/http';
 import { requirePermission, requireTenant, sendError, tenantOf } from '../server/tenancy/middleware';
@@ -18,7 +18,14 @@ import {
 import {
   MeetingError, addParticipants, admit, attendanceReport, deny, endMeeting, getByRoom, getSessionFor, joinByRoom, leave, leaveByRoom, randomRoomCode,
   mediaTokenFor, removeParticipant, sessionView, setRecording, setRole, startSession, updateSettings, type Actor,
+  answerRecordingConsent, muteParticipant,
 } from '../server/meetings/sessions';
+import {
+  GreetError, announce, canEdit, getMeeting, hostOf, isInvited, lastEnd, meetingView, occurrencesFor, outcomeSchema, patchSchema,
+  resolveInvitees, scheduleSchema, startOf, validateAssociations, type GreetActor,
+} from '../server/greet/scheduled';
+import { createInvites, invitesConfigured, listInvites, revokeInvite } from '../server/greet/invites';
+import { recordAudit } from '../server/greet/audit';
 import { activeMeetings, orgAnalytics } from '../server/meetings/stats';
 import { generateMeetingSummary, meetingSummaryInputSchema, MeetingSummaryError } from '../services/meetingSummary';
 
@@ -152,8 +159,28 @@ router.patch('/sessions/:id', requireTenant, requirePermission('write'), async (
 
 /** POST /api/meetings/sessions/:id/recording { action: 'start' | 'stop' }: the client records only after this succeeds. */
 router.post('/sessions/:id/recording', requireTenant, requirePermission('write'), async (req, res) => {
-  try { res.json({ success: true, session: view(req, await setRecording(actorOf(req), assertId(req.params.id), req.body?.action)) }); }
+  try { res.json({ success: true, session: view(req, await setRecording(actorOf(req), assertId(req.params.id), req.body?.action, { target: req.body?.target })) }); }
   catch (err) { sendMeetingError(res, err, 'meetings.recording'); }
+});
+
+/** POST /api/meetings/sessions/:id/recording/consent { consent: boolean }: your answer to the host's request to record. */
+router.post('/sessions/:id/recording/consent', requireTenant, requirePermission('read'), sessionLimiter, async (req, res) => {
+  try {
+    const a = actorOf(req);
+    const s = await answerRecordingConsent(a.orgId, assertId(req.params.id), { userId: a.userId }, req.body?.consent);
+    await recordAudit(a.orgId, { actorId: a.userId, action: req.body?.consent ? 'greet.recording.consent_given' : 'greet.recording.consent_declined', target: s.id });
+    res.json({ success: true, session: view(req, s) });
+  } catch (err) { sendMeetingError(res, err, 'meetings.recording.consent'); }
+});
+
+/** POST /api/meetings/sessions/:id/participants/:pid/mute and /mute-all: host mutes microphones through LiveKit. */
+router.post('/sessions/:id/participants/:pid/mute', requireTenant, requirePermission('write'), sessionLimiter, async (req, res) => {
+  try { const r = await muteParticipant(actorOf(req), assertId(req.params.id), req.params.pid); res.json({ success: true, results: r.results, session: view(req, r.session) }); }
+  catch (err) { sendMeetingError(res, err, 'meetings.mute'); }
+});
+router.post('/sessions/:id/mute-all', requireTenant, requirePermission('write'), sessionLimiter, async (req, res) => {
+  try { const r = await muteParticipant(actorOf(req), assertId(req.params.id), 'all'); res.json({ success: true, results: r.results, session: view(req, r.session) }); }
+  catch (err) { sendMeetingError(res, err, 'meetings.mute_all'); }
 });
 
 router.post('/sessions/:id/leave', requireTenant, requirePermission('read'), async (req, res) => {
@@ -263,35 +290,7 @@ router.put('/branding', requireTenant, requirePermission('manage_org'), async (r
 // ---------------------------------------------------------------------------
 
 const scheduledPath = (orgId: string) => `organizations/${orgId}/scheduled_meetings`;
-const scheduleSchema = z.object({
-  title: z.string().trim().min(1, 'Add a title.').max(200),
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use a date like 2026-12-01.'),
-  time: z.string().trim().min(1, 'Add a start time.').max(10),
-  ampm: z.enum(['AM', 'PM']).optional(),
-  timezone: z.string().max(64).optional(),
-  duration: z.coerce.number().int().min(5, 'Meetings are at least 5 minutes.').max(LIMIT_BOUNDS.maxDurationMinutes.max),
-  guests: z.array(z.string().trim().email('One of the guest addresses isn\'t valid.')).max(LIMIT_BOUNDS.maxParticipants.max).default([]),
-  locations: z.array(z.string().trim().max(120)).max(20).default([]),
-  permissions: z.object({ modify: z.boolean().optional(), inviteOther: z.boolean().optional(), seeGuestList: z.boolean().optional() }).partial().optional(),
-  availability: z.string().max(40).optional(),
-  visibility: z.string().max(40).optional(),
-  additionalNotes: z.string().max(5000).optional(),
-  recurrence: z.object({
-    frequency: z.enum(['none', 'daily', 'weekly', 'monthly']),
-    count: z.coerce.number().int().min(1).max(52, 'A series can have at most 52 meetings.'),
-  }).optional(),
-});
-
-function startOf(input: z.infer<typeof scheduleSchema>): DateTime {
-  const zone = input.timezone || 'utc';
-  let time = input.time;
-  if (input.ampm && !/am|pm/i.test(time)) time = `${time} ${input.ampm}`;
-  for (const fmt of ['yyyy-MM-dd HH:mm', 'yyyy-MM-dd h:mm a', 'yyyy-MM-dd hh:mm a']) {
-    const dt = DateTime.fromFormat(`${input.date} ${time}`, fmt, { zone });
-    if (dt.isValid) return dt;
-  }
-  throw new MeetingError(400, 'invalid_input', 'That start time isn\'t valid. Use a time like 14:30.', { field: 'time' });
-}
+const greetActor = (req: Request): GreetActor => actorOf(req);
 
 /** Problems a meeting would have under a plan's limits (scheduling, and re-checks after a downgrade). */
 async function planIssues(orgId: string, minutes: number, attendees: number) {
@@ -301,58 +300,148 @@ async function planIssues(orgId: string, minutes: number, attendees: number) {
   if (attendees > plan.limits.maxParticipants) issues.push({ code: 'participants_exceed_plan', message: `${attendees} people is more than the ${plan.label} plan allows (${plan.limits.maxParticipants}, including the host).` });
   return { plan, issues };
 }
+async function refusePlan(res: Response, plan: Awaited<ReturnType<typeof resolveOrgPlan>>, issues: Array<{ code: string; message: string }>, minutes: number, attendees: number) {
+  const configs = await getPlanConfigs();
+  const tier = planForNeeds(configs, { minutes, participants: attendees });
+  return res.status(403).json({ success: false, code: issues[0].code, error: issues.map((i) => i.message).join(' '), issues, plan: { tier: plan.tier, label: plan.label, limits: plan.limits }, ...(tier ? { upgradeTo: tier, upgradeLabel: configs[tier].label } : {}) });
+}
+const attendeeCount = (guests: string[], invitees: Array<{ email: string }>) =>
+  new Set([...guests.map((g) => g.toLowerCase()), ...invitees.map((i) => i.email.toLowerCase() || Math.random().toString())]).size + 1;
 
-/** POST /api/meetings/create: schedule a meeting or a recurring series. Every occurrence must fit the plan. */
+/** Sends GreetError/MeetingError/PlanError with their own status; validation errors as 400; others via sendError. */
+function sendGreetError(res: Response, err: unknown, tag: string) {
+  if (err instanceof GreetError) return res.status(err.status).json({ success: false, code: err.code, error: err.message, ...(err.extra ?? {}) });
+  if (err instanceof z.ZodError) return res.status(400).json({ success: false, code: 'invalid_input', error: err.issues[0]?.message || 'Check the form and try again.', field: err.issues[0]?.path?.join('.') });
+  return sendMeetingError(res, err, tag);
+}
+
+/** POST /api/meetings/create: schedule a GREET meeting or a recurring series. Every occurrence must fit the plan. */
 router.post('/create', requireTenant, requirePermission('write'), async (req, res) => {
   try {
     const input = scheduleSchema.parse(req.body ?? {});
     const t = tenantOf(req);
-    const attendees = new Set(input.guests.map((g) => g.toLowerCase())).size + 1;
+    const invitees = await resolveInvitees(t.orgId, input.inviteeIds, t.userId);
+    const associations = await validateAssociations(t.orgId, input.associations);
+    const attendees = attendeeCount(input.guests, invitees);
     const { plan, issues } = await planIssues(t.orgId, input.duration, attendees);
-    if (issues.length) {
-      const configs = await getPlanConfigs();
-      const tier = planForNeeds(configs, { minutes: input.duration, participants: attendees });
-      return res.status(403).json({ success: false, code: issues[0].code, error: issues.map((i) => i.message).join(' '), issues, plan: { tier: plan.tier, label: plan.label, limits: plan.limits }, ...(tier ? { upgradeTo: tier, upgradeLabel: configs[tier].label } : {}) });
-    }
-    const start = startOf(input);
+    if (issues.length) return refusePlan(res, plan, issues, input.duration, attendees);
     const freq = input.recurrence?.frequency ?? 'none';
     const count = freq === 'none' ? 1 : input.recurrence!.count;
-    const step = freq === 'daily' ? { days: 1 } : freq === 'weekly' ? { weeks: 1 } : freq === 'monthly' ? { months: 1 } : { days: 0 };
-    const occurrences = Array.from({ length: count }, (_, i) => {
-      const s = start.plus(Object.fromEntries(Object.entries(step).map(([k, v]) => [k, v * i])));
-      return { startTime: s.toUTC().toISO()!, endTime: s.plus({ minutes: input.duration }).toUTC().toISO()! };
-    });
+    const occurrences = occurrencesFor(startOf(input), input.duration, freq, count);
     const roomCode = randomRoomCode();
     const base = (process.env.APP_URL || '').replace(/\/+$/, '');
+    const now = new Date().toISOString();
     const meeting = {
-      id: newId('smt'), orgId: t.orgId, title: input.title, guests: [...new Set(input.guests)], locations: input.locations,
+      id: newId('smt'), orgId: t.orgId, title: input.title, guests: [...new Set(input.guests.map((g) => g.toLowerCase()))], invitees, associations,
+      locations: input.locations,
       permissions: { modify: !!input.permissions?.modify, inviteOther: input.permissions?.inviteOther !== false, seeGuestList: !!input.permissions?.seeGuestList },
-      date: input.date, time: input.time, duration: input.duration, availability: input.availability || 'Busy', visibility: input.visibility || 'Default Visibility',
+      date: input.date, time: input.time, ampm: input.ampm ?? null, timezone: input.timezone || 'utc', duration: input.duration,
+      availability: input.availability || 'Busy', visibility: input.visibility || 'Default Visibility',
       additionalNotes: input.additionalNotes || '', recurrence: { frequency: freq, count }, occurrences,
       startTime: occurrences[0].startTime, endTime: occurrences[0].endTime,
       roomCode, videoLink: `${base}/?view=greet&meet=${roomCode}`, status: 'SCHEDULED',
       plan: { tier: plan.tier, maxParticipants: plan.limits.maxParticipants, maxDurationMinutes: plan.limits.maxDurationMinutes },
-      createdBy: t.userId, createdAt: new Date().toISOString(),
+      hostId: t.userId, hostName: t.name || t.email || 'Host', createdBy: t.userId, createdAt: now, updatedAt: now,
+      actualStart: null, actualEnd: null, sessionIds: [], participants: [], outcome: null,
     };
     await (await getDocStore()).set(`${scheduledPath(t.orgId)}/${meeting.id}`, meeting);
-    res.status(201).json({ success: true, message: count > 1 ? `Scheduled ${count} meetings.` : 'Meeting scheduled.', meeting });
-  } catch (err) { sendMeetingError(res, err, 'meetings.schedule'); }
+    await announce(t.orgId, meeting, 'scheduled', t.name || t.email || 'Someone');
+    res.status(201).json({ success: true, message: count > 1 ? `Scheduled ${count} GREET meetings.` : 'GREET meeting scheduled.', meeting: meetingView(meeting, greetActor(req)) });
+  } catch (err) { sendGreetError(res, err, 'meetings.schedule'); }
 });
 
-/** GET /api/meetings: the organization's scheduled meetings, each re-checked against the current plan (downgrades). */
+/** GET /api/meetings: the organization's scheduled meetings (?mine=true: hosted by or inviting you), re-checked against the current plan. */
 router.get('/', requireTenant, requirePermission('read'), async (req, res) => {
   try {
     const orgId = tenantOf(req).orgId;
+    const a = greetActor(req);
     const rows = await (await getDocStore()).list(scheduledPath(orgId), { orderBy: 'startTime', direction: 'asc', limit: 500 });
     const plan = await resolveOrgPlan(orgId);
-    const meetings = rows.map((m) => {
+    const mine = req.query.mine === 'true';
+    const meetings = rows.filter((m) => !mine || hostOf(m) === a.userId || isInvited(m, a)).map((m) => {
       const issues = [] as string[];
       if (m.duration > plan.limits.maxDurationMinutes) issues.push(`Longer than the ${plan.label} plan allows (${plan.limits.maxDurationMinutes} min): it will end at the limit.`);
-      if (m.guests.length + 1 > plan.limits.maxParticipants) issues.push(`More guests than the ${plan.label} plan allows (${plan.limits.maxParticipants}).`);
-      return { ...m, planCheck: { ok: issues.length === 0, issues } };
+      if ((m.guests?.length || 0) + (m.invitees?.length || 0) + 1 > plan.limits.maxParticipants) issues.push(`More guests than the ${plan.label} plan allows (${plan.limits.maxParticipants}).`);
+      return { ...meetingView(m, a), planCheck: { ok: issues.length === 0, issues } };
     });
     res.json({ success: true, plan: { tier: plan.tier, label: plan.label, limits: plan.limits }, meetings });
-  } catch (err) { sendMeetingError(res, err, 'meetings.list'); }
+  } catch (err) { sendGreetError(res, err, 'meetings.list'); }
+});
+
+/**
+ * GET /api/meetings/hub: everything the GREET page shows for you, from the server.
+ *   upcoming     your meetings (host or invited) that haven't finished, soonest first
+ *   invitations  meetings you were invited to by someone else
+ *   history      meetings you took part in (live sessions), newest first, plus history you imported from this browser
+ *   live         meetings of your organization running right now
+ */
+router.get('/hub', requireTenant, requirePermission('read'), sessionLimiter, async (req, res) => {
+  try {
+    const a = greetActor(req);
+    const st = await getDocStore();
+    const now = Date.now();
+    const rows = await st.list(scheduledPath(a.orgId), { orderBy: 'startTime', direction: 'asc', limit: 500 });
+    const views = rows.map((m) => meetingView(m, a, now));
+    const relevant = views.filter((m) => m.yourRole !== 'member');
+    const upcoming = relevant.filter((m) => m.status === 'SCHEDULED' || m.status === 'LIVE')
+      .sort((x, y) => Date.parse(x.nextOccurrence?.startTime || x.startTime) - Date.parse(y.nextOccurrence?.startTime || y.startTime)).slice(0, 50);
+    const invitations = upcoming.filter((m) => m.yourRole === 'invitee');
+    const sessions = await st.list(`organizations/${a.orgId}/meeting_sessions`, { orderBy: 'startedAt', direction: 'desc', limit: 200 });
+    const byScheduled = new Map(rows.map((m) => [m.id, m]));
+    const history = sessions
+      .filter((s) => s.status === 'ended' && (s.hostUserId === a.userId || (s.participants || []).some((p: any) => p.userId === a.userId && p.joinedAt != null)))
+      .slice(0, 60)
+      .map((s) => {
+        const sm = s.scheduledMeetingId ? byScheduled.get(s.scheduledMeetingId) : null;
+        return {
+          id: s.id, source: 'server' as const, title: s.title, roomCode: s.roomCode, startedAt: s.startedAt, endedAt: s.endedAt,
+          minutes: Math.round(((s.endedAt ?? s.startedAt) - s.startedAt) / 60_000), hostName: s.hostName, youHosted: s.hostUserId === a.userId,
+          participants: (s.participants || []).filter((p: any) => p.joinedAt != null).map((p: any) => ({ name: p.name, role: p.role })),
+          recordingUsed: !!s.recording?.used, scheduledMeetingId: s.scheduledMeetingId ?? null,
+          associations: sm?.associations || {}, outcome: sm?.outcome ?? null,
+        };
+      });
+    const imported = (await st.list(`organizations/${a.orgId}/greet_history_imports`, { where: [['ownerId', '==', a.userId]], limit: 200 }))
+      .map((h) => ({ ...h, source: 'imported' as const }));
+    const live = (await st.list(`organizations/${a.orgId}/meeting_sessions`, { where: [['status', '==', 'active']], limit: 50 }))
+      .filter((s) => s.endsAt > now)
+      .map((s) => ({ id: s.id, title: s.title, roomCode: s.roomCode, hostName: s.hostName, startedAt: s.startedAt, participantCount: (s.participants || []).filter((p: any) => p.status === 'in').length, scheduledMeetingId: s.scheduledMeetingId ?? null }));
+    res.json({ success: true, upcoming, invitations, history: [...history, ...imported].sort((x: any, y: any) => (y.startedAt || 0) - (x.startedAt || 0)), live, serverNow: now });
+  } catch (err) { sendGreetError(res, err, 'meetings.hub'); }
+});
+
+/** POST /api/meetings/history/import { records: [...] }: moves meeting history kept in this browser to the server (idempotent per record id). */
+const importSchema = z.object({
+  records: z.array(z.object({
+    id: z.string().regex(/^[A-Za-z0-9_.:-]{1,128}$/),
+    title: z.string().trim().max(200).default('Meeting'),
+    startedAt: z.coerce.number().int().nonnegative(),
+    endedAt: z.coerce.number().int().nonnegative().optional(),
+    durationSeconds: z.coerce.number().int().nonnegative().max(7 * 86_400).optional(),
+    participants: z.array(z.string().trim().max(120)).max(500).optional(),
+    notes: z.string().max(20_000).optional(),
+  })).max(500),
+});
+router.post('/history/import', requireTenant, requirePermission('write'), sessionLimiter, async (req, res) => {
+  try {
+    const { records } = importSchema.parse(req.body ?? {});
+    const a = greetActor(req);
+    const st = await getDocStore();
+    let imported = 0;
+    for (const r of records) {
+      const key = crypto.createHash('sha256').update(`${a.userId}:${r.id}`).digest('hex').slice(0, 40);
+      const path = `organizations/${a.orgId}/greet_history_imports/${key}`;
+      if (await st.get(path)) continue;
+      const endedAt = r.endedAt ?? (r.durationSeconds != null ? r.startedAt + r.durationSeconds * 1000 : r.startedAt);
+      await st.set(path, {
+        id: key, ownerId: a.userId, title: r.title || 'Meeting', startedAt: r.startedAt, endedAt,
+        minutes: Math.round((endedAt - r.startedAt) / 60_000), participants: (r.participants || []).map((name) => ({ name, role: 'guest' })),
+        notes: r.notes || '', importedAt: new Date().toISOString(),
+      });
+      imported++;
+    }
+    res.json({ success: true, imported, skipped: records.length - imported });
+  } catch (err) { sendGreetError(res, err, 'meetings.history.import'); }
 });
 
 /**
@@ -376,6 +465,120 @@ router.post('/ai-summary', requireTenant, requirePermission('write'), summaryLim
     const err = e instanceof MeetingSummaryError ? e : new MeetingSummaryError('The summary could not be generated.', 502, 'ai_error');
     return res.status(err.status).json({ success: false, code: err.code, error: err.message });
   }
+});
+
+/** GET /api/meetings/:id: one scheduled meeting with its invitations, attendance and outcome. */
+router.get('/:id', requireTenant, requirePermission('read'), async (req, res) => {
+  try {
+    const a = greetActor(req);
+    const m = await getMeeting(a.orgId, assertId(req.params.id));
+    const view = meetingView(m, a);
+    const invites = view.canEdit ? (await listInvites(a.orgId, m.id)).map((i: any) => ({ id: i.id, email: i.email, name: i.name, createdAt: i.createdAt, expiresAt: i.expiresAt, revoked: !!i.revoked, lastUsedAt: i.lastUsedAt })) : undefined;
+    res.json({ success: true, meeting: view, invites, invitesConfigured: invitesConfigured() });
+  } catch (err) { sendGreetError(res, err, 'meetings.get'); }
+});
+
+/** PATCH /api/meetings/:id: edit or reschedule (owner or manage_records). Plan limits are checked again. */
+router.patch('/:id', requireTenant, requirePermission('write'), async (req, res) => {
+  try {
+    const a = greetActor(req);
+    const input = patchSchema.parse(req.body ?? {});
+    const st = await getDocStore();
+    const m = await getMeeting(a.orgId, assertId(req.params.id));
+    if (!canEdit(m, a)) return res.status(403).json({ success: false, code: 'not_meeting_owner', error: 'Only the meeting\'s host or a manager can change it.' });
+    if (m.status === 'CANCELLED') return res.status(409).json({ success: false, code: 'meeting_cancelled', error: 'This meeting was cancelled.' });
+    if (m.status === 'LIVE') return res.status(409).json({ success: false, code: 'meeting_live', error: 'This meeting is running. Change it after it ends.' });
+    const next: any = { ...m };
+    for (const k of ['title', 'locations', 'availability', 'visibility', 'additionalNotes', 'permissions'] as const) if (input[k] !== undefined) next[k] = input[k];
+    if (input.guests) next.guests = [...new Set(input.guests.map((g) => g.toLowerCase()))];
+    if (input.inviteeIds) next.invitees = await resolveInvitees(a.orgId, input.inviteeIds, hostOf(m));
+    if (input.associations !== undefined) next.associations = await validateAssociations(a.orgId, input.associations);
+    const timing = input.date !== undefined || input.time !== undefined || input.duration !== undefined || input.timezone !== undefined || input.ampm !== undefined;
+    if (timing) {
+      Object.assign(next, {
+        date: input.date ?? m.date, time: input.time ?? m.time, ampm: input.ampm ?? m.ampm ?? undefined,
+        timezone: input.timezone ?? m.timezone ?? 'utc', duration: input.duration ?? m.duration,
+      });
+      next.occurrences = occurrencesFor(startOf({ date: next.date, time: next.time, ampm: next.ampm || undefined, timezone: next.timezone }), next.duration, m.recurrence?.frequency || 'none', m.recurrence?.count || 1);
+      next.startTime = next.occurrences[0].startTime; next.endTime = next.occurrences[0].endTime;
+      if (Date.parse(next.endTime) > Date.now()) { next.status = 'SCHEDULED'; next.actualStart = null; next.actualEnd = null; }
+    }
+    const attendees = attendeeCount(next.guests || [], next.invitees || []);
+    const { plan, issues } = await planIssues(a.orgId, next.duration, attendees);
+    if (issues.length) return refusePlan(res, plan, issues, next.duration, attendees);
+    next.updatedAt = new Date().toISOString(); next.updatedBy = a.userId;
+    await st.set(`${scheduledPath(a.orgId)}/${m.id}`, next);
+    if (timing) await announce(a.orgId, next, 'rescheduled', a.name || a.email || 'Someone');
+    await recordAudit(a.orgId, { actorId: a.userId, action: timing ? 'greet.meeting.rescheduled' : 'greet.meeting.updated', target: m.id });
+    res.json({ success: true, message: timing ? 'Meeting rescheduled.' : 'Meeting updated.', meeting: meetingView(next, a) });
+  } catch (err) { sendGreetError(res, err, 'meetings.update'); }
+});
+
+/** POST /api/meetings/:id/cancel { reason? }: cancels the meeting (owner or manage_records). Invitation links stop working. */
+router.post('/:id/cancel', requireTenant, requirePermission('write'), async (req, res) => {
+  try {
+    const a = greetActor(req);
+    const m = await getMeeting(a.orgId, assertId(req.params.id));
+    if (!canEdit(m, a)) return res.status(403).json({ success: false, code: 'not_meeting_owner', error: 'Only the meeting\'s host or a manager can cancel it.' });
+    if (m.status === 'LIVE') return res.status(409).json({ success: false, code: 'meeting_live', error: 'This meeting is running. End it for everyone instead.' });
+    if (m.status === 'CANCELLED') return res.json({ success: true, meeting: meetingView(m, a) });
+    const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim().slice(0, 500) : '';
+    const next = { ...m, status: 'CANCELLED', cancelledAt: new Date().toISOString(), cancelledBy: a.userId, cancelReason: reason, updatedAt: new Date().toISOString() };
+    await (await getDocStore()).set(`${scheduledPath(a.orgId)}/${m.id}`, next);
+    await announce(a.orgId, next, 'cancelled', a.name || a.email || 'Someone', reason ? `Reason: ${reason}` : '');
+    await recordAudit(a.orgId, { actorId: a.userId, action: 'greet.meeting.cancelled', target: m.id });
+    res.json({ success: true, message: 'Meeting cancelled.', meeting: meetingView(next, a) });
+  } catch (err) { sendGreetError(res, err, 'meetings.cancel'); }
+});
+
+/** POST /api/meetings/:id/outcome { result, summary? }: how the meeting went (host, invitee or manager). Logged to the CRM. */
+router.post('/:id/outcome', requireTenant, requirePermission('write'), async (req, res) => {
+  try {
+    const a = greetActor(req);
+    const input = outcomeSchema.parse(req.body ?? {});
+    const m = await getMeeting(a.orgId, assertId(req.params.id));
+    if (!canEdit(m, a) && !isInvited(m, a)) return res.status(403).json({ success: false, code: 'not_meeting_owner', error: 'Only people in this meeting or a manager can record its outcome.' });
+    const outcome = { result: input.result, summary: input.summary, at: new Date().toISOString(), by: a.userId, byName: a.name || a.email || '' };
+    const next = { ...m, outcome, updatedAt: outcome.at, ...(m.status === 'SCHEDULED' && lastEnd(m) < Date.now() ? { status: 'ENDED' } : {}) };
+    await (await getDocStore()).set(`${scheduledPath(a.orgId)}/${m.id}`, next);
+    await announce(a.orgId, next, 'outcome', a.name || a.email || 'Someone', `${input.result.replace('_', ' ')}${input.summary ? `: ${input.summary.slice(0, 300)}` : ''}`);
+    res.json({ success: true, meeting: meetingView(next, a) });
+  } catch (err) { sendGreetError(res, err, 'meetings.outcome'); }
+});
+
+/** POST /api/meetings/:id/invites { guests?: [{ email, name? }] } (default: every external guest): secure, expiring guest links. */
+const inviteSchema = z.object({ guests: z.array(z.object({ email: z.string().trim().email(), name: z.string().trim().max(120).optional() })).max(200).optional() });
+router.post('/:id/invites', requireTenant, requirePermission('write'), sessionLimiter, async (req, res) => {
+  try {
+    const a = greetActor(req);
+    const input = inviteSchema.parse(req.body ?? {});
+    const m = await getMeeting(a.orgId, assertId(req.params.id));
+    if (!canEdit(m, a)) return res.status(403).json({ success: false, code: 'not_meeting_owner', error: 'Only the meeting\'s host or a manager can invite guests.' });
+    if (m.status === 'CANCELLED') return res.status(409).json({ success: false, code: 'meeting_cancelled', error: 'This meeting was cancelled.' });
+    if (!invitesConfigured()) return res.status(503).json({ success: false, code: 'invites_not_configured', error: 'Guest invitation links need GREET_INVITE_SECRET (or JWT_SECRET) on the server.' });
+    const people = input.guests ?? (m.guests || []).map((email: string) => ({ email }));
+    if (!people.length) return res.status(400).json({ success: false, code: 'invalid_input', error: 'Add at least one guest email.', field: 'guests' });
+    const guests = [...new Set([...(m.guests || []), ...people.map((p) => p.email.toLowerCase())])];
+    const attendees = attendeeCount(guests, m.invitees || []);
+    const { plan, issues } = await planIssues(a.orgId, m.duration, attendees);
+    if (issues.length) return refusePlan(res, plan, issues, m.duration, attendees);
+    const base = (process.env.APP_URL || '').replace(/\/+$/, '');
+    const created = await createInvites(a.orgId, m, people, a.userId, base);
+    if (guests.length !== (m.guests || []).length) await (await getDocStore()).update(`${scheduledPath(a.orgId)}/${m.id}`, { guests, updatedAt: new Date().toISOString() });
+    await recordAudit(a.orgId, { actorId: a.userId, action: 'greet.invites.created', target: m.id, meta: { count: created.length } });
+    res.status(201).json({ success: true, invites: created, message: created.length === 1 ? 'Invitation link created. Send it to your guest.' : `${created.length} invitation links created.` });
+  } catch (err) { sendGreetError(res, err, 'meetings.invites.create'); }
+});
+
+router.delete('/:id/invites/:inviteId', requireTenant, requirePermission('write'), async (req, res) => {
+  try {
+    const a = greetActor(req);
+    const m = await getMeeting(a.orgId, assertId(req.params.id));
+    if (!canEdit(m, a)) return res.status(403).json({ success: false, code: 'not_meeting_owner', error: 'Only the meeting\'s host or a manager can withdraw invitations.' });
+    await revokeInvite(a.orgId, m.id, req.params.inviteId);
+    await recordAudit(a.orgId, { actorId: a.userId, action: 'greet.invite.revoked', target: m.id, meta: { inviteId: req.params.inviteId } });
+    res.json({ success: true, message: 'Invitation withdrawn.' });
+  } catch (err) { sendGreetError(res, err, 'meetings.invites.revoke'); }
 });
 
 export default router;

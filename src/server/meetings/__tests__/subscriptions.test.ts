@@ -180,7 +180,7 @@ let sid = '';
   assert.equal(g.body.session.endsAt - g.body.session.startedAt, 300 * MIN);
   const more = await as('olivia').post(`/api/meetings/sessions/${id}/participants`, { emails: emails(30, 'm') });
   assert.equal(more.body.added.length, 30);
-  assert.equal((await as('olivia').post(`/api/meetings/sessions/${id}/recording`, { action: 'start' })).status, 200);
+  assert.equal((await as('olivia').post(`/api/meetings/sessions/${id}/recording`, { action: 'request' })).status, 200);
   ok('upgrading mid-meeting extends the running meeting at once (250 people, 5 hours, recording)');
 
   await setTier(orgA, { tier: 'free', reason: 'downgrade mid-meeting' });

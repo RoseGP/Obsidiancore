@@ -62,6 +62,8 @@ export const PUBLIC = {
   messaging: [/^\/widgets\/[^/]+$/, /^\/visitor-init$/, /^\/visitor-message$/, /^\/visitor-messages\/[^/]+$/, /^\/embed(\/.*)?$/],
   // Provider webhooks (verify each provider's signature inside the handler).
   communication: [/^\/whatsapp-webhook$/, /^\/twilio-sms$/, /^\/incoming-call$/, /^\/twiml-(fallback|voicemail-saved)$/],
+  // GREET guest invitation links (signed, expiring tokens checked in the handler) and LiveKit's signed webhook.
+  greet: [/^\/invite\/[A-Za-z0-9_.-]{20,600}(\/(join|session|media-token|recording-consent|leave))?$/, /^\/livekit-webhook$/],
   // Customer-facing proposal links: only /share/<token>/… (the token is checked against its stored hash).
   proposals: [/^\/share\/[A-Za-z0-9_-]{20,64}(\/(items\/[A-Za-z0-9_-]+|accept|decline|checkout|document))?$/],
 };
