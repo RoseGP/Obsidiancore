@@ -355,28 +355,22 @@ export default function DashboardView({ contacts, onSelectContact, onNavigate, o
   const unreadNotifications = notificationsCtx.notifications;
 
   return (
-    <div className="cc min-h-full shrink-0 w-full" data-theme="dark" id="dashboard-root">
+    <div className="cc min-h-full shrink-0 w-full" id="dashboard-root">
       <div className="mx-auto w-full max-w-[1440px] px-4 sm:px-6 lg:px-8 py-5 sm:py-7 space-y-5">
         <WelcomeHeader
-          name={firstName} photoURL={auth?.userProfile?.photoURL || undefined} greeting={greeting}
+          name={firstName} greeting={greeting}
           ai={{ claude: cc.service.data ? cc.service.data.ai.claude.configured : null, gemini: cc.service.data ? cc.service.data.ai.gemini.configured : null }}
-          notifications={unreadNotifications.map((n) => ({ id: n.id, title: n.title, message: n.message, timestamp: n.timestamp, read: n.read }))}
-          onMarkRead={notificationsCtx.markAsRead} onMarkAllRead={notificationsCtx.markAllAsRead}
-          onOpenSettings={() => (onOpenSettings ? onOpenSettings('account') : open('settings'))}
-          onOpenProfile={() => (onOpenSettings ? onOpenSettings('account') : open('settings'))}
+          actions={
+            <div className="flex flex-wrap items-center gap-2 print:hidden">
+              <Button variant="primary" icon={<Plus className="h-4 w-4" />} onClick={() => setDealOpen(true)} className="bg-gradient-to-br from-[#4f8df7] to-[#6b6cf2] shadow-[0_10px_24px_-8px_rgb(79_110_247/0.6)]">Register deal</Button>
+              <Button variant="secondary" icon={<UserPlus className="h-4 w-4" />} onClick={() => (onQuickAction ? onQuickAction('lead') : open('leads'))}>Add lead</Button>
+              <Button variant="secondary" icon={<Bot className="h-4 w-4" />} className="cc-aurora" onClick={() => { document.getElementById('copilot')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); document.getElementById('assistant-input')?.focus({ preventScroll: true }); }}>Ask copilot</Button>
+              <span className="mx-1 h-5 w-px bg-[var(--border)]" aria-hidden="true" />
+              <Button size="sm" variant="ghost" icon={<SlidersHorizontal className="h-4 w-4" />} onClick={() => setCustomizeOpen(true)}>Customize</Button>
+              <span className="text-[11px] text-[var(--text-subtle)]">{loading ? 'Updating…' : 'Up to date'}</span>
+            </div>
+          }
         />
-
-        <div className="flex flex-wrap items-center justify-between gap-2 print:hidden">
-          <div className="flex flex-wrap gap-2">
-            <Button variant="primary" icon={<Plus className="h-4 w-4" />} onClick={() => setDealOpen(true)}>Register deal</Button>
-            <Button variant="secondary" icon={<UserPlus className="h-4 w-4" />} onClick={() => (onQuickAction ? onQuickAction('lead') : open('leads'))}>Add lead</Button>
-            <Button variant="secondary" icon={<Bot className="h-4 w-4" />} onClick={() => document.getElementById('assistant-input')?.focus()}>Ask copilot</Button>
-          </div>
-          <div className="flex items-center gap-1">
-            <span className="hidden sm:inline text-[11px] text-[var(--text-subtle)] mr-1">{loading ? 'Updating…' : 'Up to date'}</span>
-            <Button size="sm" variant="ghost" icon={<SlidersHorizontal className="h-4 w-4" />} onClick={() => setCustomizeOpen(true)}>Customize</Button>
-          </div>
-        </div>
 
         {error && (
           <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-[var(--danger-soft)] px-4 py-3 text-[13px] text-[var(--danger)]">

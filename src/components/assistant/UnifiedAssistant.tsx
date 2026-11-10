@@ -325,7 +325,7 @@ export default function UnifiedAssistant({ contacts = [], onNavigate }: { contac
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3 px-4 sm:px-6 pt-5 pb-4">
         <div className="flex items-center gap-3 min-w-0">
-          <span className="cc-orb shrink-0" data-busy={busy} aria-hidden="true" />
+          {!empty && <span className="cc-orb shrink-0" data-busy={busy} aria-hidden="true" />}
           <div className="min-w-0">
             <h2 id="copilot-title" className="text-[17px] sm:text-[19px] font-semibold tracking-[-0.02em] text-[var(--text)]">Your AI Business Copilot</h2>
             <p className="text-[12px] sm:text-[13px] text-[var(--text-muted)]">Your intelligent assistant is ready to help you grow your business.</p>
@@ -398,17 +398,8 @@ export default function UnifiedAssistant({ contacts = [], onNavigate }: { contac
       {/* Conversation */}
       <div ref={listRef} className={`px-4 sm:px-6 ${empty ? 'pb-2' : `py-2 overflow-y-auto ${expanded ? 'flex-1' : 'max-h-[420px]'}`} space-y-4`} aria-live="polite">
         {empty ? (
-          <div className="pt-1 pb-2">
-            <p className="text-[13px] text-[var(--text-muted)] mb-2.5">Try a command, type your own, or press the microphone and speak.</p>
-            <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3" aria-label="Suggested commands">
-              {COPILOT_SUGGESTIONS.map((s) => (
-                <li key={s}>
-                  <button type="button" onClick={() => void send(s)} disabled={checkedProviders && !anyConfigured} className={`w-full h-full text-left rounded-xl border border-[var(--border)] bg-[var(--surface-sunken)] px-3 py-2.5 text-[13px] text-[var(--text)] hover:border-[var(--accent)] hover:bg-[var(--accent-soft)] transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${focus}`}>
-                    {s}
-                  </button>
-                </li>
-              ))}
-            </ul>
+          <div className="flex justify-center pt-1 -mb-7 relative z-10" aria-hidden="true">
+            <span className="cc-orb" data-busy={busy} style={{ ['--orb-size' as any]: '64px' }} />
           </div>
         ) : messages.map((m) => m.role === 'user' ? (
           <div key={m.id} className="flex justify-end items-start gap-1">
@@ -480,7 +471,7 @@ export default function UnifiedAssistant({ contacts = [], onNavigate }: { contac
 
       {/* Composer */}
       <form onSubmit={(e) => { e.preventDefault(); void send(input); }} className="px-3 sm:px-5 pb-4 pt-2">
-        <div className={`rounded-2xl border bg-[var(--surface-sunken)] transition-colors ${listening ? 'border-[var(--cc-cyan)] shadow-[0_0_0_3px_rgb(34_211_238/0.15)]' : 'border-[var(--border)] focus-within:border-[var(--accent)]'}`}>
+        <div className="cc-composer" data-listening={listening}>
           {!!attachments.length && (
             <div className="px-3 pt-2.5 flex flex-wrap gap-1.5">
               {attachments.map((a) => (
@@ -497,13 +488,13 @@ export default function UnifiedAssistant({ contacts = [], onNavigate }: { contac
             placeholder={listening ? 'Listening… speak your command' : 'Ask anything or give a command, e.g. “Register a $5,000 deal for Acme”'}
             onChange={(e) => { setInput(e.target.value); autoGrow(); }}
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void send(input); } }}
-            className="block w-full resize-none bg-transparent text-[15px] text-[var(--text)] placeholder:text-[var(--text-subtle)] focus:outline-none px-4 pt-3 pb-1 min-h-[52px]"
+            className={`block w-full resize-none bg-transparent text-[15px] text-[var(--text)] placeholder:text-[var(--text-subtle)] focus:outline-none px-4 pb-1 ${empty ? 'pt-10 min-h-[96px]' : 'pt-3 min-h-[52px]'}`}
           />
           <div className="flex items-center justify-between gap-2 px-2 pb-2">
             <div className="flex items-center gap-0.5 relative">
               <input ref={fileRef} type="file" multiple className="hidden" accept=".txt,.md,.csv,.tsv,.json,.log,.xml,.html,.yaml,.yml,.js,.ts,.tsx,.jsx,.py,.sql,.css,text/*" onChange={(e) => void addFiles(e.target.files)} />
-              <button type="button" className={iconBtn} onClick={() => fileRef.current?.click()} aria-label="Attach text files" title={`Attach text files (up to ${MAX_FILES}, ${fmtSize(MAX_FILE_BYTES)} each)`}><Paperclip className="h-4 w-4" /></button>
-              <button type="button" className={`${iconBtn} ${panel === 'options' ? 'text-[var(--accent-text)] bg-[var(--accent-soft)]' : ''}`} onClick={() => setPanel(panel === 'options' ? null : 'options')} aria-expanded={panel === 'options'} aria-label="Response options" title="Response options"><SlidersHorizontal className="h-4 w-4" /></button>
+              <button type="button" className={iconBtn} onClick={() => fileRef.current?.click()} aria-label="Add files" title={`Attach text files (up to ${MAX_FILES}, ${fmtSize(MAX_FILE_BYTES)} each)`} style={{ width: 'auto', paddingInline: 8, gap: 6 }}><Paperclip className="h-4 w-4" /><span className="hidden sm:inline text-[12px]">Add files</span></button>
+              <button type="button" className={`${iconBtn} ${panel === 'options' ? 'text-[var(--accent-text)] bg-[var(--accent-soft)]' : ''}`} onClick={() => setPanel(panel === 'options' ? null : 'options')} aria-expanded={panel === 'options'} aria-label="Response options" title="Response options" style={{ width: 'auto', paddingInline: 8, gap: 6 }}><SlidersHorizontal className="h-4 w-4" /><span className="hidden sm:inline text-[12px]">Options</span></button>
               {panel === 'options' && (
                 <div role="dialog" aria-label="Response options" className="absolute bottom-10 left-0 w-[280px] rounded-2xl border border-[var(--border)] bg-[var(--surface-raised)] p-3 shadow-2xl space-y-3 text-[12px] z-30">
                   {([['Length', 'length', ['concise', 'standard', 'detailed']], ['Tone', 'tone', ['executive', 'technical', 'action']]] as const).map(([label, key, opts]) => (
@@ -541,6 +532,20 @@ export default function UnifiedAssistant({ contacts = [], onNavigate }: { contac
             </div>
           </div>
         </div>
+        {empty && (
+          <div className="mt-4">
+            <p className="text-[13px] text-[var(--text-muted)] mb-2.5 px-1">Try a command, type your own, or press the microphone and speak.</p>
+            <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3" aria-label="Suggested commands">
+              {COPILOT_SUGGESTIONS.map((sg) => (
+                <li key={sg}>
+                  <button type="button" onClick={() => void send(sg)} disabled={checkedProviders && !anyConfigured} className={`w-full h-full text-left rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2.5 text-[13px] text-[var(--text)] hover:border-[var(--accent)] hover:-translate-y-px hover:shadow-[var(--cc-shadow)] transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 ${focus}`}>
+                    {sg}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         <p className="mt-2 px-1 text-[11px] text-[var(--text-subtle)]">
           Drafts replies · qualifies leads · registers deals · summarizes conversations{prefs.includeCrm ? '' : ' (CRM data is off in settings)'}. Changes it makes are logged in your CRM activity.
         </p>
@@ -557,7 +562,7 @@ export default function UnifiedAssistant({ contacts = [], onNavigate }: { contac
             The copilot is open in full screen.
             <button type="button" onClick={() => setExpanded(false)} className="ml-2 underline text-[var(--accent-text)] cursor-pointer">Return it here</button>
           </div>
-          <div className="fixed inset-0 z-[75] p-2 sm:p-6 bg-[#03060d]/80 backdrop-blur-sm" onClick={(e) => { if (e.target === e.currentTarget) setExpanded(false); }}>
+          <div className="fixed inset-0 z-[75] p-2 sm:p-6 bg-[#0b1020]/45 backdrop-blur-sm" onClick={(e) => { if (e.target === e.currentTarget) setExpanded(false); }}>
             <div className="mx-auto h-full max-w-5xl">{body}</div>
           </div>
         </>

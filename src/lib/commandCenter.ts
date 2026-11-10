@@ -317,7 +317,7 @@ export function greetingLine(input: CommandCenterInput, attention: AttentionItem
   if (newToday) parts.push(`${newToday} new lead${newToday === 1 ? '' : 's'} today`);
   if (next) parts.push(next.live ? `“${next.title}” is happening now` : `next meeting “${next.title}” ${minutesUntil(next.start, now).toLowerCase()}`);
   if (!parts.length) {
-    if (!input.leads.length && !input.deals.length) return 'Your workspace is ready. Add your first lead or ask your copilot where to start.';
+    if (!input.leads.length && !input.deals.length) return 'No leads or deals yet. Add your first lead or ask your copilot where to start.';
     return 'Nothing urgent right now. A good moment to follow up with your best prospects.';
   }
   const s = parts.join(', ');

@@ -48,79 +48,66 @@ const initials = (s: string) => s.trim().split(/[\s@._-]+/).filter(Boolean).slic
 // ---------------------------------------------------------------------------
 // 1. Welcome header
 // ---------------------------------------------------------------------------
-export interface HeaderNotification { id: string; title: string; message: string; timestamp: string; read: boolean }
-
-export function WelcomeHeader({ name, photoURL, greeting, ai, notifications, onMarkRead, onMarkAllRead, onOpenSettings, onOpenProfile }: {
-  name: string; photoURL?: string; greeting: string; ai: { claude: boolean | null; gemini: boolean | null };
-  notifications: HeaderNotification[]; onMarkRead: (id: string) => void; onMarkAllRead: () => void; onOpenSettings: () => void; onOpenProfile: () => void;
+export function WelcomeHeader({ name, greeting, ai, actions, crumbs = ['Home', 'AI Command Center', 'Dashboard', 'Overview'] }: {
+  name: string; greeting: string; ai: { claude: boolean | null; gemini: boolean | null }; actions?: React.ReactNode; crumbs?: string[];
 }) {
   const [now, setNow] = useState(() => new Date());
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
   useEffect(() => { const t = setInterval(() => setNow(new Date()), 15_000); return () => clearInterval(t); }, []);
-  useEffect(() => {
-    if (!open) return;
-    const close = (e: MouseEvent | KeyboardEvent) => { if (e instanceof KeyboardEvent ? e.key === 'Escape' : !ref.current?.contains(e.target as Node)) setOpen(false); };
-    document.addEventListener('mousedown', close); document.addEventListener('keydown', close);
-    return () => { document.removeEventListener('mousedown', close); document.removeEventListener('keydown', close); };
-  }, [open]);
-  const unread = notifications.filter((n) => !n.read).length;
-  const aiCount = [ai.claude, ai.gemini].filter(Boolean).length;
   const aiKnown = ai.claude !== null;
-  const aiTone = !aiKnown ? 'neutral' : aiCount === 2 ? 'success' : aiCount === 1 ? 'warning' : 'danger';
-  const aiText = !aiKnown ? 'Checking AI…' : aiCount === 2 ? 'AI online · Claude + Gemini' : aiCount === 1 ? `AI online · ${ai.claude ? 'Claude' : 'Gemini'} only` : 'AI not configured';
-  const dot = { success: 'bg-[var(--success)] shadow-[0_0_10px_var(--success)]', warning: 'bg-[var(--warning)]', danger: 'bg-[var(--danger)]', neutral: 'bg-[var(--text-subtle)]' }[aiTone];
+  const on = [ai.claude && 'Claude', ai.gemini && 'Gemini'].filter(Boolean) as string[];
+  const tone = !aiKnown ? 'neutral' : on.length === 2 ? 'success' : on.length === 1 ? 'warning' : 'danger';
+  const statusTitle = !aiKnown ? 'Checking your workspace…' : 'Your workspace is ready.';
+  const statusText = !aiKnown ? 'Looking up which AI providers are configured.'
+    : on.length === 2 ? 'AI Assistant is online with Claude and Gemini.'
+    : on.length === 1 ? `AI Assistant is online with ${on[0]}.`
+    : 'AI isn’t set up yet: an administrator adds a Claude or Gemini key.';
+  const dot = { success: 'bg-[var(--success)] shadow-[0_0_10px_var(--success)]', warning: 'bg-[var(--warning)]', danger: 'bg-[var(--danger)]', neutral: 'bg-[var(--text-subtle)]' }[tone];
 
   return (
-    <header className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-      <div className="min-w-0">
-        <p className="text-[12px] font-medium text-[var(--text-muted)] tabular-nums">
-          {now.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })} · <time dateTime={now.toISOString()}>{now.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}</time>
-        </p>
-        <h1 className="mt-1 text-[26px] sm:text-[32px] font-semibold tracking-[-0.03em] leading-tight bg-gradient-to-r from-white via-[#cfd6ff] to-[#8fe9ff] bg-clip-text text-transparent">
-          Welcome back{name ? `, ${name}` : ''}
-        </h1>
-        <p className="mt-1 text-[14px] text-[var(--text-muted)]">Your AI business command center is ready. Let’s make today productive.</p>
-        <p className="mt-2 inline-flex items-start gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface-sunken)] px-3 py-1.5 text-[13px] text-[var(--text)]" aria-live="polite">
-          <Sparkles className="h-4 w-4 mt-0.5 shrink-0 text-[var(--cc-cyan)]" aria-hidden="true" />{greeting}
-        </p>
-      </div>
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-[12px] text-[var(--text-muted)] cc-card" role="status" title="AI providers configured on this server">
-          <span className={cx('h-2 w-2 rounded-full', dot)} aria-hidden="true" /><Cpu className="h-3.5 w-3.5" aria-hidden="true" />{aiText}
-        </span>
-        <div className="relative" ref={ref}>
-          <IconButton label={`Notifications${unread ? `, ${unread} unread` : ''}`} aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen((o) => !o)} className="relative h-9 w-9 border border-[var(--border)] bg-[var(--surface)] cc-card">
-            <Bell className="h-4 w-4" />
-            {unread > 0 && <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] rounded-full bg-[var(--danger)] px-1 text-[10px] font-semibold leading-[18px] text-white" aria-hidden="true">{unread > 9 ? '9+' : unread}</span>}
-          </IconButton>
-          {open && (
-            <div role="dialog" aria-label="Notifications" className="absolute right-0 z-50 mt-2 w-[min(340px,calc(100vw-2rem))] rounded-2xl border border-[var(--border)] bg-[var(--surface-raised)] shadow-2xl">
-              <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border)]">
-                <p className="text-[13px] font-semibold text-[var(--text)]">Notifications</p>
-                {unread > 0 && <button type="button" onClick={onMarkAllRead} className={cx('text-[12px] text-[var(--accent-text)] hover:underline cursor-pointer', focusRing)}>Mark all read</button>}
-              </div>
-              {notifications.length ? (
-                <ul className="max-h-80 overflow-y-auto p-1.5">
-                  {notifications.slice(0, 12).map((n) => (
-                    <li key={n.id}>
-                      <button type="button" onClick={() => onMarkRead(n.id)} className={cx('w-full text-left rounded-xl px-3 py-2 hover:bg-[var(--surface-sunken)] cursor-pointer', focusRing)}>
-                        <span className="flex items-center gap-2 text-[13px] text-[var(--text)]">{!n.read && <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent)]" aria-label="Unread" />}{n.title}</span>
-                        <span className="block text-[12px] text-[var(--text-muted)] line-clamp-2">{n.message}</span>
-                        <span className="block text-[11px] text-[var(--text-subtle)]">{n.timestamp}</span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              ) : <p className="px-4 py-6 text-center text-[12px] text-[var(--text-muted)]">You’re all caught up.</p>}
-            </div>
-          )}
+    <header className="space-y-4">
+      <nav aria-label="Breadcrumb">
+        <ol className="flex flex-wrap items-center gap-1.5 text-[12px] text-[var(--text-muted)]">
+          {crumbs.map((c, i) => (
+            <li key={c} className="flex items-center gap-1.5">
+              {i > 0 && <span aria-hidden="true" className="text-[var(--text-subtle)]">/</span>}
+              <span aria-current={i === crumbs.length - 1 ? 'page' : undefined} className={i === crumbs.length - 1 ? 'font-semibold text-[var(--text)]' : ''}>{c}</span>
+            </li>
+          ))}
+        </ol>
+      </nav>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0 space-y-3">
+          <div>
+            <p className="text-[12px] font-medium text-[var(--text-muted)] tabular-nums">
+              {now.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })} · <time dateTime={now.toISOString()}>{now.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}</time>
+            </p>
+            <h1 className="cc-title mt-1 text-[28px] sm:text-[34px] font-semibold tracking-[-0.03em] leading-tight">Welcome back{name ? `, ${name}` : ''}</h1>
+          </div>
+          <p className="cc-card inline-flex rounded-[18px] border bg-[var(--surface)] px-3.5 py-2 text-[13px] text-[var(--text)]">Your AI business command center is ready. Let’s make today productive.</p>
+          <p className="flex items-start gap-2 text-[13px] text-[var(--text-muted)]" aria-live="polite">
+            <Sparkles className="h-4 w-4 mt-0.5 shrink-0 text-[var(--cc-violet)]" aria-hidden="true" />{greeting}
+          </p>
+          {actions}
         </div>
-        <IconButton label="Settings" onClick={onOpenSettings} className="h-9 w-9 border border-[var(--border)] bg-[var(--surface)] cc-card"><Settings className="h-4 w-4" /></IconButton>
-        <button type="button" onClick={onOpenProfile} className={cx('inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface)] cc-card pl-1 pr-3 py-1 cursor-pointer hover:border-[var(--border-strong)]', focusRing)} aria-label="Your profile">
-          {photoURL ? <img src={photoURL} alt="" className="h-7 w-7 rounded-full object-cover" referrerPolicy="no-referrer" /> : <span className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-[#5b6cff] to-[#22d3ee] text-[11px] font-semibold text-white" aria-hidden="true">{initials(name || 'You')}</span>}
-          <span className="text-[12px] font-medium text-[var(--text)] max-w-[120px] truncate">{name || 'Profile'}</span>
-        </button>
+        <div role="status" className="cc-card flex items-center gap-3 self-start rounded-[28px] border bg-[var(--surface)] pl-3.5 pr-3 py-2.5 max-w-sm">
+          <Sparkles className="h-5 w-5 shrink-0 text-[var(--accent)]" aria-hidden="true" />
+          <div className="min-w-0">
+            <p className="text-[13px] font-semibold text-[var(--text)]">{statusTitle}</p>
+            <p className="text-[12px] text-[var(--text-muted)]">{statusText}</p>
+          </div>
+          <div className="flex items-center gap-1 shrink-0" aria-hidden="true">
+            {(['Claude', 'Gemini'] as const).map((p) => {
+              const ok = p === 'Claude' ? ai.claude : ai.gemini;
+              return (
+                <span key={p} title={`${p}: ${ok ? 'configured' : ok === false ? 'not configured' : 'checking'}`}
+                  className={cx('flex h-7 w-7 items-center justify-center rounded-lg text-[12px] font-bold', ok ? (p === 'Claude' ? 'bg-[#d97757] text-white' : 'bg-white text-[#4285f4] ring-1 ring-[var(--border)]') : 'bg-[var(--surface-sunken)] text-[var(--text-subtle)] line-through')}>
+                  {p === 'Claude' ? 'A' : 'G'}
+                </span>
+              );
+            })}
+            <span className={cx('ml-1 h-2.5 w-2.5 rounded-full', dot)} />
+          </div>
+        </div>
       </div>
     </header>
   );

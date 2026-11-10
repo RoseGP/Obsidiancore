@@ -120,7 +120,7 @@ export default function LeadIntelligenceView({ onNavigate, onQuickAction }: { on
       <header className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <p className="inline-flex items-center gap-1.5 text-[12px] font-medium text-[var(--cc-cyan)]"><Brain className="h-3.5 w-3.5" aria-hidden="true" />AI Lead Intelligence</p>
-          <h1 className="mt-1 text-[26px] sm:text-[30px] font-semibold tracking-[-0.03em] bg-gradient-to-r from-white via-[#cfd6ff] to-[#8fe9ff] bg-clip-text text-transparent">Lead Intelligence Center</h1>
+          <h1 className="mt-1 text-[26px] sm:text-[30px] font-semibold tracking-[-0.03em] cc-title">Lead Intelligence Center</h1>
           <p className="mt-1 text-[14px] text-[var(--text-muted)] max-w-2xl">Every lead scored on engagement, conversations, buying intent, budget, requirements, responsiveness and deal value, with the next best action.</p>
         </div>
         <div className="flex items-center gap-2">
@@ -265,9 +265,9 @@ function LeadDrawer({ lead: l, onClose, onConvert, converting, onAction }: { lea
 
   return (
     <div className="fixed inset-0 z-[85] flex justify-end" role="dialog" aria-modal="true" aria-labelledby="li-title">
-      <div className="absolute inset-0 bg-[#03060d]/70 backdrop-blur-sm" onClick={onClose} aria-hidden="true" />
-      <aside className="relative h-full w-full max-w-[640px] overflow-y-auto border-l border-[var(--border)] bg-[#0a1020] shadow-2xl">
-        <div className="sticky top-0 z-10 flex items-start gap-3 border-b border-[var(--border)] bg-[#0a1020]/95 backdrop-blur px-5 py-4">
+      <div className="absolute inset-0 bg-[#0b1020]/45 backdrop-blur-sm" onClick={onClose} aria-hidden="true" />
+      <aside className="relative h-full w-full max-w-[640px] overflow-y-auto border-l border-[var(--border)] bg-[var(--surface-raised)] shadow-2xl">
+        <div className="sticky top-0 z-10 flex items-start gap-3 border-b border-[var(--border)] bg-[var(--surface-raised)]/95 backdrop-blur px-5 py-4">
           <ScoreRing score={l.score} cls={l.classification} size={56} />
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2"><h2 id="li-title" className="text-[18px] font-semibold text-[var(--text)] truncate">{l.name}</h2><ClassBadge cls={l.classification} />{l.qualified && <Badge tone="success">Qualified</Badge>}</div>

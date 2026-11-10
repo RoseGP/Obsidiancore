@@ -159,6 +159,8 @@ export const QUICK_ACTION_ICONS = { UserPlus, Plus, Calendar, Video, FileText, I
 export interface ChecklistStep { id: string; label: string; detail: string; done: boolean; action: { label: string; onClick: () => void } }
 
 /** First-run checklist built from what the organization has actually done. */
+const STEP_TINTS = ['rgb(147 197 253 / 0.6)', 'rgb(196 181 253 / 0.55)', 'rgb(167 243 208 / 0.55)', 'rgb(249 168 212 / 0.5)'];
+
 export function GettingStartedCard({ steps, onDismiss }: { steps: ChecklistStep[]; onDismiss: () => void }) {
   const done = steps.filter((s) => s.done).length;
   return (
@@ -172,8 +174,8 @@ export function GettingStartedCard({ steps, onDismiss }: { steps: ChecklistStep[
         actions={<IconButton label="Hide the setup checklist" onClick={onDismiss}><X className="h-4 w-4" /></IconButton>}
       />
       <ol className="grid gap-2 px-4 pb-4 grid-cols-2 lg:grid-cols-4">
-        {steps.map((s) => (
-          <li key={s.id} className={cx('flex flex-col gap-2 rounded-xl border p-3', s.done ? 'border-[var(--border)] bg-[var(--surface-sunken)]/60' : 'border-[var(--border)]')}>
+        {steps.map((s, i) => (
+          <li key={s.id} style={{ ['--step-tint' as any]: STEP_TINTS[i % STEP_TINTS.length] }} className={cx('cc-step cc-card flex flex-col gap-2 rounded-[18px] border p-3.5 bg-[var(--surface)] transition-all hover:-translate-y-0.5', s.done && 'opacity-80')}>
             <span className="flex items-center gap-2 text-[13px] font-medium text-[var(--text)]">
               {s.done ? <CheckCircle2 className="h-4 w-4 text-[var(--success)]" aria-hidden="true" /> : <Circle className="h-4 w-4 text-[var(--text-subtle)]" aria-hidden="true" />}
               <span className={s.done ? 'line-through decoration-[var(--text-subtle)] text-[var(--text-muted)]' : ''}>{s.label}</span>
