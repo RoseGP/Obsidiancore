@@ -77,8 +77,8 @@ const active = () => document.activeElement as any;
 {
   const t = setup(); await t.render();
   const labels = t.qa('[role="toolbar"] button').map((b) => b.getAttribute('aria-label'));
-  assert.deepEqual(labels, ['Turn off microphone', 'Turn off camera', 'Share screen', 'Participants (4)', 'Chat (2 messages)', 'More options', 'Leave meeting']);
-  ok('primary bar: mic, camera, share, participants, chat, More, Leave, each with an accessible name');
+  assert.deepEqual(labels, ['Turn off microphone', 'Turn off camera', 'Share screen', 'Participants (4)', 'Chat (2 messages)', 'Meeting notes', 'More options', 'Leave meeting']);
+  ok('primary bar: mic, camera, share, participants, chat, notes, More, Leave, each with an accessible name');
   assert.ok(!t.q('#btn-end-meeting') && !t.q('[data-menu-id]')); ok('secondary controls are not in the bar; menu closed initially');
   await t.render({ isMicMuted: true, isCamOff: true, isScreenSharing: true, isSidebarOpen: true, activeSidebarTab: 'chat' });
   assert.equal(t.q('#btn-toggle-mic').getAttribute('aria-label'), 'Turn on microphone');
@@ -89,9 +89,11 @@ const active = () => document.activeElement as any;
   await tick(); assert.match(t.q('[role="status"]').textContent, /Microphone off\. Camera off\. Sharing your screen\./); ok('state changes are announced in a polite live region');
   await t.render({ canShareScreen: false });
   assert.equal(t.q('#btn-share-screen'), null); ok('share screen is hidden where the browser can’t share');
-  await click(t.q('#btn-toggle-mic')); await click(t.q('#btn-toggle-cam')); await click(t.q('#btn-tab-people')); await click(t.q('#btn-tab-chat')); await click(t.q('#btn-leave-meeting'));
-  assert.deepEqual([t.calls.mic.length, t.calls.cam.length, t.calls.panel.map((c) => c[0]), t.calls.leave.length], [1, 1, ['participants', 'chat'], 1]);
-  ok('primary buttons call the existing handlers (mic, camera, panels, leave)');
+  await click(t.q('#btn-toggle-mic')); await click(t.q('#btn-toggle-cam')); await click(t.q('#btn-tab-people')); await click(t.q('#btn-tab-chat')); await click(t.q('#btn-tab-notes')); await click(t.q('#btn-leave-meeting'));
+  assert.deepEqual([t.calls.mic.length, t.calls.cam.length, t.calls.panel.map((c) => c[0]), t.calls.leave.length], [1, 1, ['participants', 'chat', 'notes'], 1]);
+  ok('primary buttons call the existing handlers (mic, camera, panels incl. notes, leave)');
+  await t.render({ isSidebarOpen: true, activeSidebarTab: 'notes' });
+  assert.equal(t.q('#btn-tab-notes').getAttribute('aria-pressed'), 'true'); ok('notes button shows the open notes panel as aria-pressed');
 }
 
 {
@@ -125,11 +127,11 @@ const active = () => document.activeElement as any;
   assert.equal(t.calls.layout.length, 1); assert.equal(t.q('[role="menu"]'), null); ok('choosing an item runs it and closes the menu');
   await click(more); await tick(); await click(t.q('[data-menu-id="react:🎉"]'));
   assert.deepEqual(t.calls.reaction[0], ['🎉']); assert.equal(t.q('[data-menu-id="react:🎉"]'), null); ok('reactions moved into the menu still broadcast');
-  for (const [id, call, arg] of [['open-greet', 'panel', 'greet'], ['open-transcript', 'panel', 'transcript'], ['open-crm', 'panel', 'crm'], ['open-settings', 'settings', undefined], ['toggle-pause-video', 'pauseVideo', undefined]] as const) {
+  for (const [id, call, arg] of [['open-notes', 'panel', 'notes'], ['open-greet', 'panel', 'greet'], ['open-transcript', 'panel', 'transcript'], ['open-crm', 'panel', 'crm'], ['open-settings', 'settings', undefined], ['toggle-pause-video', 'pauseVideo', undefined]] as const) {
     await click(more); await tick(); await click(t.q(`[data-menu-id="${id}"]`));
     if (arg) assert.equal(t.calls[call].at(-1)[0], arg); else assert.ok(t.calls[call]?.length);
   }
-  ok('moved controls keep their behavior: Meet & Greet, Transcript, CRM, Settings, Pause video');
+  ok('menu controls work: Meeting notes, Meet & Greet, Transcript, CRM, Settings, Pause video');
 
   // Participant: recording is disabled and explains why; no End for everyone.
   await click(more); await tick();

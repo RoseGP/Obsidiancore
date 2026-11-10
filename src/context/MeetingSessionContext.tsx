@@ -2,6 +2,8 @@ import React, { createContext, useContext, useState, useEffect, useRef, useCallb
 import { DEFAULT_PLAN_CONFIGS, MEETING_PLAN_TIERS, capacityStatus, durationStatus, roomCapacity, type CapacityState, type MeetingPlanConfigs, type MeetingPlanTier, type PlanFeatures, type PlanLimits } from '../lib/meetingPlans';
 import { CRMContact, CalendarEvent } from '../types';
 import { useOptionalAuth } from './AuthContext';
+import { useOptionalNotifications } from './NotificationContext';
+import { useMeetingNotesSync, type MeetingNotesSync } from './useMeetingNotesSync';
 import { MeetingMedia, type ChatPacket, type MediaStatus, type RemoteMedia } from '../lib/meetingMedia';
 export type { MediaStatus, RemoteMedia } from '../lib/meetingMedia';
 
@@ -249,6 +251,10 @@ interface MeetingSessionContextType {
   minimizeToDashboard: () => void;
   leaveMeeting: () => void;
   endMeetingForEveryone: () => void;
+  /** Notes typed during the call, saved to the CRM (drafts autosave; final when the meeting ends). */
+  meetingNotes: MeetingNotesSync;
+  /** Result of the last "save notes to the CRM" (shown as a toast where the meeting view is). */
+  notesOutcome: { result: 'final' | 'failed'; message: string; at: number } | null;
   
   // Hardware toggles
   toggleMic: () => void;
@@ -356,6 +362,29 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
 
   // ---- Who you are, and real audio/video ----
   const auth = useOptionalAuth();
+  const notifications = useOptionalNotifications();
+  const [notesOutcome, setNotesOutcome] = useState<{ result: 'final' | 'failed'; message: string; at: number } | null>(null);
+  const meetingNotes = useMeetingNotesSync({
+    meetingId: activeMeeting?.id ?? null,
+    title: activeMeeting?.title || '',
+    body: activeMeeting?.notes || '',
+    setBody: (body) => setActiveMeeting(prev => prev ? { ...prev, notes: body } : prev),
+    onFinalized: (result, message) => {
+      setNotesOutcome({ result, message, at: Date.now() });
+      notifications?.pushNotification({
+      title: result === 'final' ? 'Meeting notes saved' : 'Meeting notes not saved', message, type: 'meeting',
+      priority: result === 'final' ? 'low' : 'high', showToast: true, forceDelivery: true, duration: result === 'final' ? 5000 : 12000,
+      });
+    },
+  });
+  const meetingNotesRef = useRef(meetingNotes);
+  meetingNotesRef.current = meetingNotes;
+  /** Save the notes to the CRM before the meeting is torn down (bounded so leaving never hangs). */
+  const finalizeNotesBeforeEnd = useCallback(async () => {
+    try {
+      await Promise.race([meetingNotesRef.current.finalize(), new Promise((r) => setTimeout(r, 8000))]);
+    } catch { /* the hook reports failures itself */ }
+  }, []);
   const localUserName = auth?.userProfile?.displayName?.trim() || auth?.userProfile?.email || 'You';
   const [mediaStatus, setMediaStatus] = useState<MediaStatus>('idle');
   const [mediaMessage, setMediaMessage] = useState<string | null>(null);
@@ -999,6 +1028,7 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
 
   // LEAVE MEETING (Self leaves; the meeting ends if the host leaves without a co-host)
   const leaveMeeting = async () => {
+    await finalizeNotesBeforeEnd();
     playChime('leave');
     const cur = serverSessionRef.current;
     if (cur && cur.status === 'active') {
@@ -1020,6 +1050,7 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
 
   // END MEETING FOR EVERYONE (Host terminates room)
   const endMeetingForEveryone = async () => {
+    await finalizeNotesBeforeEnd();
     playChime('leave');
     const cur = serverSessionRef.current;
     if (cur && cur.status === 'active') await meetingsApi(`/sessions/${encodeURIComponent(cur.id)}/end`, { method: 'POST' });
@@ -1887,6 +1918,7 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
     if (timeLimitHandledRef.current === activeMeeting.id) return;
     timeLimitHandledRef.current = activeMeeting.id;
     (async () => {
+      void finalizeNotesBeforeEnd(); // the meeting ended (time limit or the host): save the notes to the CRM
       if (isRecording) { try { await stopRecording(); } catch { /* keep ending the meeting */ } }
       cleanupMediaTracks();
       setIsHandRaised(false);
@@ -1949,6 +1981,8 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
         minimizeToDashboard,
         leaveMeeting,
         endMeetingForEveryone,
+        meetingNotes,
+        notesOutcome,
         toggleMic,
         toggleCam,
         togglePauseVideo,

@@ -250,9 +250,25 @@ function AppMain() {
     if (['messages', 'email_assistant'].includes(activeView)) return 'messages';
     if (['voice_dialer', 'voice_hub'].includes(activeView)) return 'voice_dialer';
     if (['proposals', 'enterprise_proposals'].includes(activeView)) return 'proposals';
-    if (['deals', 'sales_pipelines', 'pipeline', 'leads'].includes(activeView)) return 'deals';
+    if (['deals', 'sales_pipelines', 'pipeline'].includes(activeView)) return 'deals';
+    if (activeView === 'settings') return ['account', 'notifications', 'workspace', 'integrations'].includes(settingsDefaultTab) ? `settings:${settingsDefaultTab}` : 'settings';
     return activeView;
   })();
+
+  // Sidebar items are views, dashboard sections ('dashboard#missions') or Settings tabs ('settings:integrations').
+  const navigateTo = useCallback((id: string) => {
+    if (id.startsWith('settings:')) { setSettingsDefaultTab(id.slice('settings:'.length) as SettingsTab); setActiveView('settings'); return; }
+    if (id.startsWith('dashboard#')) {
+      const section = id.slice('dashboard#'.length);
+      setActiveView('dashboard');
+      let tries = 0;
+      const scroll = () => { const el = document.getElementById(section); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); else if (tries++ < 20) setTimeout(scroll, 100); };
+      setTimeout(scroll, 60);
+      return;
+    }
+    if (id === 'settings') setSettingsDefaultTab('account');
+    setActiveView(id as SemanticView);
+  }, [setActiveView]);
 
   const renderActiveView = () => {
     switch (activeView) {
@@ -265,6 +281,7 @@ function AppMain() {
             onNavigate={(v) => setActiveView(v as SemanticView)}
             onQuickAction={handleTriggerQuickAction}
             onOpenSettings={(tab) => { setSettingsDefaultTab(tab as SettingsTab); setActiveView('settings'); }}
+            events={events}
           />
         );
       case 'leads':
@@ -324,8 +341,11 @@ function AppMain() {
         return <GbpView />;
       case 'voice_dialer':
       case 'voice_hub':
+      case 'voice_messages':
+      case 'voice_receptionist':
         return (
           <CRMVoiceDialer
+            initialMode={activeView === 'voice_messages' ? 'monitoring' : activeView === 'voice_receptionist' ? 'twilio_ivr' : 'unified'}
             onAddCalendarEvent={handleAddCalendarEvent}
             onNavigate={(v) => setActiveView(v as SemanticView)}
           />
@@ -346,6 +366,7 @@ function AppMain() {
             onNavigate={(v) => setActiveView(v as SemanticView)}
             onQuickAction={handleTriggerQuickAction}
             onOpenSettings={(tab) => { setSettingsDefaultTab(tab as SettingsTab); setActiveView('settings'); }}
+            events={events}
           />
         );
     }
@@ -415,7 +436,7 @@ function AppMain() {
       {/* Sidebar */}
       <DynamicSidebar
         activeId={sidebarActiveId}
-        onActiveIdChange={(id) => setActiveView(id as SemanticView)}
+        onActiveIdChange={navigateTo}
         mobileOpen={mobileNavOpen}
         onMobileClose={() => setMobileNavOpen(false)}
       />
@@ -423,7 +444,10 @@ function AppMain() {
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col h-screen overflow-hidden">
         {/* Top Navbar - Clean Murmura-inspired modern executive header */}
-        <header className="h-14 px-3 sm:px-5 flex items-center justify-between border-b border-[var(--border)] bg-[var(--surface)]/95 backdrop-blur-md shrink-0 z-30 transition-colors print:hidden">
+        <header
+          data-theme={activeView === 'dashboard' || activeView === 'home' ? 'dark' : undefined}
+          className={`h-14 px-3 sm:px-5 flex items-center justify-between border-b border-[var(--border)] bg-[var(--surface)]/95 backdrop-blur-md shrink-0 z-30 transition-colors print:hidden ${activeView === 'dashboard' || activeView === 'home' ? 'cc cc-bar' : ''}`}
+        >
           {/* Menu (small screens) · search · quick create */}
           <div className="flex-1 min-w-0 max-w-2xl flex items-center gap-2 sm:gap-3">
             <button

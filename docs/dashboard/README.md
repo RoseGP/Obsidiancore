@@ -1,42 +1,30 @@
-# Dashboard
+# Dashboard: AI Business Command Center
 
-`src/components/DashboardView.tsx`. Everything shown comes from the organization's own records via
-`/api/dashboard` (deals, leads, tickets, activity). There is no sample data.
+`src/components/DashboardView.tsx`. Deep-midnight theme scoped to this tab (`.cc` tokens in `src/index.css`;
+the root also carries `data-theme="dark"` so embedded components follow). Everything shown comes from the
+organization's records or the server's status endpoints. Nothing is sample data; what isn't connected says so.
 
-## Layout
-Header (greeting, one-line summary, Add lead / New deal) → toolbar (date range, refresh, export, customize)
-→ setup checklist (until done or dismissed) → sections: key figures, performance over time, what needs
-your attention, pipeline by stage, lead sources, recent activity, quick actions, AI assistant, work queues.
-
-Sections can be hidden and reordered (Customize). Order, visibility, date range and the checklist
-state are saved per person in the browser (`obsidian_dashboard_v3:<uid>`).
-
-## How each figure is computed (`src/lib/dashboardMetrics.ts`)
-| Figure | Definition | Compared with |
+## Sections (collapsible; hide/reorder in Customize, saved per person in this browser)
+| Section | Data | Notes |
 |---|---|---|
-| New leads | Leads created in the period | Same-length previous period |
-| Pipeline added | Value of deals created in the period (also shows current open pipeline) | Previous period |
-| Won revenue | Value of deals in stage Won whose last update falls in the period | Previous period |
-| Win rate | Won ÷ (won + lost) for deals closed in the period; "—" if none closed | Change in percentage points |
-| Lead conversion | Share of the period's new leads that are converted; "—" if none | Change in percentage points |
-| Open tickets | Unresolved tickets now (critical count shown) | Tickets opened vs previous period |
+| Welcome header | auth profile, `/api/dashboard/service` (AI status), NotificationContext | live clock, greeting line built from records (`greetingLine`) |
+| AI Copilot | `POST /api/chat/completions`, `GET /api/chat/models` | Claude/Gemini switch (configured providers only), voice commands (browser speech recognition), history saved in the browser, full screen. CRM tools incl. `create_deal`, `create_lead`, `qualify_lead`, `draft_sales_outreach`, `summarize_recent_conversations`. No workflow engine exists, so it doesn't claim to trigger automations. |
+| Needs your attention | leads, deals, tickets, `/api/proposals`, `/api/meetings`, inbox, service | `buildAttention`: meetings within 3 h, unanswered messages, missed calls, uncontacted 70+ leads, follow-ups idle 7+ days, deals idle 14+ days, proposals waiting 3+ days or expiring, critical tickets |
+| Business performance | leads, deals | `headlineKpis`: total contacts (vs 7 days ago), new leads today (vs yesterday), open deals, pipeline value, weighted forecast (added this week). Click a card for charts, date range and CSV/print export |
+| Upcoming meetings | `/api/meetings` (every occurrence), calendar events | Join starts the meeting if nobody has yet |
+| Live activity | inbox conversations, `/api/communication/inbound-messages` (WhatsApp/SMS, voicemail) | live via the messaging stream; quick reply posts to the conversation or sends WhatsApp/SMS (503 when not configured). Telegram/Instagram aren't supported yet |
+| Daily missions | `/api/dashboard/missions` | measured from your own actions today; XP, streak and badges stored per user on the server |
+| Service monitoring | `/api/dashboard/service` | SLA met % (first reply within `SLA_FIRST_RESPONSE_MINUTES`, default 15), avg first response, missed calls, unanswered, AI providers, channel status |
+| AI insights | `buildInsights` + `commandCenterInsights` | top 3, expandable; "Ask copilot" hands the question to the copilot |
+| Business tools | navigation | receptionist, meetings, proposals, dialer, scheduler, new deal |
+| Work queues | existing widgets | collapsed by default |
 
-There is no separate close-date field, so "closed in the period" uses the deal's last update time.
-
-Insights appear only when the records support them: lead volume change ≥ 20% (with ≥ 3 earlier),
-open deals not updated for 14+ days, open critical tickets, high-scoring (70+) leads still marked New,
-leads without an owner, and the top lead source (with ≥ 5 leads from at least two sources).
-
-## Data loading
-`src/lib/dashboardData.ts` shares one request per endpoint between the dashboard and the work-queue
-widgets (15 s cache, in-flight requests shared). Any change made from the dashboard calls
-`invalidateDashboard()`, which refreshes every mounted view.
-
-## Export
-CSV for key figures, deals and leads in the selected period (cells starting with `= + - @` are
-prefixed to prevent spreadsheet formula injection), and Print / Save as PDF (print styles hide the
-app chrome, the assistant, quick actions and work queues).
+## Navigation
+`src/components/DynamicSidebar.tsx` groups: Command Center, Customer Management, Communications, Business
+Operations, Marketing, AI Management, Settings. Item ids are views, dashboard sections (`dashboard#missions`)
+or Settings tabs (`settings:integrations`); `navigateTo` in `App.tsx` resolves them. Items for features that
+don't exist (AI agents, automations, Telegram, Instagram, a separate email inbox) are not shown.
 
 ## Tests
-`npm run test:dashboard`: metric definitions, ranges, insights, CSV (`src/lib/__tests__/dashboardMetrics.test.ts`)
-and the widgets against the real API on the in-memory store (`src/components/dashboard/__tests__/widgets.test.tsx`).
+`npm run test:dashboard` (metrics, command center, widgets) and `npm run test:command-center` (missions,
+service status, isolation). Meeting notes: `npm run test:meeting-notes`.

@@ -11,6 +11,8 @@
 import { Router, Request, Response } from 'express';
 import { CrmRepository } from '../server/crm/crmRepository';
 import { requireReadOrWrite, requireTenant, sendError, tenantOf } from '../server/tenancy/middleware';
+import { MissionInputError, loadMissions, parseDay } from '../server/crm/missions';
+import { loadServiceStatus } from '../server/crm/serviceStatus';
 
 const router = Router();
 
@@ -143,6 +145,23 @@ router.post('/tickets/:id/reply', async (req, res) => {
 router.get('/activities', async (req, res) => {
   try { res.json({ success: true, activities: await (await repoFor(req)).listActivities(20) }); }
   catch (err) { sendError(res, err, 'dashboard.activities'); }
+});
+
+/** Personal daily missions computed from real records (see server/crm/missions.ts). */
+router.get('/missions', async (req, res) => {
+  try {
+    const t = tenantOf(req);
+    let day;
+    try { day = parseDay(req.query.date, req.query.dayStart); }
+    catch (e) { if (e instanceof MissionInputError) return res.status(400).json({ success: false, code: e.code, error: e.message }); throw e; }
+    res.json(await loadMissions(t.orgId, { userId: t.userId, actor: actorOf(req) }, day.date, day.dayStart));
+  } catch (err) { sendError(res, err, 'dashboard.missions'); }
+});
+
+/** Service monitoring: SLA, unanswered, missed calls, channel and AI status (see server/crm/serviceStatus.ts). */
+router.get('/service', async (req, res) => {
+  try { res.json(await loadServiceStatus(tenantOf(req).orgId)); }
+  catch (err) { sendError(res, err, 'dashboard.service'); }
 });
 
 export default router;

@@ -11,6 +11,7 @@ import {
   // Used by the transcript tab and summary modal but previously never imported (ReferenceError at render).
   Save, Activity, UserX
 } from 'lucide-react';
+import { NotebookPen } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { jsPDF } from 'jspdf';
 import { 
@@ -24,6 +25,7 @@ import {
 } from '../../context/MeetingSessionContext';
 import { CRMContact } from '../../types';
 import MeetingControlBar, { EndMeetingConfirmDialog } from './MeetingControlBar';
+import MeetingNotesPanel from './MeetingNotesPanel';
 import { meetingPermissions, type OrgRole } from './meetingControls';
 import { FEATURE_KEYS, MEETING_PLAN_TIERS, formatMinutes, gridColumns, pageOfTiles, prioritizeTiles, tilesPerPage } from '../../lib/meetingPlans';
 import { PlanUpgradeDialog } from '../meetings/PlanComparison';
@@ -131,11 +133,13 @@ export default function VideoMeetingWorkspace({
     updateMeetingSettings,
     availableDevices,
     refreshDevices,
-    testSpeakerSound
+    testSpeakerSound,
+    meetingNotes,
+    notesOutcome
   } = useMeetingSession();
 
   // Sidebar Tab state ('chat' | 'greet' | 'participants' | 'crm' | 'transcript')
-  const [activeSidebarTab, setActiveSidebarTab] = useState<'chat' | 'greet' | 'participants' | 'crm' | 'transcript'>('greet');
+  const [activeSidebarTab, setActiveSidebarTab] = useState<'chat' | 'greet' | 'participants' | 'crm' | 'transcript' | 'notes'>('greet');
   const [isSidebarOpen, setIsSidebarOpen] = useState(() => typeof window === 'undefined' || window.innerWidth >= 1024);
   const [transcriptSaveNotice, setTranscriptSaveNotice] = useState<string | null>(null);
 
@@ -251,6 +255,12 @@ export default function VideoMeetingWorkspace({
       setToastNotice(prev => prev?.message === message ? null : prev);
     }, 3800);
   };
+
+  // Meeting notes were saved to the CRM (or couldn't be): say so here, where the person is.
+  useEffect(() => {
+    if (notesOutcome && Date.now() - notesOutcome.at < 5_000) showToast(notesOutcome.message, notesOutcome.result === 'final' ? 'success' : 'warning');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [notesOutcome?.at]);
 
   // Client-Side PDF Transcript Generator via jsPDF
   const handleDownloadTranscriptPdf = (transcript: TranscriptItem[], roomTitle: string = 'Meeting Transcript') => {
@@ -1451,6 +1461,20 @@ export default function VideoMeetingWorkspace({
                   </button>
 
                   <button
+                    onClick={() => setActiveSidebarTab('notes')}
+                    aria-pressed={activeSidebarTab === 'notes'}
+                    className={`py-1.5 px-2 rounded-lg text-[11px] font-semibold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1 ${
+                      activeSidebarTab === 'notes'
+                        ? 'bg-indigo-600 text-white shadow-xs'
+                        : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
+                    }`}
+                  >
+                    <NotebookPen className="h-3 w-3 text-indigo-300" />
+                    <span>Notes</span>
+                    {meetingNotes.status === 'error' && <span className="h-1.5 w-1.5 rounded-full bg-rose-400" aria-label="(not saved)" />}
+                  </button>
+
+                  <button
                     onClick={() => setActiveSidebarTab('crm')}
                     className={`py-1.5 px-2 rounded-lg text-[11px] font-semibold transition-all cursor-pointer whitespace-nowrap ${
                       activeSidebarTab === 'crm'
@@ -1941,6 +1965,8 @@ export default function VideoMeetingWorkspace({
               {/* -------------------------------------------------------------
                   TAB 4: CRM DOSSIER & REAL-TIME MEETING NOTES
                   ------------------------------------------------------------- */}
+              {activeSidebarTab === 'notes' && <MeetingNotesPanel />}
+
               {activeSidebarTab === 'crm' && (
                 <div className="flex-1 overflow-y-auto p-4 space-y-4">
                   
@@ -1994,36 +2020,15 @@ export default function VideoMeetingWorkspace({
                     </div>
                   </div>
 
-                  {/* Real-time Meeting Notes */}
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <label className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">
-                        Live Meeting Notes
-                      </label>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const timeTag = `\n[${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}] `;
-                          updateMeetingNotes((activeMeeting?.notes || '') + timeTag);
-                        }}
-                        className="text-[10px] font-semibold text-indigo-400 hover:text-indigo-300 cursor-pointer"
-                      >
-                        + Timestamp
-                      </button>
-                    </div>
-
-                    <textarea
-                      value={activeMeeting?.notes || ''}
-                      onChange={(e) => updateMeetingNotes(e.target.value)}
-                      rows={6}
-                      className="w-full p-3 rounded-xl bg-neutral-900 border border-white/10 text-xs text-neutral-200 placeholder:text-neutral-500 focus:outline-none focus:border-indigo-500 font-mono leading-relaxed"
-                      placeholder="Capture meeting minutes, client feedback, and technical agreements..."
-                    />
-                    <div className="flex items-center justify-between text-[10px] text-neutral-500">
-                      <span>Auto-persisting to CRM record</span>
-                      <span className="text-emerald-400 font-semibold">✓ Synchronized</span>
-                    </div>
-                  </div>
+                  {/* Meeting notes live in their own panel and are saved to the CRM */}
+                  <button
+                    type="button"
+                    onClick={() => setActiveSidebarTab('notes')}
+                    className="w-full flex items-center justify-between gap-2 rounded-xl border border-white/10 bg-neutral-900 px-3 py-2.5 text-left text-xs text-neutral-200 hover:border-indigo-500/50 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+                  >
+                    <span className="flex items-center gap-2"><NotebookPen className="h-3.5 w-3.5 text-indigo-300" aria-hidden="true" />Meeting notes</span>
+                    <span className="text-[11px] text-neutral-400">{(activeMeeting?.notes || '').trim() ? `${(activeMeeting?.notes || '').length.toLocaleString()} characters` : 'Open'}</span>
+                  </button>
 
                   {/* Tasks & Action Items */}
                   <div className="space-y-2">

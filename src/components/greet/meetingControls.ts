@@ -37,7 +37,7 @@ export function screenShareSupported(nav: Navigator | undefined = typeof navigat
   return !!(nav && nav.mediaDevices && typeof (nav.mediaDevices as any).getDisplayMedia === 'function');
 }
 
-export type SidebarTab = 'chat' | 'greet' | 'participants' | 'crm' | 'transcript';
+export type SidebarTab = 'chat' | 'greet' | 'participants' | 'crm' | 'transcript' | 'notes';
 
 export interface MeetingControlState {
   isHost: boolean;
@@ -60,7 +60,7 @@ export interface MeetingControlState {
 
 export type MenuActionId =
   | 'toggle-pause-video' | 'toggle-layout'
-  | 'open-greet' | 'open-transcript' | 'open-crm'
+  | 'open-greet' | 'open-transcript' | 'open-crm' | 'open-notes'
   | `react:${string}`
   | 'record-start' | 'record-pause-resume' | 'record-stop'
   | 'open-settings'
@@ -101,6 +101,7 @@ export function buildMoreMenu(state: MeetingControlState, perms: MeetingPermissi
     },
     {
       id: 'panels', title: 'Panels', items: [
+        { id: 'open-notes', label: 'Meeting notes', checked: panelOpen('notes'), icon: 'notes' },
         { id: 'open-greet', label: 'Meet & Greet', checked: panelOpen('greet'), icon: 'greet' },
         { id: 'open-transcript', label: 'Transcript', checked: panelOpen('transcript'), icon: 'transcript' },
         { id: 'open-crm', label: 'CRM records', checked: panelOpen('crm'), icon: 'crm' },

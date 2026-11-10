@@ -1,7 +1,7 @@
 /**
  * Meeting control bar.
  *
- *   Bar (always visible): Microphone · Camera · Share screen (if supported) · Participants · Chat · More · Leave
+ *   Bar (always visible): Microphone · Camera · Share screen (if supported) · Participants · Chat · Notes (sm+) · More · Leave
  *   More menu:            Video and layout · Panels · Participate (raise hand) · Reactions · Recording · Settings ·
  *                         Host controls (waiting room, mute everyone, lower hands, end for everyone)
  *
@@ -13,7 +13,7 @@
  */
 import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
-  ArrowUpCircle, Briefcase, DoorOpen, Disc, FileText, Hand, LayoutGrid, Lock, MessageSquare, Mic, MicOff, MonitorOff, MonitorUp, MoreHorizontal,
+  ArrowUpCircle, Briefcase, DoorOpen, NotebookPen, Disc, FileText, Hand, LayoutGrid, Lock, MessageSquare, Mic, MicOff, MonitorOff, MonitorUp, MoreHorizontal,
   Pause, PhoneOff, Play, Power, Settings, Sparkles, Square, Users, Video, VideoOff,
 } from 'lucide-react';
 import {
@@ -72,7 +72,7 @@ export interface MeetingControlBarProps {
 const fmt = (s: number) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
 
 const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
-  pause: Pause, play: Play, layout: LayoutGrid, greet: Sparkles, transcript: FileText, crm: Briefcase,
+  pause: Pause, play: Play, layout: LayoutGrid, greet: Sparkles, transcript: FileText, crm: Briefcase, notes: NotebookPen,
   record: Disc, stop: Square, settings: Settings, end: Power, hand: Hand, waiting: DoorOpen, mute: MicOff, lock: Lock, upgrade: ArrowUpCircle,
 };
 
@@ -83,7 +83,7 @@ const focusRing = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-sk
 /** Icon button with a visible tooltip on hover and keyboard focus. */
 function ControlButton(props: {
   id: string; label: string; tooltip?: string; onClick: () => void; pressed?: boolean; tone?: 'default' | 'off' | 'active' | 'danger';
-  icon: React.ReactNode; badge?: React.ReactNode; text?: string; buttonRef?: React.Ref<HTMLButtonElement>;
+  icon: React.ReactNode; badge?: React.ReactNode; text?: string; buttonRef?: React.Ref<HTMLButtonElement>; wrapperClass?: string;
   extra?: React.ButtonHTMLAttributes<HTMLButtonElement>;
 }) {
   const { tone = 'default' } = props;
@@ -94,7 +94,7 @@ function ControlButton(props: {
     danger: 'bg-rose-600 hover:bg-rose-500 text-white',
   }[tone];
   return (
-    <div className="relative group">
+    <div className={`relative group ${props.wrapperClass || ''}`}>
       <button
         id={props.id}
         ref={props.buttonRef}
@@ -208,6 +208,7 @@ export default function MeetingControlBar(p: MeetingControlBarProps) {
       case 'open-greet': return p.onTogglePanel('greet');
       case 'open-transcript': return p.onTogglePanel('transcript');
       case 'open-crm': return p.onTogglePanel('crm');
+      case 'open-notes': return p.onTogglePanel('notes');
       case 'record-start': return p.onStartRecording();
       case 'record-pause-resume': return p.onPauseResumeRecording();
       case 'record-stop': return p.onStopRecording();
@@ -279,6 +280,8 @@ export default function MeetingControlBar(p: MeetingControlBarProps) {
         <ControlButton id="btn-tab-chat" onClick={() => p.onTogglePanel('chat')} tone={panelPressed('chat') ? 'active' : 'default'} pressed={panelPressed('chat')}
           label={p.chatCount ? `Chat (${p.chatCount} messages)` : 'Chat'} icon={<MessageSquare className="h-5 w-5" />}
           badge={p.chatCount > 0 ? <span aria-hidden="true" className="absolute -top-1 -right-1 min-w-5 h-5 px-1 rounded-full bg-indigo-400 text-[10px] leading-5 font-mono text-neutral-950 text-center">{p.chatCount > 99 ? '99+' : p.chatCount}</span> : undefined} />
+        <ControlButton id="btn-tab-notes" wrapperClass="hidden sm:block" onClick={() => p.onTogglePanel('notes')} tone={panelPressed('notes') ? 'active' : 'default'} pressed={panelPressed('notes')}
+          label="Meeting notes" tooltip="Meeting notes (saved to the CRM)" icon={<NotebookPen className="h-5 w-5" />} />
         <ControlButton id="btn-more" buttonRef={moreRef} onClick={() => (open ? close(true) : openMenu('first'))} tone={open ? 'active' : 'default'}
           label="More options" icon={<MoreHorizontal className="h-5 w-5" />}
           extra={{ 'aria-haspopup': 'menu', 'aria-expanded': open, 'aria-controls': open ? menuId : undefined, onKeyDown: onMoreKeyDown }} />

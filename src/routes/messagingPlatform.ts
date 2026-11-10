@@ -411,6 +411,55 @@ export function resetInboxCacheForTests() {
   for (const arr of [STRUCTURED_PROMPTS, CANNED_RESPONSES] as any[][]) for (let i = arr.length - 1; i >= 0; i--) if (arr[i].orgId) arr.splice(i, 1);
 }
 
+/**
+ * Inbox service figures for the dashboard (read-only). For conversations whose first visitor/contact
+ * message falls in the window: the first team reply after it gives the first-response time; a
+ * conversation still unanswered after the target counts as a miss, one still within the target isn't
+ * measured yet. AI and system messages and internal notes don't count as a reply.
+ */
+export async function inboxServiceStats(orgId: string, sinceMs: number, slaTargetMinutes: number, now: number = Date.now()) {
+  await hydrateInbox(orgId);
+  const responseMinutes: number[] = [];
+  let measured = 0, met = 0, unanswered = 0;
+  const at = (m: MessageRecord) => Date.parse(String(m.createdAt));
+  for (const c of CONVERSATIONS.values()) {
+    if (c.orgId !== orgId) continue;
+    const msgs = (MESSAGES.get(c.id) || []).filter((m) => !m.isInternalNote && (m.senderType === 'visitor' || m.senderType === 'user'))
+      .sort((a, b) => at(a) - at(b));
+    const last = msgs[msgs.length - 1];
+    if ((c.status === 'open' || c.status === 'pending') && last?.senderType === 'visitor') unanswered++;
+    const first = msgs.find((m) => m.senderType === 'visitor' && at(m) >= sinceMs);
+    if (!first) continue;
+    const reply = msgs.find((m) => m.senderType === 'user' && at(m) >= at(first));
+    if (reply) {
+      const mins = (at(reply) - at(first)) / 60_000;
+      responseMinutes.push(mins); measured++;
+      if (mins <= slaTargetMinutes) met++;
+    } else if (now - at(first) > slaTargetMinutes * 60_000) {
+      measured++; // unanswered past the target: a miss
+    }
+  }
+  const hasActiveWidget = [...WIDGETS.values()].some((w) => w.orgId === orgId && w.isActive);
+  return {
+    measured, met, unanswered, hasActiveWidget,
+    avgFirstResponseMinutes: responseMinutes.length ? responseMinutes.reduce((a, b) => a + b, 0) / responseMinutes.length : null,
+  };
+}
+
+/** Recent inbox messages (newest last) for summaries; internal notes excluded. Read-only. */
+export async function recentInboxMessages(orgId: string, sinceMs: number, limit = 200) {
+  await hydrateInbox(orgId);
+  const out: { conversation: string; channel: string; from: string; senderType: string; text: string; at: string }[] = [];
+  for (const c of CONVERSATIONS.values()) {
+    if (c.orgId !== orgId) continue;
+    for (const m of MESSAGES.get(c.id) || []) {
+      if (m.isInternalNote || Date.parse(String(m.createdAt)) < sinceMs) continue;
+      out.push({ conversation: c.title, channel: c.channel, from: m.senderName, senderType: m.senderType, text: String(m.content || '').slice(0, 500), at: m.createdAt });
+    }
+  }
+  return out.sort((a, b) => a.at.localeCompare(b.at)).slice(-limit);
+}
+
 // Load the caller's organization before any route runs, and save its changes afterwards.
 router.use(async (req, res, next) => {
   try {

@@ -176,16 +176,19 @@ interface CallLogEntry {
   status: "completed" | "scheduled_demo" | "voicemail" | "followup";
 }
 
+export type AppMode = "unified" | "livekit_ivr" | "monitoring" | "sip_trunks" | "twilio_ivr";
+
 interface CRMVoiceDialerProps {
   onAddCalendarEvent?: (newEvent: any) => void;
   onNavigate?: (view: any) => void;
+  initialMode?: AppMode;
 }
 
-export type AppMode = "unified" | "livekit_ivr" | "monitoring" | "sip_trunks" | "twilio_ivr";
-
-export default function CRMVoiceDialer({ onAddCalendarEvent, onNavigate }: CRMVoiceDialerProps) {
+export default function CRMVoiceDialer({ onAddCalendarEvent, onNavigate, initialMode }: CRMVoiceDialerProps) {
   // Mode: Unified Dialer & IVR vs LiveKit IVR vs Analytics vs SIP Trunks
-  const [appMode, setAppMode] = useState<AppMode>("unified");
+  const [appMode, setAppMode] = useState<AppMode>(initialMode || "unified");
+  // Deep links from the navigation (WhatsApp & SMS → monitoring, AI Voice Receptionist → twilio_ivr).
+  useEffect(() => { if (initialMode) setAppMode(initialMode); }, [initialMode]);
 
   // Combined Left Column Tab: Softphone Dialer & Leads vs IVR Directory vs Message Slips
   const [leftPanelTab, setLeftPanelTab] = useState<"dialer" | "directory" | "slips">("dialer");
@@ -499,20 +502,20 @@ export default function CRMVoiceDialer({ onAddCalendarEvent, onNavigate }: CRMVo
                   : appMode === "livekit_ivr"
                   ? "LiveKit SIP IVR & Telephony Gateway"
                   : appMode === "monitoring"
-                  ? "LiveKit Call Monitoring & Real-Time Analytics"
+                  ? "Inbound Messages & Voicemail"
                   : appMode === "sip_trunks"
                   ? "Multi-SIP Trunk Redundancy & Carrier Fallback"
                   : "Alex AI Unified Voice Dialer & IVR Gateway"}
               </h1>
               <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
-                {appMode === "twilio_ivr" ? "Programmable Voice" : appMode === "livekit_ivr" ? "LiveKit + Failover" : appMode === "monitoring" ? "Real-time Telemetry" : appMode === "sip_trunks" ? "Zero-Downtime SIP" : "Dialer + IVR + WebRTC"}
+                {appMode === "twilio_ivr" ? "Programmable Voice" : appMode === "livekit_ivr" ? "LiveKit + Failover" : appMode === "monitoring" ? "WhatsApp · SMS · Voicemail" : appMode === "sip_trunks" ? "Zero-Downtime SIP" : "Dialer + IVR + WebRTC"}
               </span>
             </div>
             <p className="text-xs text-slate-500">
               {appMode === "livekit_ivr"
                 ? "Inbound SIP trunking, automatic LLM/TTS provider failovers, and blind transfer to office extensions"
                 : appMode === "monitoring"
-                ? "Live telemetry, hourly call volume distribution, average handle time (AHT), and concurrency loads"
+                ? "WhatsApp and SMS messages and voicemails received on your numbers, and where they are routed"
                 : appMode === "sip_trunks"
                 ? "Manage secondary and tertiary carrier routing rules, health checks, and automatic sub-second failover"
                 : "Autonomous conversational outbound telephony, inbound IVR auto-attendant, DTMF keypad & CRM sync"}

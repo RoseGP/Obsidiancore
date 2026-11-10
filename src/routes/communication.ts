@@ -9,7 +9,7 @@ import {
 } from '../utils/receptionistKnowledgeDb';
 import { requirePermission, requireTenant, sendError, tenantOf } from '../server/tenancy/middleware';
 import { getOrg } from '../server/tenancy/orgs';
-import { InvalidIdError, getDocStore, newId } from '../server/data/docStore';
+import { InvalidIdError, assertId, getDocStore, newId } from '../server/data/docStore';
 import { coreSecret } from '../utils/secrets';
 import { sendSecureOutboundEmail } from '../utils/secureOutboundMailer';
 import { unsignedWebhooksAllowed } from '../server/runtimeEnv';
@@ -396,6 +396,20 @@ router.get('/inbound-messages', requirePermission('read'), async (req, res) => {
     ]);
     res.json({ success: true, messages, voicemails });
   } catch (err) { sendError(res, err, 'communication.inbound.list'); }
+});
+
+/** Mark a voicemail as reviewed (who and when); used by the dashboard's daily missions. */
+router.post('/voicemails/:id/reviewed', requirePermission('write'), async (req, res) => {
+  try {
+    const t = tenantOf(req);
+    const path = `organizations/${t.orgId}/voicemails/${assertId(req.params.id)}`;
+    const st = await getDocStore();
+    const vm = await st.get(path);
+    if (!vm) return res.status(404).json({ success: false, error: 'Voicemail not found.' });
+    const patch = { reviewedBy: t.userId, reviewedAt: new Date().toISOString() };
+    await st.update(path, patch);
+    res.json({ success: true, voicemail: { ...vm, ...patch } });
+  } catch (err) { sendError(res, err, 'communication.voicemail.reviewed'); }
 });
 
 /** Message slips (call-back requests) taken by the team or the receptionist, per organization. */

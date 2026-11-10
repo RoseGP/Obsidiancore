@@ -167,6 +167,56 @@ await store.set('organizations/org_test', { id: 'org_test', name: 'Acme Digital'
   assert.equal(ro.status, 200); assert.equal((await store.list(`organizations/${orgId}/leads`)).length, 0); ok('read-only members can use the assistant, but its write tools are refused');
 }
 
+// ---------------------------------------------------------------------------
+// qualify_lead and summarize_recent_conversations (tools run directly, per organization)
+// ---------------------------------------------------------------------------
+{
+  const A = { userId: 'qa-owner', orgId: 'org_tools_a', role: 'OWNER' };
+  const B = { userId: 'qb-owner', orgId: 'org_tools_b', role: 'OWNER' };
+  const now = new Date().toISOString();
+  await store.set('organizations/org_tools_a/leads/lead_q1', { id: 'lead_q1', orgId: 'org_tools_a', name: 'Grace Hopper', email: 'grace@navy.test', status: 'new', createdAt: now, updatedAt: now });
+  await store.set('organizations/org_tools_a/leads/lead_q2', { id: 'lead_q2', orgId: 'org_tools_a', name: 'Sam Lee', email: 'sam1@x.test', status: 'new', createdAt: now, updatedAt: now });
+  await store.set('organizations/org_tools_a/leads/lead_q3', { id: 'lead_q3', orgId: 'org_tools_a', name: 'Sam Lee', email: 'sam2@x.test', status: 'new', createdAt: now, updatedAt: now });
+  await store.set('organizations/org_tools_a/leads/lead_q4', { id: 'lead_q4', orgId: 'org_tools_a', name: 'Done Deal', email: 'd@x.test', status: 'converted', isConverted: true, createdAt: now, updatedAt: now });
+
+  let t: any = await ai.executeCrmTool('qualify_lead', { nameOrEmail: 'GRACE@navy.test', status: 'qualified', reason: 'Budget confirmed' }, A);
+  assert.equal(t.success, true); assert.equal(t.from, 'new'); assert.equal(t.to, 'qualified');
+  const g = await store.get('organizations/org_tools_a/leads/lead_q1');
+  assert.equal(g.status, 'qualified'); assert.equal(g.statusReason, 'Budget confirmed');
+  const acts = await store.list('organizations/org_tools_a/leads/lead_q1/activities');
+  assert.match(acts[0].title, /new → qualified/);
+  assert.equal((await store.list('organizations/org_tools_a/activities')).some((x: any) => x.targetId === 'lead_q1'), true);
+  t = await ai.executeCrmTool('qualify_lead', { nameOrEmail: 'Sam Lee', status: 'unqualified' }, A);
+  assert.equal(t.candidates.length, 2); assert.equal((await store.get('organizations/org_tools_a/leads/lead_q2')).status, 'new');
+  t = await ai.executeCrmTool('qualify_lead', { leadId: 'lead_q4', status: 'unqualified' }, A);
+  assert.match(t.error, /converted/);
+  t = await ai.executeCrmTool('qualify_lead', { leadId: 'lead_q2', status: 'maybe' }, A);
+  assert.match(t.error, /qualified/);
+  ok('qualify_lead: by email (case-insensitive), asks when names are ambiguous, refuses converted leads and bad statuses, logs activity');
+
+  t = await ai.executeCrmTool('qualify_lead', { leadId: 'lead_q2', status: 'qualified' }, B);
+  assert.match(t.error, /No lead|Tell me/); assert.equal((await store.get('organizations/org_tools_a/leads/lead_q2')).status, 'new');
+  t = await ai.executeCrmTool('qualify_lead', { nameOrEmail: 'grace@navy.test', status: 'unqualified' }, B);
+  assert.match(t.error, /No lead/);
+  t = await ai.executeCrmTool('qualify_lead', { leadId: 'lead_q2', status: 'qualified' }, { ...A, role: 'READ_ONLY' });
+  assert.match(t.error, /read-only/);
+  ok('qualify_lead: another organization can\'t find or change the lead; read-only roles are refused');
+
+  const recent = new Date(Date.now() - 2 * 3_600_000).toISOString(), old = new Date(Date.now() - 80 * 3_600_000).toISOString();
+  await store.set('organizations/org_tools_a/inbox_conversations/conv_t1', { id: 'conv_t1', orgId: 'org_tools_a', type: 'widget', channel: 'widget', title: 'Website visitor', participantIds: [], participants: [], unreadCount: 1, status: 'open', priority: 'medium', tags: [], createdAt: recent, updatedAt: recent });
+  await store.set('organizations/org_tools_a/inbox_conversations/conv_t1/messages/msg_t1', { id: 'msg_t1', conversationId: 'conv_t1', senderId: 'v1', senderType: 'visitor', senderName: 'Visitor', content: 'Do you deliver on Sundays?', contentType: 'text', status: 'delivered', createdAt: recent });
+  await store.set('organizations/org_tools_a/inbox_conversations/conv_t1/messages/msg_t2', { id: 'msg_t2', conversationId: 'conv_t1', senderId: 'u1', senderType: 'user', senderName: 'Olivia', content: 'internal: check with ops', contentType: 'text', status: 'delivered', isInternalNote: true, createdAt: recent });
+  await store.set('organizations/org_tools_a/inbound_messages/msg_in1', { id: 'msg_in1', channel: 'WHATSAPP', direction: 'INBOUND', from: '15551230000', contactName: 'Ana', body: 'Is my order ready?', at: recent });
+  await store.set('organizations/org_tools_a/inbound_messages/msg_in2', { id: 'msg_in2', channel: 'SMS', direction: 'INBOUND', from: '15551230001', body: 'old message', at: old });
+  t = await ai.executeCrmTool('summarize_recent_conversations', { hours: 500 }, A);
+  assert.equal(t.windowHours, 72);
+  assert.deepEqual(t.inboxMessages.map((m: any) => m.text), ['Do you deliver on Sundays?']);
+  assert.deepEqual(t.inboundMessages.map((m: any) => [m.channel, m.from, m.text]), [['WHATSAPP', 'Ana', 'Is my order ready?']]);
+  t = await ai.executeCrmTool('summarize_recent_conversations', {}, B);
+  assert.equal(t.inboxMessages.length + t.inboundMessages.length, 0); assert.match(t.note, /No customer messages/);
+  ok('summarize_recent_conversations: recent inbox + WhatsApp/SMS only (no internal notes, window capped at 72h), per organization');
+}
+
 ai.setGeminiClientForTests(null);
 console.log(`\n${passed} passed (assistant)`);
 process.exit(0);

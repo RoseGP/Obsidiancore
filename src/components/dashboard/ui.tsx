@@ -12,7 +12,7 @@ export const focusRing = 'focus:outline-none focus-visible:ring-2 focus-visible:
 export function Card({ as: Tag = 'section', className, children, ...rest }: React.HTMLAttributes<HTMLElement> & { as?: any }) {
   return (
     <Tag
-      className={cx('bg-[var(--surface)] border border-[var(--border)] rounded-[var(--radius-panel)] shadow-xs transition-shadow', className)}
+      className={cx('cc-card bg-[var(--surface)] border border-[var(--border)] rounded-[var(--radius-panel)] shadow-xs transition-shadow', className)}
       {...rest}
     >
       {children}

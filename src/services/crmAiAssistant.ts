@@ -1,7 +1,7 @@
 import { GoogleGenAI, Type } from '@google/genai';
 import { calculateLeadScore } from '../routes/dashboardApi';
 import { CrmRepository } from '../server/crm/crmRepository';
-import { newId } from '../server/data/docStore';
+import { getDocStore, newId } from '../server/data/docStore';
 import { can, isRole } from '../server/tenancy/orgs';
 
 // Lazy initialize Gemini client
@@ -164,10 +164,34 @@ export const CRM_TOOL_DECLARATIONS = [
       },
       required: ['caption', 'platforms']
     }
+  },
+  {
+    name: 'qualify_lead',
+    description: 'Mark an existing lead as qualified or unqualified (with an optional reason). Identify the lead by its id, or by its exact name or email address. Ask the user if several leads share the name.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        leadId: { type: Type.STRING, description: 'The lead id (from search_leads), if known.' },
+        nameOrEmail: { type: Type.STRING, description: 'Exact name or email address of the lead, if the id is not known.' },
+        status: { type: Type.STRING, description: '"qualified" or "unqualified".' },
+        reason: { type: Type.STRING, description: 'Optional short reason, e.g. budget confirmed.' }
+      },
+      required: ['status']
+    }
+  },
+  {
+    name: 'summarize_recent_conversations',
+    description: 'Fetch the organization\'s recent customer messages (inbox conversations plus inbound WhatsApp and SMS) so you can summarize them. Read-only.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        hours: { type: Type.NUMBER, description: 'How far back to look, in hours (default 24, maximum 72).' }
+      }
+    }
   }
 ];
 
-const WRITE_TOOLS = new Set(['create_lead', 'create_deal', 'create_followup_task', 'create_social_draft']);
+const WRITE_TOOLS = new Set(['create_lead', 'create_deal', 'create_followup_task', 'create_social_draft', 'qualify_lead']);
 const s = (v: unknown, max = 200) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
 
 /**
@@ -290,6 +314,48 @@ export async function executeCrmTool(
         const platforms = Array.isArray(args.platforms) ? args.platforms.filter((p: unknown) => typeof p === 'string').slice(0, 10) : ['LINKEDIN'];
         const post = await repo.createSocialDraft({ caption, mediaUrls: [], platforms, scheduledAt: s(args.scheduledDate, 40) || null, status: 'DRAFT', createdById: context.userId, createdAt: new Date().toISOString() });
         return { success: true, postId: post.id, caption, platforms, message: `Saved a social media draft for [${platforms.join(', ')}]. It has not been published or scheduled.` };
+      }
+
+      case 'qualify_lead': {
+        const status = args.status === 'qualified' || args.status === 'unqualified' ? args.status : null;
+        if (!status) return { error: 'Status must be "qualified" or "unqualified".' };
+        const reason = s(args.reason, 500);
+        let lead: any = null;
+        if (typeof args.leadId === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(args.leadId)) lead = await repo.getLead(args.leadId);
+        if (!lead) {
+          const key = s(args.nameOrEmail, 254).toLowerCase();
+          if (!key) return { error: 'Tell me which lead: its id, exact name or email address.' };
+          const matches = (await repo.listLeads()).filter((l) => (typeof l.email === 'string' && l.email.toLowerCase() === key) || (typeof l.name === 'string' && l.name.toLowerCase() === key));
+          if (!matches.length) return { error: `No lead named or with the email "${s(args.nameOrEmail, 120)}" was found.` };
+          if (matches.length > 1) return { error: 'Several leads match. Which one did you mean?', candidates: matches.slice(0, 5).map((l) => ({ id: l.id, name: l.name, email: l.email, company: l.company })) };
+          lead = matches[0];
+        }
+        if (lead.isConverted || lead.status === 'converted') return { error: `${lead.name} is already converted to a deal; their status can't change.` };
+        if (lead.status === status) return { success: true, unchanged: true, leadId: lead.id, message: `${lead.name} is already ${status}.` };
+        const now = new Date().toISOString();
+        await repo.updateLead(lead.id, { status, statusReason: reason || null, updatedAt: now });
+        await repo.addLeadActivity(lead.id, { type: 'status_changed', title: `Status Changed: ${lead.status} → ${status}`, description: reason ? `Reason: ${reason}` : `Marked ${status} by the AI assistant.`, actor: 'AI Assistant' });
+        await repo.logActivity({ type: 'status_changed', title: `Lead ${status === 'qualified' ? 'Qualified' : 'Unqualified'}: ${lead.name}`, description: reason || `Marked ${status} by the AI assistant.`, actor: 'AI Assistant', targetId: lead.id, targetType: 'lead' });
+        return { success: true, leadId: lead.id, name: lead.name, from: lead.status, to: status, reason: reason || null, message: `Marked ${lead.name} as ${status}${reason ? ` (${reason})` : ''}.` };
+      }
+
+      case 'summarize_recent_conversations': {
+        const hours = Math.min(Math.max(Math.round(Number(args.hours) || 24), 1), 72);
+        const sinceMs = Date.now() - hours * 3_600_000;
+        const { recentInboxMessages } = await import('../routes/messagingPlatform');
+        const st = await getDocStore();
+        const [inbox, inbound] = await Promise.all([
+          recentInboxMessages(context.orgId, sinceMs, 150),
+          st.list(`organizations/${context.orgId}/inbound_messages`, { orderBy: 'at', direction: 'desc', limit: 150 }),
+        ]);
+        const inboundRecent = inbound.filter((m) => Date.parse(m.at) >= sinceMs)
+          .map((m) => ({ channel: m.channel, from: m.contactName || m.from, text: String(m.body || '').slice(0, 500), at: m.at }));
+        return {
+          windowHours: hours,
+          inboxMessages: inbox,
+          inboundMessages: inboundRecent,
+          note: inbox.length || inboundRecent.length ? 'Summarize these messages; nothing was changed.' : `No customer messages in the last ${hours} hours.`,
+        };
       }
 
       default:

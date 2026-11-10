@@ -42,3 +42,87 @@
   #dashboard-root [data-section="assistant"], #dashboard-root [data-section="quick_actions"], #dashboard-root [data-section="work_queues"] { display: none !important; }
   #dashboard-root section, #dashboard-root li { break-inside: avoid; }
 }
+
+/* ---------------------------------------------------------------------------
+ * AI Command Center (dashboard tab only): deep-midnight canvas, frosted glass panels,
+ * electric blue / cyan / violet accents. Scoped by redefining the theme tokens on the
+ * dashboard root (which also carries data-theme="dark" so embedded components follow).
+ * ------------------------------------------------------------------------- */
+.cc[data-theme] {
+  color-scheme: dark;
+  --app-bg: #060a14;
+  --surface: rgb(15 21 38 / 0.66);
+  --surface-raised: #111a30;
+  --surface-sunken: rgb(148 163 255 / 0.06);
+  --border: rgb(148 163 255 / 0.13);
+  --border-strong: rgb(148 163 255 / 0.26);
+  --text: #e8ecf7;
+  --text-muted: #9ba5c1;
+  --text-subtle: #6c7593;
+  --accent: #5b6cff;
+  --accent-hover: #7180ff;
+  --accent-text: #aab4ff;
+  --accent-soft: rgb(91 108 255 / 0.16);
+  --accent-contrast: #ffffff;
+  --focus-ring: #5ee7ff;
+  --success: #34d399; --success-soft: rgb(52 211 153 / 0.13);
+  --warning: #fbbf24; --warning-soft: rgb(251 191 36 / 0.13);
+  --danger:  #fb7185; --danger-soft:  rgb(251 113 133 / 0.13);
+  --info:    #22d3ee; --info-soft:    rgb(34 211 238 / 0.12);
+  --cc-violet: #a78bfa;
+  --cc-cyan: #22d3ee;
+  background:
+    radial-gradient(1100px 520px at 8% -8%, rgb(91 108 255 / 0.20), transparent 62%),
+    radial-gradient(900px 480px at 100% 0%, rgb(34 211 238 / 0.10), transparent 60%),
+    radial-gradient(800px 600px at 50% 110%, rgb(167 139 250 / 0.10), transparent 60%),
+    var(--app-bg);
+  color: var(--text);
+}
+.cc .cc-card {
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.05), 0 18px 40px -24px rgb(0 0 0 / 0.75);
+}
+/* The copilot: a soft holographic edge (animated gradient border). */
+.cc .cc-holo { position: relative; isolation: isolate; }
+.cc .cc-holo::before {
+  content: ""; position: absolute; inset: -1px; z-index: -1; border-radius: inherit; padding: 1px;
+  background: conic-gradient(from var(--cc-angle, 0deg), rgb(91 108 255 / 0.65), rgb(34 211 238 / 0.55), rgb(167 139 250 / 0.6), rgb(91 108 255 / 0.65));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude;
+  animation: cc-spin 12s linear infinite; opacity: 0.8;
+}
+.cc .cc-holo::after {
+  content: ""; position: absolute; inset: 0; z-index: -2; border-radius: inherit; pointer-events: none;
+  background: radial-gradient(600px 220px at 15% 0%, rgb(91 108 255 / 0.16), transparent 70%), radial-gradient(500px 220px at 90% 10%, rgb(34 211 238 / 0.10), transparent 70%);
+}
+@property --cc-angle { syntax: "<angle>"; initial-value: 0deg; inherits: false; }
+@keyframes cc-spin { to { --cc-angle: 360deg; } }
+/* AI processing orb */
+.cc-orb { position: relative; width: 28px; height: 28px; border-radius: 999px; background: radial-gradient(circle at 35% 30%, #bfe9ff, #5b6cff 45%, #7c3aed 80%); box-shadow: 0 0 18px rgb(91 108 255 / 0.55); }
+.cc-orb[data-busy="true"] { animation: cc-pulse 1.4s ease-in-out infinite; }
+.cc-orb[data-busy="true"]::after { content: ""; position: absolute; inset: -6px; border-radius: inherit; border: 1px solid rgb(94 231 255 / 0.5); animation: cc-ring 1.4s ease-out infinite; }
+@keyframes cc-pulse { 50% { transform: scale(0.88); box-shadow: 0 0 26px rgb(34 211 238 / 0.7); } }
+@keyframes cc-ring { from { transform: scale(0.8); opacity: 1; } to { transform: scale(1.5); opacity: 0; } }
+/* Microphone level bars while listening */
+.cc-mic-bars span { display: inline-block; width: 3px; margin: 0 1px; border-radius: 2px; background: var(--cc-cyan); animation: cc-bar 0.9s ease-in-out infinite; }
+.cc-mic-bars span:nth-child(2) { animation-delay: 0.15s; } .cc-mic-bars span:nth-child(3) { animation-delay: 0.3s; }
+@keyframes cc-bar { 0%, 100% { height: 4px; } 50% { height: 14px; } }
+/* Mission complete */
+@keyframes cc-pop { 0% { transform: scale(0.6); opacity: 0; } 60% { transform: scale(1.15); opacity: 1; } 100% { transform: scale(1); } }
+.cc-pop { animation: cc-pop 0.45s cubic-bezier(.2,.8,.2,1) both; }
+@media (prefers-reduced-motion: reduce) {
+  .cc .cc-holo::before, .cc-orb[data-busy="true"], .cc-orb[data-busy="true"]::after, .cc-mic-bars span, .cc-pop { animation: none !important; }
+}
+/* Assistant replies on the Command Center's dark glass. */
+.cc .assistant-md { color: var(--text); }
+.cc .assistant-md h1, .cc .assistant-md h2, .cc .assistant-md h3, .cc .assistant-md strong { color: #f3f5fc; }
+.cc .assistant-md h2, .cc .assistant-md hr { border-color: var(--border); }
+.cc .assistant-md a { color: var(--accent-text); }
+.cc .assistant-md blockquote { border-left-color: var(--accent); color: var(--text-muted); background: var(--surface-sunken); }
+.cc .assistant-md code { background: rgb(148 163 255 / 0.12); color: #dfe4ff; }
+.cc .assistant-md pre { background: #070b16; border: 1px solid var(--border); }
+.cc .assistant-md th, .cc .assistant-md td { border-color: var(--border); }
+.cc .assistant-md th { background: rgb(148 163 255 / 0.08); }
+.cc .assistant-md tr:nth-child(even) td { background: rgb(148 163 255 / 0.03); }
+/* The app bar above the Command Center joins its navy look (dashboard tab only). */
+.cc.cc-bar { background: rgb(7 11 22 / 0.88); }

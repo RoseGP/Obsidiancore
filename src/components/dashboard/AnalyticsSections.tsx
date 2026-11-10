@@ -71,8 +71,8 @@ const METRICS: { value: Metric; label: string }[] = [
   { value: 'leads', label: 'New leads' }, { value: 'deals', label: 'Deals created' }, { value: 'won', label: 'Won revenue' },
 ];
 
-export function PerformanceCard({ data, range, loading }: { data: DashboardData; range: ResolvedRange; loading: boolean }) {
-  const [metric, setMetric] = useState<Metric>('leads');
+export function PerformanceCard({ data, range, loading, initialMetric = 'leads' }: { data: DashboardData; range: ResolvedRange; loading: boolean; initialMetric?: 'leads' | 'deals' | 'won' }) {
+  const [metric, setMetric] = useState<Metric>(initialMetric);
   const [compare, setCompare] = useState(true);
   const rows = useMemo(() => {
     const cur = performanceSeries(data, range);

@@ -666,6 +666,9 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   );
 };
 
+/** Like useNotifications, but returns null outside a NotificationProvider (e.g. in tests). */
+export const useOptionalNotifications = () => useContext(NotificationContext) ?? null;
+
 export const useNotifications = () => {
   const context = useContext(NotificationContext);
   if (!context) {
