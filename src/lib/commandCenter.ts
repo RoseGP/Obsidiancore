@@ -113,7 +113,7 @@ export function buildAttention(input: CommandCenterInput, now: number = Date.now
       name: l.name || l.company || 'New lead', title: `High-priority lead · score ${l.score}`,
       description: [l.company, l.source && `via ${l.source}`].filter(Boolean).join(' · ') || 'Not contacted yet',
       nextAction: 'Reach out today while interest is high.', timeLabel: `Arrived ${relativeTime(l.createdAt, now).toLowerCase()}`,
-      sortKey: -age / 4, action: { type: 'navigate', view: 'leads', label: 'Contact' },
+      sortKey: -age / 4, action: { type: 'navigate', view: 'lead_intelligence', label: 'Contact' },
     });
   }
 

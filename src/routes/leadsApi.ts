@@ -9,6 +9,7 @@
  * key (X-Lead-Capture-Key header or `formKey` field), created in Settings → Organization. Never by a
  * client-chosen org id. LEGACY_LEAD_CAPTURE_ORG_ID routes key-less submissions to one org during migration.
  */
+import { refreshLeadIntelligence } from '../server/crm/leadIntelligence';
 import { Router, Request, Response } from 'express';
 import rateLimit from 'express-rate-limit';
 import { calculateLeadScore } from './dashboardApi';
@@ -108,6 +109,7 @@ router.post('/capture', captureLimiter, async (req: Request, res: Response) => {
     await repo.logActivity({ type: 'lead_created', title: `New Website Lead: ${lead.name}`, description: `Website form capture for ${lead.company}.`, actor: 'Website Form', targetId: lead.id, targetType: 'lead' });
 
     // The public response doesn't echo the stored record back to an anonymous caller.
+    await refreshLeadIntelligence(orgId, saved.id); // classify incoming web leads immediately (never throws)
     return res.status(201).json({ success: true, leadId: saved.id, isExisting: false, message: 'Thank you! Your request has been received. We will follow up shortly.' });
   } catch (err) {
     return sendError(res, err, 'leads.capture');
@@ -230,7 +232,9 @@ router.post('/', async (req: Request, res: Response) => {
     await repo.saveLead(lead);
     await repo.addLeadActivity(lead.id, { type: 'created', title: 'Lead Ingested', description: `Lead created from source: ${source.toUpperCase()} with initial score ${lead.score}/100.`, actor: actorOf(req) });
     await repo.logActivity({ type: 'lead_created', title: `New Lead: ${lead.name}`, description: `Lead recorded from ${source.toUpperCase()} (${lead.company || 'Direct'}). Score: ${lead.score}.`, actor: actorOf(req), targetId: lead.id, targetType: 'lead' });
-    res.status(201).json({ success: true, lead: { ...lead, orgId: t.orgId }, warning: hasDuplicate ? 'A lead with this email address already existed.' : undefined });
+    // Classify the new lead straight away (Hot / Warm / Cold); never blocks creation.
+    const ai = await refreshLeadIntelligence(t.orgId, lead.id);
+    res.status(201).json({ success: true, lead: { ...lead, orgId: t.orgId, ...(ai ? { aiScore: ai.score, aiClass: ai.classification } : {}) }, ...(ai ? { intelligence: ai } : {}), warning: hasDuplicate ? 'A lead with this email address already existed.' : undefined });
   } catch (err) { sendError(res, err, 'leads.create'); }
 });
 

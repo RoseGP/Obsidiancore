@@ -35,6 +35,7 @@ import QuickActionModal from './components/QuickActionModal';
 import { CRMContact, CRMLead, CalendarEvent, CRMMessage, AppNotification, ActiveView } from './types';
 import { MessageSquare, X, Menu } from 'lucide-react';
 import HelpMenu from './components/HelpMenu';
+import LeadIntelligenceView from './features/lead-intelligence/LeadIntelligenceView';
 import { useTheme } from './context/ThemeContext';
 import ThemeSwitch from './components/ThemeSwitch';
 import { InvitationAcceptor } from './components/OrganizationSettings';
@@ -70,11 +71,14 @@ const INITIAL_NOTIFICATIONS: AppNotification[] = [];
 
 // Views laid out as one long page scroll the main area; the others (inbox, calendar, meetings, proposals…)
 // fill the viewport and scroll inside their own panels.
-const PAGE_SCROLL_VIEWS = new Set<string>(['dashboard', 'home', 'analytics', 'settings']);
+const PAGE_SCROLL_VIEWS = new Set<string>(['dashboard', 'home', 'analytics', 'settings', 'lead_intelligence']);
+// Views drawn in the dark AI Command Center look (the app bar joins it).
+const CC_VIEWS = new Set<string>(['dashboard', 'home', 'lead_intelligence']);
 
 const SEARCH_NAV_ITEMS = [
   { id: 'dashboard', label: 'Dashboard', icon: 'LayoutDashboard' },
   { id: 'deals', label: 'Leads & deals', icon: 'DollarSign' },
+  { id: 'lead_intelligence', label: 'Lead Intelligence (Hot, Warm, Cold)', icon: 'Sparkles' },
   { id: 'proposals', label: 'Proposals & invoices', icon: 'FileText' },
   { id: 'messages', label: 'Inbox', icon: 'MessageSquare' },
   { id: 'greet', label: 'Meetings', icon: 'Video' },
@@ -343,6 +347,12 @@ function AppMain() {
         return <SocialPlannerTab />;
       case 'gbp':
         return <GbpView />;
+      case 'lead_intelligence':
+        return (
+          <div className="cc min-h-full shrink-0 w-full" data-theme="dark">
+            <LeadIntelligenceView onNavigate={(v) => setActiveView(v as SemanticView)} onQuickAction={handleTriggerQuickAction} />
+          </div>
+        );
       case 'voice_dialer':
       case 'voice_hub':
       case 'voice_messages':
@@ -449,8 +459,8 @@ function AppMain() {
       <div className="flex-1 flex flex-col h-screen overflow-hidden">
         {/* Top Navbar - Clean Murmura-inspired modern executive header */}
         <header
-          data-theme={activeView === 'dashboard' || activeView === 'home' ? 'dark' : undefined}
-          className={`h-14 px-3 sm:px-5 flex items-center justify-between border-b border-[var(--border)] bg-[var(--surface)]/95 backdrop-blur-md shrink-0 z-30 transition-colors print:hidden ${activeView === 'dashboard' || activeView === 'home' ? 'cc cc-bar' : ''}`}
+          data-theme={CC_VIEWS.has(activeView) ? 'dark' : undefined}
+          className={`h-14 px-3 sm:px-5 flex items-center justify-between border-b border-[var(--border)] bg-[var(--surface)]/95 backdrop-blur-md shrink-0 z-30 transition-colors print:hidden ${CC_VIEWS.has(activeView) ? 'cc cc-bar' : ''}`}
         >
           {/* Menu (small screens) · search · quick create */}
           <div className="flex-1 min-w-0 max-w-2xl flex items-center gap-2 sm:gap-3">

@@ -460,6 +460,27 @@ export async function recentInboxMessages(orgId: string, sinceMs: number, limit 
   return out.sort((a, b) => a.at.localeCompare(b.at)).slice(-limit);
 }
 
+/**
+ * Inbox messages grouped by the customer's email (visitor email or participant email), oldest first.
+ * Used by lead intelligence to read a lead's communication history. Internal notes are excluded.
+ */
+export async function inboxMessagesByEmail(orgId: string) {
+  await hydrateInbox(orgId);
+  const out = new Map<string, { at: string; fromCustomer: boolean; text: string; channel: string }[]>();
+  for (const c of CONVERSATIONS.values()) {
+    if (c.orgId !== orgId) continue;
+    const emails = new Set<string>();
+    if (c.visitorMetadata?.email) emails.add(String(c.visitorMetadata.email).toLowerCase());
+    for (const p of c.participants || []) if (p?.role === 'visitor' && p.email) emails.add(String(p.email).toLowerCase());
+    if (!emails.size) continue;
+    const msgs = (MESSAGES.get(c.id) || []).filter((m) => !m.isInternalNote).map((m) => ({
+      at: String(m.createdAt), fromCustomer: m.senderType === 'visitor', text: String(m.content || '').slice(0, 1000), channel: c.channel,
+    }));
+    for (const e of emails) out.set(e, [...(out.get(e) || []), ...msgs].sort((a, b) => a.at.localeCompare(b.at)));
+  }
+  return out;
+}
+
 // Load the caller's organization before any route runs, and save its changes afterwards.
 router.use(async (req, res, next) => {
   try {

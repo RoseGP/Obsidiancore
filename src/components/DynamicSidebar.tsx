@@ -8,7 +8,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   LayoutDashboard, MessageSquare, FileText, BarChart3, Settings, ChevronLeft, ChevronRight, ChevronDown, Video, Calendar, Share2,
-  Globe, Phone, X, Bot, Bell, Users, KanbanSquare, MessageCircle, Headphones, Trophy, Lightbulb, Plug, UserCog, UserCircle2,
+  Globe, Phone, X, Bot, Brain, Bell, Users, KanbanSquare, MessageCircle, Headphones, Trophy, Lightbulb, Plug, UserCog, UserCircle2,
 } from 'lucide-react';
 
 interface SidebarItem { id: string; label: string; icon: React.ComponentType<any>; hint: string }
@@ -22,6 +22,7 @@ export const NAV_GROUPS: SidebarGroup[] = [
   ] },
   { id: 'customers', label: 'Customer Management', items: [
     { id: 'leads', label: 'Contacts & Leads', icon: Users, hint: 'Everyone in your CRM' },
+    { id: 'lead_intelligence', label: 'Lead Intelligence', icon: Brain, hint: 'Hot, warm and cold leads with next best actions' },
     { id: 'deals', label: 'Sales Pipeline & Deals', icon: KanbanSquare, hint: 'Deals by stage' },
   ] },
   { id: 'communications', label: 'Communications', items: [

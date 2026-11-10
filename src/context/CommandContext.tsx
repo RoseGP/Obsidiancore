@@ -26,7 +26,8 @@ export type SemanticView =
   | 'sales_pipelines'
   | 'public_scheduling'
   | 'voice_messages'      // Phone → WhatsApp & SMS (inbound messages and voicemail)
-  | 'voice_receptionist'; // Phone → AI voice receptionist
+  | 'voice_receptionist' // Phone → AI voice receptionist
+  | 'lead_intelligence';
 
 export interface EmailDraft {
   recipient?: string;
