@@ -197,9 +197,25 @@ export interface WidgetRecord {
 // TO COMPLETE: look up workspace members from your user directory (Firebase Auth / users collection).
 export const REGISTERED_USERS: UserRecord[] = [];
 
-// Available CRM Records for Linking
-// TO COMPLETE: query the CRM contacts store (same source as the contacts list) for linkable records.
-export const AVAILABLE_CRM_RECORDS: CrmRecordReference[] = [];
+// CRM records a conversation can link to come from the organization's leads and deals
+// (organizations/{orgId}/leads|deals): see crmRecordRefs() and GET /crm-records.
+const leadRef = (l: any): CrmRecordReference => ({ type: 'contact', id: String(l.id), title: l.name || l.email || 'Lead', subtitle: l.email || undefined, status: l.status || undefined, companyName: l.company || undefined });
+const dealRef = (d: any): CrmRecordReference => ({ type: 'deal', id: String(d.id), title: d.title || d.name || 'Deal', value: d.value != null ? String(d.value) : undefined, status: d.stage || d.status || undefined, companyName: d.company || d.client || undefined });
+
+/** One lead or deal of this organization as a link target (null if it isn't in the organization). */
+async function crmRecordRef(orgId: string, recordId: string, type?: string): Promise<CrmRecordReference | null> {
+  if (typeof recordId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(recordId)) return null;
+  const st = await getDocStore();
+  if (type !== 'deal') {
+    const lead = await st.get(`organizations/${orgId}/leads/${recordId}`);
+    if (lead) return leadRef({ ...lead, id: lead.id ?? recordId });
+  }
+  if (type !== 'contact') {
+    const deal = await st.get(`organizations/${orgId}/deals/${recordId}`);
+    if (deal) return dealRef({ ...deal, id: deal.id ?? recordId });
+  }
+  return null;
+}
 
 // In-Memory Fallback & Real-time State Stores
 const CONVERSATIONS: Map<string, ConversationRecord> = new Map();
@@ -604,7 +620,8 @@ router.post('/conversations', async (req: Request, res: Response) => {
       participantIds: participantIds?.length ? participantIds : [me(req).id],
       participants: participants.length > 0 ? participants : [{ id: me(req).id, name: me(req).name, email: tenantOf(req).email, avatar: '', role: 'admin' as const, status: 'online' as const }],
       visitorMetadata: visitorMetadata || undefined,
-      crmRecord: crmRecord || undefined,
+      // Resolve the link from this organization's records; never trust a snapshot sent by the client.
+      crmRecord: crmRecord?.id ? (await crmRecordRef(orgOf(req), String(crmRecord.id), crmRecord.type)) ?? undefined : undefined,
       unreadCount: 0,
       status: 'open',
       priority: priority || 'medium',
@@ -1028,26 +1045,24 @@ router.post('/conversations/:id/notes', (req: Request, res: Response) => {
 });
 
 // Link / Update CRM Record
-router.post('/conversations/:id/link-crm', (req: Request, res: Response) => {
-  const convId = req.params.id;
-  const { recordId } = req.body;
-
-  const conv = CONVERSATIONS.get(convId);
-  if (!conv) {
-    return res.status(404).json({ success: false, error: 'Conversation not found' });
-  }
-
-  const targetRecord = AVAILABLE_CRM_RECORDS.find((r) => r.id === recordId);
-  if (!targetRecord) {
-    return res.status(404).json({ success: false, error: 'CRM Record not found' });
-  }
-
-  conv.crmRecord = targetRecord;
-  conv.updatedAt = new Date().toISOString();
-  CONVERSATIONS.set(convId, conv);
-
-  broadcastEvent('conversation_updated', conv);
-  res.json({ success: true, conversation: conv });
+router.post('/conversations/:id/link-crm', async (req: Request, res: Response) => {
+  try {
+    const convId = req.params.id;
+    const conv = CONVERSATIONS.get(convId); // router.param('id') already checked it belongs to this organization
+    if (!conv) return res.status(404).json({ success: false, error: 'Conversation not found' });
+    const { recordId, type } = req.body ?? {};
+    if (recordId === null) {
+      conv.crmRecord = undefined;
+    } else {
+      const targetRecord = await crmRecordRef(orgOf(req), recordId, typeof type === 'string' ? type : undefined);
+      if (!targetRecord) return res.status(404).json({ success: false, error: 'CRM record not found in this organization.' });
+      conv.crmRecord = targetRecord;
+    }
+    conv.updatedAt = new Date().toISOString();
+    CONVERSATIONS.set(convId, conv);
+    broadcastEvent('conversation_updated', conv);
+    res.json({ success: true, conversation: conv });
+  } catch (err) { sendError(res, err, 'messaging.linkCrm'); }
 });
 
 // ----------------------------------------------------
@@ -1269,10 +1284,7 @@ router.get('/crm-records', async (req: Request, res: Response) => {
       st.list(`organizations/${orgId}/leads`, { limit: 200 }),
       st.list(`organizations/${orgId}/deals`, { limit: 200 }),
     ]);
-    const records: CrmRecordReference[] = [
-      ...leads.map((l: any) => ({ type: 'contact' as const, id: String(l.id), title: l.name || l.email || 'Lead', subtitle: l.email || undefined, status: l.status || undefined, companyName: l.company || undefined })),
-      ...deals.map((d: any) => ({ type: 'deal' as const, id: String(d.id), title: d.title || d.name || 'Deal', value: d.value != null ? String(d.value) : undefined, status: d.stage || d.status || undefined, companyName: d.company || undefined })),
-    ];
+    const records: CrmRecordReference[] = [...leads.map(leadRef), ...deals.map(dealRef)];
     res.json({ success: true, records });
   } catch {
     res.status(500).json({ success: false, error: 'CRM records couldn\'t be loaded.' });
