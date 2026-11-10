@@ -14,8 +14,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Markdown from 'react-markdown';
 import {
-  AlertTriangle, ArrowUp, Bot, Check, Copy, FileText, Loader2, Paperclip, RefreshCw, Settings2,
-  SlidersHorizontal, Sparkles, Square, Trash2, Volume2, VolumeX, X,
+  AlertTriangle, ArrowUp, Check, Copy, FileText, Loader2, Maximize2, Minimize2, Paperclip, Plus, RefreshCw, Settings2,
+  SlidersHorizontal, Sparkles, Square, Volume2, VolumeX, X,
 } from 'lucide-react';
 import type { CRMContact } from '../../types';
 
@@ -33,10 +33,12 @@ const DEFAULT_MODELS = [
   { id: 'deepseek-r1', label: 'DeepSeek R1 (via OmniRoute)' },
 ];
 const SUGGESTIONS = [
-  { label: 'Pipeline Summary', prompt: 'Give me a live pipeline summary: total ARR, active deals, and lead conversion rate.' },
-  { label: 'Search Top Leads', prompt: 'Search our CRM for qualified leads with score above 80 and summarize their needs.' },
-  { label: 'Draft Outreach', prompt: 'Draft a personalized enterprise follow-up email to Marcus Chen at AlphaTech Global citing our 99.99% SLA guarantee.' },
-  { label: 'Create Social Draft', prompt: 'Create a LinkedIn and Twitter social post draft highlighting our new WebRTC Call Canvas consultation feature.' },
+  'Show me today’s hottest leads.',
+  'Follow up with customers who haven’t responded.',
+  'Schedule a meeting with my highest-value contact.',
+  'Summarize today’s customer conversations.',
+  'Draft a proposal for my newest lead.',
+  'Which deals are likely to close this week?',
 ];
 const TEXT_TYPES = /\.(txt|md|markdown|csv|tsv|json|log|xml|html?|ya?ml|js|jsx|ts|tsx|py|sql|css)$/i;
 const MAX_FILE_BYTES = 200_000;
@@ -63,7 +65,7 @@ function systemPrompt(p: Prefs, crm: string | null) {
   ].join('\n');
 }
 
-export default function UnifiedAssistant({ contacts = [], onNavigate }: { contacts?: CRMContact[]; onNavigate?: (view: any) => void }) {
+export default function UnifiedAssistant({ contacts = [], onNavigate, onMessageSent }: { contacts?: CRMContact[]; onNavigate?: (view: any) => void; onMessageSent?: () => void }) {
   const [prefs, setPrefs] = useState<Prefs>(loadPrefs);
   const [models, setModels] = useState(DEFAULT_MODELS);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -73,6 +75,7 @@ export default function UnifiedAssistant({ contacts = [], onNavigate }: { contac
   const [streaming, setStreaming] = useState(false);
   const [toast, setToast] = useState('');
   const [copied, setCopied] = useState('');
+  const [expanded, setExpanded] = useState(false);
   const [speakingId, setSpeakingId] = useState('');
   const abortRef = useRef<AbortController | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -139,6 +142,7 @@ export default function UnifiedAssistant({ contacts = [], onNavigate }: { contac
       { role: 'user', content: body },
     ];
     setMessages([...history, user, reply]);
+    onMessageSent?.();
     setInput(''); setAttachments([]); setPanel(null);
     requestAnimationFrame(autoGrow);
     setStreaming(true);
@@ -189,52 +193,54 @@ export default function UnifiedAssistant({ contacts = [], onNavigate }: { contac
   const copy = (id: string, text: string) => { navigator.clipboard?.writeText(text); setCopied(id); setTimeout(() => setCopied(''), 1500); };
   const modelLabel = (id?: string) => models.find((m) => m.id === id)?.label || id || '';
   const empty = messages.length === 0;
-  const chip = 'text-[11px] font-semibold rounded-full border px-2.5 py-1 transition-colors';
+  const shortLabel = (label: string) => label.split(' (')[0];
+  const newConversation = () => { abortRef.current?.abort(); window.speechSynthesis?.cancel(); setSpeakingId(''); setMessages([]); setPanel(null); textRef.current?.focus(); };
 
   return (
-    <section aria-label="AI assistant" className="w-full max-w-3xl mx-auto mt-4 z-10 relative">
-      <div className="rounded-3xl border border-neutral-200/80 bg-white/90 backdrop-blur-md shadow-[0_8px_30px_rgba(15,23,42,0.06)] overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-neutral-100">
-          <div className="flex items-center gap-2 min-w-0">
-            <span className="h-7 w-7 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-500 text-white flex items-center justify-center shrink-0"><Sparkles className="h-4 w-4" /></span>
-            <div className="min-w-0">
-              <p className="text-sm font-bold text-neutral-900 leading-tight">AI Assistant</p>
-              <p className="text-[11px] text-neutral-500 truncate">{modelLabel(prefs.model)} · {prefs.tone} · {prefs.length}{crmContext ? ` · ${contacts.length} contacts in context` : ''}</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-1">
-            {!empty && <button type="button" onClick={() => { abortRef.current?.abort(); setMessages([]); }} className="p-2 rounded-xl text-neutral-500 hover:bg-neutral-100" aria-label="Clear conversation" title="Clear conversation"><Trash2 className="h-4 w-4" /></button>}
-            <button type="button" onClick={() => setPanel(panel === 'settings' ? null : 'settings')} aria-expanded={panel === 'settings'} className={`p-2 rounded-xl hover:bg-neutral-100 ${panel === 'settings' ? 'text-indigo-600 bg-indigo-50' : 'text-neutral-500'}`} aria-label="Assistant settings" title="Settings"><Settings2 className="h-4 w-4" /></button>
+    <section aria-label="AI copilot" className="dash-glass relative z-10 w-full px-4 sm:px-6 pt-4 pb-5 text-left">
+      {/* Toolbar */}
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5 min-w-0">
+          {!empty && <span className="dash-orb" style={{ '--orb-size': '28px' } as React.CSSProperties} data-busy={streaming} aria-hidden />}
+          <div className="min-w-0">
+            <h2 className="text-[15px] font-semibold text-[var(--text)] leading-tight">AI copilot</h2>
+            <p className="text-xs text-[var(--text-muted)] truncate">{shortLabel(modelLabel(prefs.model))} · {prefs.tone} · {prefs.length}{crmContext ? ` · ${contacts.length} contact${contacts.length === 1 ? '' : 's'} in context` : ''}</p>
           </div>
         </div>
-
-        {panel === 'settings' && (
-          <div className="px-4 py-3 border-b border-neutral-100 bg-neutral-50/70 text-xs text-neutral-700 space-y-2.5">
-            <label className="flex items-center justify-between gap-3">
-              <span><b>Read replies aloud</b><span className="block text-neutral-500">Uses your browser’s voice.</span></span>
-              <input type="checkbox" className="h-4 w-4 accent-indigo-600" checked={prefs.autoSpeak} onChange={(e) => setPrefs({ ...prefs, autoSpeak: e.target.checked })} />
-            </label>
-            <label className="flex items-center justify-between gap-3">
-              <span><b>Include CRM context by default</b><span className="block text-neutral-500">Sends a summary of up to 25 contacts with each question.</span></span>
-              <input type="checkbox" className="h-4 w-4 accent-indigo-600" checked={prefs.includeCrm} onChange={(e) => setPrefs({ ...prefs, includeCrm: e.target.checked })} />
-            </label>
-            <p className="text-[11px] text-neutral-500">Provider: OmniRoute gateway when configured, otherwise Gemini. Settings are saved in this browser. Conversations aren’t stored.</p>
-          </div>
-        )}
-
-        {/* Conversation */}
-        <div ref={listRef} className={`px-4 ${empty ? 'py-5' : 'py-4 max-h-[440px] overflow-y-auto'} space-y-4`} aria-live="polite">
-          {empty ? (
-            <div className="text-center">
-              <Bot className="h-8 w-8 mx-auto text-indigo-500" aria-hidden />
-              <p className="mt-2 text-sm font-semibold text-neutral-800">How can I help today?</p>
-              <p className="text-xs text-neutral-500">Ask a question, attach a file, or pick a suggestion.</p>
-              <div className="mt-3 flex flex-wrap justify-center gap-1.5">
-                {SUGGESTIONS.map((s) => <button key={s.label} type="button" onClick={() => void send(s.prompt)} className={`${chip} border-neutral-200 bg-white text-neutral-600 hover:border-indigo-300 hover:text-indigo-700`}>{s.label}</button>)}
-              </div>
+        <div className="flex items-center gap-1 shrink-0">
+          {models.length > 1 && models.length <= 4 && (
+            <div className="dash-seg hidden lg:inline-flex mr-1" role="group" aria-label="Model">
+              {models.map((m) => <button key={m.id} type="button" aria-pressed={prefs.model === m.id} title={m.label} onClick={() => setPrefs({ ...prefs, model: m.id })}>{shortLabel(m.label)}</button>)}
             </div>
-          ) : messages.map((m) => m.role === 'user' ? (
+          )}
+          <button type="button" onClick={() => setPanel(panel === 'settings' ? null : 'settings')} aria-expanded={panel === 'settings'} className="dash-icon-btn" aria-label="Assistant settings" title="Settings"><Settings2 className="h-4 w-4" /></button>
+          <button type="button" onClick={newConversation} disabled={empty} className="dash-icon-btn disabled:opacity-40 disabled:pointer-events-none" aria-label="New conversation" title="New conversation"><Plus className="h-4 w-4" /></button>
+          <button type="button" onClick={() => setExpanded((v) => !v)} aria-pressed={expanded} className="dash-icon-btn" aria-label={expanded ? 'Collapse assistant' : 'Expand assistant'} title={expanded ? 'Collapse' : 'Expand'}>{expanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}</button>
+        </div>
+      </div>
+
+      {panel === 'settings' && (
+        <div className="dash-glass-strong mt-3 px-4 py-3 text-xs text-[var(--text)] space-y-2.5">
+          <label className="flex items-center justify-between gap-3">
+            <span><b>Read replies aloud</b><span className="block text-[var(--text-muted)]">Uses your browser’s voice.</span></span>
+            <input type="checkbox" className="h-4 w-4 accent-indigo-600" checked={prefs.autoSpeak} onChange={(e) => setPrefs({ ...prefs, autoSpeak: e.target.checked })} />
+          </label>
+          <label className="flex items-center justify-between gap-3">
+            <span><b>Include CRM context by default</b><span className="block text-[var(--text-muted)]">Sends a summary of up to 25 contacts with each question.</span></span>
+            <input type="checkbox" className="h-4 w-4 accent-indigo-600" checked={prefs.includeCrm} onChange={(e) => setPrefs({ ...prefs, includeCrm: e.target.checked })} />
+          </label>
+          <p className="text-[11px] text-[var(--text-muted)]">Provider: OmniRoute gateway when configured, otherwise Gemini. Settings are saved in this browser. Conversations aren’t stored.</p>
+        </div>
+      )}
+
+      {/* Conversation, or the resting orb */}
+      {empty ? (
+        <div className="relative z-10 flex justify-center -mb-8 mt-1 pointer-events-none" aria-hidden>
+          <span className="dash-orb" style={{ '--orb-size': '76px' } as React.CSSProperties} />
+        </div>
+      ) : (
+        <div ref={listRef} className={`mt-4 mb-4 pr-1 overflow-y-auto space-y-4 ${expanded ? 'max-h-[70vh]' : 'max-h-[420px]'}`} aria-live="polite">
+          {messages.map((m) => m.role === 'user' ? (
             <div key={m.id} className="flex justify-end">
               <div className="max-w-[85%] rounded-2xl rounded-br-md bg-indigo-600 text-white px-3.5 py-2 text-sm whitespace-pre-wrap break-words">
                 {m.content}
@@ -252,15 +258,15 @@ export default function UnifiedAssistant({ contacts = [], onNavigate }: { contac
                     <button type="button" onClick={() => regenerate(m.id)} className="mt-1.5 text-xs font-semibold underline">Try again</button>
                   </div>
                 ) : (
-                  <div className="prose prose-sm max-w-none prose-p:my-1.5 prose-ul:my-1.5 prose-headings:my-2 text-neutral-800 break-words">
-                    {m.content ? <Markdown>{m.content}</Markdown> : <span className="inline-flex items-center gap-1.5 text-neutral-400 text-sm"><Loader2 className="h-3.5 w-3.5 animate-spin" />Thinking…</span>}
+                  <div className="prose prose-sm max-w-none prose-p:my-1.5 prose-ul:my-1.5 prose-headings:my-2 text-sm text-[var(--text)] break-words">
+                    {m.content ? <Markdown>{m.content}</Markdown> : <span className="inline-flex items-center gap-1.5 text-[var(--text-subtle)] text-sm"><Loader2 className="h-3.5 w-3.5 animate-spin" />Thinking…</span>}
                   </div>
                 )}
                 {!m.streaming && !m.error && m.content && (
-                  <div className="mt-1 flex items-center gap-0.5 text-neutral-400">
-                    <button type="button" onClick={() => copy(m.id, m.content)} className="p-1.5 rounded-lg hover:bg-neutral-100 hover:text-neutral-700" aria-label="Copy reply">{copied === m.id ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}</button>
-                    <button type="button" onClick={() => speak(m.id, m.content)} className="p-1.5 rounded-lg hover:bg-neutral-100 hover:text-neutral-700" aria-label={speakingId === m.id ? 'Stop reading' : 'Read aloud'}>{speakingId === m.id ? <VolumeX className="h-3.5 w-3.5" /> : <Volume2 className="h-3.5 w-3.5" />}</button>
-                    <button type="button" onClick={() => regenerate(m.id)} disabled={streaming} className="p-1.5 rounded-lg hover:bg-neutral-100 hover:text-neutral-700 disabled:opacity-40" aria-label="Regenerate reply"><RefreshCw className="h-3.5 w-3.5" /></button>
+                  <div className="mt-1 flex items-center gap-0.5 text-[var(--text-subtle)]">
+                    <button type="button" onClick={() => copy(m.id, m.content)} className="dash-icon-btn !h-7 !w-7" aria-label="Copy reply">{copied === m.id ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}</button>
+                    <button type="button" onClick={() => speak(m.id, m.content)} className="dash-icon-btn !h-7 !w-7" aria-label={speakingId === m.id ? 'Stop reading' : 'Read aloud'}>{speakingId === m.id ? <VolumeX className="h-3.5 w-3.5" /> : <Volume2 className="h-3.5 w-3.5" />}</button>
+                    <button type="button" onClick={() => regenerate(m.id)} disabled={streaming} className="dash-icon-btn !h-7 !w-7 disabled:opacity-40" aria-label="Regenerate reply"><RefreshCw className="h-3.5 w-3.5" /></button>
                     {m.model && <span className="ml-1 text-[10px]">{modelLabel(m.model)}</span>}
                   </div>
                 )}
@@ -268,71 +274,80 @@ export default function UnifiedAssistant({ contacts = [], onNavigate }: { contac
             </div>
           ))}
         </div>
+      )}
 
-        {/* Composer */}
-        <form onSubmit={(e) => { e.preventDefault(); void send(input); }} className="border-t border-neutral-100 px-3 pt-2.5 pb-2.5">
-          {!!attachments.length && (
-            <div className="mb-2 flex flex-wrap gap-1.5">
-              {attachments.map((a) => (
-                <span key={a.id} className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-200 bg-neutral-50 pl-2 pr-1 py-1 text-[11px] text-neutral-700">
-                  <FileText className="h-3.5 w-3.5 text-indigo-500" />{a.name}<span className="text-neutral-400">{fmtSize(a.size)}</span>
-                  <button type="button" onClick={() => setAttachments((x) => x.filter((y) => y.id !== a.id))} className="p-0.5 rounded hover:bg-neutral-200" aria-label={`Remove ${a.name}`}><X className="h-3 w-3" /></button>
-                </span>
-              ))}
-            </div>
-          )}
-          <label htmlFor="assistant-input" className="sr-only">Message the AI assistant</label>
-          <textarea
-            id="assistant-input" ref={textRef} rows={2} value={input} placeholder="Ask anything about your customers, deals or schedule…"
-            onChange={(e) => { setInput(e.target.value); autoGrow(); }}
-            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void send(input); } }}
-            className="w-full resize-none bg-transparent text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none px-1.5 py-1 min-h-[52px]"
-          />
-          <div className="flex items-center justify-between gap-2 pt-1">
-            <div className="flex items-center gap-1 relative">
-              <input ref={fileRef} type="file" multiple className="hidden" accept=".txt,.md,.csv,.tsv,.json,.log,.xml,.html,.yaml,.yml,.js,.ts,.tsx,.jsx,.py,.sql,.css,text/*" onChange={(e) => void addFiles(e.target.files)} />
-              <button type="button" onClick={() => fileRef.current?.click()} className="flex items-center gap-1 rounded-xl px-2.5 py-1.5 text-xs font-semibold text-neutral-600 hover:bg-neutral-100" aria-label="Attach files" title={`Attach text files (up to ${MAX_FILES}, ${fmtSize(MAX_FILE_BYTES)} each)`}><Paperclip className="h-4 w-4" /><span className="hidden sm:inline">Attach</span></button>
-              <button type="button" onClick={() => setPanel(panel === 'options' ? null : 'options')} aria-expanded={panel === 'options'} className={`flex items-center gap-1 rounded-xl px-2.5 py-1.5 text-xs font-semibold hover:bg-neutral-100 ${panel === 'options' ? 'text-indigo-700 bg-indigo-50' : 'text-neutral-600'}`}><SlidersHorizontal className="h-4 w-4" /><span className="hidden sm:inline">Options</span></button>
-              {panel === 'options' && (
-                <div role="dialog" aria-label="Response options" className="absolute bottom-11 left-0 w-[290px] rounded-2xl border border-neutral-200 bg-white p-3 shadow-xl space-y-3 text-xs z-20">
-                  <label className="block">
-                    <span className="font-semibold text-neutral-700">Model</span>
-                    <select value={prefs.model} onChange={(e) => setPrefs({ ...prefs, model: e.target.value })} className="mt-1 w-full rounded-lg border border-neutral-200 px-2 py-1.5 bg-white">
-                      {models.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
-                    </select>
-                  </label>
-                  {([['Length', 'length', ['concise', 'standard', 'detailed']], ['Tone', 'tone', ['executive', 'technical', 'action']]] as const).map(([label, key, opts]) => (
-                    <fieldset key={key}>
-                      <legend className="font-semibold text-neutral-700">{label}</legend>
-                      <div className="mt-1 grid grid-cols-3 gap-1">
-                        {opts.map((o) => <button key={o} type="button" onClick={() => setPrefs({ ...prefs, [key]: o } as Prefs)} aria-pressed={prefs[key] === o} className={`rounded-lg border px-1.5 py-1 capitalize ${prefs[key] === o ? 'border-indigo-400 bg-indigo-50 text-indigo-700 font-semibold' : 'border-neutral-200 text-neutral-600 hover:bg-neutral-50'}`}>{o}</button>)}
-                      </div>
-                    </fieldset>
-                  ))}
-                  <label className="flex items-center justify-between gap-2">
-                    <span><span className="font-semibold text-neutral-700">Include CRM context</span><span className="block text-neutral-500">{contacts.length ? `${contacts.length} contact${contacts.length === 1 ? '' : 's'} available` : 'No contacts yet'}</span></span>
-                    <input type="checkbox" className="h-4 w-4 accent-indigo-600" checked={prefs.includeCrm} onChange={(e) => setPrefs({ ...prefs, includeCrm: e.target.checked })} />
-                  </label>
-                </div>
-              )}
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="hidden sm:inline text-[10px] text-neutral-400">Enter to send · Shift+Enter new line</span>
-              {streaming ? (
-                <button type="button" onClick={() => abortRef.current?.abort()} className="h-9 w-9 rounded-xl bg-neutral-900 text-white flex items-center justify-center" aria-label="Stop generating"><Square className="h-3.5 w-3.5" /></button>
-              ) : (
-                <button type="submit" disabled={!input.trim() && !attachments.length} className="h-9 w-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center disabled:opacity-40 hover:bg-indigo-700" aria-label="Send message"><ArrowUp className="h-4 w-4" /></button>
-              )}
-            </div>
+      {/* Composer */}
+      <form onSubmit={(e) => { e.preventDefault(); void send(input); }} className={`dash-composer px-4 sm:px-5 pb-2.5 ${empty ? 'pt-8' : 'pt-3'}`}>
+        {!!attachments.length && (
+          <div className="mb-2 flex flex-wrap gap-1.5">
+            {attachments.map((a) => (
+              <span key={a.id} className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface-sunken)] pl-2 pr-1 py-1 text-[11px] text-[var(--text)]">
+                <FileText className="h-3.5 w-3.5 text-indigo-500" />{a.name}<span className="text-[var(--text-subtle)]">{fmtSize(a.size)}</span>
+                <button type="button" onClick={() => setAttachments((x) => x.filter((y) => y.id !== a.id))} className="p-0.5 rounded hover:bg-[var(--border)]" aria-label={`Remove ${a.name}`}><X className="h-3 w-3" /></button>
+              </span>
+            ))}
           </div>
-        </form>
-      </div>
-      {!!onNavigate && !empty && (
-        <div className="mt-2 flex flex-wrap justify-center gap-1.5">
-          {[['Contacts', 'dashboard'], ['Calendar', 'calendar'], ['Messages', 'messages']].map(([l, v]) => <button key={v} type="button" onClick={() => onNavigate(v)} className={`${chip} border-neutral-200 bg-white/70 text-neutral-500 hover:text-neutral-800`}>Open {l}</button>)}
+        )}
+        <label htmlFor="assistant-input" className="sr-only">Message the AI copilot</label>
+        <textarea
+          id="assistant-input" ref={textRef} rows={2} value={input} placeholder="Ask anything about your customers, deals or schedule…"
+          onChange={(e) => { setInput(e.target.value); autoGrow(); }}
+          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void send(input); } }}
+          className={`w-full resize-none bg-transparent text-[15px] text-[var(--text)] placeholder:text-[var(--text-subtle)] focus:outline-none py-1 ${expanded && empty ? 'min-h-[120px]' : 'min-h-[56px]'}`}
+        />
+        <div className="flex items-center justify-between gap-2 pt-2 border-t border-[var(--dh-line)]">
+          <div className="flex items-center gap-0.5 relative -ml-2">
+            <input ref={fileRef} type="file" multiple className="hidden" accept=".txt,.md,.csv,.tsv,.json,.log,.xml,.html,.yaml,.yml,.js,.ts,.tsx,.jsx,.py,.sql,.css,text/*" onChange={(e) => void addFiles(e.target.files)} />
+            <button type="button" onClick={() => fileRef.current?.click()} className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-medium text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--dh-line)]" title={`Attach text files (up to ${MAX_FILES}, ${fmtSize(MAX_FILE_BYTES)} each)`}><Paperclip className="h-3.5 w-3.5" />Add files</button>
+            <button type="button" onClick={() => setPanel(panel === 'options' ? null : 'options')} aria-expanded={panel === 'options'} className={`flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-medium hover:bg-[var(--dh-line)] ${panel === 'options' ? 'text-[var(--accent-text)] bg-[var(--accent-soft)]' : 'text-[var(--text-muted)] hover:text-[var(--text)]'}`}><SlidersHorizontal className="h-3.5 w-3.5" />Options</button>
+            {panel === 'options' && (
+              <div role="dialog" aria-label="Response options" className="absolute bottom-10 left-2 w-[290px] rounded-2xl border border-[var(--border)] bg-[var(--surface-raised)] p-3 shadow-xl space-y-3 text-xs z-20">
+                <label className="block">
+                  <span className="font-semibold text-[var(--text)]">Model</span>
+                  <select value={prefs.model} onChange={(e) => setPrefs({ ...prefs, model: e.target.value })} className="mt-1 w-full rounded-lg border border-[var(--border)] px-2 py-1.5 bg-[var(--surface)] text-[var(--text)]">
+                    {models.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+                  </select>
+                </label>
+                {([['Length', 'length', ['concise', 'standard', 'detailed']], ['Tone', 'tone', ['executive', 'technical', 'action']]] as const).map(([label, key, opts]) => (
+                  <fieldset key={key}>
+                    <legend className="font-semibold text-[var(--text)]">{label}</legend>
+                    <div className="mt-1 grid grid-cols-3 gap-1">
+                      {opts.map((o) => <button key={o} type="button" onClick={() => setPrefs({ ...prefs, [key]: o } as Prefs)} aria-pressed={prefs[key] === o} className={`rounded-lg border px-1.5 py-1 capitalize ${prefs[key] === o ? 'border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent-text)] font-semibold' : 'border-[var(--border)] text-[var(--text-muted)] hover:bg-[var(--surface-sunken)]'}`}>{o}</button>)}
+                    </div>
+                  </fieldset>
+                ))}
+                <label className="flex items-center justify-between gap-2">
+                  <span><span className="font-semibold text-[var(--text)]">Include CRM context</span><span className="block text-[var(--text-muted)]">{contacts.length ? `${contacts.length} contact${contacts.length === 1 ? '' : 's'} available` : 'No contacts yet'}</span></span>
+                  <input type="checkbox" className="h-4 w-4 accent-indigo-600" checked={prefs.includeCrm} onChange={(e) => setPrefs({ ...prefs, includeCrm: e.target.checked })} />
+                </label>
+              </div>
+            )}
+          </div>
+          <div className="flex items-center gap-2.5">
+            <span className="hidden md:inline text-[11px] text-[var(--text-subtle)]">Enter to send · Shift+Enter for a new line</span>
+            {streaming ? (
+              <button type="button" onClick={() => abortRef.current?.abort()} className="h-9 w-9 rounded-full bg-neutral-900 text-white flex items-center justify-center" aria-label="Stop generating"><Square className="h-3.5 w-3.5" /></button>
+            ) : (
+              <button type="submit" disabled={!input.trim() && !attachments.length} className="dash-btn-primary h-9 w-9 rounded-full flex items-center justify-center disabled:opacity-40 disabled:shadow-none transition" aria-label="Send message"><ArrowUp className="h-4 w-4" /></button>
+            )}
+          </div>
+        </div>
+      </form>
+
+      {empty && (
+        <div className="mt-4">
+          <p className="text-[13px] text-[var(--text-muted)] mb-2.5">Try a suggestion, or type your own.</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+            {SUGGESTIONS.map((s) => <button key={s} type="button" onClick={() => void send(s)} className="dash-chip">{s}</button>)}
+          </div>
         </div>
       )}
-      {toast && <p role="status" className="mt-2 text-center text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-3 py-1.5">{toast}</p>}
+      {!!onNavigate && !empty && (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {[['Leads', 'leads'], ['Calendar', 'calendar'], ['Messages', 'messages']].map(([l, v]) => <button key={v} type="button" onClick={() => onNavigate(v)} className="dash-btn dash-btn-sm">Open {l}</button>)}
+        </div>
+      )}
+      {toast && <p role="status" className="mt-3 text-center text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-3 py-1.5">{toast}</p>}
     </section>
   );
 }

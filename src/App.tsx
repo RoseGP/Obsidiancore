@@ -329,6 +329,7 @@ function AppMain() {
             contacts={contacts}
             onSelectContact={handleSelectContact}
             onNavigate={(v) => setActiveView(v as SemanticView)}
+            onQuickAction={handleTriggerQuickAction}
           />
         );
       case 'leads':
@@ -413,6 +414,7 @@ function AppMain() {
             contacts={contacts}
             onSelectContact={handleSelectContact}
             onNavigate={(v) => setActiveView(v as SemanticView)}
+            onQuickAction={handleTriggerQuickAction}
           />
         );
     }

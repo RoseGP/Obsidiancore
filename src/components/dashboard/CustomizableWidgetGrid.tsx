@@ -308,7 +308,7 @@ export const CustomizableWidgetGrid: React.FC<CustomizableWidgetGridProps> = ({
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-base sm:text-lg font-bold text-white tracking-tight">
+              <h2 className="text-base sm:text-lg font-bold text-[var(--text)] tracking-tight">
                 Customizable KPI Command Center
               </h2>
               <span className="text-[10px] font-mono font-bold tracking-wider text-amber-400 uppercase bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full">

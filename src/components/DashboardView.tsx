@@ -16,11 +16,23 @@ import Markdown from 'react-markdown';
 import UnifiedAssistant from './assistant/UnifiedAssistant';
 import CustomizableWidgetGrid from './dashboard/CustomizableWidgetGrid';
 import { useNotifications } from '../context/NotificationContext';
+import { useAuth } from '../context/AuthContext';
 
 interface DashboardViewProps {
   contacts: CRMContact[];
   onSelectContact: (contact: CRMContact) => void;
   onNavigate: (view: any) => void;
+  /** Opens the global quick-create modal (lead / deal / event) owned by App. */
+  onQuickAction?: (type: 'lead' | 'deal' | 'event') => void;
+}
+
+// "Get set up" checklist progress. Lead completion comes from the real contacts list; the other steps are
+// remembered in this browser once the user has done them here.
+const SETUP_KEY = 'obsidian_dash_setup_v1';
+interface SetupState { deal: boolean; invite: boolean; copilot: boolean; dismissed: boolean }
+function loadSetup(): SetupState {
+  const d: SetupState = { deal: false, invite: false, copilot: false, dismissed: false };
+  try { return { ...d, ...JSON.parse(localStorage.getItem(SETUP_KEY) || '{}') }; } catch { return d; }
 }
 
 // Fun Motivational / Insight quotes
@@ -99,10 +111,26 @@ interface InboundSlip {
 // TO COMPLETE: load recent inbound items (calls, messages, form submissions) from the messaging and voice logs.
 const INITIAL_INBOUND_SLIPS: InboundSlip[] = [];
 
-export default function DashboardView({ contacts, onSelectContact, onNavigate }: DashboardViewProps) {
+export default function DashboardView({ contacts, onSelectContact, onNavigate, onQuickAction }: DashboardViewProps) {
   const now = new Date();
   const dayGreeting = now.getHours() < 12 ? 'Good morning' : now.getHours() < 18 ? 'Good afternoon' : 'Good evening';
   const todayLabel = now.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
+  const timeLabel = now.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  const { userProfile } = useAuth();
+  const firstName = (userProfile?.displayName || '').trim().split(/\s+/)[0] || '';
+  const [setup, setSetup] = useState<SetupState>(loadSetup);
+  const markSetup = (patch: Partial<SetupState>) => setSetup(prev => {
+    const next = { ...prev, ...patch };
+    try { localStorage.setItem(SETUP_KEY, JSON.stringify(next)); } catch {}
+    return next;
+  });
+  const focusCopilot = () => {
+    const el = document.getElementById('assistant-input') as HTMLTextAreaElement | null;
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el.focus({ preventScroll: true });
+  };
+  const addLead = () => (onQuickAction ? onQuickAction('lead') : onNavigate('leads'));
   const { handleUserCommand, isProcessingCommand, isVoiceAssistantActive } = useCommand();
   const { simulateEvent, autoStreamActive, setAutoStreamActive } = useNotifications();
   const [commandText, setCommandText] = useState('');
@@ -144,7 +172,6 @@ export default function DashboardView({ contacts, onSelectContact, onNavigate }:
   const [streakDays] = useState(4);
   const [currentInsightIdx, setCurrentInsightIdx] = useState(0);
   const [starburstSpun, setStarburstSpun] = useState(false);
-  const [focusMood, setFocusMood] = useState<'energy' | 'zen' | 'dealmaker'>('energy');
 
   // Real Backend Dashboard Stats
   const [dashboardStats, setDashboardStats] = useState<{
@@ -240,6 +267,7 @@ export default function DashboardView({ contacts, onSelectContact, onNavigate }:
       if (data.success) {
         triggerAlert(`🎉 Deal registered: $${parseFloat(newDealForm.value).toLocaleString()} for ${newDealForm.client}!`, 'reward');
         setIsNewDealModalOpen(false);
+        markSetup({ deal: true });
         setNewDealForm({
           name: '',
           client: '',
@@ -747,399 +775,404 @@ export default function DashboardView({ contacts, onSelectContact, onNavigate }:
   // Top VIP Contacts for Fast Action
   const vipContacts = contacts.slice(0, 4);
 
+  const serverOnline = !!dashboardStats;
+  const setupSteps = [
+    {
+      id: 'lead', done: contacts.length > 0, title: 'Add your first lead',
+      text: 'Leads feed every figure on this page.', cta: 'Add a lead', icon: Users,
+      tint: 'rgba(125, 211, 252, 0.6)', run: addLead,
+    },
+    {
+      id: 'deal', done: setup.deal, title: 'Register a deal',
+      text: 'Track value and stage in your pipeline.', cta: 'New deal', icon: TrendingUp,
+      tint: 'rgba(196, 181, 253, 0.6)', run: () => setIsNewDealModalOpen(true),
+    },
+    {
+      id: 'invite', done: setup.invite, title: 'Invite a teammate',
+      text: 'Share leads and assign owners.', cta: 'Invite', icon: UserCheck,
+      tint: 'rgba(165, 180, 252, 0.55)', run: () => { markSetup({ invite: true }); onNavigate('settings'); },
+    },
+    {
+      id: 'copilot', done: setup.copilot, title: 'Ask your copilot',
+      text: 'Try “Show me today’s hottest leads.”', cta: 'Try it', icon: Sparkles,
+      tint: 'rgba(240, 171, 252, 0.5)', run: focusCopilot,
+    },
+  ];
+  const setupDone = setupSteps.filter(st => st.done).length;
+  const showSetup = !setup.dismissed && setupDone < setupSteps.length;
+  const fmtMoney = (n?: number) => (serverOnline ? `$${Math.round(n || 0).toLocaleString()}` : '—');
+  const fmtCount = (n?: number) => (serverOnline ? (n || 0).toLocaleString() : '—');
+
+  const metricCards = [
+    {
+      label: 'Pipeline value', icon: TrendingUp, view: 'deals',
+      value: fmtMoney(dashboardStats?.totalPipelineValue),
+      side: serverOnline ? `${dashboardStats!.openDealsCount || 0} open deal${dashboardStats!.openDealsCount === 1 ? '' : 's'}` : '',
+      foot: serverOnline ? `Weighted forecast ${fmtMoney(dashboardStats!.weightedForecastValue)}` : 'No data yet',
+    },
+    {
+      label: 'AI receptionist', icon: Activity, view: 'voice_dialer',
+      value: fmtCount(dashboardStats?.callsToday), side: '',
+      foot: 'Calls handled today',
+    },
+    {
+      label: 'Inbound queue', icon: Mail, view: 'messages',
+      value: fmtCount(dashboardStats?.activeTicketsCount),
+      side: serverOnline && dashboardStats!.criticalTicketsCount ? `${dashboardStats!.criticalTicketsCount} priority` : '',
+      foot: serverOnline ? `Avg reply ${dashboardStats!.avgResponseMinutes || 0}m · ${dashboardStats!.slaMetRate || 0}% SLA met` : 'No data yet',
+    },
+    {
+      label: 'Meetings today', icon: Clock, view: 'calendar',
+      value: fmtCount(dashboardStats?.meetingsToday), side: '',
+      foot: 'From your calendar',
+    },
+  ];
+
   return (
-    <div className="relative min-h-full w-full flex flex-col items-center justify-start p-4 sm:p-6 md:p-8 font-sans overflow-x-hidden bg-[var(--app-bg)] text-[var(--text)] transition-colors gap-8 sm:gap-10">
-      
+    <div className="dash-home relative min-h-full w-full flex flex-col items-center justify-start p-4 sm:p-6 md:p-8 font-sans overflow-x-hidden text-[var(--text)] transition-colors gap-6">
 
-      {/* TOP BAR / LIVE SYSTEM TELEMETRY & PRODUCTIVITY HUD */}
-      <div className="w-full max-w-6xl flex flex-wrap justify-between items-center gap-3 z-10 shrink-0">
-        <div className="flex items-center gap-2.5">
-          <span className="text-[10px] font-medium bg-white/70 text-neutral-600 border border-neutral-200/80 px-2.5 py-1 rounded-full shadow-xs flex items-center gap-1.5">
-            <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-            Executive Workspace
-          </span>
+      {/* HEADER: breadcrumb, greeting, workspace status, primary actions */}
+      <header className="w-full max-w-6xl z-10">
+        <nav aria-label="Breadcrumb" className="mb-5 text-xs text-[var(--text-muted)]">
+          <ol className="flex flex-wrap items-center gap-1.5">
+            <li>Home</li><li aria-hidden="true">/</li>
+            <li>AI Command Center</li><li aria-hidden="true">/</li>
+            <li>Dashboard</li><li aria-hidden="true">/</li>
+            <li aria-current="page" className="font-semibold text-[var(--text)]">Overview</li>
+          </ol>
+        </nav>
 
-          {/* Sound FX & Voice-Over Control */}
-          <button
-            onClick={() => {
-              if (isSpeaking || activeVoiceSim) {
-                stopVoiceOver();
-              } else {
-                setSoundEnabled(!soundEnabled);
-                triggerAlert(soundEnabled ? "Muted UI Sound FX" : "Enabled UI Sound FX", "info");
-              }
-            }}
-            className={`p-1.5 rounded-full border text-xs transition shadow-xs cursor-pointer ${
-              isSpeaking
-                ? 'bg-rose-100 hover:bg-rose-200 border-rose-300 text-rose-700 animate-pulse'
-                : 'bg-white/70 hover:bg-white border-neutral-200/70 text-neutral-500 hover:text-neutral-700'
-            }`}
-            title={isSpeaking ? "Stop Voice-Over Audio" : soundEnabled ? "Mute sound FX" : "Enable sound FX"}
-          >
-            {isSpeaking ? (
-              <Square className="h-3.5 w-3.5 fill-rose-600 text-rose-600" />
-            ) : soundEnabled ? (
-              <Volume2 className="h-3.5 w-3.5" />
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-[13px] text-[var(--text-muted)]">{todayLabel} • {timeLabel}</p>
+            <h1 className="mt-1 text-[30px] sm:text-[36px] leading-[1.1] font-semibold tracking-[-0.025em] text-[var(--text)]">
+              Welcome back{firstName ? `, ${firstName}` : ''}
+            </h1>
+          </div>
+
+          <div role="status" className="dash-pill flex items-center gap-3 pl-4 pr-4 py-2.5 max-w-full">
+            <Sparkles className="h-4 w-4 shrink-0 text-[var(--accent-text)]" aria-hidden="true" />
+            <div className="min-w-0">
+              <p className="text-[13px] font-semibold leading-tight text-[var(--text)]">
+                {isStatsLoading ? 'Getting your workspace ready…' : serverOnline ? 'Your workspace is ready.' : 'Your workspace is offline.'}
+              </p>
+              <p className="text-xs text-[var(--text-muted)] leading-tight mt-0.5">
+                {isStatsLoading ? 'Syncing CRM data.' : serverOnline ? 'Live CRM data is connected.' : 'Couldn’t reach the CRM server. Figures will show once it’s back.'}
+              </p>
+            </div>
+            <span
+              aria-hidden="true"
+              className={`ml-1 h-2.5 w-2.5 rounded-full shrink-0 ${isStatsLoading ? 'bg-neutral-300 animate-pulse' : serverOnline ? 'bg-emerald-500 shadow-[0_0_0_4px_rgba(16,185,129,0.18)]' : 'bg-amber-500 shadow-[0_0_0_4px_rgba(245,158,11,0.18)]'}`}
+            />
+          </div>
+        </div>
+
+        <p className="dash-pill mt-4 inline-block px-4 py-2 text-[13px] text-[var(--text)]">
+          Your AI business command center is ready. Let&apos;s make today productive.
+        </p>
+
+        <div className="mt-4 flex flex-wrap items-center gap-2.5">
+          <button type="button" onClick={() => setIsNewDealModalOpen(true)} className="dash-btn dash-btn-primary">
+            <Plus className="h-4 w-4" aria-hidden="true" />
+            Register deal
+          </button>
+          <button type="button" onClick={addLead} className="dash-btn">
+            <Users className="h-4 w-4" aria-hidden="true" />
+            Add lead
+          </button>
+          <button type="button" onClick={focusCopilot} className="dash-btn dash-btn-aurora">
+            <Sparkles className="h-4 w-4" aria-hidden="true" />
+            Ask copilot
+          </button>
+        </div>
+      </header>
+
+      {/* GET SET UP: onboarding checklist, hidden once dismissed or complete */}
+      {showSetup && (
+        <section aria-labelledby="dash-setup-title" className="dash-glass w-full max-w-6xl z-10 p-4 sm:p-5">
+          <div className="flex items-start justify-between gap-3 mb-4">
+            <div className="flex items-start gap-2.5">
+              <Users className="h-4 w-4 mt-0.5 text-[var(--text-muted)]" aria-hidden="true" />
+              <div>
+                <h2 id="dash-setup-title" className="text-[15px] font-semibold leading-tight text-[var(--text)]">Get set up</h2>
+                <p className="text-xs text-[var(--text-muted)] mt-0.5">{setupDone} of {setupSteps.length} done. Each step fills in more of the dashboard.</p>
+              </div>
+            </div>
+            <button type="button" onClick={() => markSetup({ dismissed: true })} className="dash-icon-btn -mt-1 -mr-1" aria-label="Dismiss setup checklist" title="Dismiss">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          <ol className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {setupSteps.map((st) => {
+              const StepIcon = st.icon;
+              return (
+                <li
+                  key={st.id}
+                  className="dash-glass-strong dash-step dash-lift flex flex-col p-4"
+                  style={{ '--step-tint': st.tint } as React.CSSProperties}
+                >
+                  <div className="flex items-center gap-2">
+                    {st.done
+                      ? <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" aria-label="Done" />
+                      : <Circle className="h-4 w-4 shrink-0 text-[var(--text-subtle)]" aria-label="Not done yet" />}
+                    <h3 className="text-[13.5px] font-semibold text-[var(--text)]">{st.title}</h3>
+                  </div>
+                  <p className="mt-1.5 text-xs leading-relaxed text-[var(--text-muted)] min-h-[2.4em]">{st.text}</p>
+                  <div className="mt-3 flex items-end justify-between gap-2">
+                    <button type="button" onClick={st.run} className="dash-btn dash-btn-sm">{st.cta}</button>
+                    <StepIcon className="h-4 w-4 text-[var(--accent-text)] opacity-80" aria-hidden="true" />
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+        </section>
+      )}
+
+      {/* AI COPILOT: one assistant, orb + command input */}
+      <div className="w-full max-w-6xl z-10">
+        <UnifiedAssistant contacts={contacts} onNavigate={onNavigate} onMessageSent={() => { if (!setup.copilot) markSetup({ copilot: true }); }} />
+      </div>
+
+      {/* NEEDS YOUR ATTENTION: open conversations + recent activity */}
+      <div className="w-full max-w-6xl z-10 grid grid-cols-1 lg:grid-cols-3 gap-5">
+
+        <section aria-labelledby="dash-attention-title" className="dash-glass lg:col-span-2 p-5 sm:p-6">
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+            <div className="flex items-start gap-2.5">
+              <Bell className="h-4 w-4 mt-0.5 text-[var(--text-muted)]" aria-hidden="true" />
+              <div>
+                <h2 id="dash-attention-title" className="text-[15px] font-semibold leading-tight text-[var(--text)]">Needs your attention</h2>
+                <p className="text-xs text-[var(--text-muted)] mt-0.5">Open conversations across WhatsApp, web chat, phone and email.</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <button type="button" onClick={fetchDashboardData} className="dash-icon-btn" aria-label="Refresh" title="Refresh">
+                <RefreshCw className={`h-4 w-4 ${isStatsLoading ? 'animate-spin' : ''}`} />
+              </button>
+              <button type="button" onClick={() => onNavigate('messages')} className="dash-btn dash-btn-sm">
+                Open inbox
+                <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-3 max-h-[380px] overflow-y-auto pr-1">
+            {liveConversations.length === 0 ? (
+              <div className="py-10 text-center">
+                <CheckCheck className="h-6 w-6 mx-auto text-emerald-600" aria-hidden="true" />
+                <p className="mt-2 text-[13px] font-semibold text-[var(--text)]">You&apos;re all caught up</p>
+                <p className="text-xs text-[var(--text-muted)]">New conversations that need a reply will show up here.</p>
+              </div>
             ) : (
-              <VolumeX className="h-3.5 w-3.5" />
+              liveConversations.map((conv: any) => {
+                const channel = (conv.channel || 'web').toLowerCase();
+                const isReplyOpen = replyOpenId === conv.id;
+
+                return (
+                  <div key={conv.id} className="dash-glass-strong p-3.5">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <img
+                          src={conv.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=150'}
+                          alt=""
+                          referrerPolicy="no-referrer"
+                          className="h-8 w-8 rounded-full object-cover border border-[var(--border)] shrink-0"
+                        />
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[13px] font-semibold text-[var(--text)] truncate">{conv.name}</span>
+                            {conv.company && <span className="text-[11px] text-[var(--text-muted)] truncate">{conv.company}</span>}
+                          </div>
+                          <div className="text-[11px] text-[var(--text-subtle)] flex items-center gap-1.5 mt-0.5">
+                            <span className="font-semibold text-[var(--accent-text)] capitalize">{channel}</span>
+                            {conv.timeAgo && <><span aria-hidden="true">·</span><span>{conv.timeAgo}</span></>}
+                          </div>
+                        </div>
+                      </div>
+                      {conv.value && (
+                        <span className="shrink-0 text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full tabular-nums">
+                          {conv.value}
+                        </span>
+                      )}
+                    </div>
+
+                    <p className="text-[13px] text-[var(--text)] mt-2.5 leading-relaxed">
+                      {conv.intent || conv.lastMessage || 'New inquiry received.'}
+                    </p>
+
+                    {isReplyOpen ? (
+                      <div className="mt-3 pt-3 border-t border-[var(--dh-line)] space-y-2 animate-in fade-in duration-150">
+                        <textarea
+                          value={replyInput}
+                          onChange={(e) => setReplyInput(e.target.value)}
+                          placeholder={`Reply to ${conv.name} via ${channel}…`}
+                          aria-label={`Reply to ${conv.name}`}
+                          rows={2}
+                          className="w-full bg-[var(--surface)] border border-[var(--border)] rounded-xl p-2.5 text-[13px] text-[var(--text)] placeholder:text-[var(--text-subtle)] focus:outline-none focus:border-[var(--accent)]"
+                        />
+                        <div className="flex items-center justify-end gap-2">
+                          <button type="button" onClick={() => { setReplyOpenId(null); setReplyInput(''); }} className="dash-btn dash-btn-sm">
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            disabled={isSendingReply}
+                            onClick={() => handleSendQuickReply(conv.id, channel, conv.name)}
+                            className="dash-btn dash-btn-sm dash-btn-primary disabled:opacity-60"
+                          >
+                            <Send className="h-3.5 w-3.5" aria-hidden="true" />
+                            {isSendingReply ? 'Sending…' : 'Send reply'}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="mt-3 pt-2.5 border-t border-[var(--dh-line)] flex items-center justify-between gap-2">
+                        <span className="text-[11px] text-[var(--text-subtle)] tabular-nums">
+                          {conv.score != null ? `Lead score ${conv.score}/100` : ''}
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setNewDealForm({
+                                name: conv.company ? `${conv.company} deal` : '',
+                                client: conv.company || conv.name || '',
+                                value: '',
+                                stage: 'qualified',
+                                channelOrigin: channel,
+                                expectedClose: 'Next Month'
+                              });
+                              setIsNewDealModalOpen(true);
+                            }}
+                            className="dash-btn dash-btn-sm"
+                          >
+                            <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+                            New deal
+                          </button>
+                          <button type="button" onClick={() => { setReplyOpenId(conv.id); setReplyInput(''); }} className="dash-btn dash-btn-sm">
+                            <MessageSquare className="h-3.5 w-3.5" aria-hidden="true" />
+                            Reply
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })
             )}
-          </button>
-
-          {/* Alert simulator (development builds only): injects test notifications, never in production. */}
-          {(import.meta as any).env?.DEV && (
-          <div className="hidden lg:flex items-center gap-1.5 bg-[#0B0C12]/90 border border-white/10 px-2.5 py-1 rounded-full text-xs text-neutral-300 shadow-xs">
-            <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
-            <span className="text-[10px] text-neutral-400 font-medium">Live Alerts:</span>
-            <button 
-              type="button"
-              onClick={() => simulateEvent('lead')}
-              className="px-2 py-0.5 rounded-md bg-white/5 hover:bg-emerald-500/20 text-emerald-400 font-mono text-[10px] transition cursor-pointer"
-              title="Trigger instant incoming lead toast"
-            >
-              + Lead
-            </button>
-            <button 
-              type="button"
-              onClick={() => simulateEvent('message')}
-              className="px-2 py-0.5 rounded-md bg-white/5 hover:bg-indigo-500/20 text-indigo-400 font-mono text-[10px] transition cursor-pointer"
-              title="Trigger instant new message toast"
-            >
-              + Message
-            </button>
-            <button 
-              type="button"
-              onClick={() => simulateEvent('task')}
-              className="px-2 py-0.5 rounded-md bg-white/5 hover:bg-amber-500/20 text-amber-400 font-mono text-[10px] transition cursor-pointer"
-              title="Trigger instant assigned task toast"
-            >
-              + Task
-            </button>
-            <button 
-              type="button"
-              onClick={() => simulateEvent('interaction')}
-              className="px-2 py-0.5 rounded-md bg-white/5 hover:bg-cyan-500/20 text-cyan-400 font-mono text-[10px] transition cursor-pointer"
-              title="Trigger customer interaction alert"
-            >
-              + Interaction
-            </button>
           </div>
-          )}
-        </div>
-        
-        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-          {/* Gamification Streak & XP Badge */}
-          <div className="flex items-center gap-2 bg-white/80 border border-amber-200/80 py-1 px-3 rounded-full shadow-xs">
-            <Flame className="h-3.5 w-3.5 text-amber-500 fill-amber-500 animate-bounce" />
-            <span className="text-[11px] font-bold text-neutral-700 font-mono">
-              {streakDays}D Streak
-            </span>
-            <span className="text-neutral-300">•</span>
-            <Trophy className="h-3.5 w-3.5 text-indigo-500" />
-            <span className="text-[11px] font-extrabold text-indigo-600 font-mono">
-              {userXP.toLocaleString()} XP
-            </span>
-          </div>
+        </section>
 
-          {/* Mood / Focus Toggle */}
-          <div className="flex items-center bg-white/70 border border-neutral-200/70 p-0.5 rounded-full shadow-xs text-[10px] font-bold text-neutral-600">
-            <button
-              onClick={() => { setFocusMood('energy'); triggerAlert("⚡ High-Energy Mode active!", "info"); }}
-              className={`px-2 py-0.5 rounded-full transition cursor-pointer ${focusMood === 'energy' ? 'bg-amber-100 text-amber-800 shadow-xs' : 'hover:text-neutral-900'}`}
-            >
-              ⚡ Fast
-            </button>
-            <button
-              onClick={() => { setFocusMood('zen'); triggerAlert("🎯 Deep Zen Focus active!", "info"); }}
-              className={`px-2 py-0.5 rounded-full transition cursor-pointer ${focusMood === 'zen' ? 'bg-indigo-100 text-indigo-800 shadow-xs' : 'hover:text-neutral-900'}`}
-            >
-              🎯 Zen
-            </button>
-          </div>
-
-          {/* Executive Officer Badge */}
-          <div className="flex items-center gap-1.5 bg-white/80 border border-neutral-200/80 py-1 px-3 rounded-full shadow-xs">
-            <div className="h-5 w-5 rounded-full bg-gradient-to-tr from-indigo-500 to-amber-500 flex items-center justify-center text-white text-[10px] font-bold">
-              ✦
+        <section aria-labelledby="dash-activity-title" className="dash-glass p-5 sm:p-6 flex flex-col">
+          <div className="flex items-start gap-2.5 mb-4">
+            <Activity className="h-4 w-4 mt-0.5 text-[var(--text-muted)]" aria-hidden="true" />
+            <div>
+              <h2 id="dash-activity-title" className="text-[15px] font-semibold leading-tight text-[var(--text)]">Recent activity</h2>
+              <p className="text-xs text-[var(--text-muted)] mt-0.5">What changed in your CRM.</p>
             </div>
-            <span className="text-xs font-bold text-neutral-700">Executive Officer</span>
           </div>
-        </div>
+
+          <div className="flex-1 space-y-3.5 max-h-[340px] overflow-y-auto pr-1">
+            {activities.length === 0 ? (
+              <p className="py-10 text-center text-xs text-[var(--text-muted)]">No activity recorded yet.</p>
+            ) : (
+              activities.map((act) => (
+                <div key={act.id} className="flex items-start gap-3 text-left">
+                  <div className="mt-1.5 h-2 w-2 rounded-full bg-[var(--accent)] shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[13px] font-semibold text-[var(--text)] leading-snug">{act.title}</div>
+                    <div className="text-xs text-[var(--text-muted)] mt-0.5 line-clamp-2">{act.description}</div>
+                    <div className="text-[11px] text-[var(--text-subtle)] mt-1">
+                      {act.actor} · {new Date(act.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          <div className="pt-3 mt-3 border-t border-[var(--dh-line)]">
+            <button type="button" onClick={() => onNavigate('analytics')} className="dash-btn dash-btn-sm w-full">
+              View analytics
+              <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+            </button>
+          </div>
+        </section>
       </div>
 
-      {/* CENTRAL HERO STATEMENT & INTERACTIVE STARBURST */}
-      <div className="w-full max-w-5xl flex flex-col items-center justify-center py-2 sm:py-4 z-10 text-center">
-        
-        {/* Greeting: quiet and factual. */}
-        <div className="flex flex-col items-center gap-1 mb-1">
-          <h1 className="text-[26px] sm:text-[30px] leading-tight font-semibold tracking-[-0.02em] text-[var(--text)]">{dayGreeting}</h1>
-          <p className="text-[13px] text-[var(--text-muted)]">
-            {todayLabel}. {contacts.length ? `${contacts.length.toLocaleString()} contact${contacts.length === 1 ? '' : 's'} in your CRM.` : 'Add or import contacts to get started.'}
-          </p>
-        </div>
-
-        {/* One AI assistant (merged from DashboardChatbot and the inline co-pilot bar) */}
-        <UnifiedAssistant contacts={contacts} onNavigate={onNavigate} />
-
-      </div>
-
-      {/* SECTION: POWER LAUNCHPAD SHORTCUTS (WITH QUICK DEAL REGISTRATION) */}
-      <div className="w-full max-w-5xl z-10">
-        <div className="flex items-center justify-between px-2 mb-3">
-          <h2 className="text-[13px] font-semibold text-[var(--text)]">Quick actions</h2>
-          <div className="flex items-center gap-2">
+      {/* KEY FIGURES (from /api/dashboard/stats; a dash means no data, never a placeholder number) */}
+      <section aria-label="Key figures" className="w-full max-w-6xl z-10 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+        {metricCards.map((m) => {
+          const MetricIcon = m.icon;
+          return (
             <button
+              key={m.label}
               type="button"
-              onClick={() => onNavigate('leads')}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-xs hover:shadow-md transition cursor-pointer"
+              onClick={() => onNavigate(m.view)}
+              className="dash-glass-strong dash-lift p-4 text-left cursor-pointer"
             >
-              <Users className="h-3.5 w-3.5" />
-              <span>Leads Pipeline</span>
+              <div className="flex items-center justify-between text-[var(--text-muted)] mb-2">
+                <span className="text-xs font-medium">{m.label}</span>
+                <MetricIcon className="h-4 w-4 text-[var(--accent-text)]" aria-hidden="true" />
+              </div>
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="text-2xl font-semibold tracking-tight tabular-nums text-[var(--text)]">{m.value}</span>
+                {m.side && <span className="text-xs font-medium text-[var(--text-muted)] tabular-nums">{m.side}</span>}
+              </div>
+              <div className="text-[11px] text-[var(--text-muted)] mt-1.5 tabular-nums">{m.foot}</div>
             </button>
-            <button
-              type="button"
-              onClick={() => setIsNewDealModalOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-xs hover:shadow-md transition cursor-pointer"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              <span>New Deal</span>
-            </button>
-          </div>
-        </div>
+          );
+        })}
+      </section>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-          
-          {/* 1. New Deal Modal Trigger */}
-          <button
-            type="button"
-            onClick={() => setIsNewDealModalOpen(true)}
-            className="flex flex-col items-start p-3.5 rounded-2xl bg-white/80 hover:bg-white border border-emerald-200/60 hover:border-emerald-300 shadow-xs hover:shadow-md transition-all hover:scale-[1.02] text-left group cursor-pointer"
-          >
-            <div className="p-2 rounded-xl bg-emerald-100 text-emerald-700 mb-2 group-hover:scale-110 transition">
-              <Plus className="h-4 w-4" />
-            </div>
-            <span className="text-xs font-bold text-neutral-800 group-hover:text-emerald-700 transition">
-              Register Deal
-            </span>
-            <span className="text-[10px] text-neutral-400 mt-0.5">
-              Pipeline Entry
-            </span>
-          </button>
-
-          {/* 2. Meet & Greet */}
-          <button
-            type="button"
-            onClick={() => onNavigate('greet')}
-            className="flex flex-col items-start p-3.5 rounded-2xl bg-white/80 hover:bg-white border border-purple-200/60 hover:border-purple-300 shadow-xs hover:shadow-md transition-all hover:scale-[1.02] text-left group cursor-pointer"
-          >
-            <div className="p-2 rounded-xl bg-purple-100 text-purple-700 mb-2 group-hover:scale-110 transition">
-              <Video className="h-4 w-4" />
-            </div>
-            <span className="text-xs font-bold text-neutral-800 group-hover:text-purple-700 transition">
-              Video Dashboard
-            </span>
-            <span className="text-[10px] text-neutral-400 mt-0.5">
-              Greet & Call Canvas
-            </span>
-          </button>
-
-          {/* 3. Voice Dialer */}
-          <button
-            type="button"
-            onClick={() => onNavigate('voice_dialer')}
-            className="flex flex-col items-start p-3.5 rounded-2xl bg-white/80 hover:bg-white border border-indigo-200/60 hover:border-indigo-300 shadow-xs hover:shadow-md transition-all hover:scale-[1.02] text-left group cursor-pointer"
-          >
-            <div className="p-2 rounded-xl bg-indigo-100 text-indigo-700 mb-2 group-hover:scale-110 transition">
-              <Phone className="h-4 w-4" />
-            </div>
-            <span className="text-xs font-bold text-neutral-800 group-hover:text-indigo-700 transition">
-              Voice Dialer
-            </span>
-            <span className="text-[10px] text-neutral-400 mt-0.5">
-              AI Receptionist
-            </span>
-          </button>
-
-          {/* 4. AI Email Outreach */}
-          <button
-            type="button"
-            onClick={() => onNavigate('messages')}
-            className="flex flex-col items-start p-3.5 rounded-2xl bg-white/80 hover:bg-white border border-sky-200/60 hover:border-sky-300 shadow-xs hover:shadow-md transition-all hover:scale-[1.02] text-left group cursor-pointer"
-          >
-            <div className="p-2 rounded-xl bg-sky-100 text-sky-700 mb-2 group-hover:scale-110 transition">
-              <Mail className="h-4 w-4" />
-            </div>
-            <span className="text-xs font-bold text-neutral-800 group-hover:text-sky-700 transition">
-              Email Outreach
-            </span>
-            <span className="text-[10px] text-neutral-400 mt-0.5">
-              Smart Sequences
-            </span>
-          </button>
-
-          {/* 5. Calendar Scheduling */}
-          <button
-            type="button"
-            onClick={() => onNavigate('calendar')}
-            className="flex flex-col items-start p-3.5 rounded-2xl bg-white/80 hover:bg-white border border-teal-200/60 hover:border-teal-300 shadow-xs hover:shadow-md transition-all hover:scale-[1.02] text-left group cursor-pointer"
-          >
-            <div className="p-2 rounded-xl bg-teal-100 text-teal-700 mb-2 group-hover:scale-110 transition">
-              <Calendar className="h-4 w-4" />
-            </div>
-            <span className="text-xs font-bold text-neutral-800 group-hover:text-teal-700 transition">
-              Book Meeting
-            </span>
-            <span className="text-[10px] text-neutral-400 mt-0.5">
-              Calendar Matrix
-            </span>
-          </button>
-
-          {/* 6. Enterprise Proposals */}
-          <button
-            type="button"
-            onClick={() => onNavigate('proposals')}
-            className="flex flex-col items-start p-3.5 rounded-2xl bg-white/80 hover:bg-white border border-cyan-200/60 hover:border-cyan-300 shadow-xs hover:shadow-md transition-all hover:scale-[1.02] text-left group cursor-pointer"
-          >
-            <div className="p-2 rounded-xl bg-cyan-100 text-cyan-700 mb-2 group-hover:scale-110 transition">
-              <FileText className="h-4 w-4" />
-            </div>
-            <span className="text-xs font-bold text-neutral-800 group-hover:text-cyan-700 transition">
-              New Proposal
-            </span>
-            <span className="text-[10px] text-neutral-400 mt-0.5">
-              SLA Term Sheets
-            </span>
-          </button>
-
-        </div>
-      </div>
-
-      {/* SECTION: LIVE METRICS & REAL-TIME OPERATIONAL PULSE (CONNECTED TO BACKEND) */}
-      <div className="w-full max-w-5xl z-10 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
-        
-        {/* Metric 1: Pipeline Value */}
-        <div 
-          onClick={() => onNavigate('deals')}
-          className="p-4 rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 shadow-xs hover:shadow-md transition cursor-pointer group"
-        >
-          <div className="flex items-center justify-between text-neutral-500 dark:text-neutral-400 mb-2">
-            <span className="text-xs font-medium">Pipeline Value</span>
-            <TrendingUp className="h-4 w-4 text-emerald-500 group-hover:scale-110 transition-transform" />
-          </div>
-          <div className="flex items-baseline justify-between gap-2">
-            <span className="text-2xl font-bold text-neutral-900 dark:text-neutral-100 font-mono tracking-tight tabular-nums">
-              ${(dashboardStats?.totalPipelineValue || 366500).toLocaleString()}
-            </span>
-            <span className="text-xs font-mono font-medium text-emerald-600 dark:text-emerald-400">
-              {dashboardStats?.openDealsCount || 5} deals
-            </span>
-          </div>
-          <div className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-1.5 flex items-center gap-1.5">
-            <span>Weighted</span>
-            <span aria-hidden="true">·</span>
-            <span className="font-mono text-neutral-700 dark:text-neutral-300">
-              ${(dashboardStats?.weightedForecastValue || 231500).toLocaleString()}
-            </span>
-          </div>
-        </div>
-
-        {/* Metric 2: AI Receptionist Status */}
-        <div 
-          onClick={() => onNavigate('voice_dialer')}
-          className="p-4 rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 shadow-xs hover:shadow-md transition cursor-pointer group"
-        >
-          <div className="flex items-center justify-between text-neutral-500 dark:text-neutral-400 mb-2">
-            <span className="text-xs font-medium">AI Receptionist</span>
-            <Activity className="h-4 w-4 text-indigo-500 group-hover:scale-110 transition-transform" />
-          </div>
-          <div className="flex items-baseline justify-between gap-2">
-            <span className="text-2xl font-bold text-neutral-900 dark:text-neutral-100 font-mono tracking-tight tabular-nums">
-              {dashboardStats?.callsToday || 14}
-            </span>
-            <span className="text-xs font-mono font-medium text-indigo-600 dark:text-indigo-400">
-              Active Triage
-            </span>
-          </div>
-          <div className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-1.5 flex items-center gap-1.5">
-            <span>Calls handled today</span>
-            <span aria-hidden="true">·</span>
-            <span className="text-emerald-600 dark:text-emerald-400 font-medium">100% SLA</span>
-          </div>
-        </div>
-
-        {/* Metric 3: Inbound Messages & Queue */}
-        <div 
-          onClick={() => onNavigate('messages')}
-          className="p-4 rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 shadow-xs hover:shadow-md transition cursor-pointer group"
-        >
-          <div className="flex items-center justify-between text-neutral-500 dark:text-neutral-400 mb-2">
-            <span className="text-xs font-medium">Inbound Queue</span>
-            <Mail className="h-4 w-4 text-sky-500 group-hover:scale-110 transition-transform" />
-          </div>
-          <div className="flex items-baseline justify-between gap-2">
-            <span className="text-2xl font-bold text-neutral-900 dark:text-neutral-100 font-mono tracking-tight tabular-nums">
-              {dashboardStats?.activeTicketsCount || 3}
-            </span>
-            <span className="text-xs font-mono font-medium text-amber-600 dark:text-amber-400">
-              {dashboardStats?.criticalTicketsCount || 1} priority
-            </span>
-          </div>
-          <div className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-1.5 flex items-center gap-1.5 font-mono">
-            <span>Avg {dashboardStats?.avgResponseMinutes || 1.2}m</span>
-            <span aria-hidden="true">·</span>
-            <span>{dashboardStats?.slaMetRate || 98.4}% SLA met</span>
-          </div>
-        </div>
-
-        {/* Metric 4: Scheduled Video Meetings */}
-        <div 
-          onClick={() => onNavigate('calendar')}
-          className="p-4 rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 shadow-xs hover:shadow-md transition cursor-pointer group"
-        >
-          <div className="flex items-center justify-between text-neutral-500 dark:text-neutral-400 mb-2">
-            <span className="text-xs font-medium">Meetings Today</span>
-            <Clock className="h-4 w-4 text-purple-500 group-hover:scale-110 transition-transform" />
-          </div>
-          <div className="flex items-baseline justify-between gap-2">
-            <span className="text-2xl font-bold text-neutral-900 dark:text-neutral-100 font-mono tracking-tight tabular-nums">
-              {dashboardStats?.meetingsToday || 3}
-            </span>
-            <span className="text-xs font-mono font-medium text-purple-600 dark:text-purple-400">
-              Scheduled
-            </span>
-          </div>
-          <div className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-1.5 flex items-center gap-1.5">
-            <span>Calendar matrix</span>
-            <span aria-hidden="true">·</span>
-            <span>Live sync</span>
-          </div>
-        </div>
-
-      </div>
-
-      {/* SECTION: CUSTOMIZABLE KPI COMMAND CENTER (LUXURY OBSIDIAN WIDGETS) */}
-      <CustomizableWidgetGrid 
-        contacts={contacts} 
-        onSelectContact={onSelectContact} 
-        onNavigate={onNavigate} 
+      {/* CUSTOMIZABLE KPI WIDGETS */}
+      <CustomizableWidgetGrid
+        contacts={contacts}
+        onSelectContact={onSelectContact}
+        onNavigate={onNavigate}
       />
 
-      {/* SECTION: TODAY'S AI MISSIONS (GAMIFIED PRODUCTIVITY WIDGET) */}
-      <div className="w-full max-w-5xl z-10 bg-white/80 backdrop-blur-md rounded-3xl border border-neutral-200/80 p-5 sm:p-6 shadow-md">
-        <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
-          <div className="flex items-center gap-2">
-            <div className="p-2 rounded-xl bg-amber-500/10 text-amber-600">
-              <Lightbulb className="h-4 w-4" />
-            </div>
+      {/* DAILY MISSIONS */}
+      <section aria-labelledby="dash-missions-title" className="dash-glass w-full max-w-6xl z-10 p-5 sm:p-6">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <div className="flex items-start gap-2.5">
+            <Lightbulb className="h-4 w-4 mt-0.5 text-[var(--text-muted)]" aria-hidden="true" />
             <div>
-              <h3 className="text-sm font-extrabold text-neutral-900">Today&apos;s AI High-Impact Missions</h3>
-              <p className="text-[11px] text-neutral-500">Complete daily milestones to maximize deal velocity and earn XP</p>
+              <h2 id="dash-missions-title" className="text-[15px] font-semibold leading-tight text-[var(--text)]">Daily missions</h2>
+              <p className="text-xs text-[var(--text-muted)] mt-0.5">
+                {missions.filter(m => m.completed).length} of {missions.length} done today
+              </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-mono font-bold text-neutral-500">
-              {missions.filter(m => m.completed).length} / {missions.length} Done
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="dash-pill !shadow-none inline-flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-[var(--text)] tabular-nums">
+              <Flame className="h-3.5 w-3.5 text-amber-500" aria-hidden="true" />
+              {streakDays}-day streak
+              <span aria-hidden="true" className="text-[var(--text-subtle)]">·</span>
+              <Trophy className="h-3.5 w-3.5 text-[var(--accent-text)]" aria-hidden="true" />
+              {userXP.toLocaleString()} XP
             </span>
             <button
+              type="button"
+              onClick={() => {
+                if (isSpeaking || activeVoiceSim) {
+                  stopVoiceOver();
+                } else {
+                  setSoundEnabled(!soundEnabled);
+                  triggerAlert(soundEnabled ? "Sound effects muted" : "Sound effects on", "info");
+                }
+              }}
+              aria-pressed={soundEnabled}
+              className="dash-icon-btn"
+              aria-label={soundEnabled ? 'Mute sound effects' : 'Turn on sound effects'}
+              title={soundEnabled ? 'Mute sound effects' : 'Turn on sound effects'}
+            >
+              {soundEnabled ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
+            </button>
+            <button
+              type="button"
               onClick={() => {
                 const newM: AIMission = {
                   id: `m-${Date.now()}`,
@@ -1151,362 +1184,138 @@ export default function DashboardView({ contacts, onSelectContact, onNavigate }:
                   badge: 'Local Reputation'
                 };
                 setMissions(prev => [...prev, newM]);
-                triggerAlert("✨ New AI mission added to queue!", "info");
+                triggerAlert("New mission added", "info");
               }}
-              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-xs font-bold transition cursor-pointer"
+              className="dash-btn dash-btn-sm"
             >
-              <Plus className="h-3 w-3" />
-              Add Mission
+              <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+              Add mission
             </button>
           </div>
         </div>
 
-        {/* Progress Bar */}
-        <div className="w-full bg-neutral-100 h-2 rounded-full overflow-hidden mb-4">
-          <div 
-            className="h-full bg-gradient-to-r from-amber-400 via-pink-500 to-indigo-600 transition-all duration-500 rounded-full"
-            style={{ width: `${(missions.filter(m => m.completed).length / missions.length) * 100}%` }}
+        <div className="w-full h-1.5 rounded-full overflow-hidden mb-4 bg-[var(--dh-line)]">
+          <div
+            className="h-full rounded-full transition-all duration-500"
+            style={{
+              width: `${missions.length ? (missions.filter(m => m.completed).length / missions.length) * 100 : 0}%`,
+              background: 'linear-gradient(90deg, var(--dh-primary-a), var(--dh-primary-b))'
+            }}
           />
         </div>
 
-        {/* Mission Checklist */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+        <ul className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
           {missions.map((mission) => (
-            <div
+            <li
               key={mission.id}
-              className={`flex items-center justify-between p-3 rounded-2xl border transition-all ${
-                mission.completed 
-                  ? 'bg-emerald-50/50 border-emerald-200 text-neutral-500' 
-                  : 'bg-white hover:bg-neutral-50 border-neutral-200 text-neutral-800 shadow-2xs'
-              }`}
+              className={`dash-glass-strong flex items-center justify-between gap-2 p-3 ${mission.completed ? 'opacity-70' : ''}`}
             >
-              <div className="flex items-center gap-3 min-w-0 pr-2">
+              <div className="flex items-center gap-2.5 min-w-0">
                 <button
                   type="button"
                   onClick={() => toggleMission(mission.id)}
-                  className="shrink-0 p-1 rounded-lg hover:bg-neutral-100 transition cursor-pointer text-neutral-400 hover:text-neutral-700"
+                  aria-pressed={mission.completed}
+                  aria-label={mission.completed ? `Mark "${mission.title}" as not done` : `Mark "${mission.title}" as done`}
+                  className="dash-icon-btn shrink-0"
                 >
-                  {mission.completed ? (
-                    <CheckCircle2 className="h-5 w-5 text-emerald-500" />
-                  ) : (
-                    <Circle className="h-5 w-5 text-neutral-300 hover:text-neutral-400" />
-                  )}
+                  {mission.completed
+                    ? <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+                    : <Circle className="h-5 w-5" />}
                 </button>
                 <div className="min-w-0">
-                  <div className={`text-xs font-bold truncate ${mission.completed ? 'line-through text-neutral-400' : 'text-neutral-800'}`}>
+                  <div className={`text-[13px] font-semibold truncate ${mission.completed ? 'line-through text-[var(--text-muted)]' : 'text-[var(--text)]'}`}>
                     {mission.title}
                   </div>
-                  <div className="flex items-center gap-2 mt-0.5">
-                    <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-neutral-100 text-neutral-600 font-semibold">
-                      {mission.badge}
-                    </span>
-                    <span className="text-[10px] font-bold text-amber-600 font-mono">
-                      +{mission.rewardXP} XP
-                    </span>
+                  <div className="flex items-center gap-2 mt-0.5 text-[11px] text-[var(--text-muted)]">
+                    <span>{mission.badge}</span>
+                    <span aria-hidden="true">·</span>
+                    <span className="font-semibold tabular-nums">+{mission.rewardXP} XP</span>
                   </div>
                 </div>
               </div>
-
               <button
                 type="button"
                 onClick={() => onNavigate(mission.targetView)}
-                className="shrink-0 p-2 rounded-xl bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-xs font-bold transition cursor-pointer"
-                title="Launch relevant tool"
+                className="dash-icon-btn shrink-0"
+                aria-label={`Open ${mission.title}`}
+                title="Open"
               >
-                <ArrowRight className="h-3.5 w-3.5" />
+                <ArrowRight className="h-4 w-4" />
               </button>
-            </div>
+            </li>
           ))}
-        </div>
-      </div>
+        </ul>
+      </section>
 
-      {/* SECTION: VIP RECENT CONTACTS QUICK-CONNECT ROW */}
-      <div className="w-full max-w-5xl z-10">
-        <div className="flex items-center justify-between px-2 mb-3">
-          <span className="text-[11px] font-mono font-bold tracking-widest text-neutral-400 uppercase">
-            🤝 Top VIP Contacts
-          </span>
-          <button 
-            onClick={() => onNavigate('messages')}
-            className="text-[11px] font-bold text-blue-600 hover:text-blue-700 transition cursor-pointer flex items-center gap-1"
-          >
-            <span>View All Contacts</span>
-            <ArrowRight className="h-3 w-3" />
-          </button>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          {vipContacts.map((contact) => (
-            <div
-              key={contact.id}
-              className="p-3.5 rounded-2xl bg-white/80 border border-neutral-200/80 shadow-2xs hover:shadow-md transition flex flex-col justify-between"
-            >
-              <div className="flex items-center gap-2.5 mb-2.5">
-                <img 
-                  src={contact.avatar} 
-                  alt={contact.name} 
-                  className="h-9 w-9 rounded-full object-cover border border-neutral-200 shadow-2xs"
-                  referrerPolicy="no-referrer"
-                />
-                <div className="min-w-0 flex-1">
-                  <div className="text-xs font-bold text-neutral-900 truncate">{contact.name}</div>
-                  <div className="text-[10px] text-neutral-400 truncate">{contact.company}</div>
-                </div>
-                {contact.dealSize && (
-                  <span className="text-[10px] font-mono font-extrabold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">
-                    {contact.dealSize}
-                  </span>
-                )}
-              </div>
-
-              {/* 1-Click Connect Actions */}
-              <div className="flex items-center gap-1.5 pt-2 border-t border-neutral-100">
-                <button
-                  type="button"
-                  onClick={() => onNavigate('greet')}
-                  className="flex-1 py-1.5 rounded-lg bg-purple-50 hover:bg-purple-100 text-purple-700 text-[10px] font-bold flex items-center justify-center gap-1 transition cursor-pointer"
-                  title="Video Consultation"
-                >
-                  <Video className="h-3 w-3" />
-                  <span>Meet</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onNavigate('voice_dialer')}
-                  className="flex-1 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[10px] font-bold flex items-center justify-center gap-1 transition cursor-pointer"
-                  title="Call Contact"
-                >
-                  <Phone className="h-3 w-3" />
-                  <span>Call</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    onSelectContact(contact);
-                    onNavigate('messages');
-                  }}
-                  className="flex-1 py-1.5 rounded-lg bg-sky-50 hover:bg-sky-100 text-sky-700 text-[10px] font-bold flex items-center justify-center gap-1 transition cursor-pointer"
-                  title="Message Contact"
-                >
-                  <Mail className="h-3 w-3" />
-                  <span>Chat</span>
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* SECTION: LIVE OMNICHANNEL INTERACTION STREAM & INSTANT QUICK REPLY */}
-      <div className="w-full max-w-5xl z-10 grid grid-cols-1 lg:grid-cols-3 gap-5">
-        
-        {/* Left 2 Cols: Real-time Multi-Channel Inbound Queue */}
-        <div className="lg:col-span-2 rounded-3xl bg-white/80 backdrop-blur-md border border-neutral-200/80 p-5 sm:p-6 shadow-sm flex flex-col justify-between">
-          <div>
-            <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-              <div className="flex items-center gap-2">
-                <div className="p-2 rounded-xl bg-indigo-500/10 text-indigo-600">
-                  <MessageSquare className="h-4 w-4" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-extrabold text-neutral-900">Live Omnichannel Stream</h3>
-                  <p className="text-[11px] text-neutral-500">Real-time incoming dialogues across WhatsApp, Web Chat, Phone & Email</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={fetchDashboardData}
-                  className="p-1.5 rounded-lg bg-neutral-100 hover:bg-neutral-200 text-neutral-600 text-xs transition cursor-pointer"
-                  title="Refresh Stream"
-                >
-                  <RefreshCw className={`h-3.5 w-3.5 ${isStatsLoading ? 'animate-spin text-indigo-600' : ''}`} />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onNavigate('messages')}
-                  className="text-xs font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-1 transition"
-                >
-                  <span>Open Inbox</span>
-                  <ArrowRight className="h-3 w-3" />
-                </button>
-              </div>
-            </div>
-
-            {/* Conversation Stream Items */}
-            <div className="space-y-3 max-h-[360px] overflow-y-auto pr-1">
-              {liveConversations.length === 0 ? (
-                <div className="py-8 text-center text-xs text-neutral-500">
-                  No active incoming dialogues. All customer inquiries resolved.
-                </div>
-              ) : (
-                liveConversations.map((conv: any) => {
-                  const channel = (conv.channel || 'web').toLowerCase();
-                  const isReplyOpen = replyOpenId === conv.id;
-
-                  return (
-                    <div
-                      key={conv.id}
-                      className="p-3.5 rounded-2xl bg-white border border-neutral-200/90 hover:border-indigo-200 shadow-2xs transition-all"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <img
-                            src={conv.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=150'}
-                            alt={conv.name}
-                            referrerPolicy="no-referrer"
-                            className="h-8 w-8 rounded-full object-cover border border-neutral-200 shrink-0"
-                          />
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs font-bold text-neutral-900 truncate">{conv.name}</span>
-                              <span className="text-[10px] text-neutral-500 truncate">({conv.company})</span>
-                            </div>
-                            <div className="text-[10px] text-neutral-400 flex items-center gap-1.5 mt-0.5">
-                              <span className="font-semibold text-indigo-600 uppercase font-mono">{channel}</span>
-                              <span>·</span>
-                              <span>{conv.timeAgo || 'Just now'}</span>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="text-right shrink-0">
-                          <span className="text-[10px] font-mono font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
-                            {conv.value || '$45k ARR'}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Content snippet */}
-                      <p className="text-xs text-neutral-700 mt-2 bg-neutral-50 p-2 rounded-xl border border-neutral-100 font-normal leading-relaxed">
-                        {conv.intent || conv.lastMessage || 'Customer inquiry received via omnichannel gateway.'}
-                      </p>
-
-                      {/* Expandable Instant Quick Reply Drawer */}
-                      {isReplyOpen ? (
-                        <div className="mt-3 pt-3 border-t border-neutral-100 space-y-2 animate-in fade-in duration-150">
-                          <textarea
-                            value={replyInput}
-                            onChange={(e) => setReplyInput(e.target.value)}
-                            placeholder={`Type quick response to ${conv.name} via ${channel.toUpperCase()}...`}
-                            rows={2}
-                            className="w-full bg-white border border-neutral-200 rounded-xl p-2.5 text-xs text-neutral-900 placeholder-neutral-400 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/30"
-                          />
-                          <div className="flex items-center justify-end gap-2">
-                            <button
-                              type="button"
-                              onClick={() => { setReplyOpenId(null); setReplyInput(''); }}
-                              className="px-3 py-1 rounded-lg text-xs font-medium text-neutral-500 hover:text-neutral-800"
-                            >
-                              Cancel
-                            </button>
-                            <button
-                              type="button"
-                              disabled={isSendingReply}
-                              onClick={() => handleSendQuickReply(conv.id, channel, conv.name)}
-                              className="px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-xs"
-                            >
-                              <Send className="h-3 w-3" />
-                              <span>{isSendingReply ? 'Sending...' : 'Send Reply'}</span>
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="mt-2.5 pt-2 border-t border-neutral-100 flex items-center justify-between text-xs">
-                          <span className="text-[10px] font-mono text-neutral-400">
-                            Score: {conv.score || 90}/100
-                          </span>
-                          <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setNewDealForm({
-                                  name: `${conv.company} Solution Suite`,
-                                  client: conv.company,
-                                  value: '75000',
-                                  stage: 'qualified',
-                                  channelOrigin: channel,
-                                  expectedClose: 'Next Month'
-                                });
-                                setIsNewDealModalOpen(true);
-                              }}
-                              className="text-[11px] font-semibold text-emerald-600 hover:text-emerald-700 flex items-center gap-1 transition cursor-pointer"
-                            >
-                              <Plus className="h-3 w-3" />
-                              <span>New Deal</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => { setReplyOpenId(conv.id); setReplyInput(''); }}
-                              className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-700 flex items-center gap-1 transition cursor-pointer"
-                            >
-                              <MessageSquare className="h-3 w-3" />
-                              <span>Instant Reply</span>
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Right 1 Col: Real-time CRM Activity Timeline */}
-        <div className="rounded-3xl bg-white/80 backdrop-blur-md border border-neutral-200/80 p-5 sm:p-6 shadow-sm flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-600">
-                  <Activity className="h-4 w-4" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-extrabold text-neutral-900">CRM Activity Stream</h3>
-                  <p className="text-[11px] text-neutral-500">Live operational audit trail</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="space-y-3.5 max-h-[360px] overflow-y-auto pr-1">
-              {activities.length === 0 ? (
-                <div className="py-8 text-center text-xs text-neutral-400">
-                  No recent activities recorded yet.
-                </div>
-              ) : (
-                activities.map((act) => (
-                  <div key={act.id} className="flex items-start gap-3 text-left">
-                    <div className="mt-1 h-2 w-2 rounded-full bg-indigo-500 shrink-0" />
-                    <div className="min-w-0 flex-1">
-                      <div className="text-xs font-bold text-neutral-900 leading-snug">
-                        {act.title}
-                      </div>
-                      <div className="text-[11px] text-neutral-500 mt-0.5 line-clamp-2">
-                        {act.description}
-                      </div>
-                      <div className="text-[10px] text-neutral-400 font-mono mt-1">
-                        {act.actor} · {new Date(act.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </div>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-
-          <div className="pt-3 border-t border-neutral-100 flex items-center justify-between text-[11px] text-neutral-500 font-mono">
-            <span>Audit Trail: Synced</span>
-            <button
-              onClick={() => onNavigate('analytics')}
-              className="text-indigo-600 hover:text-indigo-700 font-semibold cursor-pointer"
-            >
-              View Analytics →
+      {/* TOP CONTACTS (only once there are contacts) */}
+      {vipContacts.length > 0 && (
+        <section aria-labelledby="dash-contacts-title" className="w-full max-w-6xl z-10">
+          <div className="flex items-center justify-between mb-3">
+            <h2 id="dash-contacts-title" className="text-[15px] font-semibold text-[var(--text)]">Top contacts</h2>
+            <button type="button" onClick={() => onNavigate('leads')} className="dash-btn dash-btn-sm">
+              View all
+              <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
             </button>
           </div>
-        </div>
 
-      </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {vipContacts.map((contact) => (
+              <div key={contact.id} className="dash-glass-strong p-3.5 flex flex-col justify-between">
+                <div className="flex items-center gap-2.5 mb-3">
+                  <img
+                    src={contact.avatar}
+                    alt=""
+                    className="h-9 w-9 rounded-full object-cover border border-[var(--border)]"
+                    referrerPolicy="no-referrer"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[13px] font-semibold text-[var(--text)] truncate">{contact.name}</div>
+                    <div className="text-[11px] text-[var(--text-muted)] truncate">{contact.company}</div>
+                  </div>
+                  {contact.dealSize && (
+                    <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded tabular-nums">
+                      {contact.dealSize}
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <button type="button" onClick={() => onNavigate('greet')} className="dash-btn dash-btn-sm flex-1 !px-2 !shadow-none">
+                    <Video className="h-3.5 w-3.5" aria-hidden="true" />
+                    Meet
+                  </button>
+                  <button type="button" onClick={() => onNavigate('voice_dialer')} className="dash-btn dash-btn-sm flex-1 !px-2 !shadow-none">
+                    <Phone className="h-3.5 w-3.5" aria-hidden="true" />
+                    Call
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { onSelectContact(contact); onNavigate('messages'); }}
+                    className="dash-btn dash-btn-sm flex-1 !px-2 !shadow-none"
+                  >
+                    <Mail className="h-3.5 w-3.5" aria-hidden="true" />
+                    Chat
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Alert simulator (development builds only): injects test notifications, never in production. */}
+      {(import.meta as any).env?.DEV && (
+        <div className="w-full max-w-6xl z-10 flex flex-wrap items-center gap-2 text-xs text-[var(--text-muted)]">
+          <span>Dev: simulate alert</span>
+          {(['lead', 'message', 'task', 'interaction'] as const).map((kind) => (
+            <button key={kind} type="button" onClick={() => simulateEvent(kind)} className="dash-btn dash-btn-sm capitalize !shadow-none">
+              {kind}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* WORKSPACE MODULES CAROUSEL */}
       <div className="w-full max-w-4xl z-10 select-none">
         
         {/* Carousel Header & Category Tabs */}

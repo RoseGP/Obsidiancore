@@ -32,6 +32,11 @@ Example: `className="bg-[var(--surface)] border border-[var(--border)] text-[var
   Inside it the grey scale keeps dark-panel values in both themes.
 - **Dark islands** (a `bg-slate-900` badge inside a light card) keep their own greys automatically.
 - No glassmorphism (backdrop blur is disabled globally), no decorative glow, gradients only where they carry meaning.
+  - **Exception: the dashboard homepage.** `DashboardView` uses the "AI Command Center" surface in
+    `src/styles/dashboard-home.css`: a pastel canvas, frosted-glass cards and the assistant orb, all scoped to
+    `.dash-home` (`dash-glass`, `dash-glass-strong`, `dash-pill`, `dash-btn`, `dash-chip`, `dash-orb`). It has its
+    own light and dark values and still reads text, accent and border colours from the tokens above. Don't use
+    these classes on other screens.
 - Theme: `useTheme()` from `src/context/ThemeContext.tsx` (`pref`, `resolved`, `setPref`, `toggle`);
   the top bar has the System / Light / Dark switch. `index.html` applies the saved theme before first paint.
 

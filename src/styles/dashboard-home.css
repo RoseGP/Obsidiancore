@@ -1,0 +1,162 @@
+/* Dashboard homepage ("AI Command Center") surface.
+   Scoped to .dash-home: a soft pastel canvas, frosted-glass cards and the assistant orb.
+   This is the one screen that opts out of the "no glassmorphism" rule in obsidian-theme.css
+   (see docs/DESIGN_SYSTEM.md). Everything else keeps the flat paper/graphite look. */
+
+.dash-home {
+  --dh-canvas: #F3F5FA;
+  --dh-blob-a: rgba(147, 197, 253, 0.42); /* sky */
+  --dh-blob-b: rgba(196, 181, 253, 0.36); /* lilac */
+  --dh-blob-c: rgba(167, 243, 208, 0.34); /* mint */
+  --dh-glass: rgba(255, 255, 255, 0.62);
+  --dh-glass-strong: rgba(255, 255, 255, 0.84);
+  --dh-glass-border: rgba(255, 255, 255, 0.95);
+  --dh-line: rgba(40, 52, 96, 0.09);
+  --dh-btn-border: rgba(40, 52, 96, 0.14);
+  --dh-shadow: 0 1px 2px rgba(30, 40, 90, 0.04), 0 14px 36px -16px rgba(60, 80, 160, 0.22);
+  --dh-shadow-hover: 0 2px 4px rgba(30, 40, 90, 0.05), 0 20px 44px -16px rgba(60, 80, 160, 0.3);
+  --dh-primary-a: #4F8DF7;
+  --dh-primary-b: #6B6CF2;
+  --dh-glow: rgba(120, 150, 255, 0.35);
+
+  background-color: var(--dh-canvas);
+  background-image:
+    radial-gradient(900px 520px at 4% -6%, var(--dh-blob-a), transparent 62%),
+    radial-gradient(760px 520px at 100% 0%, var(--dh-blob-b), transparent 60%),
+    radial-gradient(820px 560px at 62% 46%, var(--dh-blob-c), transparent 64%);
+  background-repeat: no-repeat;
+}
+
+[data-theme=dark] .dash-home {
+  --dh-canvas: #101014;
+  --dh-blob-a: rgba(59, 108, 214, 0.22);
+  --dh-blob-b: rgba(124, 92, 230, 0.2);
+  --dh-blob-c: rgba(34, 150, 120, 0.12);
+  --dh-glass: rgba(255, 255, 255, 0.045);
+  --dh-glass-strong: rgba(255, 255, 255, 0.075);
+  --dh-glass-border: rgba(255, 255, 255, 0.1);
+  --dh-line: rgba(255, 255, 255, 0.09);
+  --dh-btn-border: rgba(255, 255, 255, 0.14);
+  --dh-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 16px 40px -18px rgba(0, 0, 0, 0.7);
+  --dh-shadow-hover: 0 2px 4px rgba(0, 0, 0, 0.35), 0 22px 48px -18px rgba(0, 0, 0, 0.8);
+  --dh-glow: rgba(120, 130, 255, 0.28);
+}
+
+/* ---------- Glass surfaces ---------- */
+.dash-glass,
+.dash-glass-strong,
+.dash-pill {
+  border: 1px solid var(--dh-glass-border);
+  box-shadow: var(--dh-shadow);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  backdrop-filter: blur(18px) saturate(1.4);
+}
+.dash-glass { background: var(--dh-glass); border-radius: 24px; }
+.dash-glass-strong { background: var(--dh-glass-strong); border-radius: 18px; }
+.dash-pill { background: var(--dh-glass-strong); border-radius: 28px; } /* a pill on one line, a soft card when it wraps */
+
+.dash-lift { transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease; }
+.dash-lift:hover { transform: translateY(-2px); box-shadow: var(--dh-shadow-hover); }
+
+/* ---------- Buttons ---------- */
+.dash-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.45rem;
+  min-height: 38px; padding: 0 0.95rem; border-radius: 12px;
+  font-size: 13px; font-weight: 600; color: var(--text);
+  background: var(--dh-glass-strong); border: 1px solid var(--dh-btn-border);
+  box-shadow: 0 1px 2px rgba(30, 40, 90, 0.06);
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  cursor: pointer; transition: transform 0.15s ease, box-shadow 0.2s ease, filter 0.2s ease;
+}
+.dash-btn:hover { transform: translateY(-1px); box-shadow: var(--dh-shadow-hover); }
+.dash-btn:active { transform: translateY(0); }
+.dash-btn-sm { min-height: 32px; padding: 0 0.75rem; border-radius: 10px; font-size: 12.5px; }
+.dash-btn-primary {
+  color: #fff; border-color: transparent;
+  background: linear-gradient(135deg, var(--dh-primary-a), var(--dh-primary-b));
+  box-shadow: 0 1px 2px rgba(40, 60, 160, 0.25), 0 10px 24px -8px rgba(79, 110, 247, 0.6);
+}
+.dash-btn-primary:hover { filter: brightness(1.06); box-shadow: 0 1px 2px rgba(40, 60, 160, 0.3), 0 14px 28px -8px rgba(79, 110, 247, 0.7); }
+.dash-btn-aurora { position: relative; isolation: isolate; }
+.dash-btn-aurora::before {
+  content: ""; position: absolute; inset: -1px; z-index: -1; border-radius: inherit; opacity: 0.55;
+  background: linear-gradient(120deg, rgba(125, 211, 252, 0.7), rgba(196, 181, 253, 0.75), rgba(249, 168, 212, 0.6));
+  filter: blur(8px);
+}
+
+.dash-icon-btn {
+  display: inline-flex; align-items: center; justify-content: center; height: 32px; width: 32px;
+  border-radius: 10px; color: var(--text-muted); cursor: pointer; transition: background 0.15s ease, color 0.15s ease;
+}
+.dash-icon-btn:hover { background: var(--dh-line); color: var(--text); }
+.dash-icon-btn[aria-pressed=true], .dash-icon-btn[aria-expanded=true] { background: var(--accent-soft); color: var(--accent-text); }
+
+/* ---------- Setup step cards ---------- */
+.dash-step { position: relative; overflow: hidden; }
+.dash-step::after {
+  content: ""; position: absolute; top: -40%; right: -25%; width: 70%; height: 130%; pointer-events: none;
+  background: radial-gradient(closest-side, var(--step-tint, rgba(147, 197, 253, 0.55)), transparent);
+  opacity: 0.8;
+}
+.dash-step > * { position: relative; z-index: 1; }
+[data-theme=dark] .dash-step::after { opacity: 0.28; }
+
+/* ---------- Assistant ---------- */
+.dash-composer {
+  position: relative; border-radius: 22px; background: var(--dh-glass-strong);
+  border: 1px solid transparent;
+  background-image: linear-gradient(var(--dh-composer-fill, #fff), var(--dh-composer-fill, #fff)),
+    linear-gradient(120deg, rgba(125, 211, 252, 0.9), rgba(165, 180, 252, 0.9), rgba(216, 180, 254, 0.9), rgba(153, 246, 228, 0.9));
+  background-origin: border-box; background-clip: padding-box, border-box;
+  box-shadow: 0 0 0 4px rgba(147, 197, 253, 0.12), 0 18px 44px -18px var(--dh-glow);
+  transition: box-shadow 0.25s ease;
+}
+.dash-composer:focus-within { box-shadow: 0 0 0 4px rgba(129, 140, 248, 0.2), 0 22px 50px -16px var(--dh-glow); }
+.dash-home { --dh-composer-fill: rgba(255, 255, 255, 0.92); }
+[data-theme=dark] .dash-home { --dh-composer-fill: #17171C; }
+
+.dash-orb {
+  position: relative; width: var(--orb-size, 72px); height: var(--orb-size, 72px); border-radius: 9999px; flex: none;
+  background:
+    radial-gradient(circle at 30% 26%, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0) 34%),
+    radial-gradient(circle at 72% 30%, #7DD3FC 0%, rgba(125, 211, 252, 0) 52%),
+    radial-gradient(circle at 26% 72%, #F0ABFC 0%, rgba(240, 171, 252, 0) 56%),
+    radial-gradient(circle at 74% 78%, #A5B4FC 0%, rgba(165, 180, 252, 0) 60%),
+    linear-gradient(140deg, #BAE6FD, #C4B5FD 55%, #FBCFE8);
+  background-size: 100% 100%, 160% 160%, 160% 160%, 160% 160%, 100% 100%;
+  box-shadow:
+    inset -6px -10px 18px rgba(99, 102, 241, 0.28),
+    inset 6px 8px 14px rgba(255, 255, 255, 0.7),
+    0 0 0 6px rgba(255, 255, 255, 0.35),
+    0 14px 34px -6px rgba(129, 140, 248, 0.55);
+  animation: dash-orb-drift 9s ease-in-out infinite alternate;
+}
+.dash-orb::after {
+  content: ""; position: absolute; inset: -30%; z-index: -1; border-radius: inherit;
+  background: radial-gradient(closest-side, rgba(165, 180, 252, 0.45), rgba(125, 211, 252, 0.18) 55%, transparent);
+  filter: blur(10px);
+}
+.dash-orb[data-busy=true] { animation-duration: 2.2s; }
+[data-theme=dark] .dash-orb { box-shadow: inset -6px -10px 18px rgba(49, 46, 129, 0.5), inset 6px 8px 14px rgba(255, 255, 255, 0.45), 0 0 0 6px rgba(255, 255, 255, 0.06), 0 14px 34px -6px rgba(99, 102, 241, 0.6); }
+@keyframes dash-orb-drift {
+  0% { background-position: 0 0, 0% 0%, 100% 100%, 100% 0%, 0 0; transform: translateY(0); }
+  100% { background-position: 0 0, 100% 60%, 0% 20%, 20% 100%, 0 0; transform: translateY(-3px); }
+}
+
+.dash-chip {
+  display: flex; align-items: center; width: 100%; text-align: left; min-height: 38px; padding: 0.45rem 0.8rem;
+  border-radius: 12px; font-size: 12.5px; line-height: 1.3; color: var(--text);
+  background: var(--dh-glass-strong); border: 1px solid var(--dh-line); cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.2s ease, transform 0.15s ease;
+}
+.dash-chip:hover { border-color: color-mix(in oklab, var(--accent) 45%, transparent); box-shadow: var(--dh-shadow); transform: translateY(-1px); }
+.dash-chip:disabled { opacity: 0.5; cursor: default; transform: none; box-shadow: none; }
+
+.dash-seg { display: inline-flex; padding: 3px; border-radius: 9999px; background: var(--dh-glass-strong); border: 1px solid var(--dh-line); }
+.dash-seg button { padding: 0.28rem 0.75rem; border-radius: 9999px; font-size: 12px; font-weight: 500; color: var(--text-muted); cursor: pointer; transition: background 0.15s ease, color 0.15s ease; }
+.dash-seg button[aria-pressed=true] { background: var(--accent-soft); color: var(--accent-text); font-weight: 600; box-shadow: 0 1px 2px rgba(30, 40, 90, 0.08); }
+
+@media (prefers-reduced-motion: reduce) {
+  .dash-orb { animation: none; }
+  .dash-lift:hover, .dash-btn:hover, .dash-chip:hover { transform: none; }
+}
