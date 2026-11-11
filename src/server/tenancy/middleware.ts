@@ -9,6 +9,7 @@
 import type { NextFunction, Request, Response } from 'express';
 import { InvalidIdError, assertId, getDocStore } from '../data/docStore';
 import { can, getMember, getMembershipIndex, TenancyError, type Action, type Role } from './orgs';
+import { checkCredentialAgainstPolicy, getSecurityPolicy, noteMemberActivity } from '../security/policy';
 
 export interface Tenant { orgId: string; userId: string; role: Role; email: string; name: string }
 export type TenantRequest = Request & { tenant?: Tenant };
@@ -72,8 +73,36 @@ export async function resolveTenant(req: Request): Promise<Tenant> {
   return { orgId, userId: uid, role: member.role, email: member.email || au.email || '', name: member.name || au.name || '' };
 }
 
+/**
+ * Marks a route as usable by GUEST members (outside collaborators). Put it before requireTenant.
+ * Every other tenant route refuses guests, whatever its own permission checks say.
+ */
+export function allowGuest(req: Request, _res: Response, next: NextFunction) { (req as any).__allowGuest = true; next(); }
+
+/**
+ * Marks a route as reachable while the organization requires two-step sign-in and this sign-in didn't use
+ * it (so the person can read the policy and their own status). Put it before requireTenant.
+ */
+export function allowWithoutMfa(req: Request, _res: Response, next: NextFunction) { (req as any).__allowWithoutMfa = true; next(); }
+
+/** The organization's security policy and guest rules for this request; null when it may proceed. */
+export async function tenantAccessViolation(req: Request, t: Tenant): Promise<{ status: number; code: string; error: string } | null> {
+  const au = (req as any).accountUser || {};
+  const v = checkCredentialAgainstPolicy(await getSecurityPolicy(t.orgId), au);
+  if (v && !(v.code === 'mfa_required' && (req as any).__allowWithoutMfa)) return v;
+  if (t.role === 'GUEST' && !(req as any).__allowGuest) return { status: 403, code: 'forbidden', error: 'Guests can only open meetings they were invited to.' };
+  return null;
+}
+
 export function requireTenant(req: Request, res: Response, next: NextFunction) {
-  resolveTenant(req).then((t) => { (req as TenantRequest).tenant = t; next(); }, (e) => sendError(res, e, 'tenant'));
+  resolveTenant(req).then(async (t) => {
+    const au = (req as any).accountUser || {};
+    const v = await tenantAccessViolation(req, t);
+    if (v) return res.status(v.status).json({ success: false, code: v.code, error: v.error });
+    (req as TenantRequest).tenant = t;
+    noteMemberActivity(t.orgId, t.userId, !!au.secondFactor);
+    next();
+  }).catch((e) => sendError(res, e, 'tenant'));
 }
 
 /** Use after requireTenant. */

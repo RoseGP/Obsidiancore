@@ -18,7 +18,9 @@ import { rotateLeadCaptureKey } from '../server/crm/crmRepository';
 import { createEmbedKey, listEmbedKeys, revokeEmbedKey } from '../server/embed/embedKeys';
 import { assertId, getDocStore } from '../server/data/docStore';
 import { requirePermission, requireTenant, sendError, tenantOf } from '../server/tenancy/middleware';
-import { acceptInvitation, createInvitation, createOrg, getMembershipIndex, isRole, listMembers, listMyOrgs, removeMember, setMemberRole, TenancyError } from '../server/tenancy/orgs';
+import { acceptInvitation, createInvitation, createOrg, getMember, getMembershipIndex, isRole, listMembers, listMyOrgs, removeMember, setMemberRole, TenancyError } from '../server/tenancy/orgs';
+import { auditFromRequest, recordAudit } from '../server/audit/auditLog';
+import { requireAccess } from '../server/security/permissions';
 
 const router = Router();
 const appUrl = () => (process.env.APP_URL || '').replace(/\/+$/, '');
@@ -36,6 +38,7 @@ router.post('/', createLimiter, async (req, res) => {
   try {
     const u = user(req);
     const org = await createOrg({ userId: u.id, email: u.email, name: u.name }, req.body?.name);
+    await recordAudit(org.id, { actorId: u.id, actorEmail: u.email, action: 'org.created', target: { type: 'organization', id: org.id, label: org.name }, ip: req.ip });
     res.status(201).json({ success: true, organization: org });
   } catch (err) { sendError(res, err, 'orgs.create'); }
 });
@@ -52,7 +55,7 @@ router.put('/me/default', async (req, res) => {
   } catch (err) { sendError(res, err, 'orgs.setDefault'); }
 });
 
-router.get('/current/members', requireTenant, async (req, res) => {
+router.get('/current/members', requireTenant, requireAccess('members', 'view'), async (req, res) => {
   try { res.json({ success: true, members: await listMembers(tenantOf(req).orgId) }); }
   catch (err) { sendError(res, err, 'orgs.members'); }
 });
@@ -61,7 +64,10 @@ router.patch('/current/members/:uid', requireTenant, requirePermission('manage_m
   try {
     const t = tenantOf(req);
     if (!isRole(req.body?.role)) return res.status(400).json({ success: false, error: 'Unknown role.' });
-    await setMemberRole(t.orgId, t, assertId(req.params.uid), req.body.role);
+    const target = assertId(req.params.uid);
+    const before = await getMember(t.orgId, target);
+    await setMemberRole(t.orgId, t, target, req.body.role);
+    await auditFromRequest(req, 'member.role_changed', { type: 'member', id: target, label: before?.email || before?.name }, { from: before?.role || null, to: req.body.role });
     res.json({ success: true });
   } catch (err) { sendError(res, err, 'orgs.setRole'); }
 });
@@ -75,7 +81,9 @@ router.delete('/current/members/:uid', requireTenant, async (req, res) => {
       return res.status(403).json({ success: false, code: 'forbidden', error: 'Only admins can remove other members.' });
     }
     // Leaving yourself is allowed for any role (an owner can only leave if another owner remains).
+    const before = await getMember(t.orgId, target);
     await removeMember(t.orgId, self ? { userId: t.userId, role: 'OWNER' } : t, target);
+    await auditFromRequest(req, self ? 'member.left' : 'member.removed', { type: 'member', id: target, label: before?.email || before?.name }, { role: before?.role || null });
     res.json({ success: true });
   } catch (err) { sendError(res, err, 'orgs.removeMember'); }
 });
@@ -85,6 +93,7 @@ router.post('/current/invitations', requireTenant, requirePermission('manage_mem
   try {
     const t = tenantOf(req);
     const { invitation, token } = await createInvitation(t.orgId, t, req.body?.email, req.body?.role || 'SALES_REP');
+    await auditFromRequest(req, 'member.invited', { type: 'invitation', id: invitation.id, label: invitation.email }, { role: invitation.role });
     // No email is sent from here: the inviter shares this link. It works once, for 7 days, and only
     // for someone signed in with the invited, verified email address.
     const acceptUrl = appUrl() ? `${appUrl()}/?invite=${encodeURIComponent(token)}` : null;
@@ -97,6 +106,7 @@ router.post('/invitations/accept', acceptLimiter, async (req, res) => {
   try {
     const u = user(req);
     const r = await acceptInvitation(String(req.body?.token || ''), { userId: u.id, email: u.email, emailVerified: u.emailVerified, name: u.name });
+    await recordAudit(r.orgId, { actorId: u.id, actorEmail: u.email, action: 'member.joined', target: { type: 'member', id: u.id, label: u.email }, meta: { role: r.role }, ip: req.ip });
     res.json({ success: true, ...r });
   } catch (err) { sendError(res, err, 'orgs.acceptInvite'); }
 });
@@ -104,6 +114,7 @@ router.post('/invitations/accept', acceptLimiter, async (req, res) => {
 router.post('/current/lead-capture-key', requireTenant, requirePermission('manage_org'), async (req, res) => {
   try {
     const key = await rotateLeadCaptureKey(tenantOf(req).orgId);
+    await auditFromRequest(req, 'api_key.rotated', { type: 'lead_capture_key' });
     res.json({ success: true, key, note: 'Copy this key now; it won’t be shown again. Any previous key stopped working.' });
   } catch (err) { sendError(res, err, 'orgs.leadKey'); }
 });
@@ -117,11 +128,12 @@ router.post('/current/embed-keys', requireTenant, requirePermission('manage_org'
   try {
     const t = tenantOf(req);
     const { key, secret } = await createEmbedKey(t.orgId, t.userId, req.body || {});
+    await auditFromRequest(req, 'api_key.created', { type: 'embed_key', id: (key as any)?.id, label: (key as any)?.label || (key as any)?.name });
     res.status(201).json({ success: true, key, secret, note: 'Copy this key now; it won’t be shown again.' });
   } catch (err) { sendError(res, err, 'orgs.createEmbedKey'); }
 });
 router.delete('/current/embed-keys/:id', requireTenant, requirePermission('manage_org'), async (req, res) => {
-  try { await revokeEmbedKey(tenantOf(req).orgId, req.params.id); res.json({ success: true }); }
+  try { await revokeEmbedKey(tenantOf(req).orgId, req.params.id); await auditFromRequest(req, 'api_key.revoked', { type: 'embed_key', id: req.params.id }); res.json({ success: true }); }
   catch (err) { sendError(res, err, 'orgs.revokeEmbedKey'); }
 });
 

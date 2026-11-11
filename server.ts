@@ -38,6 +38,12 @@ import marketingApiRouter from './src/routes/marketingApi';
 import orgsApiRouter from './src/routes/orgsApi';
 import accountApiRouter from './src/routes/accountApi';
 import leadIntelligenceRouter from './src/routes/leadIntelligenceApi';
+import securityApiRouter from './src/routes/securityApi';
+import adminAuditRouter from './src/routes/adminAuditApi';
+import complianceApiRouter from './src/routes/complianceApi';
+import { securityHeaders, inlineScriptHashes } from './src/server/security/headers';
+import { startRetentionSweeper } from './src/server/compliance/retention';
+import fs from 'fs';
 import { requireUser } from './src/features/social-accounts/server/auth';
 import { guard, PUBLIC } from './src/server/routeGuards';
 import { isExplicitDevOrTest } from './src/server/runtimeEnv';
@@ -47,6 +53,15 @@ dotenv.config();
 const app = express();
 // Hosts (Cloud Run, Render, Heroku, Railway) assign the port via PORT.
 const PORT = Number(process.env.PORT) || 3000;
+
+// Behind a reverse proxy, TRUST_PROXY (e.g. 1 = one proxy hop) makes req.ip the client's address, which
+// rate limits and sign-in monitoring rely on. Leave unset when clients connect directly.
+if (process.env.TRUST_PROXY) app.set('trust proxy', /^\d+$/.test(process.env.TRUST_PROXY) ? Number(process.env.TRUST_PROXY) : process.env.TRUST_PROXY);
+app.disable('x-powered-by');
+// Security headers on every response; CSP is report-only unless CSP_ENFORCE=true (see docs/compliance/SECURITY_CONTROLS.md).
+const productionMode = !isExplicitDevOrTest();
+const builtIndex = path.join(process.cwd(), 'dist', 'index.html');
+app.use(securityHeaders({ production: productionMode, scriptHashes: productionMode && fs.existsSync(builtIndex) ? inlineScriptHashes(fs.readFileSync(builtIndex, 'utf8')) : [] }));
 
 // Core Middleware
 // CORS: the app's own pages only (APP_URL plus CORS_ALLOWED_ORIGINS). The embeddable calendar API
@@ -84,23 +99,28 @@ app.use('/api/admin/meetings', guard(PUBLIC.none), meetingAdminRouter);
 app.use('/api/proposals', guard(PUBLIC.proposals), proposalsRouter);
 app.use('/api/payments', guard(PUBLIC.payments), paymentsRouter);
 app.use('/api/invoices', guard(PUBLIC.none), invoicesRouter);
+// Billing verifies its own session token (and the organization) inside the router.
 app.use('/api/billing', billingRouter);
-app.use('/api/accounts', accountsApiRouter);
-app.use('/api/analytics', analyticsApiRouter);
-app.use('/api/local-seo', localSeoApiRouter);
-app.use('/api/voice', voiceIvrRouter);
+app.use('/api/accounts', guard(PUBLIC.accounts), accountsApiRouter);
+app.use('/api/analytics', guard(PUBLIC.none), analyticsApiRouter);
+app.use('/api/local-seo', guard(PUBLIC.localSeo), localSeoApiRouter);
+app.use('/api/voice', guard(PUBLIC.voice), voiceIvrRouter);
 app.use('/api/orgs', guard(PUBLIC.none), orgsApiRouter);
 app.use('/api/account', guard(PUBLIC.none), accountApiRouter);
 app.use('/api/lead-intelligence', guard(PUBLIC.none), leadIntelligenceRouter);
+app.use('/api/security', guard(PUBLIC.none), securityApiRouter);
+app.use('/api/admin/audit-log', guard(PUBLIC.none), adminAuditRouter);
+app.use('/api/compliance', guard(PUBLIC.none), complianceApiRouter);
 app.use('/api/dashboard', guard(PUBLIC.none), dashboardApiRouter);
 app.use('/api/leads', guard(PUBLIC.leads), leadsApiRouter);
 app.use('/api/marketing', guard(PUBLIC.none), marketingApiRouter);
 app.use('/api/v1/marketing', guard(PUBLIC.none), marketingApiRouter);
 // New application routes first; remaining legacy paths (/queue, /schedule, /retry, /accounts) require a verified user too.
-app.use('/api/posts', postsApiRouter);
-app.use('/api/media', postsApiRouter);
+app.use('/api/posts', guard(PUBLIC.none), postsApiRouter);
+app.use('/api/media', guard(PUBLIC.none), postsApiRouter);
 app.use('/api/integrations', guard(PUBLIC.paymentIntegrations), paymentIntegrationsRouter);
-app.use('/api/webhooks', paymentWebhooksRouter);
+// Provider webhooks: each handler verifies the provider's signature.
+app.use('/api/webhooks', guard(PUBLIC.paymentWebhooks), paymentWebhooksRouter);
 // Channel list for pickers (same data as /api/accounts/integrations), before the legacy /api/social router.
 app.get('/api/social/integrations', requireUser, listIntegrations as any);
 app.use('/api/availability', guard(PUBLIC.availability), availabilityRouter);
@@ -141,6 +161,8 @@ async function startServer() {
 
   // Ends meetings whose plan time limit has passed, even if nobody is connected.
   startMeetingSweeper();
+  // Data retention: applies only policies an admin set to apply automatically; otherwise records a dry run.
+  startRetentionSweeper();
   httpServer.listen(PORT, '0.0.0.0', () => {
     console.log(`[OmniChannel CRM Server] Running on http://0.0.0.0:${PORT} (WebSocket + HTTP)`);
   });

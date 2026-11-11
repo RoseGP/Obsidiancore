@@ -16,11 +16,12 @@ import { requireUser, type AuthedRequest } from '../features/social-accounts/ser
 import { csrfGuard, rateLimit, sendError, userKey } from '../features/social-accounts/server/http';
 import { config, posts } from '../features/social-accounts/server/instance';
 import { PLATFORM_DEFINITIONS } from '../features/social-accounts/shared/types';
+import { safeFileName, sniffMediaType } from '../server/security/uploads';
 
 const router = Router();
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 25 * 1024 * 1024 }, // 25MB max
+  limits: { fileSize: 25 * 1024 * 1024, files: 1, fields: 10 }, // one file, 25 MB max
 });
 const guard = [requireUser, csrfGuard(config.appUrl), rateLimit({ name: 'posts', windowMs: 60_000, max: 120, key: userKey })];
 // File uploads are multipart; same origin check, otherwise identical.
@@ -54,17 +55,8 @@ const rangeQuery = z.object({ from: iso, to: iso }).refine((r) => Date.parse(r.t
 
 const uid = (req: AuthedRequest) => req.accountUser!.id;
 
-/** Identifies supported media by magic bytes. Returns null for anything else. */
-export function sniffMediaType(b: Buffer): string | null {
-  if (!b || b.length < 12) return null;
-  const ascii = (from: number, to: number) => b.subarray(from, to).toString('latin1');
-  if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'image/jpeg';
-  if (b[0] === 0x89 && ascii(1, 4) === 'PNG') return 'image/png';
-  if (ascii(0, 4) === 'GIF8') return 'image/gif';
-  if (ascii(0, 4) === 'RIFF' && ascii(8, 12) === 'WEBP') return 'image/webp';
-  if (ascii(4, 8) === 'ftyp') return ascii(8, 10) === 'qt' ? 'video/quicktime' : 'video/mp4';
-  return null;
-}
+/** Kept as an export for existing callers; the shared check lives in server/security/uploads. */
+export { sniffMediaType };
 
 const normalizeCreate = (raw: any) => {
   const b = { ...(raw ?? {}) };
@@ -131,7 +123,7 @@ router.post('/upload', ...uploadGuard, writeLimit, singleFile, async (req: Authe
     if (!mime) {
       return res.status(400).json({ error: 'Unsupported file type. Use JPEG, PNG, GIF, WebP, MP4 or MOV.', code: 'invalid_type' });
     }
-    const media = await posts.uploadFile(uid(req), req.file.buffer, req.file.originalname, mime);
+    const media = await posts.uploadFile(uid(req), req.file.buffer, safeFileName(req.file.originalname, `upload.${mime.split('/')[1]}`), mime);
     res.status(201).json({ success: true, id: media.id, url: media.path, path: media.path, media });
   } catch (err) {
     sendError(res, err, 'upload media');

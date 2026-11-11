@@ -62,6 +62,13 @@ export const PUBLIC = {
   messaging: [/^\/widgets\/[^/]+$/, /^\/visitor-init$/, /^\/visitor-message$/, /^\/visitor-messages\/[^/]+$/, /^\/embed(\/.*)?$/],
   // Provider webhooks (verify each provider's signature inside the handler).
   communication: [/^\/whatsapp-webhook$/, /^\/twilio-sms$/, /^\/incoming-call$/, /^\/twiml-(fallback|voicemail-saved)$/],
+  // Social account and Google Business Profile OAuth redirects (state is checked in the handler).
+  accounts: [/^\/callback$/, /^\/return\/[^/]+$/],
+  localSeo: [/^\/callback$/],
+  // Twilio voice webhooks (signature verified by twilioHook in the handler) and the caller OTP check.
+  voice: [/^\/(inbound|menu|support|queue-wait|dial-status|status)$/, /^\/otp\/verify$/],
+  // Stripe and Square webhooks (signature verified in each handler).
+  paymentWebhooks: [/^\/(stripe|square)$/],
   // Customer-facing proposal links: only /share/<token>/… (the token is checked against its stored hash).
   proposals: [/^\/share\/[A-Za-z0-9_-]{20,64}(\/(items\/[A-Za-z0-9_-]+|accept|decline|checkout|document))?$/],
 };

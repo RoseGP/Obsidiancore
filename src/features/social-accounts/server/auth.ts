@@ -13,9 +13,16 @@ import { getAuth } from 'firebase-admin/auth';
 import { verifyJwt } from '../../../utils/verifyJwt';
 import { devIdentityHeaderAllowed } from '../../../server/runtimeEnv';
 import firebaseConfigJson from '../../../../firebase-applet-config.json';
+import { blockedFor, recordAuthFailure, recordAuthSuccess } from '../../../server/security/loginMonitor';
 
 export interface AuthedRequest extends Request {
-  accountUser?: { id: string; via: 'firebase' | 'jwt' | 'dev'; email?: string; emailVerified?: boolean; name?: string };
+  accountUser?: {
+    id: string; via: 'firebase' | 'jwt' | 'dev'; email?: string; emailVerified?: boolean; name?: string;
+    /** Second factor used at sign-in ('totp', 'phone'), when the credential says so. */
+    secondFactor?: string;
+    /** When the person last actually signed in (seconds since epoch), from the credential. */
+    authTime?: number;
+  };
 }
 
 function firebaseProjectId(): string | undefined {
@@ -36,7 +43,7 @@ export function acceptedFirebaseIdentity(decoded: { uid?: string; firebase?: { s
   return Boolean(decoded?.uid) && decoded.firebase?.sign_in_provider !== 'anonymous';
 }
 
-async function verifyFirebaseClaims(token: string): Promise<{ uid: string; email?: string; email_verified?: boolean; name?: string } | null> {
+async function verifyFirebaseClaims(token: string): Promise<{ uid: string; email?: string; email_verified?: boolean; name?: string; auth_time?: number; firebase?: { sign_in_second_factor?: string } } | null> {
   const projectId = firebaseProjectId();
   if (!projectId) return null;
   try {
@@ -58,14 +65,18 @@ export async function identify(req: Request): Promise<AuthedRequest['accountUser
   if (token) {
     if (looksLikeFirebaseToken(token)) {
       const c = await verifyFirebaseClaims(token);
-      if (c) return { id: c.uid, via: 'firebase', email: c.email, emailVerified: c.email_verified === true, name: c.name };
+      if (c) return { id: c.uid, via: 'firebase', email: c.email, emailVerified: c.email_verified === true, name: c.name, secondFactor: c.firebase?.sign_in_second_factor || undefined, authTime: typeof c.auth_time === 'number' ? c.auth_time : undefined };
     } else {
       const secret = process.env.SOCIAL_ACCOUNTS_JWT_SECRET || process.env.JWT_SECRET;
       if (secret) {
         const p: any = await verifyJwt(token, secret);
         const id = p && String(p.userId ?? p.sub ?? p.uid ?? '');
         // Server-issued session JWTs: an email claim is only trusted as verified if the token says so.
-        if (id) return { id, via: 'jwt', email: typeof p.email === 'string' ? p.email : undefined, emailVerified: p.email_verified === true, name: typeof p.name === 'string' ? p.name : undefined };
+        if (id) {
+          const mfa = typeof p.second_factor === 'string' ? p.second_factor : Array.isArray(p.amr) && p.amr.includes('mfa') ? 'mfa' : undefined;
+          const authTime = typeof p.auth_time === 'number' ? p.auth_time : typeof p.iat === 'number' ? p.iat : undefined;
+          return { id, via: 'jwt', email: typeof p.email === 'string' ? p.email : undefined, emailVerified: p.email_verified === true, name: typeof p.name === 'string' ? p.name : undefined, secondFactor: mfa, authTime };
+        }
       }
     }
   }
@@ -75,14 +86,34 @@ export async function identify(req: Request): Promise<AuthedRequest['accountUser
       // Development only: X-Dev-User-Email simulates a verified email (e.g. to test invitations).
       const rawEmail = req.headers['x-dev-user-email'];
       const email = typeof rawEmail === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail) ? rawEmail.trim().toLowerCase() : undefined;
-      return { id: rawDev.trim(), via: 'dev', email, emailVerified: !!email };
+      // X-Dev-Second-Factor / X-Dev-Auth-Time let tests exercise two-step and session-age rules.
+      const sf = req.headers['x-dev-second-factor'];
+      const at = Number(req.headers['x-dev-auth-time']);
+      return { id: rawDev.trim(), via: 'dev', email, emailVerified: !!email, secondFactor: typeof sf === 'string' && /^[a-z]{2,16}$/.test(sf) ? sf : undefined, authTime: Number.isFinite(at) && at > 0 ? at : undefined };
     }
   }
   return null;
 }
 
 export async function requireUser(req: AuthedRequest, res: Response, next: NextFunction) {
+  const ip = req.ip || req.socket?.remoteAddress || 'unknown';
+  const presented = /^Bearer\s+\S/.test(req.headers.authorization || '');
   const user = await identify(req);
+  if (presented) {
+    if (user) recordAuthSuccess(ip);
+    else {
+      // A blocked network keeps getting 429 for bad credentials. Valid credentials still work, so one client
+      // sending junk from a shared address (office, mobile carrier, proxy) can't lock everyone else out.
+      const wait = blockedFor(ip);
+      recordAuthFailure(ip);
+      const after = wait || blockedFor(ip);
+      if (after > 0) {
+        res.setHeader('Retry-After', String(Math.ceil(after / 1000)));
+        res.status(429).json({ code: 'too_many_failed_sign_ins', error: 'Too many failed sign-in attempts from this network. Wait a few minutes and sign in again.' });
+        return;
+      }
+    }
+  }
   if (!user) {
     res.status(401).json({ code: 'unauthorized', error: 'Sign in to manage connected accounts.' });
     return;
