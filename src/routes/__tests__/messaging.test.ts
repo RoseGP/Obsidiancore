@@ -111,6 +111,27 @@ assert.equal(r.status, 200); assert.equal(r.body.messages.some((m: any) => m.con
 assert.equal((await as('bea').get(`${M}/conversations/${conv.id}`)).status, 404);
 ok('conversations, messages, tasks and visitor chats survive a restart, still isolated');
 
+// ---- Linking a conversation to a CRM record uses the organization's real leads/deals ----
+{
+  const orgO = (await store.get('crm_user_memberships/olivia')).defaultOrgId;
+  const orgB = (await store.get('crm_user_memberships/bea')).defaultOrgId;
+  await store.set(`organizations/${orgO}/leads/lead_link_1`, { id: 'lead_link_1', name: 'Avery Lee', email: 'avery@example.com', company: 'Northwind', status: 'new' });
+  await store.set(`organizations/${orgO}/deals/deal_link_1`, { id: 'deal_link_1', name: 'Website redesign', client: 'Northwind', value: 4200, stage: 'proposal' });
+  await store.set(`organizations/${orgB}/leads/lead_other_org`, { id: 'lead_other_org', name: 'Someone Else', status: 'new' });
+  const recs = (await as('olivia').get(`${M}/crm-records`)).body.records;
+  assert.ok(recs.some((x: any) => x.id === 'lead_link_1') && recs.some((x: any) => x.id === 'deal_link_1'));
+  r = await as('olivia').post(`${M}/conversations/${conv.id}/link-crm`, { recordId: 'lead_link_1' });
+  assert.equal(r.status, 200); assert.equal(r.body.conversation.crmRecord.id, 'lead_link_1'); assert.equal(r.body.conversation.crmRecord.title, 'Avery Lee');
+  r = await as('olivia').post(`${M}/conversations/${conv.id}/link-crm`, { recordId: 'deal_link_1', type: 'deal' });
+  assert.equal(r.status, 200); assert.equal(r.body.conversation.crmRecord.type, 'deal'); assert.equal(r.body.conversation.crmRecord.companyName, 'Northwind');
+  assert.equal((await as('olivia').post(`${M}/conversations/${conv.id}/link-crm`, { recordId: 'lead_other_org' })).status, 404);
+  assert.equal((await as('olivia').post(`${M}/conversations/${conv.id}/link-crm`, { recordId: '../../x' })).status, 404);
+  assert.equal((await as('bea').post(`${M}/conversations/${conv.id}/link-crm`, { recordId: 'lead_other_org' })).status, 404);
+  r = await as('olivia').post(`${M}/conversations/${conv.id}/link-crm`, { recordId: null });
+  assert.equal(r.status, 200); assert.equal(r.body.conversation.crmRecord, undefined);
+  ok('link-crm links to this organization\'s leads/deals; other organizations\' records and conversations are 404');
+}
+
 await as('olivia').del(`${M}/conversations/${conv.id}`); await settle('olivia');
 assert.equal([...store.data.keys()].some((k) => k.includes(`inbox_conversations/${conv.id}`)), false);
 ok('deleting a conversation deletes its stored messages');

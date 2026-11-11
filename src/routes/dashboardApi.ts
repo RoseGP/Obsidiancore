@@ -10,6 +10,7 @@
  */
 import { Router, Request, Response } from 'express';
 import { CrmRepository } from '../server/crm/crmRepository';
+import { DEAL_STAGE_PROBABILITY } from '../lib/pipelineStages';
 import { requireReadOrWrite, requireTenant, sendError, tenantOf } from '../server/tenancy/middleware';
 import { MissionInputError, loadMissions, parseDay } from '../server/crm/missions';
 import { loadServiceStatus } from '../server/crm/serviceStatus';
@@ -33,7 +34,8 @@ export async function logCrmActivity(orgId: string, activity: { type: string; ti
   return (await CrmRepository.forOrg(orgId)).logActivity(activity);
 }
 
-const PROBABILITY: Record<string, number> = { lead: 20, discovery: 30, qualified: 50, proposal: 70, negotiation: 85, won: 100, lost: 0 };
+// One pipeline vocabulary (shared with the Sales Pipeline board): see src/lib/pipelineStages.ts.
+const PROBABILITY: Record<string, number> = DEAL_STAGE_PROBABILITY;
 const str = (v: unknown, max = 200) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
 const repoFor = (req: Request) => CrmRepository.forOrg(tenantOf(req).orgId);
 const actorOf = (req: Request) => { const t = tenantOf(req); return t.name || t.email || t.userId; };

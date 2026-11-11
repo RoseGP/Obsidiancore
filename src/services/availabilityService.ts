@@ -125,22 +125,35 @@ export const EVENT_TYPES_DB: Record<string, EventTypeConfig> = {
  * Whose calendar the public booking page checks. Until booking pages belong to an organization (Phase D),
  * this is one configured host: BOOKING_HOST_ORG_ID + BOOKING_HOST_USER_ID. Without them, no busy time is known.
  */
-function bookingHost(): { orgId: string; userId: string } | null {
+export function bookingHost(): { orgId: string; userId: string } | null {
   const orgId = process.env.BOOKING_HOST_ORG_ID?.trim(), userId = process.env.BOOKING_HOST_USER_ID?.trim();
   return orgId && userId ? { orgId, userId } : null;
 }
 
-/** Existing CRM bookings/events for the host (organizations/{orgId}/calendar_events), excluding cancelled ones. */
+/**
+ * Existing CRM bookings for the host, excluding cancelled ones: calendar events
+ * (organizations/{orgId}/calendar_events) and scheduled meetings, including public bookings
+ * (organizations/{orgId}/scheduled_meetings, every occurrence), so a slot can't be booked twice.
+ */
 async function fetchInternalBookings(_hostId: string, rangeStart: DateTime, rangeEnd: DateTime): Promise<BusyBlock[]> {
   const host = bookingHost();
   if (!host) return [];
   const { getDocStore } = await import('../server/data/docStore');
-  const events = await (await getDocStore()).list(`organizations/${host.orgId}/calendar_events`);
+  const st = await getDocStore();
+  const [events, meetings] = await Promise.all([
+    st.list(`organizations/${host.orgId}/calendar_events`),
+    st.list(`organizations/${host.orgId}/scheduled_meetings`, { limit: 1000 }),
+  ]);
   const from = rangeStart.toMillis(), to = rangeEnd.toMillis();
-  return events
+  const fromEvents = events
     .filter((e: any) => e.status !== 'cancelled' && e.scheduledAt)
-    .map((e: any) => ({ start: e.scheduledAt, end: e.endAt || new Date(Date.parse(e.scheduledAt) + 30 * 60_000).toISOString(), source: 'INTERNAL_BOOKING', summary: 'Busy' } as BusyBlock))
-    .filter((b: BusyBlock) => Date.parse(b.end) > from && Date.parse(b.start) < to);
+    .map((e: any) => ({ start: e.scheduledAt, end: e.endAt || new Date(Date.parse(e.scheduledAt) + 30 * 60_000).toISOString(), source: 'INTERNAL_BOOKING', summary: 'Busy' } as BusyBlock));
+  const fromMeetings = meetings
+    .filter((m: any) => String(m.status || '').toUpperCase() !== 'CANCELLED')
+    .flatMap((m: any) => (Array.isArray(m.occurrences) && m.occurrences.length ? m.occurrences : [{ startTime: m.startTime, endTime: m.endTime }]))
+    .filter((o: any) => o?.startTime && o?.endTime)
+    .map((o: any) => ({ start: o.startTime, end: o.endTime, source: 'INTERNAL_BOOKING', summary: 'Busy' } as BusyBlock));
+  return [...fromEvents, ...fromMeetings].filter((b: BusyBlock) => Date.parse(b.end) > from && Date.parse(b.start) < to);
 }
 
 /** Busy blocks synced from the host's own Google Calendar (per-user, encrypted connection). */

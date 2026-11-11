@@ -25,7 +25,7 @@ import { CONSENT_PURPOSES, recordConsent } from '../server/compliance/records';
 
 const router = Router();
 
-const LEAD_STATUSES = ['new', 'contacted', 'qualifying', 'qualified', 'unqualified', 'converted'] as const;
+import { LEAD_STATUSES } from '../lib/pipelineStages';
 const BULK_MAX = 200;
 
 function isValidEmail(email: unknown): email is string {

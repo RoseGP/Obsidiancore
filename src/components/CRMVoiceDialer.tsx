@@ -1,8 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
-import { 
-  Phone, PhoneOff, Mic, MicOff, Bot, User, Sparkles, 
-  AlertCircle, ChevronRight, Activity, Volume2, CornerDownLeft, 
-  Pause, Play, Radio, ShieldCheck, History, Clock, FileText, 
+import {
+  Phone, PhoneOff, Mic, MicOff, Bot, User, Sparkles,
+  AlertCircle, ChevronRight, Activity, Volume2, CornerDownLeft,
+  Pause, Play, Radio, ShieldCheck, History, Clock, FileText,
   CheckCircle2, Plus, ArrowUpRight, ArrowRight, Search, Delete, Grid,
   Sliders, UserCheck, Calendar, Zap, MessageSquare, Copy, Check,
   Building2, PhoneForwarded, PhoneCall, Headphones, BellRing,
@@ -13,10 +13,21 @@ import ReceptionistDirectory from "./voice/ReceptionistDirectory";
 import MessageSlipsInbox from "./voice/MessageSlipsInbox";
 import ReceptionistFAQKnowledge from "./voice/ReceptionistFAQKnowledge";
 import ReceptionistTrainingCenter from "./voice/ReceptionistTrainingCenter";
-import LiveKitIvrConsole from "./voice/LiveKitIvrConsole";
 import DograhIvrConsole from "./voice/DograhIvrConsole";
 import CallMonitoringDashboard from "./voice/CallMonitoringDashboard";
-import SipTrunkRedundancyManager, { SipTrunkConfig } from "./voice/SipTrunkRedundancyManager";
+
+/** Shown for telephony features that aren't built yet (nothing simulated). */
+function NotAvailablePanel({ title, body, action }: { title: string; body: string; action?: { label: string; onClick: () => void } }) {
+  return (
+    <div role="status" className="bg-white border border-slate-200 rounded-3xl p-5 shadow-sm space-y-3">
+      <div className="flex items-center gap-2 text-sm font-bold text-slate-900"><AlertCircle className="h-4 w-4 text-amber-600" /> {title}</div>
+      <p className="text-xs text-slate-600 leading-relaxed">{body}</p>
+      {action && (
+        <button type="button" onClick={action.onClick} className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold cursor-pointer">{action.label}</button>
+      )}
+    </div>
+  );
+}
 import { copyToClipboard } from "../utils/clipboard";
 
 interface LeadItem {
@@ -106,63 +117,6 @@ const COUNTRY_CODES = [
   { code: "+65", country: "Singapore", flag: "🇸🇬" },
 ];
 
-interface InboundScenario {
-  id: string;
-  callerName: string;
-  callerCompany: string;
-  callerPhone: string;
-  intentTag: string;
-  scenarioDescription: string;
-  suggestedPrompt: string;
-}
-
-const INBOUND_SCENARIOS: InboundScenario[] = [
-  {
-    id: "sc_1",
-    callerName: "Sarah Jenkins",
-    callerCompany: "TechFlow Innovations",
-    callerPhone: "+1 (555) 234-8901",
-    intentTag: "Sales Inquiry",
-    scenarioDescription: "Calling to ask about custom enterprise plans and connect with Sales.",
-    suggestedPrompt: "Hi, I'm Sarah from TechFlow. Can you transfer me to your sales team?"
-  },
-  {
-    id: "sc_2",
-    callerName: "David Kim",
-    callerCompany: "Spark AI Solutions",
-    callerPhone: "+1 (555) 761-3329",
-    intentTag: "Technical Support",
-    scenarioDescription: "Experiencing WebRTC webhook timeout error and needs Tier-2 DevOps engineer.",
-    suggestedPrompt: "Hi, we have an API latency issue on our webhook receiver and need support."
-  },
-  {
-    id: "sc_3",
-    callerName: "Richard Thorne",
-    callerCompany: "Apex BioTech",
-    callerPhone: "+1 (555) 492-1049",
-    intentTag: "Executive Desk",
-    scenarioDescription: "Leaving urgent message regarding term sheet for CEO Evelyn Sinclair.",
-    suggestedPrompt: "I'd like to leave an urgent message for Evelyn Sinclair about our term sheet."
-  },
-  {
-    id: "sc_4",
-    callerName: "Kendra Larson",
-    callerCompany: "Nexus Retailers",
-    callerPhone: "+1 (555) 301-8842",
-    intentTag: "Billing Department",
-    scenarioDescription: "Inquiring about updated Q3 VAT invoice and wire instructions.",
-    suggestedPrompt: "Can you connect me with Marcus in billing regarding our Q3 invoice?"
-  },
-  {
-    id: "sc_5",
-    callerName: "Alex Rivera",
-    callerCompany: "Prospective Client",
-    callerPhone: "+1 (555) 602-9911",
-    intentTag: "General Reception",
-    scenarioDescription: "Asking about San Francisco HQ address, business hours, and visitor access.",
-    suggestedPrompt: "What are your business hours and where is your office located in San Francisco?"
-  }
-];
 
 interface CallLogEntry {
   id: string;
@@ -176,7 +130,8 @@ interface CallLogEntry {
   status: "completed" | "scheduled_demo" | "voicemail" | "followup";
 }
 
-export type AppMode = "unified" | "livekit_ivr" | "monitoring" | "sip_trunks" | "twilio_ivr";
+/** Voice Calls tabs. "receptionist" holds everything the former AI Voice Receptionist page had (training, FAQs, call-back slips, routing). */
+export type AppMode = "unified" | "receptionist" | "livekit_ivr" | "monitoring" | "sip_trunks" | "twilio_ivr";
 
 interface CRMVoiceDialerProps {
   onAddCalendarEvent?: (newEvent: any) => void;
@@ -187,7 +142,7 @@ interface CRMVoiceDialerProps {
 export default function CRMVoiceDialer({ onAddCalendarEvent, onNavigate, initialMode }: CRMVoiceDialerProps) {
   // Mode: Unified Dialer & IVR vs LiveKit IVR vs Analytics vs SIP Trunks
   const [appMode, setAppMode] = useState<AppMode>(initialMode || "unified");
-  // Deep links from the navigation (WhatsApp & SMS → monitoring, AI Voice Receptionist → twilio_ivr).
+  // Deep links from the navigation (WhatsApp & SMS → monitoring, voice_receptionist → receptionist).
   useEffect(() => { if (initialMode) setAppMode(initialMode); }, [initialMode]);
 
   // Combined Left Column Tab: Softphone Dialer & Leads vs IVR Directory vs Message Slips
@@ -199,15 +154,13 @@ export default function CRMVoiceDialer({ onAddCalendarEvent, onNavigate, initial
   const [selectedCountryCode, setSelectedCountryCode] = useState<string>("+1");
   const [selectedSkillMode, setSelectedSkillMode] = useState<AlexSkillMode>(ALEX_SKILL_MODES[0]);
   const [leadSearchQuery, setLeadSearchQuery] = useState<string>("");
-  
+
   // Responsive UI Tab for mobile / tablet screens
   const [activeTab, setActiveTab] = useState<"left_panel" | "call" | "transcript" | "history">("call");
 
   // In-call features & modals
   const [showDTMFDrawer, setShowDTMFDrawer] = useState<boolean>(false);
-  const [showInboundModal, setShowInboundModal] = useState<boolean>(false);
   const [showTrainingStudio, setShowTrainingStudio] = useState<boolean>(false);
-  const [selectedScenario, setSelectedScenario] = useState<InboundScenario>(INBOUND_SCENARIOS[0]);
   const [copiedNote, setCopiedNote] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -346,41 +299,6 @@ export default function CRMVoiceDialer({ onAddCalendarEvent, onNavigate, initial
     });
   };
 
-  // Inbound Call Simulator
-  const handleOpenInboundSimulator = () => {
-    setShowInboundModal(true);
-  };
-
-  const handleAcceptInboundCall = async (scenario: InboundScenario) => {
-    setShowInboundModal(false);
-    setSelectedLead({
-      id: scenario.id,
-      name: scenario.callerName,
-      phone: scenario.callerPhone,
-      company: scenario.callerCompany,
-      dealValue: "$100,000",
-      stage: scenario.intentTag,
-      avatarColor: "from-blue-600 to-indigo-600",
-      lastContact: "Just now",
-      notes: scenario.scenarioDescription
-    });
-    setDialNumber(scenario.callerPhone);
-    setActiveTab("call");
-
-    await startCall({
-      callMode: "receptionist",
-      leadName: scenario.callerName,
-      leadCompany: scenario.callerCompany,
-      leadPhone: scenario.callerPhone,
-      agentPersona: "Alex AI - Unified Executive Voice Concierge",
-      callGoal: selectedSkillMode.prompt,
-    });
-
-    // Auto-prompt the initial simulated question after greeting
-    setTimeout(() => {
-      submitVoiceInput(scenario.suggestedPrompt);
-    }, 4500);
-  };
 
   // Dial back from message slip
   const handleDialBack = (phone: string, name: string) => {
@@ -469,7 +387,7 @@ export default function CRMVoiceDialer({ onAddCalendarEvent, onNavigate, initial
   };
 
   // Filter leads
-  const filteredLeads = CRM_LEADS.filter(l => 
+  const filteredLeads = CRM_LEADS.filter(l =>
     l.name.toLowerCase().includes(leadSearchQuery.toLowerCase()) ||
     l.company.toLowerCase().includes(leadSearchQuery.toLowerCase()) ||
     l.phone.includes(leadSearchQuery)
@@ -477,13 +395,15 @@ export default function CRMVoiceDialer({ onAddCalendarEvent, onNavigate, initial
 
   return (
     <div className="h-full w-full flex flex-col bg-slate-50 text-slate-900 overflow-y-auto" id="crm-voice-dialer-root">
-      
+
       {/* Top Bar / Header with Mode Switcher */}
       <header className="shrink-0 border-b border-slate-200 bg-white/95 backdrop-blur-xl px-4 md:px-8 py-3.5 flex flex-wrap items-center justify-between gap-4 shadow-sm">
         <div className="flex items-center gap-3">
           <div className="h-10 w-10 rounded-2xl bg-blue-50 border border-blue-200 flex items-center justify-center text-blue-600 shadow-sm">
             {appMode === "twilio_ivr" ? (
               <Workflow className="h-5 w-5 text-blue-600" />
+            ) : appMode === "receptionist" ? (
+              <Headphones className="h-5 w-5 text-blue-600" />
             ) : appMode === "livekit_ivr" ? (
               <Server className="h-5 w-5 animate-pulse" />
             ) : appMode === "monitoring" ? (
@@ -498,27 +418,33 @@ export default function CRMVoiceDialer({ onAddCalendarEvent, onNavigate, initial
             <div className="flex items-center gap-2">
               <h1 className="text-base md:text-lg font-bold text-slate-900 tracking-tight">
                 {appMode === "twilio_ivr"
-                  ? "Twilio IVR & Dograh Voice AI"
+                  ? "Call routing (Twilio IVR)"
+                  : appMode === "receptionist"
+                  ? "AI Receptionist"
                   : appMode === "livekit_ivr"
                   ? "LiveKit SIP IVR & Telephony Gateway"
                   : appMode === "monitoring"
                   ? "Inbound Messages & Voicemail"
                   : appMode === "sip_trunks"
                   ? "Multi-SIP Trunk Redundancy & Carrier Fallback"
-                  : "Alex AI Unified Voice Dialer & IVR Gateway"}
+                  : "Voice Calls"}
               </h1>
               <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
-                {appMode === "twilio_ivr" ? "Programmable Voice" : appMode === "livekit_ivr" ? "LiveKit + Failover" : appMode === "monitoring" ? "WhatsApp · SMS · Voicemail" : appMode === "sip_trunks" ? "Zero-Downtime SIP" : "Dialer + IVR + WebRTC"}
+                {appMode === "twilio_ivr" ? "Programmable Voice" : appMode === "receptionist" ? "Answers and routes calls" : appMode === "livekit_ivr" ? "LiveKit + Failover" : appMode === "monitoring" ? "WhatsApp · SMS · Voicemail" : appMode === "sip_trunks" ? "Zero-Downtime SIP" : "Dialer + IVR + WebRTC"}
               </span>
             </div>
             <p className="text-xs text-slate-500">
-              {appMode === "livekit_ivr"
-                ? "Inbound SIP trunking, automatic LLM/TTS provider failovers, and blind transfer to office extensions"
+              {appMode === "receptionist"
+                ? "What your AI receptionist knows, the call-back requests it takes, and how calls are routed"
+                : appMode === "livekit_ivr"
+                ? "Not available yet: LiveKit SIP telephony isn't connected in this app"
                 : appMode === "monitoring"
                 ? "WhatsApp and SMS messages and voicemails received on your numbers, and where they are routed"
                 : appMode === "sip_trunks"
-                ? "Manage secondary and tertiary carrier routing rules, health checks, and automatic sub-second failover"
-                : "Autonomous conversational outbound telephony, inbound IVR auto-attendant, DTMF keypad & CRM sync"}
+                ? "Not available yet: carrier failover isn't connected in this app"
+                : appMode === "twilio_ivr"
+                ? "Your Twilio number's menu: greeting, options and where each option sends the caller"
+                : "Dial out, take calls, keep transcripts and notes with your CRM"}
             </p>
           </div>
         </div>
@@ -536,7 +462,18 @@ export default function CRMVoiceDialer({ onAddCalendarEvent, onNavigate, initial
               }`}
             >
               <Radio className="h-3.5 w-3.5" />
-              <span>Unified Dialer & IVR</span>
+              <span>Dialer</span>
+            </button>
+            <button
+              onClick={() => handleSwitchMode("receptionist")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                appMode === "receptionist"
+                  ? "bg-white text-blue-600 shadow-sm border border-slate-200"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              <Headphones className="h-3.5 w-3.5" />
+              <span>AI Receptionist</span>
             </button>
             <button
               onClick={() => handleSwitchMode("livekit_ivr")}
@@ -580,7 +517,7 @@ export default function CRMVoiceDialer({ onAddCalendarEvent, onNavigate, initial
               }`}
             >
               <Workflow className="h-3.5 w-3.5" />
-              <span>IVR (Twilio + Dograh)</span>
+              <span>Call routing</span>
             </button>
           </div>
 
@@ -595,15 +532,6 @@ export default function CRMVoiceDialer({ onAddCalendarEvent, onNavigate, initial
             <span className="sm:hidden">Train</span>
           </button>
 
-          <button
-            onClick={handleOpenInboundSimulator}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all cursor-pointer shadow-sm active:scale-95"
-            title="Simulate incoming customer caller"
-          >
-            <BellRing className="h-3.5 w-3.5 animate-bounce" />
-            <span className="hidden sm:inline">Simulate Inbound Call</span>
-            <span className="sm:hidden">Incoming</span>
-          </button>
         </div>
       </header>
 
@@ -613,14 +541,69 @@ export default function CRMVoiceDialer({ onAddCalendarEvent, onNavigate, initial
         </div>
       )}
 
+      {appMode === "receptionist" && (
+        <div className="flex-1 overflow-y-auto px-3 md:px-8 py-5 space-y-5 max-w-7xl mx-auto w-full">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <button
+              type="button"
+              onClick={() => handleSwitchMode("twilio_ivr")}
+              className="text-left bg-white border border-slate-200 rounded-2xl p-4 shadow-sm hover:border-blue-300 transition-colors cursor-pointer"
+            >
+              <div className="flex items-center gap-2 text-sm font-bold text-slate-900"><Workflow className="h-4 w-4 text-blue-600" /> Call routing</div>
+              <p className="text-xs text-slate-500 mt-1">Greeting, menu options and where each option sends the caller.</p>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSwitchMode("unified")}
+              className="text-left bg-white border border-slate-200 rounded-2xl p-4 shadow-sm hover:border-blue-300 transition-colors cursor-pointer"
+            >
+              <div className="flex items-center gap-2 text-sm font-bold text-slate-900"><Phone className="h-4 w-4 text-blue-600" /> Test a call</div>
+              <p className="text-xs text-slate-500 mt-1">Talk to the receptionist in the dialer to hear how it answers.</p>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSwitchMode("monitoring")}
+              className="text-left bg-white border border-slate-200 rounded-2xl p-4 shadow-sm hover:border-blue-300 transition-colors cursor-pointer"
+            >
+              <div className="flex items-center gap-2 text-sm font-bold text-slate-900"><Inbox className="h-4 w-4 text-blue-600" /> Messages and voicemail</div>
+              <p className="text-xs text-slate-500 mt-1">WhatsApp, SMS and voicemails received on your numbers.</p>
+            </button>
+          </div>
+
+          <ReceptionistTrainingCenter
+            inline
+            onNavigate={onNavigate}
+            onLaunchCallTest={(prompt) => {
+              handleSwitchMode("unified");
+              submitVoiceInput(prompt);
+            }}
+          />
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+            <div className="bg-white border border-slate-200 rounded-3xl p-4 shadow-sm">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 mb-3">Call-back requests</h3>
+              <MessageSlipsInbox
+                messageSlips={messageSlips}
+                onAddSlip={addManualMessageSlip}
+                onUpdateStatus={markMessageSlipStatus}
+                onDialBack={(phone, name) => { handleSwitchMode("unified"); handleDialBack(phone, name); }}
+              />
+            </div>
+            <ReceptionistFAQKnowledge
+              onSelectPrompt={(prompt) => { handleSwitchMode("unified"); submitVoiceInput(prompt); }}
+            />
+          </div>
+        </div>
+      )}
+
 
       {/* Mobile / Tablet Tab Navigation Bar */}
-      <div className={`${appMode === "twilio_ivr" ? "hidden" : "lg:hidden flex"} shrink-0 bg-white border-b border-slate-200 px-3 py-2 items-center justify-between gap-1 overflow-x-auto`}>
+      <div className={`${appMode === "twilio_ivr" || appMode === "receptionist" ? "hidden" : "lg:hidden flex"} shrink-0 bg-white border-b border-slate-200 px-3 py-2 items-center justify-between gap-1 overflow-x-auto`}>
         <button
           onClick={() => setActiveTab("left_panel")}
           className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
-            activeTab === "left_panel" 
-              ? "bg-blue-600 text-white shadow-sm" 
+            activeTab === "left_panel"
+              ? "bg-blue-600 text-white shadow-sm"
               : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
           }`}
         >
@@ -631,8 +614,8 @@ export default function CRMVoiceDialer({ onAddCalendarEvent, onNavigate, initial
         <button
           onClick={() => setActiveTab("call")}
           className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all relative ${
-            activeTab === "call" 
-              ? "bg-blue-600 text-white shadow-sm" 
+            activeTab === "call"
+              ? "bg-blue-600 text-white shadow-sm"
               : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
           }`}
         >
@@ -646,8 +629,8 @@ export default function CRMVoiceDialer({ onAddCalendarEvent, onNavigate, initial
         <button
           onClick={() => setActiveTab("transcript")}
           className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
-            activeTab === "transcript" 
-              ? "bg-blue-600 text-white shadow-sm" 
+            activeTab === "transcript"
+              ? "bg-blue-600 text-white shadow-sm"
               : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
           }`}
         >
@@ -658,8 +641,8 @@ export default function CRMVoiceDialer({ onAddCalendarEvent, onNavigate, initial
         <button
           onClick={() => setActiveTab("history")}
           className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
-            activeTab === "history" 
-              ? "bg-blue-600 text-white shadow-sm" 
+            activeTab === "history"
+              ? "bg-blue-600 text-white shadow-sm"
               : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
           }`}
         >
@@ -669,13 +652,13 @@ export default function CRMVoiceDialer({ onAddCalendarEvent, onNavigate, initial
       </div>
 
       {/* Main Responsive Grid Layout */}
-      <div className={`${appMode === "twilio_ivr" ? "hidden" : "grid"} flex-1 p-3 md:p-6 max-w-7xl mx-auto w-full grid-cols-1 lg:grid-cols-12 gap-5 items-start`}>
-        
+      <div className={`${appMode === "twilio_ivr" || appMode === "receptionist" ? "hidden" : "grid"} flex-1 p-3 md:p-6 max-w-7xl mx-auto w-full grid-cols-1 lg:grid-cols-12 gap-5 items-start`}>
+
         {/* ========================================================================= */}
         {/* COLUMN 1: COMBINED DIALER & IVR (KEYPAD, LEADS, DIRECTORY & SLIPS)        */}
         {/* ========================================================================= */}
         <div className={`space-y-4 ${activeTab === "left_panel" ? "block" : "hidden lg:block"} lg:col-span-4`}>
-          
+
           {/* Combined Left Column Navigation Tabs */}
           <div className="bg-slate-100 p-1 rounded-2xl flex items-center gap-1 border border-slate-200 shadow-inner">
             <button
@@ -912,10 +895,10 @@ export default function CRMVoiceDialer({ onAddCalendarEvent, onNavigate, initial
         {/* COLUMN 2: LIVE CALL STUDIO & DYNAMIC AUDIO VISUALIZER (lg:col-span-4) */}
         {/* ===================================================================== */}
         <div className={`space-y-4 ${activeTab === "call" ? "block" : "hidden lg:block"} lg:col-span-4`}>
-          
+
           {/* Main Visualizer & Live Session Card */}
           <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-sm relative overflow-hidden flex flex-col items-center text-center">
-            
+
             {/* Header Telemetry Pill */}
             <div className="w-full flex items-center justify-between gap-2 border-b border-slate-100 pb-3 mb-4">
               <div className="flex items-center gap-1.5">
@@ -1044,7 +1027,7 @@ export default function CRMVoiceDialer({ onAddCalendarEvent, onNavigate, initial
 
             {/* Central Pulsing Audio Visualizer Ring Canvas */}
             <div className="relative h-44 w-44 my-1 flex items-center justify-center">
-              
+
               {/* Outer Radial Dynamic Wave Rings */}
               {status === "active" && !isOnHold && (
                 <>
@@ -1100,7 +1083,7 @@ export default function CRMVoiceDialer({ onAddCalendarEvent, onNavigate, initial
                 <span>{audioLevel}%</span>
               </div>
               <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden border border-slate-200">
-                <motion.div 
+                <motion.div
                   className="h-full bg-gradient-to-r from-blue-500 to-emerald-400"
                   style={{ width: `${audioLevel}%` }}
                   transition={{ duration: 0.1 }}
@@ -1140,8 +1123,8 @@ export default function CRMVoiceDialer({ onAddCalendarEvent, onNavigate, initial
                 onClick={toggleMuted}
                 disabled={status !== "active"}
                 className={`h-12 w-12 rounded-2xl flex items-center justify-center border transition-all cursor-pointer ${
-                  isMuted 
-                    ? "bg-rose-600 border-rose-500 text-white shadow-sm" 
+                  isMuted
+                    ? "bg-rose-600 border-rose-500 text-white shadow-sm"
                     : "bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700 hover:text-slate-900"
                 } disabled:opacity-40`}
                 title={isMuted ? "Unmute Microphone" : "Mute Microphone"}
@@ -1154,8 +1137,8 @@ export default function CRMVoiceDialer({ onAddCalendarEvent, onNavigate, initial
                 onClick={toggleHold}
                 disabled={status !== "active"}
                 className={`h-12 w-12 rounded-2xl flex items-center justify-center border transition-all cursor-pointer ${
-                  isOnHold 
-                    ? "bg-amber-600 border-amber-500 text-white shadow-sm" 
+                  isOnHold
+                    ? "bg-amber-600 border-amber-500 text-white shadow-sm"
                     : "bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700 hover:text-slate-900"
                 } disabled:opacity-40`}
                 title={isOnHold ? "Resume Call" : "Hold Call"}
@@ -1188,8 +1171,8 @@ export default function CRMVoiceDialer({ onAddCalendarEvent, onNavigate, initial
                 onClick={toggleRecording}
                 disabled={status !== "active"}
                 className={`h-12 w-12 rounded-2xl flex items-center justify-center border transition-all cursor-pointer ${
-                  isRecording 
-                    ? "bg-blue-50 border-blue-300 text-blue-600" 
+                  isRecording
+                    ? "bg-blue-50 border-blue-300 text-blue-600"
                     : "bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-500 hover:text-slate-900"
                 } disabled:opacity-40`}
                 title="Toggle Call Audio Recording"
@@ -1201,8 +1184,8 @@ export default function CRMVoiceDialer({ onAddCalendarEvent, onNavigate, initial
               <button
                 onClick={() => setShowDTMFDrawer(prev => !prev)}
                 className={`h-12 w-12 rounded-2xl flex items-center justify-center border transition-all cursor-pointer ${
-                  showDTMFDrawer 
-                    ? "bg-blue-600 border-blue-600 text-white" 
+                  showDTMFDrawer
+                    ? "bg-blue-600 border-blue-600 text-white"
                     : "bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700 hover:text-slate-900"
                 }`}
                 title="Open In-Call DTMF Keypad"
@@ -1239,8 +1222,10 @@ export default function CRMVoiceDialer({ onAddCalendarEvent, onNavigate, initial
 
           {/* Mode-Specific Telephony Extensions below Visualizer */}
           {appMode === "livekit_ivr" && (
-            <LiveKitIvrConsole 
-              onSimulateTransfer={(ext, dept) => triggerDepartmentTransfer(ext, dept)} 
+            <NotAvailablePanel
+              title="LiveKit SIP telephony isn't available yet"
+              body="Inbound SIP calls through LiveKit, provider failover and transfers to extensions aren't connected in this app. Use Call routing (Twilio) for your phone menu today."
+              action={{ label: 'Open call routing', onClick: () => handleSwitchMode("twilio_ivr") }}
             />
           )}
 
@@ -1251,14 +1236,11 @@ export default function CRMVoiceDialer({ onAddCalendarEvent, onNavigate, initial
           )}
 
           {appMode === "sip_trunks" && (
-            <div className="space-y-4">
-              <SipTrunkRedundancyManager 
-                onTrunkChange={(newPrimaryId, trunks) => {
-                  const target = trunks.find(t => t.id === newPrimaryId);
-                  showToast(`⚡ SIP Trunk Switched to ${target?.name || newPrimaryId}`);
-                }}
-              />
-            </div>
+            <NotAvailablePanel
+              title="SIP trunk failover isn't available yet"
+              body="Managing backup carriers and automatic failover isn't connected in this app. Calls use the Twilio number configured on the server."
+              action={{ label: 'Open call routing', onClick: () => handleSwitchMode("twilio_ivr") }}
+            />
           )}
         </div>
 
@@ -1266,10 +1248,10 @@ export default function CRMVoiceDialer({ onAddCalendarEvent, onNavigate, initial
         {/* COLUMN 3: LIVE TRANSCRIPT, SPEECH TESTER & FAQS (lg:col-span-4)           */}
         {/* ========================================================================= */}
         <div className={`space-y-4 ${activeTab === "transcript" ? "block" : "hidden lg:block"} lg:col-span-4`}>
-          
+
           {/* Live Transcript Card */}
           <div className="bg-white border border-slate-200 rounded-3xl p-4 shadow-sm flex flex-col h-[480px]">
-            
+
             {/* Header with Sentiment & Lead Qualification Gauge */}
             <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-3">
               <div className="flex items-center gap-2">
@@ -1293,7 +1275,7 @@ export default function CRMVoiceDialer({ onAddCalendarEvent, onNavigate, initial
             </div>
 
             {/* Real-time Conversation Stream */}
-            <div 
+            <div
               ref={scrollContainerRef}
               className="flex-1 overflow-y-auto space-y-3 pr-1 text-left"
             >
@@ -1401,8 +1383,8 @@ export default function CRMVoiceDialer({ onAddCalendarEvent, onNavigate, initial
           </div>
 
           {/* AI Voice Concierge Knowledge & FAQs Widget */}
-          <ReceptionistFAQKnowledge 
-            onSelectPrompt={(prompt) => submitVoiceInput(prompt)} 
+          <ReceptionistFAQKnowledge
+            onSelectPrompt={(prompt) => submitVoiceInput(prompt)}
             onOpenTrainingStudio={() => setShowTrainingStudio(true)}
           />
         </div>
@@ -1587,82 +1569,6 @@ export default function CRMVoiceDialer({ onAddCalendarEvent, onNavigate, initial
         )}
       </AnimatePresence>
 
-      {/* ========================================================================= */}
-      {/* INBOUND CALLER SIMULATION SELECTION MODAL                                 */}
-      {/* ========================================================================= */}
-      <AnimatePresence>
-        {showInboundModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setShowInboundModal(false)}
-              className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
-            />
-
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="relative z-10 w-full max-w-lg bg-white border border-slate-200 rounded-3xl p-6 shadow-2xl text-left max-h-[90vh] overflow-y-auto"
-            >
-              <div className="flex items-center gap-3 border-b border-slate-100 pb-3 mb-4">
-                <div className="h-10 w-10 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center">
-                  <BellRing className="h-5 w-5 text-emerald-600 animate-bounce" />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-slate-900">Simulate Incoming Customer Call</h3>
-                  <p className="text-xs text-slate-500">Select a real customer scenario to test Alex AI Unified Voice Agent</p>
-                </div>
-              </div>
-
-              <div className="space-y-2.5 mb-5">
-                {INBOUND_SCENARIOS.map((scenario) => {
-                  const isSelected = selectedScenario.id === scenario.id;
-
-                  return (
-                    <div
-                      key={scenario.id}
-                      onClick={() => setSelectedScenario(scenario)}
-                      className={`p-3 rounded-2xl border transition-all cursor-pointer ${
-                        isSelected
-                          ? "bg-blue-50/80 border-blue-300 shadow-xs"
-                          : "bg-slate-50/60 hover:bg-slate-100/80 border-slate-200"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-2 mb-1">
-                        <span className="text-xs font-bold text-slate-900">{scenario.callerName} ({scenario.callerCompany})</span>
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
-                          {scenario.intentTag}
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-slate-600 leading-relaxed">{scenario.scenarioDescription}</p>
-                      <p className="text-[10px] text-slate-500 font-mono mt-1">Prompt: "{scenario.suggestedPrompt}"</p>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div className="flex items-center justify-end gap-2.5 border-t border-slate-100 pt-3">
-                <button
-                  onClick={() => setShowInboundModal(false)}
-                  className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 hover:text-slate-900 text-xs font-semibold cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={() => handleAcceptInboundCall(selectedScenario)}
-                  className="flex items-center gap-1.5 px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-sm active:scale-95 transition-all cursor-pointer"
-                >
-                  <Phone className="h-4 w-4" />
-                  <span>Answer Call with Alex AI</span>
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
 
       {/* AI Receptionist Interactive Training Studio Modal */}
       <AnimatePresence>

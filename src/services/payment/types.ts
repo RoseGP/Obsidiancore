@@ -79,6 +79,8 @@ export interface Invoice {
   due_date: string;
   description: string;
   hosted_invoice_url: string;
+  /** The Invoicing app invoice (billing/{orgId}/invoices/{id}) this provider invoice collects, if any. */
+  billing_invoice_id?: string;
   created_at: string;
   updated_at: string;
   items?: InvoiceItem[];
@@ -117,6 +119,8 @@ export interface CreateInvoiceInput {
   items: CreateInvoiceItemInput[];
   deliveryMethod?: 'email' | 'share_manually';
   idempotencyKey?: string;
+  /** Links the provider invoice to an Invoicing app invoice so a confirmed payment marks it paid. */
+  billingInvoiceId?: string;
 }
 
 /**
@@ -139,6 +143,7 @@ export interface PaymentProvider {
  */
 export type PaymentErrorCode =
   | 'PROVIDER_NOT_CONNECTED'
+  | 'PROVIDER_NOT_CONFIGURED'
   | 'PROVIDER_AUTH_EXPIRED'
   | 'PROVIDER_AUTH_REVOKED'
   | 'CUSTOMER_CREATION_FAILED'

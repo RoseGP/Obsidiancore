@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { 
+import {
   Calendar as CalendarIcon, Clock, Phone, Video, Globe, ChevronLeft, ChevronRight,
   User, Mail, Building, Sparkles, CheckCircle2, ArrowRight, ArrowLeft,
   Download, ExternalLink, ShieldCheck, X, FileText, Check, Copy
@@ -17,35 +17,12 @@ interface MeetingTypeOption {
   description: string;
 }
 
-const MEETING_TYPES: MeetingTypeOption[] = [
-  {
-    id: '30-min-reservation',
-    name: 'Reservation Page',
-    duration: '30 min',
-    durationMinutes: 30,
-    location: 'Phone call',
-    locationType: 'phone',
-    description: 'This is an example of a meeting you would have with a potential customer to demonstrate your product.'
-  },
-  {
-    id: '15-min-intro',
-    name: '15-Min Quick Intro',
-    duration: '15 min',
-    durationMinutes: 15,
-    location: 'Google Meet',
-    locationType: 'video',
-    description: 'A rapid 15-minute discovery call to discuss high-level goals and see if our product is a strong fit.'
-  },
-  {
-    id: '60-min-deep-dive',
-    name: '60-Min Product Deep-Dive',
-    duration: '60 min',
-    durationMinutes: 60,
-    location: 'Google Meet / HD Video',
-    locationType: 'video',
-    description: 'An in-depth technical walkthrough and strategy session for engineering and operations teams.'
-  }
-];
+/** Meeting types come from the server (/api/availability/event-types); this placeholder shows while loading. */
+const LOADING_TYPE: MeetingTypeOption = { id: '', name: 'Loading meeting types…', duration: '', durationMinutes: 0, location: 'Video meeting', locationType: 'video', description: '' };
+const toOption = (t: any): MeetingTypeOption => ({
+  id: String(t.slug), name: String(t.name), duration: `${t.durationMinutes} min`, durationMinutes: Number(t.durationMinutes) || 0,
+  location: 'Video meeting', locationType: 'video', description: String(t.description || ''),
+});
 
 const TIMEZONES = [
   { code: 'CET', name: 'Central European Time', tz: 'Europe/Paris' },
@@ -69,7 +46,7 @@ export default function PublicSchedulingPage({
 }: PublicSchedulingPageProps) {
   // Company Logo & Branding State
   const [companyName, setCompanyName] = useState<string>(() => {
-    return localStorage.getItem('obsidian_branding_company_name') || 'ACME Inc.';
+    return localStorage.getItem('obsidian_branding_company_name') || '';
   });
   const [companyLogoUrl, setCompanyLogoUrl] = useState<string | null>(() => {
     return localStorage.getItem('obsidian_branding_logo_url') || null;
@@ -111,8 +88,30 @@ export default function PublicSchedulingPage({
   };
 
   // 1. Meeting Type & Timezone
-  const [selectedMeetingType, setSelectedMeetingType] = useState<MeetingTypeOption>(MEETING_TYPES[0]);
-  const [userTimezone, setUserTimezone] = useState<string>('Europe/Paris');
+  const [meetingTypes, setMeetingTypes] = useState<MeetingTypeOption[]>([]);
+  const [selectedMeetingType, setSelectedMeetingType] = useState<MeetingTypeOption>(LOADING_TYPE);
+  const [bookingConfigured, setBookingConfigured] = useState<boolean | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [userTimezone, setUserTimezone] = useState<string>(() => {
+    try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; } catch { return 'UTC'; }
+  });
+
+  // Real meeting types and whether online booking is set up on this server.
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/availability/event-types')
+      .then(async (res) => {
+        const data = await res.json().catch(() => ({}));
+        if (cancelled) return;
+        if (!res.ok || !Array.isArray(data.data)) { setLoadError('Meeting types couldn’t be loaded. Refresh to try again.'); return; }
+        const list = data.data.map(toOption);
+        setMeetingTypes(list);
+        if (list[0]) setSelectedMeetingType(list[0]);
+        setBookingConfigured(Boolean(data.configured));
+      })
+      .catch(() => { if (!cancelled) setLoadError('Meeting types couldn’t be loaded. Check your connection.'); });
+    return () => { cancelled = true; };
+  }, []);
   const [currentTimeFormatted, setCurrentTimeFormatted] = useState<string>('');
 
   // Update live timezone clock
@@ -128,7 +127,7 @@ export default function PublicSchedulingPage({
         }).format(now);
         setCurrentTimeFormatted(timeString.toLowerCase());
       } catch (e) {
-        setCurrentTimeFormatted('8:11pm');
+        setCurrentTimeFormatted('');
       }
     };
     updateClock();
@@ -137,10 +136,12 @@ export default function PublicSchedulingPage({
   }, [userTimezone]);
 
   // 2. Date & Time Slot Picker States
-  const [currentMonth, setCurrentMonth] = useState<Date>(new Date(2026, 7, 1)); // August 2026 context
-  const [selectedDate, setSelectedDate] = useState<string>('2026-08-25');
-  const [selectedTimeSlot, setSelectedTimeSlot] = useState<string | null>('10:00 AM');
-  
+  const [currentMonth, setCurrentMonth] = useState<Date>(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); });
+  const [selectedDate, setSelectedDate] = useState<string>('');
+  const [selectedTimeSlot, setSelectedTimeSlot] = useState<string | null>(null);
+  const [slots, setSlots] = useState<{ label: string; utc: string }[]>([]);
+  const [slotsLoading, setSlotsLoading] = useState(false);
+
   // Phase Workflow: 'slot_select' | 'booking_form' | 'confirmation'
   const [phase, setPhase] = useState<'slot_select' | 'booking_form' | 'confirmation'>('slot_select');
 
@@ -158,19 +159,25 @@ export default function PublicSchedulingPage({
   const [confirmedBooking, setConfirmedBooking] = useState<any | null>(null);
   const [copiedLink, setCopiedLink] = useState<boolean>(false);
 
-  // Time Slots matrix
-  const timeSlots = [
-    '09:00 AM',
-    '09:30 AM',
-    '10:00 AM',
-    '10:30 AM',
-    '11:00 AM',
-    '01:30 PM',
-    '02:00 PM',
-    '02:30 PM',
-    '03:00 PM',
-    '04:00 PM'
-  ];
+  // Free slots for the chosen type and day, from the server (working hours, buffers, existing bookings).
+  useEffect(() => {
+    if (!selectedMeetingType.id || !selectedDate) { setSlots([]); return; }
+    let cancelled = false;
+    setSlotsLoading(true);
+    const q = new URLSearchParams({ startDate: selectedDate, endDate: selectedDate, visitorTimezone: userTimezone });
+    fetch(`/api/availability/${encodeURIComponent(selectedMeetingType.id)}?${q}`)
+      .then(async (res) => {
+        const data = await res.json().catch(() => ({}));
+        if (cancelled) return;
+        const list = Array.isArray(data?.data?.slots) ? data.data.slots : [];
+        setSlots(list.map((x: any) => ({ label: String(x.visitorFormattedTime), utc: String(x.startTimeUTC) })));
+      })
+      .catch(() => { if (!cancelled) setSlots([]); })
+      .finally(() => { if (!cancelled) setSlotsLoading(false); });
+    return () => { cancelled = true; };
+  }, [selectedMeetingType.id, selectedDate, userTimezone]);
+  const timeSlots = slots.map((x) => x.label);
+  useEffect(() => { setSelectedTimeSlot(null); }, [selectedMeetingType.id, selectedDate, userTimezone]);
 
   // Month navigation
   const handlePrevMonth = () => {
@@ -185,7 +192,7 @@ export default function PublicSchedulingPage({
   const getDaysInMonth = (date: Date) => {
     const year = date.getFullYear();
     const month = date.getMonth();
-    
+
     // Day of week index for 1st of month: 0 (Sun) .. 6 (Sat)
     let firstDayIndex = new Date(year, month, 1).getDay();
     // Convert to Monday = 0, Tuesday = 1, ..., Sunday = 6
@@ -234,9 +241,6 @@ export default function PublicSchedulingPage({
   // Date selection
   const handleDateClick = (dateString: string) => {
     setSelectedDate(dateString);
-    if (!selectedTimeSlot) {
-      setSelectedTimeSlot('10:00 AM');
-    }
   };
 
   // Submit Booking
@@ -251,71 +255,66 @@ export default function PublicSchedulingPage({
       return;
     }
 
+    const chosen = slots.find((x) => x.label === selectedTimeSlot);
+    if (!chosen) { setFormError('Pick a time first.'); return; }
+    if (bookingConfigured === false) { setFormError('Online booking isn’t set up yet. Please contact us directly.'); return; }
+
     setFormError(null);
     setIsSubmitting(true);
+    let booked: any;
+    try {
+      const res = await fetch('/api/availability/book', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ eventTypeSlug: selectedMeetingType.id, startTimeISO: chosen.utc, clientName: fullName.trim(), clientEmail: email.trim(), company, phone, notes: [notes, guestEmails ? `Other guests: ${guestEmails}` : ''].filter(Boolean).join('\n') }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) {
+        setFormError(data.error || 'The booking didn’t go through. Please try again.');
+        if (res.status === 409) setPhase('slot_select');
+        return;
+      }
+      booked = data.data;
+    } catch {
+      setFormError('Couldn’t reach the server. Check your connection and try again.');
+      return;
+    } finally {
+      setIsSubmitting(false);
+    }
 
-    // Latency simulation
-    await new Promise(resolve => setTimeout(resolve, 600));
-
-    const meetingId = `booking-${Date.now()}`;
-    const randMeetCode = Math.random().toString(36).substring(2, 5) + '-' + 
-                         Math.random().toString(36).substring(2, 6) + '-' + 
-                         Math.random().toString(36).substring(2, 5);
-    const meetingLink = `https://meet.google.com/${randMeetCode}`;
-
-    const formattedDateObj = new Date(selectedDate);
-    const dateReadable = formattedDateObj.toLocaleDateString('en-US', {
-      weekday: 'long',
-      month: 'long',
-      day: 'numeric',
-      year: 'numeric'
-    });
-
-    const bookingPayload = {
-      id: meetingId,
+    const meetingLink = booked.meetingLink || '';
+    const dateReadable = new Date(`${selectedDate}T12:00:00`).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+    setConfirmedBooking({
+      id: booked.id,
       title: `${selectedMeetingType.name} w/ ${fullName}`,
-      hostName: 'ACME Inc.',
+      hostName: companyName,
       visitorName: fullName,
       visitorEmail: email,
       visitorPhone: phone,
-      company: company || 'ACME Inc.',
+      company,
       meetingType: selectedMeetingType,
       dateString: selectedDate,
       dateReadable,
       timeSlot: selectedTimeSlot,
       timezone: userTimezone,
       meetingLink,
-      notes: notes || 'Product Demonstration & Strategy Audit',
-      createdAt: new Date().toISOString()
-    };
+      notes,
+      createdAt: booked.createdAt,
+    });
 
-    setConfirmedBooking(bookingPayload);
-
-    // Save locally
-    try {
-      const existing = JSON.parse(localStorage.getItem('obsidian_public_bookings') || '[]');
-      localStorage.setItem('obsidian_public_bookings', JSON.stringify([bookingPayload, ...existing]));
-    } catch (err) {
-      console.warn('Could not cache booking locally', err);
-    }
-
-    // Pass event back to parent calendar
-    const newCalendarEvent: CalendarEvent = {
-      id: meetingId,
-      title: `${selectedMeetingType.name} - ${fullName}`,
-      time: `${selectedDate} ${selectedTimeSlot}`,
-      type: selectedMeetingType.durationMinutes <= 15 ? 'call' : 'demo',
-      contact: fullName,
-      status: 'upcoming',
-      meetingLink,
-      invitees: email + (guestEmails ? `, ${guestEmails}` : '')
-    };
-
+    // The booking is saved on the server (host's scheduled meetings); also show it in this session's calendar.
     if (onBookingCreated) {
-      onBookingCreated(newCalendarEvent);
+      onBookingCreated({
+        id: booked.id,
+        title: `${selectedMeetingType.name} - ${fullName}`,
+        time: `${selectedDate} ${selectedTimeSlot}`,
+        type: selectedMeetingType.durationMinutes <= 15 ? 'call' : 'demo',
+        contact: fullName,
+        status: 'upcoming',
+        meetingLink,
+        invitees: email + (guestEmails ? `, ${guestEmails}` : '')
+      });
     }
-
-    setIsSubmitting(false);
     setPhase('confirmation');
   };
 
@@ -348,16 +347,17 @@ END:VCALENDAR`;
   const getGoogleCalendarUrl = () => {
     if (!confirmedBooking) return '#';
     const text = encodeURIComponent(confirmedBooking.title);
-    const details = encodeURIComponent(`Meeting Link: ${confirmedBooking.meetingLink}\n\nHost: ACME Inc.\nDescription: ${confirmedBooking.notes}`);
+    const details = encodeURIComponent(`Meeting Link: ${confirmedBooking.meetingLink}\n\nHost: ${companyName}\nDescription: ${confirmedBooking.notes}`);
     const location = encodeURIComponent(confirmedBooking.meetingLink);
     return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${text}&details=${details}&location=${location}`;
   };
 
-  const selectedTzObj = TIMEZONES.find(t => t.tz === userTimezone) || TIMEZONES[0];
+  const tzOptions = TIMEZONES.some(t => t.tz === userTimezone) ? TIMEZONES : [{ code: userTimezone, name: userTimezone, tz: userTimezone }, ...TIMEZONES];
+  const selectedTzObj = tzOptions.find(t => t.tz === userTimezone) || tzOptions[0];
 
   return (
-    <div 
-      id="obsidian-reservation-page-root" 
+    <div
+      id="obsidian-reservation-page-root"
       className={`w-full font-sans antialiased text-slate-800 ${
         embedded ? 'p-1 sm:p-4 bg-transparent' : 'p-4 sm:p-10 min-h-screen bg-slate-50 flex flex-col items-center justify-center'
       }`}
@@ -377,19 +377,19 @@ END:VCALENDAR`;
 
       {/* 2. Main Reservation White Card */}
       <div className="w-full max-w-4xl mx-auto bg-white rounded-3xl border border-slate-200/90 shadow-xl overflow-hidden grid grid-cols-1 md:grid-cols-12 min-h-[580px]">
-        
+
         {/* ============================================== */}
         {/* LEFT COLUMN (md:col-span-5): Host Branding & Details */}
         {/* ============================================== */}
         <div className="md:col-span-5 p-6 sm:p-8 border-b md:border-b-0 md:border-r border-slate-100 flex flex-col justify-between bg-white relative">
           <div className="space-y-6">
-            
+
             {/* Logo folded badge or Custom Uploaded Logo */}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 {companyLogoUrl ? (
-                  <img 
-                    src={companyLogoUrl} 
+                  <img
+                    src={companyLogoUrl}
                     alt={companyName}
                     className="h-12 w-12 rounded-2xl object-cover border border-slate-200 shadow-md"
                   />
@@ -426,7 +426,7 @@ END:VCALENDAR`;
             {/* Company Name & Page Title */}
             <div>
               <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">
-                {companyName}
+                {companyName || 'Book a meeting'}
               </p>
               <h2 className="text-2xl font-black text-slate-800 tracking-tight leading-snug">
                 {selectedMeetingType.name}
@@ -457,11 +457,16 @@ END:VCALENDAR`;
 
             {/* Meeting Type Selector Buttons */}
             <div className="pt-2">
+              {(bookingConfigured === false || loadError) && (
+                <div role="status" className="mb-3 p-3 rounded-xl border border-amber-200 bg-amber-50 text-[11px] text-amber-900">
+                  {loadError || 'Online booking isn’t set up yet: you can look at free times, but booking is turned off until an administrator connects a host calendar.'}
+                </div>
+              )}
               <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
                 Switch Meeting Type
               </label>
               <div className="space-y-1.5">
-                {MEETING_TYPES.map((type) => {
+                {meetingTypes.map((type) => {
                   const isSelected = selectedMeetingType.id === type.id;
                   return (
                     <button
@@ -471,8 +476,8 @@ END:VCALENDAR`;
                         setPhase('slot_select');
                       }}
                       className={`w-full text-left px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-between cursor-pointer border ${
-                        isSelected 
-                          ? 'bg-blue-50 border-blue-600/40 text-blue-600' 
+                        isSelected
+                          ? 'bg-blue-50 border-blue-600/40 text-blue-600'
                           : 'bg-slate-50/80 border-slate-200/80 text-slate-700 hover:bg-slate-100'
                       }`}
                     >
@@ -507,7 +512,7 @@ END:VCALENDAR`;
         {/* ============================================== */}
         <div className="md:col-span-7 p-6 sm:p-8 flex flex-col justify-between bg-white">
           <AnimatePresence mode="wait">
-            
+
             {/* PHASE 1: Date & Time Slot Picker */}
             {phase === 'slot_select' && (
               <motion.div
@@ -604,7 +609,7 @@ END:VCALENDAR`;
                         onChange={(e) => setUserTimezone(e.target.value)}
                         className="bg-transparent text-xs font-bold text-slate-800 border-none outline-none cursor-pointer pr-4 hover:text-blue-600 transition-colors"
                       >
-                        {TIMEZONES.map(t => (
+                        {tzOptions.map(t => (
                           <option key={t.tz} value={t.tz} className="bg-white text-slate-900">
                             {t.name} ({currentTimeFormatted})
                           </option>
@@ -615,7 +620,7 @@ END:VCALENDAR`;
 
                   {/* Available Time Slots Section (Appears below when date selected) */}
                   {selectedDate && (
-                    <motion.div 
+                    <motion.div
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
                       className="mt-5 pt-4 border-t border-slate-100 space-y-2"
@@ -627,6 +632,8 @@ END:VCALENDAR`;
                         </span>
                       </div>
 
+                      {slotsLoading && <p className="text-xs text-slate-500">Loading free times…</p>}
+                      {!slotsLoading && timeSlots.length === 0 && <p className="text-xs text-slate-500">No free times on this day. Try another date.</p>}
                       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                         {timeSlots.map(slot => {
                           const isSelectedSlot = selectedTimeSlot === slot;
@@ -699,8 +706,8 @@ END:VCALENDAR`;
 
                     <div>
                       <label className="font-bold text-slate-700 block mb-1">Full Name *</label>
-                      <input 
-                        type="text" 
+                      <input
+                        type="text"
                         required
                         placeholder="John Doe"
                         value={fullName}
@@ -711,8 +718,8 @@ END:VCALENDAR`;
 
                     <div>
                       <label className="font-bold text-slate-700 block mb-1">Work Email Address *</label>
-                      <input 
-                        type="email" 
+                      <input
+                        type="email"
                         required
                         placeholder="john@company.com"
                         value={email}
@@ -724,8 +731,8 @@ END:VCALENDAR`;
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
                         <label className="font-bold text-slate-700 block mb-1">Company / Org</label>
-                        <input 
-                          type="text" 
+                        <input
+                          type="text"
                           placeholder="Acme Corp"
                           value={company}
                           onChange={(e) => setCompany(e.target.value)}
@@ -734,8 +741,8 @@ END:VCALENDAR`;
                       </div>
                       <div>
                         <label className="font-bold text-slate-700 block mb-1">Phone Number</label>
-                        <input 
-                          type="text" 
+                        <input
+                          type="text"
                           placeholder="+1 (555) 019-2834"
                           value={phone}
                           onChange={(e) => setPhone(e.target.value)}
@@ -746,7 +753,7 @@ END:VCALENDAR`;
 
                     <div>
                       <label className="font-bold text-slate-700 block mb-1">Additional Notes / Preparation Goals</label>
-                      <textarea 
+                      <textarea
                         rows={2}
                         placeholder="Please share anything that will help prepare for our meeting..."
                         value={notes}
@@ -802,9 +809,9 @@ END:VCALENDAR`;
                     <p><span className="font-bold text-slate-500">Location:</span> {confirmedBooking.meetingType.location}</p>
                     <div className="pt-2 border-t border-slate-200/80 flex items-center justify-between">
                       <span className="font-mono text-[11px] text-blue-600 truncate mr-2">{confirmedBooking.meetingLink}</span>
-                      <a 
-                        href={confirmedBooking.meetingLink} 
-                        target="_blank" 
+                      <a
+                        href={confirmedBooking.meetingLink}
+                        target="_blank"
                         rel="noreferrer"
                         className="px-2.5 py-1 rounded-lg bg-blue-600 text-white font-bold text-[11px] flex items-center gap-1 shrink-0"
                       >
@@ -863,7 +870,7 @@ END:VCALENDAR`;
                 <Sparkles className="h-5 w-5 text-blue-600" />
                 <h3 className="font-extrabold text-base text-slate-800">Customize Company Logo & Branding</h3>
               </div>
-              <button 
+              <button
                 onClick={() => setShowEditBrandingModal(false)}
                 className="p-1 rounded-xl text-slate-400 hover:bg-slate-100"
               >
@@ -874,8 +881,8 @@ END:VCALENDAR`;
             <form onSubmit={handleSaveBranding} className="space-y-4 text-xs">
               <div>
                 <label className="font-extrabold text-slate-700 block mb-1">Company / Organization Name</label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   required
                   value={tempCompanyName}
                   onChange={(e) => setTempCompanyName(e.target.value)}
@@ -887,8 +894,8 @@ END:VCALENDAR`;
               <div>
                 <label className="font-extrabold text-slate-700 block mb-1">Company Logo Image (URL or Upload)</label>
                 <div className="space-y-2">
-                  <input 
-                    type="url" 
+                  <input
+                    type="url"
                     value={tempLogoUrl}
                     onChange={(e) => setTempLogoUrl(e.target.value)}
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 outline-none focus:bg-white focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600"
@@ -896,8 +903,8 @@ END:VCALENDAR`;
                   />
                   <div className="flex items-center gap-2">
                     <span className="text-[10px] text-slate-400 font-bold">OR UPLOAD FILE:</span>
-                    <input 
-                      type="file" 
+                    <input
+                      type="file"
                       accept="image/*"
                       onChange={handleLogoFileUpload}
                       className="text-xs text-slate-500 file:mr-2 file:py-1 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-extrabold file:bg-blue-50 file:text-blue-600 hover:file:bg-blue-100 cursor-pointer"
@@ -911,8 +918,8 @@ END:VCALENDAR`;
                   <img src={tempLogoUrl} alt="Logo preview" className="h-10 w-10 object-cover rounded-xl border border-slate-200" />
                   <div className="flex-1">
                     <p className="font-bold text-slate-800 text-xs">Custom Logo Loaded</p>
-                    <button 
-                      type="button" 
+                    <button
+                      type="button"
                       onClick={() => setTempLogoUrl('')}
                       className="text-[10px] font-bold text-rose-600 hover:underline cursor-pointer"
                     >
