@@ -531,6 +531,46 @@ registerInboxTaskMirror(async (orgId: string, t: Task) => {
   broadcastEvent('task_updated', { conversationId: conv.id, task: t }, orgId);
   await flushInbox(orgId);
 });
+/** Conversations where this email is the customer (visitor or participant). */
+function conversationsForEmail(orgId: string, email: string) {
+  const e = email.trim().toLowerCase();
+  return [...CONVERSATIONS.values()].filter((c) => c.orgId === orgId && (
+    String(c.visitorMetadata?.email || '').toLowerCase() === e
+    || (c.participants || []).some((p: any) => String(p?.email || '').toLowerCase() === e && p?.role !== 'admin')));
+}
+
+/** Data-subject access: every inbox conversation and message about this email (compliance export). */
+export async function inboxRecordsForEmail(orgId: string, email: string) {
+  await hydrateInbox(orgId);
+  return conversationsForEmail(orgId, email).map((c) => ({
+    conversation: { id: c.id, title: c.title, channel: c.channel, type: c.type, status: c.status, createdAt: c.createdAt, updatedAt: c.updatedAt, visitorMetadata: c.visitorMetadata || null },
+    messages: (MESSAGES.get(c.id) || []).filter((m) => !m.isInternalNote).map((m) => ({ id: m.id, at: m.createdAt, from: m.senderType, senderName: m.senderName, content: m.content })),
+  }));
+}
+
+/**
+ * Data-subject erasure for the inbox: the customer's name, email and visitor details are removed and the
+ * text of their own messages is replaced. Team replies and the conversation itself stay (with no personal data).
+ * With apply=false nothing changes; the counts say what would.
+ */
+export async function anonymizeInboxForEmail(orgId: string, email: string, apply: boolean) {
+  await hydrateInbox(orgId);
+  const e = email.trim().toLowerCase();
+  const convs = conversationsForEmail(orgId, email);
+  let messages = 0;
+  for (const c of convs) {
+    const mine = (MESSAGES.get(c.id) || []).filter((m: any) => m.senderType === 'visitor' || String(m.senderEmail || '').toLowerCase() === e);
+    messages += mine.length;
+    if (!apply) continue;
+    for (const m of mine as any[]) { m.content = '[removed at the person’s request]'; m.senderName = 'Removed contact'; delete m.senderEmail; delete m.attachments; }
+    if (c.visitorMetadata) (c as any).visitorMetadata = { anonymized: true };
+    c.participants = (c.participants || []).map((p: any) => (String(p?.email || '').toLowerCase() === e || p?.role === 'visitor') ? { ...p, name: 'Removed contact', email: '', avatar: '' } : p);
+    if (c.title && c.title.toLowerCase().includes(e)) c.title = 'Conversation (contact removed)';
+    (c as any).anonymizedAt = new Date().toISOString();
+  }
+  if (apply && convs.length) await flushInbox(orgId);
+  return { conversations: convs.length, messages };
+}
 
 // Load the caller's organization before any route runs, and save its changes afterwards.
 router.use(async (req, res, next) => {

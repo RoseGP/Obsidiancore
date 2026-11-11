@@ -1,3 +1,4 @@
+import SecurityPolicyGuard from './components/settings/SecurityPolicyGuard';
 import React, { useState, useCallback } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { DatabaseProvider } from './context/DatabaseContext';
@@ -440,6 +441,8 @@ function AppMain() {
     <div className="min-h-screen flex bg-[var(--app-bg)] text-[var(--text)]">
       {/* Accepts ?invite=<token> links once the user is signed in */}
       <InvitationAcceptor onResult={showToast} />
+      {/* Explains two-step / session-age refusals and applies the organization's idle sign-out */}
+      <SecurityPolicyGuard onOpenSecurity={() => navigateTo('settings:security')} />
 
       {/* Session Lock Screen Overlay */}
       {isSessionLocked && <SessionLockScreen />}

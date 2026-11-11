@@ -14,10 +14,14 @@
 import crypto from 'node:crypto';
 import { assertId, getDocStore, newId, type DocStore } from '../data/docStore';
 
-export const ROLES = ['OWNER', 'ADMIN', 'MANAGER', 'SALES_REP', 'MARKETER', 'READ_ONLY'] as const;
+export const ROLES = ['OWNER', 'ADMIN', 'MANAGER', 'SALES_REP', 'MARKETER', 'SUPPORT_AGENT', 'READ_ONLY', 'GUEST'] as const;
 export type Role = typeof ROLES[number];
 
-const RANK: Record<Role, number> = { OWNER: 5, ADMIN: 4, MANAGER: 3, SALES_REP: 2, MARKETER: 2, READ_ONLY: 1 };
+/**
+ * Coarse rank used by requirePermission(). GUEST has rank 0: it passes no rank check at all, so a guest
+ * can only reach routes that explicitly allow it through requireAccess() (see server/security/permissions.ts).
+ */
+const RANK: Record<Role, number> = { OWNER: 5, ADMIN: 4, MANAGER: 3, SALES_REP: 2, MARKETER: 2, SUPPORT_AGENT: 2, READ_ONLY: 1, GUEST: 0 };
 
 /** What each action requires. Checked on the server for every request. */
 export type Action = 'read' | 'write' | 'manage_records' | 'manage_members' | 'manage_org';

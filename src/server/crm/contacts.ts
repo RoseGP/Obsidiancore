@@ -16,6 +16,7 @@
  */
 import { assertId, getDocStore, newId, type DocStore } from '../data/docStore';
 import { TenancyError } from '../tenancy/orgs';
+import { recordAudit } from '../audit/auditLog';
 import { inboxMessagesByEmail } from '../../routes/messagingPlatform';
 
 export const normEmail = (v: unknown) => (typeof v === 'string' ? v.trim().toLowerCase() : '');
@@ -151,7 +152,7 @@ export class ContactService {
   async softDelete(id: string, actor: { userId: string; name: string }) {
     const cur = await this.st.get(contactPath(this.orgId, id));
     if (!live(cur)) throw new TenancyError(404, 'not_found', 'Contact not found.');
-    // TODO(audit): record this deletion with recordAudit() once the audit log service exists.
+    await recordAudit(this.orgId, { actorId: actor.userId, action: 'contact.deleted', target: { type: 'contact', id }, meta: { soft: true } });
     await this.st.update(contactPath(this.orgId, id), { deletedAt: nowIso(), deletedBy: actor.userId, updatedAt: nowIso() });
     await this.feed({ type: 'contact_deleted', title: 'Contact deleted', description: cur.name || cur.email, actor: actor.name, targetId: id, targetType: 'contact' });
     return { id };
@@ -197,7 +198,7 @@ export class ContactService {
     if (!live(keep)) throw new TenancyError(404, 'not_found', 'The contact to keep wasn’t found.');
     const drop = await Promise.all(ids.map((i) => this.st.get(contactPath(this.orgId, i))));
     if (drop.some((d) => !live(d))) throw new TenancyError(404, 'not_found', 'One of the contacts to merge wasn’t found.');
-    // TODO(audit): record this merge with recordAudit() once the audit log service exists.
+    await recordAudit(this.orgId, { actorId: actor.userId, action: 'contact.merged', target: { type: 'contact', id: keepId }, meta: { mergedIds: ids } });
 
     const merged: Record<string, any> = { ...keep };
     for (const d of drop) for (const k of ['name', 'email', 'phone', 'title', 'company', 'companyId', 'ownerId', 'owner', 'category', 'notes', 'originLeadId']) if (!merged[k] && d[k]) merged[k] = d[k];
@@ -297,7 +298,7 @@ export class ContactService {
   async softDeleteCompany(id: string, actor: { userId: string; name: string }) {
     const cur = await this.st.get(companyPath(this.orgId, id));
     if (!live(cur)) throw new TenancyError(404, 'not_found', 'Company not found.');
-    // TODO(audit): record this deletion with recordAudit() once the audit log service exists.
+    await recordAudit(this.orgId, { actorId: actor.userId, action: 'company.deleted', target: { type: 'company', id }, meta: { soft: true } });
     await this.st.update(companyPath(this.orgId, id), { deletedAt: nowIso(), deletedBy: actor.userId, updatedAt: nowIso() });
     await this.feed({ type: 'company_deleted', title: 'Company deleted', description: cur.name, actor: actor.name, targetId: id, targetType: 'company' });
     return { id };

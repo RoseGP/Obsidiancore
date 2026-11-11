@@ -6,12 +6,12 @@ import React, { useCallback, useEffect, useState } from 'react';
 import SubscriptionSettings from './meetings/SubscriptionSettings';
 import { Building2, Copy, KeyRound, Loader2, Mail, RefreshCw, Trash2, UserPlus, Users } from 'lucide-react';
 
-type Role = 'OWNER' | 'ADMIN' | 'MANAGER' | 'SALES_REP' | 'MARKETER' | 'READ_ONLY';
+type Role = 'OWNER' | 'ADMIN' | 'MANAGER' | 'SALES_REP' | 'MARKETER' | 'SUPPORT_AGENT' | 'READ_ONLY' | 'GUEST';
 interface Member { userId: string; role: Role; email: string; name: string; joinedAt: string }
 interface OrgRow { id: string; name: string; role: Role; isDefault: boolean }
 
 const ROLE_LABEL: Record<Role, string> = {
-  OWNER: 'Owner', ADMIN: 'Admin', MANAGER: 'Manager', SALES_REP: 'Sales rep', MARKETER: 'Marketer', READ_ONLY: 'Read only',
+  OWNER: 'Owner', ADMIN: 'Admin', MANAGER: 'Manager', SALES_REP: 'Sales rep', MARKETER: 'Marketer', SUPPORT_AGENT: 'Support agent', READ_ONLY: 'Read only', GUEST: 'Guest',
 };
 const ROLE_HELP: Record<Role, string> = {
   OWNER: 'Everything, including owner roles',
@@ -19,7 +19,9 @@ const ROLE_HELP: Record<Role, string> = {
   MANAGER: 'Bulk changes and deletions',
   SALES_REP: 'Create and edit records',
   MARKETER: 'Create and edit records',
+  SUPPORT_AGENT: 'Inbox, tasks and meetings; view other records',
   READ_ONLY: 'View only',
+  GUEST: 'Only meetings they are invited to',
 };
 
 async function api<T = any>(path: string, init?: RequestInit): Promise<T> {

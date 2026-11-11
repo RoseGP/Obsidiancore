@@ -1,3 +1,4 @@
+import TwoStepSignInPrompt from './TwoStepSignInPrompt';
 import React, { useState, useMemo } from 'react';
 import { 
   ShieldCheck, 
@@ -156,7 +157,8 @@ export default function AuthFlowView({
       await loginWithEmail(email, password, rememberMe);
       if (onSuccess) onSuccess();
     } catch (err: any) {
-      setLocalError(err.message || 'Invalid email or password.');
+      // Two-step sign-in: the code prompt takes over (TwoStepSignInPrompt).
+      if (err?.code !== 'mfa_required') setLocalError(err.message || 'Invalid email or password.');
     } finally {
       setIsSubmitting(false);
     }
@@ -170,7 +172,7 @@ export default function AuthFlowView({
       await loginWithGoogle();
       if (onSuccess) onSuccess();
     } catch (err: any) {
-      if (err.code !== 'auth/popup-closed-by-user') {
+      if (err.code !== 'auth/popup-closed-by-user' && err.code !== 'mfa_required') {
         setLocalError(err.message || 'Google sign-in could not be completed.');
       }
     } finally {
@@ -185,6 +187,7 @@ export default function AuthFlowView({
 
   return (
     <div className={`min-h-screen w-full flex items-center justify-center p-4 sm:p-6 lg:p-8 bg-[var(--obsidian-0)] text-neutral-100 relative overflow-hidden select-none`}>
+      <TwoStepSignInPrompt onSuccess={onSuccess} />
       {/* Background Decorative Ambient Gradients */}
       <div className="absolute top-1/4 -left-48 w-96 h-96 bg-indigo-600/15 rounded-full blur-[128px] pointer-events-none" />
       <div className="absolute bottom-1/4 -right-48 w-96 h-96 bg-purple-600/15 rounded-full blur-[128px] pointer-events-none" />

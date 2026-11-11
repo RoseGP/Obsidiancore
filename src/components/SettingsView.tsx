@@ -3,7 +3,9 @@
  *   Account        profile saved to your user record; presence
  *   Organization   members, invitations, roles, keys, meeting plan (server-enforced)
  *   Notifications  notification preferences
- *   Security       password change (Firebase), sign out on all devices
+ *   Security       password change (Firebase), sign out on all devices, two-step sign-in, organization rules
+ *   Roles & permissions  the server's permission table (read-only)
+ *   Privacy & compliance (owners/admins) data requests, consent, retention, access reviews, incidents, audit log
  *   Connected accounts → managed in Social Planner (server-side, encrypted tokens)
  *   Real-time sync connection status
  *   Integrations, Plan administration (platform admins only)
@@ -19,9 +21,13 @@ import IntegrationsSettingsSection from './IntegrationsSettingsSection';
 import NotificationPreferencesModal from './notifications/NotificationPreferencesModal';
 import OrganizationSettings from './OrganizationSettings';
 import MeetingAdminPanel, { usePlatformAdmin } from './meetings/MeetingAdminPanel';
+import { TwoStepCard, OrgSecurityPolicyCard } from './settings/TwoStepSettings';
+import RolesPermissionsTable from './settings/RolesPermissionsTable';
+import ComplianceCenter from './settings/ComplianceCenter';
+import { sapi, isAdminRole, type PolicyResponse } from './settings/securityApi';
 import {
   User, Building2, Bell, ShieldCheck, Share2, Wifi, Layers, Sliders, CheckCircle2, AlertCircle,
-  RefreshCw, Activity, Users, Eye, EyeOff, LogOut, Monitor, ArrowRight,
+  RefreshCw, Activity, Users, Eye, EyeOff, LogOut, Monitor, ArrowRight, KeySquare, Scale,
 } from 'lucide-react';
 
 export type SettingsTab =
@@ -35,6 +41,8 @@ export type SettingsTab =
   | 'realtime-sync'
   | 'integrations'
   | 'roles-rbac'
+  | 'roles'
+  | 'compliance'
   | 'social-db'
   | 'plan-admin'
   | 'general';
@@ -50,7 +58,8 @@ const primaryBtn = 'px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 tex
 
 /** Old tab names (links, bookmarks) map onto the tabs that exist now. */
 function normalizeTab(tab: SettingsTab): SettingsTab {
-  if (tab === 'general' || tab === 'billing' || tab === 'roles-rbac') return 'workspace';
+  if (tab === 'general' || tab === 'billing') return 'workspace';
+  if (tab === 'roles-rbac') return 'roles';
   if (tab === 'sessions') return 'security';
   if (tab === 'social-db') return 'channels';
   return tab;
@@ -76,6 +85,9 @@ export default function SettingsView({ defaultTab = 'account' }: SettingsViewPro
   const realtimeSync = useRealtimeSync();
   const { setActiveView } = useCommand();
   const isPlatformAdmin = usePlatformAdmin();
+  // Your role in the current organization (for showing admin-only tabs; the server enforces access).
+  const [orgRole, setOrgRole] = useState<string | undefined>();
+  useEffect(() => { sapi<PolicyResponse>('/api/security/policy').then((r) => setOrgRole(r.me.role)).catch(() => setOrgRole(undefined)); }, []);
 
   const [notice, setNotice] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
   const say = (kind: 'ok' | 'error', text: string) => {
@@ -162,6 +174,8 @@ export default function SettingsView({ defaultTab = 'account' }: SettingsViewPro
     { id: 'channels' as SettingsTab, label: 'Connected accounts', icon: Share2 },
     { id: 'realtime-sync' as SettingsTab, label: 'Live updates', icon: Wifi },
     { id: 'integrations' as SettingsTab, label: 'Integrations', icon: Layers },
+    { id: 'roles' as SettingsTab, label: 'Roles & permissions', icon: KeySquare },
+    ...(isAdminRole(orgRole) ? [{ id: 'compliance' as SettingsTab, label: 'Privacy & compliance', icon: Scale }] : []),
     // Platform administrators only (PLATFORM_ADMIN_USER_IDS); the server enforces it too.
     ...(isPlatformAdmin ? [{ id: 'plan-admin' as SettingsTab, label: 'Plan administration', icon: Sliders }] : []),
   ];
@@ -329,10 +343,8 @@ export default function SettingsView({ defaultTab = 'account' }: SettingsViewPro
             </div>
           </div>
 
-          <div className={card}>
-            <h3 className="text-base font-bold text-white">Two-step verification</h3>
-            <p className="text-xs text-neutral-400">Not available yet. If you sign in with Google, turn on 2-Step Verification in your Google account to protect this sign-in too.</p>
-          </div>
+          <TwoStepCard />
+          <OrgSecurityPolicyCard />
         </div>
       )}
 
@@ -391,6 +403,10 @@ export default function SettingsView({ defaultTab = 'account' }: SettingsViewPro
       )}
 
       {activeTab === 'integrations' && <IntegrationsSettingsSection />}
+
+      {activeTab === 'roles' && <RolesPermissionsTable />}
+
+      {activeTab === 'compliance' && <ComplianceCenter />}
 
       {activeTab === 'plan-admin' && isPlatformAdmin && <MeetingAdminPanel />}
     </div>

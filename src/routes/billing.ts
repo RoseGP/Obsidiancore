@@ -25,7 +25,8 @@ import { invoicePdfFilename, renderInvoicePdf } from '../features/invoicing/serv
 import { isEmailConfigured, sendInvoiceEmail } from '../features/invoicing/server/emailTransport';
 import { loadSnapshot, withSnapshot } from '../features/invoicing/server/store';
 import { identify } from '../features/social-accounts/server/auth';
-import { resolveTenant, sendError } from '../server/tenancy/middleware';
+import { resolveTenant, sendError, tenantAccessViolation } from '../server/tenancy/middleware';
+import { validateImageDataUrl } from '../server/security/uploads';
 import { getDocStore } from '../server/data/docStore';
 
 const router = Router();
@@ -40,7 +41,7 @@ const ROLE_MAP: Record<string, CurrentUser['role']> = {
 
 /** Organization roles → billing roles. */
 const ORG_ROLE_MAP: Record<string, CurrentUser['role']> = {
-  OWNER: 'owner', ADMIN: 'admin', MANAGER: 'accountant', SALES_REP: 'accountant', MARKETER: 'viewer', READ_ONLY: 'viewer',
+  OWNER: 'owner', ADMIN: 'admin', MANAGER: 'accountant', SALES_REP: 'accountant', MARKETER: 'viewer', SUPPORT_AGENT: 'viewer', READ_ONLY: 'viewer',
 };
 
 /**
@@ -68,6 +69,9 @@ async function requireAuth(req: AuthedRequest, res: Response, next: NextFunction
     try {
       (req as any).accountUser = who;
       const t = await resolveTenant(req);
+      // Two-step sign-in / session policy, and guests (outside collaborators) have no billing access.
+      const v = await tenantAccessViolation(req, t);
+      if (v) return res.status(v.status).json({ success: false, code: v.code, error: v.error });
       await importPersonalWorkspace(t.orgId, who.id);
       req.billing = { businessId: t.orgId, user: { id: t.userId, email: t.email, name: t.name || t.email || 'Member', role: ORG_ROLE_MAP[t.role] ?? 'viewer' } };
       return next();
@@ -130,7 +134,8 @@ const str = (max = 500) => z.string().max(max);
 const dec = z.string().max(24);
 const date = z.string().regex(/^(\d{4}-\d{2}-\d{2})?$/);
 const addr = z.object({ line1: str(200), line2: str(200), city: str(120), state: str(120), postalCode: str(32), country: str(120) });
-const image = z.string().max(1_000_000).refine((v) => v === '' || /^data:image\/(png|jpeg);base64,/.test(v), 'Images must be PNG or JPEG data URLs');
+// Logo and signature images: real PNG/JPEG bytes (checked, not just the prefix), at most 750 KB.
+const image = z.string().max(1_100_000).superRefine((v, ctx) => { const r = validateImageDataUrl(v); if (r.ok === false) ctx.addIssue({ code: z.ZodIssueCode.custom, message: r.reason }); });
 
 const invoiceSchema = z.object({
   id: str(64), number: str(32), kind: z.enum(['standard', 'split', 'recurring']), lifecycle: z.enum(['draft', 'sent', 'viewed', 'void']),

@@ -19,6 +19,9 @@ import { TaskService } from '../server/crm/tasks';
 import { existingForLead } from '../server/crm/contacts';
 import { requirePermission, requireReadOrWrite, requireTenant, sendError, tenantOf } from '../server/tenancy/middleware';
 import { TenancyError } from '../server/tenancy/orgs';
+import { canAccess, requireAccess } from '../server/security/permissions';
+import { auditFromRequest, hashIp } from '../server/audit/auditLog';
+import { CONSENT_PURPOSES, recordConsent } from '../server/compliance/records';
 
 const router = Router();
 
@@ -51,6 +54,21 @@ const captureLimiter = rateLimit({
   message: { success: false, error: 'Too many submissions. Please try again later.' },
 });
 
+/**
+ * Consent sent with the website form: `consent: true` (general data processing) or an object of purposes,
+ * e.g. { marketing_email: true, sms: false }. Recorded per purpose with the form as source. Never throws.
+ */
+async function recordFormConsent(orgId: string, email: string, consent: unknown, sourceUrl: string, ip?: string) {
+  try {
+    const entries: Array<[string, boolean]> = consent === true ? [['data_processing', true]]
+      : consent && typeof consent === 'object' ? Object.entries(consent as Record<string, unknown>).filter(([k, v]) => (CONSENT_PURPOSES as readonly string[]).includes(k) && typeof v === 'boolean') as Array<[string, boolean]>
+      : [];
+    for (const [purpose, granted] of entries.slice(0, CONSENT_PURPOSES.length)) {
+      await recordConsent(orgId, { email, purpose: purpose as any, status: granted ? 'granted' : 'withdrawn', source: `website_form${sourceUrl ? `: ${sourceUrl.slice(0, 100)}` : ''}`, note: '' }, { ipHash: hashIp(ip) });
+    }
+  } catch (err) { console.warn('[leads.capture] consent not recorded:', (err as any)?.code || (err as any)?.name || 'error'); }
+}
+
 router.post('/capture', captureLimiter, async (req: Request, res: Response) => {
   try {
     const b = req.body || {};
@@ -74,6 +92,7 @@ router.post('/capture', captureLimiter, async (req: Request, res: Response) => {
     const inquiryText = str(b.message, 4000) || str(b.need, 4000) || 'Inbound website lead submission.';
     const sourceUrl = str(b.sourceUrl, 500);
 
+    if (b.consent !== undefined) await recordFormConsent(orgId, cleanEmail, b.consent, sourceUrl, req.ip);
     const existing = (await repo.listLeads()).find((l) =>
       (l.email && String(l.email).toLowerCase() === cleanEmail) || (cleanPhone && digits(l.phone) && digits(l.phone) === digits(cleanPhone)));
 
@@ -123,6 +142,24 @@ router.post('/capture', captureLimiter, async (req: Request, res: Response) => {
 // Everything below: signed-in member of the organization
 // ---------------------------------------------------------------------------
 router.use(requireTenant, requireReadOrWrite);
+
+// GET /api/leads/export: CSV of the organization's leads (leads › export; managers and admins). Audited.
+const csvCell = (v: unknown) => {
+  let s = v === undefined || v === null ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v);
+  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`; // spreadsheet formula injection
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+};
+router.get('/export', requireAccess('leads', 'export'), async (req, res) => {
+  try {
+    const leads = await (await repoFor(req)).listLeads();
+    const cols = ['id', 'name', 'email', 'phone', 'company', 'title', 'source', 'status', 'owner', 'score', 'createdAt', 'updatedAt'];
+    const csv = [cols.join(','), ...leads.map((l: any) => cols.map((c) => csvCell(l[c])).join(','))].join('\n') + '\n';
+    await auditFromRequest(req, 'data.exported', { type: 'leads' }, { rows: leads.length, format: 'csv' });
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="leads-${new Date().toISOString().slice(0, 10)}.csv"`);
+    res.send(csv);
+  } catch (err) { sendError(res, err, 'leads.export'); }
+});
 
 // GET /api/leads: search, filter, sort
 router.get('/', async (req: Request, res: Response) => {
@@ -283,7 +320,9 @@ router.post('/bulk', requirePermission('manage_records'), async (req, res) => {
   try {
     const { action, leadIds } = req.body || {};
     if (action === 'delete') {
+      if (!canAccess(tenantOf(req).role, 'leads', 'delete')) return res.status(403).json({ success: false, code: 'forbidden', error: 'Your role doesn’t allow this action. Ask an admin for access.' });
       const r = await bulkApply(req, leadIds, (repo, id) => repo.deleteLead(id));
+      if (r.updated.length) await auditFromRequest(req, 'record.deleted', { type: 'lead' }, { count: r.updated.length, ids: r.updated });
       if (r.updated.length) await r.repo.logActivity({ type: 'lead_deleted', title: 'Bulk Lead Deletion', description: `Deleted ${r.updated.length} leads.`, actor: actorOf(req) });
       return res.json({ success: true, action, count: r.updated.length, skipped: r.skipped });
     }
@@ -453,12 +492,13 @@ router.post('/:id/convert', async (req, res) => {
 });
 
 // DELETE /api/leads/:id (manager and above). Deletes the lead with its tasks and activity.
-router.delete('/:id', requirePermission('manage_records'), async (req, res) => {
+router.delete('/:id', requirePermission('manage_records'), requireAccess('leads', 'delete'), async (req, res) => {
   try {
     const repo = await repoFor(req);
     const lead = await repo.getLead(req.params.id);
     if (!lead) return res.status(404).json({ success: false, error: 'Lead not found.' });
     await repo.deleteLead(lead.id);
+    await auditFromRequest(req, 'record.deleted', { type: 'lead', id: lead.id }, { count: 1 });
     await repo.logActivity({ type: 'lead_deleted', title: 'Lead Deleted', description: `Deleted lead: "${lead.name}" (${lead.company || 'Direct'}).`, actor: actorOf(req), targetId: lead.id });
     res.json({ success: true, id: lead.id });
   } catch (err) { sendError(res, err, 'leads.delete'); }
