@@ -11,7 +11,7 @@ import {
   // Used by the transcript tab and summary modal but previously never imported (ReferenceError at render).
   Save, Activity, UserX
 } from 'lucide-react';
-import { NotebookPen } from 'lucide-react';
+import { NotebookPen, Signal, SignalLow, SignalZero, Circle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { jsPDF } from 'jspdf';
 import { 
@@ -135,8 +135,16 @@ export default function VideoMeetingWorkspace({
     refreshDevices,
     testSpeakerSound,
     meetingNotes,
-    notesOutcome
+    notesOutcome,
+    networkQuality,
+    recordingConsentRequested,
+    answerRecordingConsent,
+    meetingIsBeingRecorded,
+    recordingMode,
+    recordingNotice,
   } = useMeetingSession();
+  const [consentBusy, setConsentBusy] = React.useState(false);
+  const [consentDeclined, setConsentDeclined] = React.useState(false);
 
   // Sidebar Tab state ('chat' | 'greet' | 'participants' | 'crm' | 'transcript')
   const [activeSidebarTab, setActiveSidebarTab] = useState<'chat' | 'greet' | 'participants' | 'crm' | 'transcript' | 'notes'>('greet');
@@ -642,6 +650,29 @@ export default function VideoMeetingWorkspace({
 
   return (
     <div className="obsidian w-full h-screen bg-[var(--obsidian-0)] text-neutral-100 flex flex-col overflow-hidden select-none font-sans">
+      {/* Recording consent: nothing is recorded until everyone in the meeting agrees. */}
+      {recordingConsentRequested && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/60" role="dialog" aria-modal="true" aria-labelledby="greet-consent-title">
+          <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[var(--obsidian-1)] p-5 shadow-2xl">
+            <h2 id="greet-consent-title" className="text-base font-semibold text-white">The host would like to record this meeting</h2>
+            <p className="mt-2 text-sm text-neutral-300">
+              Recording starts only if everyone agrees. It captures audio, video and shared screens. You'll see a red "Recording" label while it runs.
+            </p>
+            {consentDeclined && <p className="mt-3 text-sm text-amber-200">You declined. The host has been told and can't start recording without you. You can stay in the meeting.</p>}
+            <div className="mt-4 flex flex-wrap justify-end gap-2">
+              <button type="button" disabled={consentBusy} onClick={async () => { setConsentBusy(true); const r = await answerRecordingConsent(false); setConsentBusy(false); if (r.success) setConsentDeclined(true); }}
+                className="px-4 py-2 rounded-lg border border-white/15 text-sm text-neutral-200 hover:bg-white/5 disabled:opacity-50">Decline</button>
+              <button type="button" disabled={consentBusy} onClick={async () => { setConsentBusy(true); await answerRecordingConsent(true); setConsentBusy(false); setConsentDeclined(false); }}
+                className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm font-semibold text-white disabled:opacity-50">I agree to be recorded</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {recordingNotice && (
+        <div role="status" className="fixed top-16 sm:top-20 left-1/2 -translate-x-1/2 z-[70] max-w-[92vw] px-4 py-2 rounded-xl border border-amber-500/30 bg-amber-950/80 text-amber-100 text-xs shadow-lg">
+          {recordingNotice}
+        </div>
+      )}
       
       {/* =========================================================================
           1. TOP NAVIGATION & HUD BAR
@@ -748,6 +779,29 @@ export default function VideoMeetingWorkspace({
             <Shield className="h-3 w-3" />
             <span>{mediaStatus === 'connected' ? 'Video connected' : mediaStatus === 'connecting' ? 'Connecting video…' : mediaStatus === 'reconnecting' ? 'Reconnecting…' : 'Video not connected'}</span>
           </div>
+
+          {/* Your network quality as LiveKit measures it */}
+          {(mediaStatus === 'connected' || mediaStatus === 'reconnecting') && networkQuality !== 'unknown' && (
+            <div
+              data-testid="greet-network-quality"
+              className={`hidden sm:flex items-center gap-1 px-2.5 py-1 rounded-full border text-[11px] font-medium ${
+                networkQuality === 'excellent' || networkQuality === 'good' ? 'bg-emerald-950/30 border-emerald-500/20 text-emerald-300'
+                  : networkQuality === 'poor' ? 'bg-amber-950/40 border-amber-500/30 text-amber-200' : 'bg-rose-950/40 border-rose-500/30 text-rose-200'
+              }`}
+              title="Your connection quality, measured by the video service"
+            >
+              {networkQuality === 'excellent' || networkQuality === 'good' ? <Signal className="h-3 w-3" /> : networkQuality === 'poor' ? <SignalLow className="h-3 w-3" /> : <SignalZero className="h-3 w-3" />}
+              <span>{networkQuality === 'excellent' ? 'Network: excellent' : networkQuality === 'good' ? 'Network: good' : networkQuality === 'poor' ? 'Network: poor' : 'Network: lost'}</span>
+            </div>
+          )}
+
+          {/* Everyone sees when the meeting is being recorded */}
+          {meetingIsBeingRecorded && (
+            <div data-testid="greet-recording-indicator" className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-rose-500/40 bg-rose-950/50 text-rose-200 text-[11px] font-semibold" title={recordingMode === 'cloud' ? 'Recorded to your organization\'s GREET recordings' : 'Recorded on the host\'s device'}>
+              <Circle className="h-2.5 w-2.5 fill-rose-500 text-rose-500 animate-pulse" />
+              <span>Recording{recordingMode === 'cloud' ? ' · cloud' : ''}</span>
+            </div>
+          )}
 
           {/* Group Capacity Counter */}
           <div className={`flex items-center gap-1 px-2.5 py-1 rounded-full border text-[11px] font-medium ${
