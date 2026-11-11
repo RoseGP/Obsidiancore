@@ -3,8 +3,12 @@
  *
  *   /api/contacts
  *     GET    /                 ?q= &tag= &companyId= &ownerId= &includeDeleted=true      list / search
- *     GET    /duplicates       groups of contacts that look like the same person
- *     POST   /                 create (409 possible_duplicate with `matches` unless { force: true })
+ *     GET    /duplicates       groups of contacts that look like the same person ({ reasons, contacts } plus
+ *                              score, level and scored pairs) and `leadMatches`: open leads that look like a contact
+ *     POST   /match            { name, email, phone, company } closest existing contacts with score and reasons
+ *                              (for the create form; read-only)
+ *     POST   /                 create (409 possible_duplicate with `matches` unless { force: true }): exact
+ *                              matches and fuzzy "likely" matches (score ≥ 0.85); nothing is merged automatically
  *     POST   /merge            { keepId, mergeIds[] } re-points every link to the kept contact (manager+)
  *     GET    /:id              profile: company, leads, deals, tasks, proposals, meetings, invoicing clients,
  *                              communication history and a combined timeline
@@ -45,7 +49,19 @@ contactsRouter.get('/', async (req, res) => {
 });
 
 contactsRouter.get('/duplicates', async (req, res) => {
-  try { res.json({ success: true, groups: await (await svc(req)).duplicateGroups() }); } catch (err) { fail(res, err, 'contacts.duplicates'); }
+  try {
+    const s = await svc(req);
+    const [groups, leadMatches] = await Promise.all([s.duplicateGroups(), s.leadMatches()]);
+    res.json({ success: true, groups, leadMatches, thresholds: { likely: 0.85, possible: 0.7 } });
+  } catch (err) { fail(res, err, 'contacts.duplicates'); }
+});
+
+contactsRouter.post('/match', async (req, res) => {
+  try {
+    const b = req.body || {};
+    const matches = await (await svc(req)).matchCandidates({ name: b.name, email: b.email, phone: b.phone, company: b.company, id: typeof b.excludeId === 'string' && b.excludeId ? b.excludeId : undefined });
+    res.json({ success: true, matches });
+  } catch (err) { fail(res, err, 'contacts.match'); }
 });
 
 contactsRouter.post('/', async (req, res) => {

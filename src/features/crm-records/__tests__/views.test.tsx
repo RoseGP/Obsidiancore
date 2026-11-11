@@ -107,8 +107,17 @@ await wait(() => !!button('Save anyway') && text().includes('Same email'), 'dupl
 ok('Contacts: a duplicate email is flagged, with "Open" and "Save anyway"');
 await click(button('Save anyway'), 'save anyway');
 await wait(() => text().includes('1 possible duplicate'), 'duplicates button');
-await act(async () => { root.render(React.createElement('div')); });
 ok('Contacts: "Save anyway" keeps both and the possible-duplicates button appears');
+await click(button(/1 possible duplicate/), 'open duplicates');
+await wait(() => /\d+% likely match/.test(text()) && text().includes('Same email'), 'scored duplicate group');
+ok('Contacts: the possible-duplicates list shows the match score and its reasons');
+await click(button('Close'), 'close duplicates');
+await click(button('New contact'), 'new contact (fuzzy)');
+await type(field('Name'), 'Hana Lee');
+await type(field('Email'), 'hana.lee@acme.test');
+await wait(() => text().includes('This may already be in your contacts') && /likely match/.test(text()), 'live fuzzy match warning while typing');
+ok('Contacts: the create form warns with the closest existing contacts while typing (score and reasons)');
+await act(async () => { root.render(React.createElement('div')); });
 
 // ---- Companies ----
 await act(async () => { root.render(React.createElement(CompaniesView, {})); });
