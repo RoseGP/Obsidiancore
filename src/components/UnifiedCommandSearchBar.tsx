@@ -1,21 +1,21 @@
 import React, { useState, useRef, useEffect } from 'react';
 import useDebounce from '../hooks/useDebounce';
-import { 
-  Search, 
-  Command, 
-  Sparkles, 
-  User, 
-  Calendar, 
-  ArrowRight, 
-  Clock, 
-  Settings, 
-  Globe, 
-  Megaphone, 
-  Phone, 
-  Video, 
-  FileText, 
-  BarChart3, 
-  HelpCircle, 
+import {
+  Search,
+  Command,
+  Sparkles,
+  User,
+  Calendar,
+  ArrowRight,
+  Clock,
+  Settings,
+  Globe,
+  Megaphone,
+  Phone,
+  Video,
+  FileText,
+  BarChart3,
+  HelpCircle,
   Filter,
   CheckCircle2,
   Briefcase,
@@ -23,12 +23,15 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { CRMContact, CalendarEvent } from '../types';
+import { NAV_GROUPS } from './DynamicSidebar';
+import { getDashboardJson } from '../lib/dashboardData';
 
 interface UnifiedCommandSearchBarProps {
   themeMode: 'light' | 'dark';
   contacts: CRMContact[];
   events: CalendarEvent[];
-  navItems: readonly any[];
+  /** Deprecated: navigation entries now come from the sidebar (same labels everywhere). */
+  navItems?: readonly any[];
   activeView: string;
   setActiveView: (view: any) => void;
   onSelectContact: (contact: CRMContact) => void;
@@ -61,14 +64,25 @@ export default function UnifiedCommandSearchBar({
   const [showSearchResults, setShowSearchResults] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const [selectedCategory, setSelectedCategory] = useState<'all' | 'leads' | 'menus' | 'events'>('all');
+  // Only what this person actually searched (no sample entries).
   const [recentSearches, setRecentSearches] = useState<string[]>(() => {
     try {
-      const saved = localStorage.getItem('obsidian_recent_searches');
-      return saved ? JSON.parse(saved) : ['Sarah Jenkins', 'SLA Proposal', 'Reviews'];
+      const saved = JSON.parse(localStorage.getItem('obsidian_recent_searches_v2') || '[]');
+      return Array.isArray(saved) ? saved.filter((x) => typeof x === 'string').slice(0, 5) : [];
     } catch {
-      return ['Sarah Jenkins', 'SLA Proposal', 'Reviews'];
+      return [];
     }
   });
+  // The organization's real deals (shared, cached dashboard request), loaded when search opens.
+  const [deals, setDeals] = useState<any[]>([]);
+  useEffect(() => {
+    if (!showSearchResults) return;
+    let cancelled = false;
+    getDashboardJson<{ deals?: any[] }>('/api/dashboard/deals')
+      .then((d) => { if (!cancelled && Array.isArray(d?.deals)) setDeals(d.deals); })
+      .catch(() => { /* search still works on everything else */ });
+    return () => { cancelled = true; };
+  }, [showSearchResults]);
 
   const searchInputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -78,7 +92,7 @@ export default function UnifiedCommandSearchBar({
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
       // Don't intercept if user is typing in another input/textarea
       if (
-        document.activeElement?.tagName === 'INPUT' || 
+        document.activeElement?.tagName === 'INPUT' ||
         document.activeElement?.tagName === 'TEXTAREA' ||
         document.activeElement?.getAttribute('contenteditable') === 'true'
       ) {
@@ -112,7 +126,7 @@ export default function UnifiedCommandSearchBar({
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (
-        dropdownRef.current && 
+        dropdownRef.current &&
         !dropdownRef.current.contains(event.target as Node) &&
         searchInputRef.current &&
         !searchInputRef.current.contains(event.target as Node)
@@ -125,25 +139,26 @@ export default function UnifiedCommandSearchBar({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Compute all potential matches
+  // Compute all potential matches (only real records and real destinations)
+  const money = (v: unknown) => (Number.isFinite(Number(v)) && v !== null && v !== '' ? `$${Number(v).toLocaleString()}` : '');
   const allMatches: SearchMatch[] = [
-    // 1. Navigation Routes
-    ...navItems.map(item => ({
+    // 1. Navigation: the sidebar's entries and labels
+    ...NAV_GROUPS.flatMap((g) => g.items.map((item) => ({
       type: 'route' as const,
       id: item.id,
       title: item.label,
-      subtitle: 'Navigate System Section',
-      meta: 'Navigation',
+      subtitle: [g.label, item.hint].filter(Boolean).join(' · '),
+      meta: 'Go to',
       object: item.id,
       icon: item.icon
-    })),
+    }))),
     // 2. Contacts / Leads
     ...contacts.map(c => ({
       type: 'contact' as const,
       id: c.id,
       title: c.name,
-      subtitle: `${c.company} • ${c.phone}`,
-      meta: c.channel,
+      subtitle: [c.company, c.phone].filter(Boolean).join(' • '),
+      meta: c.channel || 'Lead',
       object: c,
       icon: User
     })),
@@ -152,73 +167,36 @@ export default function UnifiedCommandSearchBar({
       type: 'event' as const,
       id: e.id,
       title: e.title,
-      subtitle: `Scheduled for ${e.contact} on ${e.time}`,
+      subtitle: [e.contact, e.time].filter(Boolean).join(' · '),
       meta: e.type,
       object: e,
       icon: Calendar
     })),
-    // 4. CRM Deals & Opportunities
-    {
+    // 4. Deals of this organization
+    ...deals.map((d) => ({
       type: 'deal' as const,
-      id: 'deal-acme-cloud',
-      title: 'Acme Corp Omnichannel Expansion',
-      subtitle: '$148,000 ARR • Negotiation Stage • Sarah Jenkins',
+      id: String(d.id),
+      title: d.name || d.client || 'Deal',
+      subtitle: [d.client, money(d.value), d.stage].filter(Boolean).join(' • '),
       meta: 'Deal',
-      object: 'proposals',
+      object: 'deals',
       icon: Briefcase
-    },
-    {
-      type: 'deal' as const,
-      id: 'deal-apex-telecom',
-      title: 'Apex Telecom LiveKit Trunking',
-      subtitle: '$84,000 ARR • Proposal Sent • Marcus Vance',
-      meta: 'Deal',
-      object: 'proposals',
-      icon: Briefcase
-    },
-    {
-      type: 'deal' as const,
-      id: 'deal-lumina-tier1',
-      title: 'Lumina Tech Enterprise Tier-1 License',
-      subtitle: '$220,000 ARR • Discovery Stage • Elena Rostova',
-      meta: 'Deal',
-      object: 'proposals',
-      icon: Briefcase
-    },
-    // 5. CRM Tasks & Follow-ups
-    {
-      type: 'task' as const,
-      id: 'task-call-sarah',
-      title: 'Follow-up Call with Sarah Jenkins',
-      subtitle: 'Due Today at 2:00 PM • Priority: High • Deals',
-      meta: 'Task',
-      object: 'calendar',
-      icon: CheckSquare
-    },
-    {
-      type: 'task' as const,
-      id: 'task-send-sla',
-      title: 'Send Revised DPA & Security Annex',
-      subtitle: 'Due Tomorrow • Priority: Medium • Proposals',
-      meta: 'Task',
-      object: 'proposals',
-      icon: CheckSquare
-    },
-    // 6. Quick Context Actions
+    })),
+    // 5. Quick actions that open real screens
     {
       type: 'action' as const,
-      id: 'action-ai-sync',
-      title: 'Run System AI Intelligence Sync',
-      subtitle: 'Synchronize leads, generate follow-ups & optimize pipeline',
-      meta: 'AI Intel',
-      object: 'dashboard',
+      id: 'action-copilot',
+      title: 'Ask your AI copilot',
+      subtitle: 'Open the copilot on the dashboard',
+      meta: 'AI',
+      object: 'dashboard#copilot',
       icon: Sparkles
     },
     {
       type: 'action' as const,
-      id: 'action-new-sla',
-      title: 'Compose New SLA Proposal Draft',
-      subtitle: 'Generate enterprise pricing and security structures',
+      id: 'action-new-proposal',
+      title: 'Create a proposal',
+      subtitle: 'Open Proposals & Invoices',
       meta: 'Proposals',
       object: 'proposals',
       icon: FileText
@@ -235,7 +213,7 @@ export default function UnifiedCommandSearchBar({
     const subtitleStr = (match.subtitle || '').toLowerCase();
     const metaStr = (match.meta || '').toLowerCase();
 
-    const matchesSearch = query === '' || 
+    const matchesSearch = query === '' ||
       titleStr.includes(query) ||
       subtitleStr.includes(query) ||
       metaStr.includes(query);
@@ -244,7 +222,7 @@ export default function UnifiedCommandSearchBar({
 
     // Category tab filter
     if (selectedCategory === 'all') return true;
-    if (selectedCategory === 'leads') return match.type === 'contact';
+    if (selectedCategory === 'leads') return match.type === 'contact' || match.type === 'deal';
     if (selectedCategory === 'menus') return match.type === 'route' || match.type === 'action';
     if (selectedCategory === 'events') return match.type === 'event';
 
@@ -261,7 +239,7 @@ export default function UnifiedCommandSearchBar({
     const filtered = [query, ...recentSearches.filter(s => s !== query)].slice(0, 5);
     setRecentSearches(filtered);
     try {
-      localStorage.setItem('obsidian_recent_searches', JSON.stringify(filtered));
+      localStorage.setItem('obsidian_recent_searches_v2', JSON.stringify(filtered));
     } catch (e) {
       console.warn('Failed to save recent search to localStorage', e);
     }
@@ -280,9 +258,7 @@ export default function UnifiedCommandSearchBar({
     } else if (match.type === 'event') {
       setActiveView('calendar');
     } else if (match.type === 'deal') {
-      setActiveView('proposals');
-    } else if (match.type === 'task') {
-      setActiveView('calendar');
+      setActiveView('deals');
     } else if (match.type === 'action') {
       setActiveView(match.object);
     }
@@ -342,24 +318,24 @@ export default function UnifiedCommandSearchBar({
   };
 
   return (
-    <div 
-      id="unified-navigation-search-root" 
+    <div
+      id="unified-navigation-search-root"
       className="relative flex-1 group max-w-sm sm:max-w-md md:max-w-lg z-30"
     >
       {/* Input container */}
-      <div 
+      <div
         id="unified-search-input-wrapper"
         className="relative flex items-center"
       >
         <div className="absolute left-3.5 flex items-center pointer-events-none">
           <Search className="h-4 w-4 text-neutral-400 group-focus-within:text-blue-500 transition-colors duration-200" />
         </div>
-        
-        <input 
+
+        <input
           id="search-command-input"
           ref={searchInputRef}
-          type="text" 
-          placeholder={placeholder} 
+          type="text"
+          placeholder={placeholder}
           value={searchQuery}
           onKeyDown={handleSearchKeyDown}
           onFocus={() => setShowSearchResults(true)}
@@ -376,7 +352,7 @@ export default function UnifiedCommandSearchBar({
               : 'border-white/5 bg-neutral-900/60 text-neutral-200 placeholder-neutral-500 focus:border-blue-500/30 focus:shadow-[0_0_20px_rgba(59,130,246,0.12)] focus:bg-neutral-950/90'
           }`}
         />
-        
+
         {/* Keyboard Shortcut Indicator pill */}
         <div className={`absolute right-3.5 flex items-center gap-0.5 select-none text-[9px] font-mono py-0.5 px-1.5 rounded-md pointer-events-none transition-colors ${
           themeMode === 'light'
@@ -391,7 +367,7 @@ export default function UnifiedCommandSearchBar({
       {/* Dynamic dropped dropdown results with luxury glassmorphism */}
       <AnimatePresence>
         {showSearchResults && (
-          <motion.div 
+          <motion.div
             id="search-outcomes-dropdown-panel"
             ref={dropdownRef}
             initial={{ opacity: 0, y: 10, scale: 0.98 }}
@@ -475,7 +451,7 @@ export default function UnifiedCommandSearchBar({
                         <span className="text-[8.5px] font-black text-neutral-500 uppercase tracking-widest flex items-center gap-1">
                           <Clock className="h-3 w-3" /> Recent Searches
                         </span>
-                        <button 
+                        <button
                           onClick={clearRecentSearches}
                           className="text-[8.5px] text-blue-400 hover:text-blue-300 font-bold hover:underline cursor-pointer"
                         >
@@ -518,7 +494,7 @@ export default function UnifiedCommandSearchBar({
                           <span className="text-[8.5px] text-neutral-500 block">System Overview</span>
                         </div>
                       </button>
-                      
+
                       <button
                         onClick={() => {
                           setActiveView('messages');
@@ -554,6 +530,7 @@ export default function UnifiedCommandSearchBar({
                         const contactsList = filteredMatches.filter(m => m.type === 'contact');
                         const eventsList = filteredMatches.filter(m => m.type === 'event');
                         const actions = filteredMatches.filter(m => m.type === 'action');
+                        const dealsList = filteredMatches.filter(m => m.type === 'deal');
 
                         return (
                           <div className="space-y-4">
@@ -569,8 +546,8 @@ export default function UnifiedCommandSearchBar({
                                       key={match.id}
                                       onClick={() => handleSearchResultClick(match)}
                                       className={`w-full text-left flex items-center justify-between p-2 rounded-xl cursor-pointer transition-all duration-150 border ${
-                                        globalIndex === highlightedIndex 
-                                          ? 'bg-blue-600/15 border-blue-500/35 text-white shadow-lg shadow-blue-500/5' 
+                                        globalIndex === highlightedIndex
+                                          ? 'bg-blue-600/15 border-blue-500/35 text-white shadow-lg shadow-blue-500/5'
                                           : 'bg-transparent border-transparent hover:bg-white/5 hover:border-white/5 text-neutral-300 hover:text-white'
                                       }`}
                                     >
@@ -611,8 +588,8 @@ export default function UnifiedCommandSearchBar({
                                       key={match.id}
                                       onClick={() => handleSearchResultClick(match)}
                                       className={`w-full text-left flex items-center justify-between p-2 rounded-xl cursor-pointer transition-all duration-150 border ${
-                                        globalIndex === highlightedIndex 
-                                          ? 'bg-blue-600/15 border-blue-500/35 text-white shadow-lg shadow-blue-500/5' 
+                                        globalIndex === highlightedIndex
+                                          ? 'bg-blue-600/15 border-blue-500/35 text-white shadow-lg shadow-blue-500/5'
                                           : 'bg-transparent border-transparent hover:bg-white/5 hover:border-white/5 text-neutral-300 hover:text-white'
                                       }`}
                                     >
@@ -654,15 +631,15 @@ export default function UnifiedCommandSearchBar({
                                       key={match.id}
                                       onClick={() => handleSearchResultClick(match)}
                                       className={`w-full text-left flex items-center justify-between p-2 rounded-xl cursor-pointer transition-all duration-150 border ${
-                                        globalIndex === highlightedIndex 
-                                          ? 'bg-blue-600/15 border-blue-500/35 text-white shadow-lg shadow-blue-500/5' 
+                                        globalIndex === highlightedIndex
+                                          ? 'bg-blue-600/15 border-blue-500/35 text-white shadow-lg shadow-blue-500/5'
                                           : 'bg-transparent border-transparent hover:bg-white/5 hover:border-white/5 text-neutral-300 hover:text-white'
                                       }`}
                                     >
                                       <div className="flex items-center gap-2.5 truncate">
                                         <div className="relative shrink-0 select-none">
-                                          <img 
-                                            src={contact.avatar} 
+                                          <img
+                                            src={contact.avatar}
                                             alt={contact.name}
                                             className="h-7 w-7 rounded-full border border-white/10 object-cover"
                                             referrerPolicy="no-referrer"
@@ -692,6 +669,38 @@ export default function UnifiedCommandSearchBar({
                               </div>
                             )}
 
+                            {/* Deals Group */}
+                            {dealsList.length > 0 && (
+                              <div className="space-y-1">
+                                <span className="text-[8.5px] font-extrabold text-emerald-400 uppercase tracking-widest pl-1 block">DEALS</span>
+                                {dealsList.map(match => {
+                                  const globalIndex = filteredMatches.indexOf(match);
+                                  const IconComp = match.icon || Briefcase;
+                                  return (
+                                    <button
+                                      key={match.id}
+                                      onClick={() => handleSearchResultClick(match)}
+                                      className={`w-full text-left flex items-center justify-between p-2 rounded-xl cursor-pointer transition-all duration-150 border ${
+                                        globalIndex === highlightedIndex
+                                          ? 'bg-blue-600/15 border-blue-500/35 text-white shadow-lg shadow-blue-500/5'
+                                          : 'bg-transparent border-transparent hover:bg-white/5 hover:border-white/5 text-neutral-300 hover:text-white'
+                                      }`}
+                                    >
+                                      <div className="flex items-center gap-2.5 truncate">
+                                        <div className="h-7 w-7 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center shrink-0">
+                                          <IconComp className="h-4 w-4 text-emerald-400" />
+                                        </div>
+                                        <div className="truncate">
+                                          <span className={`text-[11px] font-bold block truncate ${globalIndex === highlightedIndex ? 'text-white' : 'text-neutral-200'}`}>{match.title}</span>
+                                          <span className="text-[8.5px] text-neutral-400 block truncate">{match.subtitle}</span>
+                                        </div>
+                                      </div>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
+
                             {/* Events Group */}
                             {eventsList.length > 0 && (
                               <div className="space-y-1">
@@ -704,8 +713,8 @@ export default function UnifiedCommandSearchBar({
                                       key={match.id}
                                       onClick={() => handleSearchResultClick(match)}
                                       className={`w-full text-left flex items-center justify-between p-2 rounded-xl cursor-pointer transition-all duration-150 border ${
-                                        globalIndex === highlightedIndex 
-                                          ? 'bg-blue-600/15 border-blue-500/35 text-white shadow-lg shadow-blue-500/5' 
+                                        globalIndex === highlightedIndex
+                                          ? 'bg-blue-600/15 border-blue-500/35 text-white shadow-lg shadow-blue-500/5'
                                           : 'bg-transparent border-transparent hover:bg-white/5 hover:border-white/5 text-neutral-300 hover:text-white'
                                       }`}
                                     >

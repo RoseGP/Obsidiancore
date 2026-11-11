@@ -476,7 +476,7 @@ function AppMain() {
                 events={events}
                 navItems={SEARCH_NAV_ITEMS}
                 activeView={activeView}
-                setActiveView={(v) => setActiveView(v as SemanticView)}
+                setActiveView={(v) => navigateTo(String(v))}
                 onSelectContact={handleSelectContact}
                 placeholder="Search contacts, deals, calls, or type command..."
               />
