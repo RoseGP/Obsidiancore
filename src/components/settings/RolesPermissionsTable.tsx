@@ -25,7 +25,7 @@ export default function RolesPermissionsTable() {
     <div className="rounded-2xl p-6 bg-neutral-900/40 border border-white/5 space-y-4">
       <div className="border-b border-white/5 pb-3">
         <h3 className="text-base font-bold text-white">Roles & permissions</h3>
-        <p className="text-xs text-neutral-400 mt-0.5">What each role can do. The server checks these on every request; change someone’s role in Organization & plan.</p>
+        <p className="text-xs text-neutral-400 mt-0.5">What each role can do. The server checks these on every request; change someone’s role in Settings › Organization & team.</p>
       </div>
       <div className="flex flex-wrap gap-1.5" role="tablist" aria-label="Role">
         {t.roles.map((r) => (

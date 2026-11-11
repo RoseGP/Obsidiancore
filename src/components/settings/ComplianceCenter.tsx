@@ -261,7 +261,7 @@ function Reviews() {
   return (
     <div className={card}>
       <h4 className="text-sm font-bold text-white">Who has access</h4>
-      <p className="text-xs text-neutral-400">Check that everyone still needs their access and role (SOC 2 suggests every quarter). Change roles or remove people in Organization & plan.</p>
+      <p className="text-xs text-neutral-400">Check that everyone still needs their access and role (SOC 2 suggests every quarter). Change roles or remove people in Settings › Organization & team.</p>
       <div className="overflow-x-auto"><table className="w-full min-w-[560px] text-xs">
         <thead><tr><th className={th}>Member</th><th className={th}>Role</th><th className={th}>Last active</th><th className={th}>Two-step at last sign-in</th></tr></thead>
         <tbody>{data?.members.map((m) => <tr key={m.userId} className="border-t border-white/5"><td className={td}>{m.name || m.email || m.userId}<div className="text-neutral-500">{m.email}</div></td><td className={td}>{m.role}</td><td className={td}>{fmt(m.lastActiveAt)}</td><td className={td}>{m.lastSignInMfa === null ? 'Not seen yet' : m.lastSignInMfa ? 'Yes' : 'No'}</td></tr>)}</tbody>

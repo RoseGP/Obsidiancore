@@ -10,7 +10,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   LayoutDashboard, MessageSquare, FileText, BarChart3, Settings, ChevronLeft, ChevronRight, ChevronDown, Video, Calendar, Share2,
-  Globe, Phone, X, Brain, Bell, KanbanSquare, MessageCircle, Plug, UserCog, UserCircle2, ListChecks, ShieldCheck, Scale,
+  Globe, Phone, X, Brain, Bell, KanbanSquare, MessageCircle, Plug, UserCog, UserCircle2, ListChecks, ShieldCheck, Scale, CreditCard,
 } from 'lucide-react';
 
 interface SidebarItem { id: string; label: string; icon: React.ComponentType<any>; hint: string }
@@ -43,8 +43,9 @@ export const NAV_GROUPS: SidebarGroup[] = [
   { id: 'settings', label: 'Settings', items: [
     { id: 'settings:integrations', label: 'Integrations', icon: Plug, hint: 'Connected services and AI providers' },
     { id: 'settings:notifications', label: 'Notifications', icon: Bell, hint: 'What you’re told about, and how' },
-    { id: 'settings:workspace', label: 'Team Management', icon: UserCog, hint: 'Members, roles, plan' },
-    { id: 'settings:security', label: 'Security', icon: ShieldCheck, hint: 'Two-step sign-in and session rules' },
+    { id: 'settings:workspace', label: 'Team Management', icon: UserCog, hint: 'Members, roles and invitations' },
+    { id: 'billing', label: 'Billing & Subscription', icon: CreditCard, hint: 'Your plan, invoices and payment providers' },
+    { id: 'security_access', label: 'Security & Access', icon: ShieldCheck, hint: 'Sign-in, two-step, sessions, roles and permissions' },
     { id: 'settings:compliance', label: 'Privacy & Compliance', icon: Scale, hint: 'Consent, data requests, retention, audit log' },
     { id: 'settings:account', label: 'Account Settings', icon: UserCircle2, hint: 'Your profile' },
   ] },

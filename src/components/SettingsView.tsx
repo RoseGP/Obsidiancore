@@ -49,7 +49,17 @@ export type SettingsTab =
 
 interface SettingsViewProps {
   defaultTab?: SettingsTab;
+  /**
+   * 'security_access' renders the dedicated Security & Access page (sidebar → Security & Access): sign-in,
+   * devices, two-step, organization rules and roles & permissions, without the Settings tab bar.
+   */
+  page?: 'security_access';
+  /** Opens another page or Settings tab ('settings:compliance'). */
+  onNavigate?: (id: string) => void;
 }
+
+/** Tabs that now live on their own pages (old links and bookmarks are sent there). */
+const MOVED_TABS: Partial<Record<SettingsTab, string>> = { security: 'security_access', roles: 'security_access', billing: 'billing' };
 
 const card = 'rounded-2xl p-6 bg-neutral-900/40 border border-white/5 backdrop-blur-md space-y-4';
 const input = 'w-full text-xs font-medium bg-neutral-950/80 border border-white/10 rounded-xl p-3 text-white outline-none focus:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-500';
@@ -58,7 +68,7 @@ const primaryBtn = 'px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 tex
 
 /** Old tab names (links, bookmarks) map onto the tabs that exist now. */
 function normalizeTab(tab: SettingsTab): SettingsTab {
-  if (tab === 'general' || tab === 'billing') return 'workspace';
+  if (tab === 'general') return 'workspace';
   if (tab === 'roles-rbac') return 'roles';
   if (tab === 'sessions') return 'security';
   if (tab === 'social-db') return 'channels';
@@ -77,14 +87,18 @@ function describeDevice() {
   return os ? `${browser} on ${os}` : browser;
 }
 
-export default function SettingsView({ defaultTab = 'account' }: SettingsViewProps) {
-  const [activeTab, setActiveTab] = useState<SettingsTab>(normalizeTab(defaultTab));
-  useEffect(() => { if (defaultTab) setActiveTab(normalizeTab(defaultTab)); }, [defaultTab]);
+export default function SettingsView({ defaultTab = 'account', page, onNavigate }: SettingsViewProps) {
+  const [activeTab, setActiveTab] = useState<SettingsTab>(page ? 'security' : normalizeTab(defaultTab));
+  useEffect(() => { if (!page && defaultTab) setActiveTab(normalizeTab(defaultTab)); }, [defaultTab, page]);
 
   const { user, userProfile, updateProfileDetails, setPresence, logout } = useAuth();
   const realtimeSync = useRealtimeSync();
   const { setActiveView } = useCommand();
   const isPlatformAdmin = usePlatformAdmin();
+  useEffect(() => {
+    const target = !page ? MOVED_TABS[activeTab] : undefined;
+    if (target) setActiveView(target as any);
+  }, [activeTab, page, setActiveView]);
   // Your role in the current organization (for showing admin-only tabs; the server enforces access).
   const [orgRole, setOrgRole] = useState<string | undefined>();
   useEffect(() => { sapi<PolicyResponse>('/api/security/policy').then((r) => setOrgRole(r.me.role)).catch(() => setOrgRole(undefined)); }, []);
@@ -168,13 +182,11 @@ export default function SettingsView({ defaultTab = 'account' }: SettingsViewPro
 
   const TABS = [
     { id: 'account' as SettingsTab, label: 'Account', icon: User },
-    { id: 'workspace' as SettingsTab, label: 'Organization & plan', icon: Building2 },
+    { id: 'workspace' as SettingsTab, label: 'Organization & team', icon: Building2 },
     { id: 'notifications' as SettingsTab, label: 'Notifications', icon: Bell },
-    { id: 'security' as SettingsTab, label: 'Security', icon: ShieldCheck },
     { id: 'channels' as SettingsTab, label: 'Connected accounts', icon: Share2 },
     { id: 'realtime-sync' as SettingsTab, label: 'Live updates', icon: Wifi },
     { id: 'integrations' as SettingsTab, label: 'Integrations', icon: Layers },
-    { id: 'roles' as SettingsTab, label: 'Roles & permissions', icon: KeySquare },
     ...(isAdminRole(orgRole) ? [{ id: 'compliance' as SettingsTab, label: 'Privacy & compliance', icon: Scale }] : []),
     // Platform administrators only (PLATFORM_ADMIN_USER_IDS); the server enforces it too.
     ...(isPlatformAdmin ? [{ id: 'plan-admin' as SettingsTab, label: 'Plan administration', icon: Sliders }] : []),
@@ -196,11 +208,11 @@ export default function SettingsView({ defaultTab = 'account' }: SettingsViewPro
       )}
 
       <div className="border-b border-white/5 pb-4">
-        <h2 className="font-sans font-bold text-xl text-white tracking-tight">Settings</h2>
-        <p className="text-xs text-neutral-400 mt-0.5">Your account, your organization, notifications and security.</p>
+        <h2 className="font-sans font-bold text-xl text-white tracking-tight">{page ? 'Security & Access' : 'Settings'}</h2>
+        <p className="text-xs text-neutral-400 mt-0.5">{page ? 'How people sign in, where they’re signed in, and who can see and change what.' : 'Your account, your organization and notifications. Billing & Subscription and Security & Access have their own pages.'}</p>
       </div>
 
-      <div className="flex items-center gap-1.5 overflow-x-auto p-1.5 rounded-2xl bg-neutral-950/80 border border-white/10" id="settings-tab-bar" role="tablist">
+      {!page && <div className="flex items-center gap-1.5 overflow-x-auto p-1.5 rounded-2xl bg-neutral-950/80 border border-white/10" id="settings-tab-bar" role="tablist">
         {TABS.map((tab) => {
           const Icon = tab.icon;
           const active = activeTab === tab.id;
@@ -221,7 +233,7 @@ export default function SettingsView({ defaultTab = 'account' }: SettingsViewPro
             </button>
           );
         })}
-      </div>
+      </div>}
 
       {activeTab === 'account' && (
         <div className={card}>
@@ -274,7 +286,7 @@ export default function SettingsView({ defaultTab = 'account' }: SettingsViewPro
                 <input id="settings-photo" type="url" placeholder="https://…" value={photoURL} onChange={(e) => setPhotoURL(e.target.value)} className={input} />
               </div>
             </div>
-            <p className="text-[11px] text-neutral-500">Your role and permissions come from your organization (Organization &amp; plan tab), not from this profile.</p>
+            <p className="text-[11px] text-neutral-500">Your role and permissions come from your organization (Organization &amp; team tab), not from this profile.</p>
             <div className="pt-2 flex justify-end">
               <button type="submit" disabled={savingProfile} className={primaryBtn}>{savingProfile ? 'Saving…' : 'Save profile'}</button>
             </div>
@@ -404,7 +416,21 @@ export default function SettingsView({ defaultTab = 'account' }: SettingsViewPro
 
       {activeTab === 'integrations' && <IntegrationsSettingsSection />}
 
-      {activeTab === 'roles' && <RolesPermissionsTable />}
+      {(activeTab === 'roles' || page === 'security_access') && <RolesPermissionsTable />}
+
+      {page === 'security_access' && (
+        <div className={card}>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h3 className="text-base font-bold text-white">Audit log</h3>
+              <p className="text-xs text-neutral-400 mt-0.5">Every change to members, roles, keys, security rules and data requests is recorded. Owners and admins can review and export it.</p>
+            </div>
+            {isAdminRole(orgRole) && (
+              <button type="button" onClick={() => (onNavigate ? onNavigate('settings:compliance') : setActiveView('settings' as any))} className="px-4 py-2 rounded-xl border border-white/10 text-xs font-semibold text-neutral-200 hover:bg-white/5 cursor-pointer">Privacy &amp; compliance</button>
+            )}
+          </div>
+        </div>
+      )}
 
       {activeTab === 'compliance' && <ComplianceCenter />}
 

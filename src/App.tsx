@@ -8,6 +8,7 @@ import ProposalSharePage from './features/proposals/ProposalSharePage';
 import SessionLockScreen from './components/auth/SessionLockScreen';
 import DynamicSidebar from './components/DynamicSidebar';
 import { TasksView } from './features/crm-records';
+import BillingSubscriptionView from './features/billing/BillingSubscriptionView';
 import TopNavProfileDropdown from './components/TopNavProfileDropdown';
 import { NotificationDropdown } from './components/NotificationDropdown';
 import { NotificationProvider } from './context/NotificationContext';
@@ -81,7 +82,7 @@ const INITIAL_NOTIFICATIONS: AppNotification[] = [];
 
 // Views laid out as one long page scroll the main area; the others (inbox, calendar, meetings, proposals…)
 // fill the viewport and scroll inside their own panels.
-const PAGE_SCROLL_VIEWS = new Set<string>(['dashboard', 'home', 'analytics', 'settings', 'lead_intelligence', 'tasks']);
+const PAGE_SCROLL_VIEWS = new Set<string>(['dashboard', 'home', 'analytics', 'settings', 'lead_intelligence', 'tasks', 'billing', 'security_access']);
 
 const SEARCH_NAV_ITEMS = [
   { id: 'dashboard', label: 'Dashboard', icon: 'LayoutDashboard' },
@@ -300,12 +301,16 @@ function AppMain() {
     if (['proposals', 'enterprise_proposals'].includes(activeView)) return 'proposals';
     if (['deals', 'sales_pipelines', 'pipeline', 'leads', 'contacts', 'companies'].includes(activeView)) return 'deals';
     if (['voice_dialer', 'voice_hub', 'voice_receptionist'].includes(activeView)) return 'voice_dialer';
-    if (activeView === 'settings') return ['account', 'notifications', 'workspace', 'integrations', 'security', 'compliance'].includes(settingsDefaultTab) ? `settings:${settingsDefaultTab}` : 'settings';
+    if (activeView === 'billing' || activeView === 'security_access') return activeView;
+    if (activeView === 'settings') return ['account', 'notifications', 'workspace', 'integrations', 'compliance'].includes(settingsDefaultTab) ? `settings:${settingsDefaultTab}` : 'settings';
     return activeView;
   })();
 
   // Sidebar items are views, dashboard sections ('dashboard#missions') or Settings tabs ('settings:integrations').
   const navigateTo = useCallback((id: string) => {
+    // Security, roles and billing have their own pages now; old Settings links open them.
+    const moved: Record<string, string> = { 'settings:security': 'security_access', 'settings:roles': 'security_access', 'settings:sessions': 'security_access', 'settings:billing': 'billing' };
+    if (moved[id]) { setActiveView(moved[id] as SemanticView); return; }
     if (id.startsWith('settings:')) { setSettingsDefaultTab(id.slice('settings:'.length) as SettingsTab); setActiveView('settings'); return; }
     if (id.startsWith('dashboard#')) {
       const section = id.slice('dashboard#'.length);
@@ -369,7 +374,11 @@ function AppMain() {
       case 'analytics':
         return <div className="cc min-h-full shrink-0 w-full"><AnalyticsView onNavigate={(v) => setActiveView(v as SemanticView)} /></div>;
       case 'settings':
-        return <div className="obsidian min-h-full shrink-0 bg-[var(--obsidian-1)] text-neutral-200"><SettingsView defaultTab={settingsDefaultTab} /></div>;
+        return <div className="obsidian min-h-full shrink-0 bg-[var(--obsidian-1)] text-neutral-200"><SettingsView defaultTab={settingsDefaultTab} onNavigate={navigateTo} /></div>;
+      case 'security_access':
+        return <div className="obsidian min-h-full shrink-0 bg-[var(--obsidian-1)] text-neutral-200"><SettingsView page="security_access" onNavigate={navigateTo} /></div>;
+      case 'billing':
+        return <div className="obsidian min-h-full shrink-0 bg-[var(--obsidian-1)] text-neutral-200"><BillingSubscriptionView onNavigate={navigateTo} /></div>;
       case 'calendar':
         return (
           <CalendarView
@@ -475,7 +484,7 @@ function AppMain() {
       {/* Accepts ?invite=<token> links once the user is signed in */}
       <InvitationAcceptor onResult={showToast} />
       {/* Explains two-step / session-age refusals and applies the organization's idle sign-out */}
-      <SecurityPolicyGuard onOpenSecurity={() => navigateTo('settings:security')} />
+      <SecurityPolicyGuard onOpenSecurity={() => navigateTo('security_access')} />
 
       {/* Session Lock Screen Overlay */}
       {isSessionLocked && <SessionLockScreen />}

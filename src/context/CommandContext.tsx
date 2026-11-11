@@ -30,7 +30,9 @@ export type SemanticView =
   | 'lead_intelligence'
   | 'tasks'
   | 'contacts'
-  | 'companies';
+  | 'companies'
+  | 'billing'           // Settings → Billing & Subscription
+  | 'security_access';  // Settings → Security & Access
 
 export interface EmailDraft {
   recipient?: string;

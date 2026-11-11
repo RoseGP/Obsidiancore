@@ -3,7 +3,7 @@
  * the UI only hides actions the signed-in role can't perform.
  */
 import React, { useCallback, useEffect, useState } from 'react';
-import SubscriptionSettings from './meetings/SubscriptionSettings';
+import { useCommand } from '../context/CommandContext';
 import { Building2, Copy, KeyRound, Loader2, Mail, RefreshCw, Trash2, UserPlus, Users } from 'lucide-react';
 
 type Role = 'OWNER' | 'ADMIN' | 'MANAGER' | 'SALES_REP' | 'MARKETER' | 'SUPPORT_AGENT' | 'READ_ONLY' | 'GUEST';
@@ -36,6 +36,7 @@ async function copy(text: string) {
 }
 
 export default function OrganizationSettings() {
+  const { setActiveView } = useCommand();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -142,7 +143,11 @@ export default function OrganizationSettings() {
         )}
       </section>
 
-      <SubscriptionSettings isAdmin={isAdmin} />
+      <section className={card} aria-labelledby="plan-moved">
+        <h3 id="plan-moved" className="text-base font-semibold text-white">Plan</h3>
+        <p className="text-sm text-neutral-400">Your plan, its limits and plan requests are on the Billing &amp; Subscription page.</p>
+        <button type="button" className={`${btn} text-sky-300 hover:bg-sky-500/10`} onClick={() => setActiveView('billing')}>Open Billing &amp; Subscription</button>
+      </section>
 
       <section className={card} aria-labelledby="members-heading">
         <h3 id="members-heading" className="flex items-center gap-2 text-base font-semibold text-white"><Users className="h-4 w-4 text-sky-400" />Members ({members.length})</h3>

@@ -203,7 +203,7 @@ export default function TopNavProfileDropdown({
               >
                 <div className="flex items-center gap-2.5">
                   <Layers className="h-4 w-4 text-purple-500" />
-                  <span>Organization &amp; plan</span>
+                  <span>Organization &amp; team</span>
                 </div>
                 <span className="text-[10px] text-neutral-400">Members, plan</span>
               </button>
