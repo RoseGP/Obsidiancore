@@ -129,9 +129,9 @@ export function meetingToCalendarEvent(m: GreetMeeting): CalendarEvent & { serve
   const localDate = `${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}`;
   return {
     id: m.id, title: m.title, time: `${localDate} ${pad(start.getHours())}:${pad(start.getMinutes())}`, date: localDate,
-    type: 'demo', contact: m.associations?.label || m.invitees.map((i) => i.name).join(', ') || m.guests.join(', ') || 'GREET meeting',
+    type: 'demo', contact: m.associations?.label || (m.invitees || []).map((i) => i.name).join(', ') || (m.guests || []).join(', ') || 'GREET meeting',
     status: m.status === 'CANCELLED' ? 'cancelled' : m.status === 'ENDED' ? 'completed' : 'upcoming',
-    meetingLink: m.videoLink, invitees: [...m.invitees.map((i) => i.name), ...m.guests].join(', '),
+    meetingLink: m.videoLink, invitees: [...(m.invitees || []).map((i) => i.name), ...(m.guests || [])].join(', '),
     notes: m.additionalNotes, location: 'GREET', duration: m.duration, serverMeeting: true, startTime: occ.startTime, greetStatus: m.status,
   };
 }
