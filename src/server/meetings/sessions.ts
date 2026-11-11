@@ -22,7 +22,11 @@ import {
   type MeetingPlanTier, type PlanFeatures, type PlanLimits,
 } from '../../lib/meetingPlans';
 import { getPlanConfigs } from './plans';
-import { closeMediaRoom, createMediaToken, removeFromMediaRoom } from './media';
+import {
+  closeMediaRoom, cloudRecordingAvailable, createMediaToken, egressConfig, muteInMediaRoom, removeFromMediaRoom, startRoomRecording, stopRoomRecording,
+} from './media';
+import { syncFromSession, getMeeting, GreetError } from '../greet/scheduled';
+import { recordAudit } from '../greet/audit';
 
 export class MeetingError extends Error {
   constructor(public status: number, public code: string, message: string, public extra?: Record<string, unknown>) { super(message); }
@@ -41,6 +45,22 @@ export interface SessionParticipant {
   leftAt: number | null;
   /** Seconds in the meeting across rejoins (attendance reports). */
   secondsIn: number;
+  /** External guests who came through a GREET invitation link (no account). */
+  inviteId?: string | null;
+  /** sha256 of the guest's browser key (the key itself is only ever held by the guest). */
+  guestKeyHash?: string | null;
+}
+
+export interface RecordingState {
+  active: boolean; startedAt: number | null; by: string | null; used: boolean;
+  /** 'cloud' = LiveKit Egress to the organization's storage; 'device' = the host's browser records locally. */
+  mode?: 'cloud' | 'device' | null;
+  recordingId?: string | null;
+  egressId?: string | null;
+  /** Consent round: the host asked to record; each participant answers before recording can start. */
+  requestedAt?: number | null;
+  consents?: Record<string, number>;
+  declined?: Record<string, number>;
 }
 
 export interface Session {
@@ -63,7 +83,7 @@ export interface Session {
   endedReason: 'host' | 'time_limit' | 'admin' | null;
   waitingRoomEnabled: boolean;
   locked: boolean;
-  recording: { active: boolean; startedAt: number | null; by: string | null; used: boolean };
+  recording: RecordingState;
   participants: SessionParticipant[];
   peakParticipants: number;
   scheduledMeetingId: string | null;
@@ -200,7 +220,11 @@ async function mutate<R>(orgId: string, id: string, fn: ((s: Session, now: numbe
     return { session: s, result, endedError, justEnded: wasActive && s.status === 'ended' };
   });
   // The meeting just ended (host, admin, time limit): disconnect everyone from the media room too.
-  if (out.justEnded) await closeMediaRoom(out.session.id);
+  if (out.justEnded) {
+    await closeMediaRoom(out.session.id);
+    await finishCloudRecording(out.session, out.session.endedAt ?? Date.now());
+    await syncFromSession(out.session);
+  }
   if (out.endedError) throw Object.assign(out.endedError, { session: out.session });
   return { session: out.session, result: out.result };
 }
@@ -217,11 +241,21 @@ export function randomRoomCode() {
 export async function startSession(a: Actor, input: { title?: unknown; roomCode?: unknown; scheduledMeetingId?: unknown }): Promise<Session> {
   const plan = await resolveOrgPlan(a.orgId);
   const st = await getDocStore();
-  const title = typeof input.title === 'string' && input.title.trim() ? input.title.trim().slice(0, 200) : 'Meeting';
+  let title = typeof input.title === 'string' && input.title.trim() ? input.title.trim().slice(0, 200) : 'Meeting';
   let roomCode = typeof input.roomCode === 'string' ? input.roomCode.trim().toLowerCase() : '';
   if (roomCode && !ROOM_RE.test(roomCode)) throw new MeetingError(400, 'invalid_input', 'Room codes use letters, numbers and dashes.', { field: 'roomCode' });
   if (!roomCode) roomCode = randomRoomCode();
   const scheduledMeetingId = typeof input.scheduledMeetingId === 'string' && input.scheduledMeetingId ? assertId(input.scheduledMeetingId) : null;
+  if (scheduledMeetingId) {
+    // Starting a scheduled GREET meeting: it must belong to this organization and not be cancelled;
+    // its room code (the one in the invitations) and title are used.
+    let m: any;
+    try { m = await getMeeting(a.orgId, scheduledMeetingId); }
+    catch (e) { if (e instanceof GreetError) throw new MeetingError(e.status, e.code, e.message); throw e; }
+    if (m.status === 'CANCELLED') throw new MeetingError(409, 'meeting_cancelled', 'This meeting was cancelled.');
+    if (m.roomCode && ROOM_RE.test(m.roomCode)) roomCode = m.roomCode;
+    if (!(typeof input.title === 'string' && input.title.trim()) && m.title) title = String(m.title).slice(0, 200);
+  }
   const now = Date.now();
   const s: Session = {
     id: newId('mtg'), orgId: a.orgId, roomCode, title, hostUserId: a.userId, hostName: a.name || a.email || 'Host',
@@ -243,6 +277,7 @@ export async function startSession(a: Actor, input: { title?: unknown; roomCode?
     tx.set(roomPath(roomCode), { orgId: a.orgId, sessionId: s.id });
     writeSession(tx, s);
   });
+  await syncFromSession(s);
   return s;
 }
 
@@ -361,7 +396,9 @@ export async function mediaTokenFor(a: Actor, s: Session) {
   if (!p || p.status === 'removed' || p.status === 'denied') throw new MeetingError(403, 'not_a_participant', 'You\'re not in this meeting.');
   if (p.status === 'waiting') throw new MeetingError(403, 'not_admitted', 'The host hasn\'t let you in yet.');
   if (p.status !== 'in') throw new MeetingError(403, 'not_a_participant', 'Join the meeting first.');
-  return createMediaToken({ room: s.id, identity: p.id, name: p.name, role: p.role, canManage: canManage(s, a), expiresAt: s.endsAt });
+  const t = await createMediaToken({ room: s.id, identity: p.id, name: p.name, role: p.role, canManage: canManage(s, a), expiresAt: s.endsAt });
+  if (t) await recordAudit(s.orgId, { actorId: a.userId, action: 'greet.media_token.issued', target: s.id, meta: { participantId: p.id, role: p.role, admin: canManage(s, a), expiresAt: t.expiresAt } });
+  return t;
 }
 
 export async function setRole(a: Actor, id: string, pid: string, role: unknown) {
@@ -391,17 +428,195 @@ export async function updateSettings(a: Actor, id: string, patch: { waitingRoomE
   })).session;
 }
 
-export async function setRecording(a: Actor, id: string, action: unknown) {
-  if (action !== 'start' && action !== 'stop') throw new MeetingError(400, 'invalid_input', 'action must be start or stop.', { field: 'action' });
-  return (await mutate(a.orgId, id, async (s, now) => {
+const recordingPath = (orgId: string, id: string) => `organizations/${orgId}/meeting_recordings/${id}`;
+const RETENTION_DEFAULT_DAYS = 30;
+export async function greetSettings(orgId: string) {
+  const d = await (await getDocStore()).get(`organizations/${orgId}/settings/greet`);
+  return { recordingEnabled: d?.recordingEnabled === true, recordingRetentionDays: Number(d?.recordingRetentionDays) > 0 ? Number(d.recordingRetentionDays) : RETENTION_DEFAULT_DAYS };
+}
+
+/**
+ * Recording, with consent from everyone:
+ *   request  the host asks; every participant's screen asks them to agree (nothing is recorded yet)
+ *   start    allowed once everyone in the meeting agreed. Cloud recording (LiveKit Egress) when it is configured
+ *            and turned on for the organization; otherwise 'device' (the host's browser records its own view).
+ *            target 'cloud' insists on cloud and answers 501 recording_not_configured when it isn't available.
+ *   stop     ends it (cloud recordings are finalized by LiveKit and appear under GREET recordings).
+ *   cancel   withdraws a pending request.
+ */
+export async function setRecording(a: Actor, id: string, action: unknown, opts: { target?: unknown } = {}) {
+  if (!['request', 'start', 'stop', 'cancel'].includes(String(action))) throw new MeetingError(400, 'invalid_input', 'action must be request, start, stop or cancel.', { field: 'action' });
+  const settings = await greetSettings(a.orgId);
+  const cloudReady = settings.recordingEnabled && cloudRecordingAvailable();
+  if (action === 'start' && opts.target === 'cloud' && !cloudReady) {
+    throw new MeetingError(501, 'recording_not_configured', settings.recordingEnabled
+      ? 'Cloud recording isn\'t set up on this server (LiveKit Egress storage isn\'t configured).'
+      : 'Cloud recording is turned off for this organization. An admin can turn it on in GREET settings.');
+  }
+  let started: { recordingId: string; filepath: string } | null = null;
+  const { session } = await mutate(a.orgId, id, async (s, now) => {
     requireManager(s, a);
-    if (action === 'start') {
+    const r = s.recording;
+    if (action === 'request') {
       await requireFeature(s, 'recording');
-      s.recording = { active: true, startedAt: now, by: a.userId, used: true };
+      if (r.active) throw new MeetingError(409, 'already_recording', 'This meeting is already being recorded.');
+      const me = s.participants.find((p) => p.userId === a.userId && p.status === 'in');
+      s.recording = { ...r, requestedAt: now, consents: me ? { [me.id]: now } : {}, declined: {} };
+    } else if (action === 'cancel') {
+      s.recording = { ...r, requestedAt: null, consents: {}, declined: {} };
+    } else if (action === 'start') {
+      await requireFeature(s, 'recording');
+      if (r.active) return;
+      const present = s.participants.filter((p) => p.status === 'in');
+      const missing = present.filter((p) => !(r.consents || {})[p.id] && p.userId !== a.userId);
+      if (!r.requestedAt || missing.length) {
+        throw new MeetingError(409, 'consent_pending', missing.length
+          ? `Waiting for consent from: ${missing.map((p) => p.name).join(', ')}.`
+          : 'Ask everyone for consent first.', { waitingFor: missing.map((p) => ({ id: p.id, name: p.name })) });
+      }
+      const mode: 'cloud' | 'device' = cloudReady ? 'cloud' : 'device';
+      const recordingId = newId('rec');
+      if (mode === 'cloud') started = { recordingId, filepath: `${egressConfig()?.prefix || 'greet-recordings'}/${s.orgId}/${s.id}/${recordingId}.mp4` };
+      s.recording = { ...r, active: true, startedAt: now, by: a.userId, used: true, mode, recordingId, egressId: null };
     } else {
-      s.recording = { ...s.recording, active: false };
+      s.recording = { ...r, active: false, requestedAt: null };
     }
+  });
+  if (action === 'start' && started) {
+    const st = started as { recordingId: string; filepath: string };
+    let egressId: string | null = null;
+    try { egressId = (await startRoomRecording(session.id, st.filepath))?.egressId ?? null; }
+    catch (e) {
+      await mutate(a.orgId, id, (s) => { s.recording = { ...s.recording, active: false }; }).catch(() => undefined);
+      console.warn('[greet] cloud recording could not start:', (e as Error)?.name || 'error');
+      throw new MeetingError(502, 'recording_failed', 'Cloud recording couldn\'t start. Try again, or check the LiveKit Egress setup.');
+    }
+    const out = await mutate(a.orgId, id, (s) => { s.recording = { ...s.recording, egressId }; });
+    await (await getDocStore()).set(recordingPath(a.orgId, st.recordingId), {
+      id: st.recordingId, orgId: a.orgId, sessionId: session.id, scheduledMeetingId: session.scheduledMeetingId, title: session.title,
+      hostUserId: session.hostUserId, startedBy: a.userId, startedAt: new Date().toISOString(), endedAt: null,
+      mode: 'cloud', status: 'recording', egressId, storageKey: st.filepath,
+      consents: Object.entries(session.recording.consents || {}).map(([pid, at]) => ({ participantId: pid, name: session.participants.find((p) => p.id === pid)?.name || '', at: new Date(at).toISOString() })),
+      retentionDays: settings.recordingRetentionDays,
+      deleteAfter: new Date(Date.now() + settings.recordingRetentionDays * 86_400_000).toISOString(),
+    });
+    await recordAudit(a.orgId, { actorId: a.userId, action: 'greet.recording.started', target: st.recordingId, meta: { sessionId: session.id, mode: 'cloud' } });
+    return out.session;
+  }
+  if (action === 'start') await recordAudit(a.orgId, { actorId: a.userId, action: 'greet.recording.started', target: session.id, meta: { mode: session.recording.mode } });
+  if (action === 'stop') {
+    await finishCloudRecording(session, Date.now());
+    await recordAudit(a.orgId, { actorId: a.userId, action: 'greet.recording.stopped', target: session.recording.recordingId || session.id, meta: { mode: session.recording.mode } });
+  }
+  return session;
+}
+
+/** Stops LiveKit Egress (best effort) and marks the recording as processing; the LiveKit webhook marks it ready. */
+async function finishCloudRecording(s: Session, at: number) {
+  const r = s.recording;
+  if (r.mode !== 'cloud' || !r.recordingId) return;
+  const st = await getDocStore();
+  const rec = await st.get(recordingPath(s.orgId, r.recordingId));
+  if (!rec || rec.status !== 'recording') return;
+  try { if (r.egressId) await stopRoomRecording(r.egressId); }
+  catch (e) { console.warn('[greet] could not stop cloud recording:', (e as Error)?.name || 'error'); }
+  await st.update(recordingPath(s.orgId, r.recordingId), { status: 'processing', endedAt: new Date(at).toISOString() });
+}
+
+/** A participant answers the recording request (agree or decline). The host sees who declined. */
+export async function answerRecordingConsent(orgId: string, id: string, who: { userId?: string | null; guestKeyHash?: string | null }, agree: unknown) {
+  if (typeof agree !== 'boolean') throw new MeetingError(400, 'invalid_input', 'consent must be true or false.', { field: 'consent' });
+  return (await mutate(orgId, id, (s, now) => {
+    const p = s.participants.find((x) => x.status === 'in' && ((who.userId && x.userId === who.userId) || (who.guestKeyHash && x.guestKeyHash === who.guestKeyHash)));
+    if (!p) throw new MeetingError(403, 'not_a_participant', 'You\'re not in this meeting.');
+    if (!s.recording.requestedAt && !s.recording.active) throw new MeetingError(409, 'no_request', 'Nobody has asked to record this meeting.');
+    const consents = { ...(s.recording.consents || {}) }; const declined = { ...(s.recording.declined || {}) };
+    if (agree) { consents[p.id] = now; delete declined[p.id]; } else { declined[p.id] = now; delete consents[p.id]; }
+    s.recording = { ...s.recording, consents, declined };
   })).session;
+}
+
+/** Host control: mute someone's microphone through LiveKit (they can unmute themselves; everyone sees it). */
+export async function muteParticipant(a: Actor, id: string, pid: string | 'all') {
+  const s = await getSession(a.orgId, id);
+  requireManager(s, a);
+  if (s.status !== 'active') throw new MeetingError(409, 'meeting_ended', 'This meeting has ended.');
+  const targets = pid === 'all' ? s.participants.filter((p) => p.status === 'in' && p.userId !== a.userId) : [findParticipant(s, assertId(pid))];
+  const results: Record<string, string> = {};
+  for (const p of targets) {
+    const r = await muteInMediaRoom(s.id, p.id);
+    if (r === 'not_configured') throw new MeetingError(503, 'media_not_configured', 'Audio and video between people aren\'t connected on this server yet (LiveKit isn\'t configured).');
+    results[p.id] = r;
+  }
+  await recordAudit(a.orgId, { actorId: a.userId, action: 'greet.participant.muted', target: s.id, meta: { participants: Object.keys(results) } });
+  return { session: s, results };
+}
+
+// ---------------------------------------------------------------------------
+// External guests (GREET invitation links, no account)
+// ---------------------------------------------------------------------------
+
+/** The running session for a scheduled meeting (by its room code), or null when it hasn't started. */
+export async function liveSessionForMeeting(orgId: string, meeting: { id: string; roomCode?: string }) {
+  if (!meeting.roomCode || !ROOM_RE.test(meeting.roomCode)) return null;
+  const room = await (await getDocStore()).get(roomPath(meeting.roomCode));
+  if (!room || room.orgId !== orgId) return null;
+  const s = await getSession(orgId, room.sessionId);
+  return s.status === 'active' && s.scheduledMeetingId === meeting.id ? s : null;
+}
+
+/** A guest with a valid invitation enters the waiting room; only the host (or a co-host / admin) can let them in. */
+export async function guestJoin(orgId: string, sessionId: string, g: { inviteId: string; email: string; name: string; keyHash: string }) {
+  const { session, result } = await mutate(orgId, sessionId, (s, now) => {
+    const prior = s.participants.find((p) => p.inviteId === g.inviteId);
+    if (prior && (prior.status === 'removed' || prior.status === 'denied')) throw new MeetingError(403, 'not_allowed', 'The host didn\'t let you into this meeting.');
+    if (s.locked) throw new MeetingError(423, 'meeting_locked', 'The host has locked this meeting.');
+    if (prior && (prior.status === 'in' || prior.status === 'waiting')) { prior.guestKeyHash = g.keyHash; return prior; }
+    if (waitingCount(s) >= s.limits.maxParticipants) throw new MeetingError(409, 'waiting_full', 'The waiting room is full. Try again in a moment.');
+    const p: SessionParticipant = prior ?? { id: newId('pt'), name: g.name, email: g.email, userId: null, role: 'guest', status: 'waiting', invitedAt: now, joinedAt: null, leftAt: null, secondsIn: 0, inviteId: g.inviteId, guestKeyHash: g.keyHash };
+    if (!prior) s.participants.push(p);
+    p.status = 'waiting'; p.name = g.name; p.guestKeyHash = g.keyHash;
+    return p;
+  });
+  return { session, you: result! };
+}
+
+export async function guestParticipant(orgId: string, sessionId: string, keyHash: string, inviteId: string) {
+  const s = await getSession(orgId, sessionId);
+  const p = s.participants.find((x) => x.inviteId === inviteId && x.guestKeyHash === keyHash) ?? null;
+  return { session: s, you: p };
+}
+
+export async function guestMediaToken(orgId: string, sessionId: string, keyHash: string, inviteId: string) {
+  const { session: s, you: p } = await guestParticipant(orgId, sessionId, keyHash, inviteId);
+  if (s.status !== 'active') throw new MeetingError(409, 'meeting_ended', 'This meeting has ended.');
+  if (!p || p.status === 'removed' || p.status === 'denied' || p.status === 'left') throw new MeetingError(403, 'not_a_participant', 'You\'re not in this meeting.');
+  if (p.status === 'waiting') throw new MeetingError(403, 'not_admitted', 'The host hasn\'t let you in yet.');
+  const t = await createMediaToken({ room: s.id, identity: p.id, name: p.name, role: 'guest', canManage: false, expiresAt: s.endsAt });
+  if (t) await recordAudit(orgId, { actorId: `guest:${inviteId}`, action: 'greet.media_token.issued', target: s.id, meta: { participantId: p.id, role: 'guest', admin: false, expiresAt: t.expiresAt } });
+  return t;
+}
+
+export async function guestLeave(orgId: string, sessionId: string, keyHash: string, inviteId: string) {
+  return (await mutate(orgId, sessionId, (s, now) => {
+    const p = s.participants.find((x) => x.inviteId === inviteId && x.guestKeyHash === keyHash && (x.status === 'in' || x.status === 'waiting'));
+    if (!p) return;
+    if (p.status === 'in') p.secondsIn += Math.max(0, Math.round((now - (p.joinedAt ?? now)) / 1000));
+    p.status = 'left'; p.leftAt = now;
+  })).session;
+}
+
+/** What a guest's page shows (no roster emails, no ids beyond their own). */
+export function guestView(s: Session, p: SessionParticipant | null) {
+  return {
+    title: s.title, status: s.status, hostName: s.hostName, endsAt: s.endsAt, serverNow: Date.now(),
+    you: p ? { participantId: p.id, name: p.name, status: p.status } : null,
+    participantCount: inCount(s), locked: s.locked,
+    recording: {
+      active: s.recording.active, requested: !!s.recording.requestedAt && !s.recording.active, mode: s.recording.mode ?? null,
+      yourConsent: p ? ((s.recording.consents || {})[p.id] ? 'agreed' : (s.recording.declined || {})[p.id] ? 'declined' : null) : null,
+    },
+  };
 }
 
 /** Leave the meeting. When the host leaves and no co-host is still in, the meeting ends. */
@@ -480,13 +695,23 @@ export function sessionView(s: Session, a: Actor) {
     remainingSeconds: s.status === 'active' ? durationStatus(s.limits, (now - s.startedAt) / 1000, s.warnMinutesBefore).secondsLeft : 0,
     durationState: s.status === 'active' ? durationStatus(s.limits, (now - s.startedAt) / 1000, s.warnMinutesBefore).state : 'reached',
     participantCount: count, waitingCount: waitingCount(s), capacityState: capacityStatus(s.limits, count, s.capacityWarnPercent),
-    waitingRoomEnabled: s.waitingRoomEnabled, locked: s.locked, recording: { active: s.recording.active, startedAt: s.recording.startedAt },
+    waitingRoomEnabled: s.waitingRoomEnabled, locked: s.locked,
+    recording: {
+      active: s.recording.active, startedAt: s.recording.startedAt, mode: s.recording.mode ?? null,
+      requested: !!s.recording.requestedAt && !s.recording.active,
+      yourConsent: you ? ((s.recording.consents || {})[you.id] ? 'agreed' : (s.recording.declined || {})[you.id] ? 'declined' : null) : null,
+      ...(manager ? {
+        consentedIds: Object.keys(s.recording.consents || {}), declinedIds: Object.keys(s.recording.declined || {}),
+        waitingFor: s.participants.filter((p) => p.status === 'in' && !(s.recording.consents || {})[p.id]).map((p) => ({ id: p.id, name: p.name })),
+      } : {}),
+    },
+    scheduledMeetingId: s.scheduledMeetingId ?? null,
     host: { userId: s.hostUserId, name: s.hostName },
     you: { participantId: you?.id ?? null, role: you?.role ?? null, status: you?.status ?? null, canManage: manager },
     // Roster: full detail for the organizer's organization; names only for people joining from elsewhere.
     participants: s.participants
       .filter((p) => p.status === 'in' || (manager && p.status === 'waiting'))
-      .map((p) => ({ id: p.id, name: p.name, role: p.role, status: p.status, joinedAt: p.joinedAt, ...(sameOrg ? { email: p.email, userId: p.userId } : {}) })),
+      .map((p) => ({ id: p.id, name: p.name, role: p.role, status: p.status, joinedAt: p.joinedAt, external: !!p.inviteId, ...(sameOrg ? { email: p.email, userId: p.userId } : {}) })),
   };
 }
 export type SessionView = ReturnType<typeof sessionView>;

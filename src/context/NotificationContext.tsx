@@ -565,7 +565,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       case 'interaction': {
         const interactions = [
           { title: 'Client Viewed Proposal', message: 'Strata Global Agency opened "Enterprise Omnichannel Expansion" (View count: 4).' },
-          { title: 'Customer Joined Waiting Room', message: 'Elena Rostova is in the Greet Video Room ready for consultation.' },
+          { title: 'Customer Joined Waiting Room', message: 'Elena Rostova is in the GREET waiting room.' },
           { title: 'Social Mention Spike', message: 'LinkedIn post "AI Workflow Velocity" reached 1,400+ executive impressions.' }
         ];
         const idx = Math.floor(Math.random() * interactions.length);

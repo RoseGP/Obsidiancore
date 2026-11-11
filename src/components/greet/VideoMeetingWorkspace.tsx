@@ -11,7 +11,7 @@ import {
   // Used by the transcript tab and summary modal but previously never imported (ReferenceError at render).
   Save, Activity, UserX
 } from 'lucide-react';
-import { NotebookPen } from 'lucide-react';
+import { NotebookPen, Signal, SignalLow, SignalZero, Circle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { jsPDF } from 'jspdf';
 import { 
@@ -135,8 +135,16 @@ export default function VideoMeetingWorkspace({
     refreshDevices,
     testSpeakerSound,
     meetingNotes,
-    notesOutcome
+    notesOutcome,
+    networkQuality,
+    recordingConsentRequested,
+    answerRecordingConsent,
+    meetingIsBeingRecorded,
+    recordingMode,
+    recordingNotice,
   } = useMeetingSession();
+  const [consentBusy, setConsentBusy] = React.useState(false);
+  const [consentDeclined, setConsentDeclined] = React.useState(false);
 
   // Sidebar Tab state ('chat' | 'greet' | 'participants' | 'crm' | 'transcript')
   const [activeSidebarTab, setActiveSidebarTab] = useState<'chat' | 'greet' | 'participants' | 'crm' | 'transcript' | 'notes'>('greet');
@@ -642,6 +650,29 @@ export default function VideoMeetingWorkspace({
 
   return (
     <div className="obsidian w-full h-screen bg-[var(--obsidian-0)] text-neutral-100 flex flex-col overflow-hidden select-none font-sans">
+      {/* Recording consent: nothing is recorded until everyone in the meeting agrees. */}
+      {recordingConsentRequested && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/60" role="dialog" aria-modal="true" aria-labelledby="greet-consent-title">
+          <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[var(--obsidian-1)] p-5 shadow-2xl">
+            <h2 id="greet-consent-title" className="text-base font-semibold text-white">The host would like to record this meeting</h2>
+            <p className="mt-2 text-sm text-neutral-300">
+              Recording starts only if everyone agrees. It captures audio, video and shared screens. You'll see a red "Recording" label while it runs.
+            </p>
+            {consentDeclined && <p className="mt-3 text-sm text-amber-200">You declined. The host has been told and can't start recording without you. You can stay in the meeting.</p>}
+            <div className="mt-4 flex flex-wrap justify-end gap-2">
+              <button type="button" disabled={consentBusy} onClick={async () => { setConsentBusy(true); const r = await answerRecordingConsent(false); setConsentBusy(false); if (r.success) setConsentDeclined(true); }}
+                className="px-4 py-2 rounded-lg border border-white/15 text-sm text-neutral-200 hover:bg-white/5 disabled:opacity-50">Decline</button>
+              <button type="button" disabled={consentBusy} onClick={async () => { setConsentBusy(true); await answerRecordingConsent(true); setConsentBusy(false); setConsentDeclined(false); }}
+                className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm font-semibold text-white disabled:opacity-50">I agree to be recorded</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {recordingNotice && (
+        <div role="status" className="fixed top-16 sm:top-20 left-1/2 -translate-x-1/2 z-[70] max-w-[92vw] px-4 py-2 rounded-xl border border-amber-500/30 bg-amber-950/80 text-amber-100 text-xs shadow-lg">
+          {recordingNotice}
+        </div>
+      )}
       
       {/* =========================================================================
           1. TOP NAVIGATION & HUD BAR
@@ -748,6 +779,29 @@ export default function VideoMeetingWorkspace({
             <Shield className="h-3 w-3" />
             <span>{mediaStatus === 'connected' ? 'Video connected' : mediaStatus === 'connecting' ? 'Connecting video…' : mediaStatus === 'reconnecting' ? 'Reconnecting…' : 'Video not connected'}</span>
           </div>
+
+          {/* Your network quality as LiveKit measures it */}
+          {(mediaStatus === 'connected' || mediaStatus === 'reconnecting') && networkQuality !== 'unknown' && (
+            <div
+              data-testid="greet-network-quality"
+              className={`hidden sm:flex items-center gap-1 px-2.5 py-1 rounded-full border text-[11px] font-medium ${
+                networkQuality === 'excellent' || networkQuality === 'good' ? 'bg-emerald-950/30 border-emerald-500/20 text-emerald-300'
+                  : networkQuality === 'poor' ? 'bg-amber-950/40 border-amber-500/30 text-amber-200' : 'bg-rose-950/40 border-rose-500/30 text-rose-200'
+              }`}
+              title="Your connection quality, measured by the video service"
+            >
+              {networkQuality === 'excellent' || networkQuality === 'good' ? <Signal className="h-3 w-3" /> : networkQuality === 'poor' ? <SignalLow className="h-3 w-3" /> : <SignalZero className="h-3 w-3" />}
+              <span>{networkQuality === 'excellent' ? 'Network: excellent' : networkQuality === 'good' ? 'Network: good' : networkQuality === 'poor' ? 'Network: poor' : 'Network: lost'}</span>
+            </div>
+          )}
+
+          {/* Everyone sees when the meeting is being recorded */}
+          {meetingIsBeingRecorded && (
+            <div data-testid="greet-recording-indicator" className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-rose-500/40 bg-rose-950/50 text-rose-200 text-[11px] font-semibold" title={recordingMode === 'cloud' ? 'Recorded to your organization\'s GREET recordings' : 'Recorded on the host\'s device'}>
+              <Circle className="h-2.5 w-2.5 fill-rose-500 text-rose-500 animate-pulse" />
+              <span>Recording{recordingMode === 'cloud' ? ' · cloud' : ''}</span>
+            </div>
+          )}
 
           {/* Group Capacity Counter */}
           <div className={`flex items-center gap-1 px-2.5 py-1 rounded-full border text-[11px] font-medium ${
@@ -1388,7 +1442,7 @@ export default function VideoMeetingWorkspace({
             onStopRecording={async () => {
               const saved = await stopRecording();
               if (saved) {
-                showToast(`✓ Meeting recording stopped and saved to Greet Hub Vault (${saved.fileSizeFormatted}).`, 'success');
+                showToast(`✓ Recording stopped and saved on this device (${saved.fileSizeFormatted}).`, 'success');
               }
             }}
             onOpenSettings={() => setShowSettingsModal(true)}
@@ -1615,7 +1669,7 @@ export default function VideoMeetingWorkspace({
                   <div className="p-3.5 rounded-2xl bg-gradient-to-r from-indigo-950/80 to-purple-950/80 border border-indigo-500/30 space-y-2.5">
                     <div className="flex items-center gap-2">
                       <Sparkles className="h-4 w-4 text-amber-300" />
-                      <h4 className="text-xs font-bold text-white">Meet & Greet Concierge</h4>
+                      <h4 className="text-xs font-bold text-white">Welcome your guests</h4>
                     </div>
                     <p className="text-[11px] text-neutral-300 leading-relaxed">
                       Welcome attendees, exchange verified credentials, and create immediate CRM contact records.
@@ -2124,10 +2178,10 @@ export default function VideoMeetingWorkspace({
                         setTimeout(() => setTranscriptSaveNotice(null), 3500);
                       }}
                       className="w-full py-2 px-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md shadow-emerald-950/40 transition-all cursor-pointer active:scale-98"
-                      title="Save the complete meeting transcript into Greet Meeting tabs"
+                      title="Save the complete meeting transcript to GREET history"
                     >
                       <Save className="h-3.5 w-3.5" />
-                      <span>Save Transcript to Greet Hub Tabs</span>
+                      <span>Save transcript to GREET</span>
                     </button>
 
                     {transcriptSaveNotice && (
@@ -2436,7 +2490,7 @@ export default function VideoMeetingWorkspace({
             </div>
 
             <p className="text-xs text-neutral-300 leading-relaxed">
-              Recording this consultation will archive the media file into your <span className="font-semibold text-white">Greet Hub Recordings Vault</span>. All participants will receive an on-screen visual notification.
+              Recording this consultation will archive the media file on this device, or to your organization's <span className="font-semibold text-white">GREET recordings</span> when cloud recording is on. Everyone is asked to agree first and sees a red "Recording" label while it runs.
             </p>
 
             <label className="flex items-start gap-2.5 p-3 rounded-xl bg-neutral-900 border border-white/10 cursor-pointer">
@@ -2468,7 +2522,7 @@ export default function VideoMeetingWorkspace({
                   setRecordingConsentGranted(true);
                   const started = await startRecording();
                   if (started) {
-                    sendChatMessage('🔴 Meeting recording started. Session will be archived into Greet Hub Vault upon conclusion.');
+                    sendChatMessage('🔴 Recording started.');
                   }
                 }}
                 className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 disabled:opacity-40 text-white font-bold text-xs transition-all cursor-pointer shadow-md shadow-rose-950/50 flex items-center justify-center gap-1.5"
@@ -3097,7 +3151,7 @@ export default function VideoMeetingWorkspace({
                       className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-bold text-white flex items-center gap-1 cursor-pointer"
                     >
                       <Save className="h-3 w-3" />
-                      <span>Save in Greet Tabs</span>
+                      <span>Save to GREET</span>
                     </button>
                   </div>
                 </div>
@@ -3245,7 +3299,7 @@ export default function VideoMeetingWorkspace({
                 className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-all cursor-pointer shadow-md flex items-center justify-center gap-1.5"
               >
                 <Disc className="h-3.5 w-3.5" />
-                <span>View in Greet Hub Recordings Tab</span>
+                <span>View in GREET recordings</span>
               </button>
 
               <button

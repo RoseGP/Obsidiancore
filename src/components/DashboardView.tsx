@@ -215,7 +215,7 @@ export default function DashboardView({ contacts, onSelectContact, onNavigate, o
 
   const tools: Tool[] = [
     { id: 'receptionist', label: 'AI Voice Receptionist', description: 'Answers calls, takes messages, routes callers', icon: Headphones, cta: 'Open', color: '#22d3ee', onClick: () => open('voice_dialer') },
-    { id: 'meetings', label: 'Video Meetings', description: 'Start or join a call with screen sharing and notes', icon: Video, cta: 'Start', color: '#5b6cff', onClick: () => open('greet') },
+    { id: 'meetings', label: 'GREET', description: 'Start or join a GREET video meeting with screen sharing and notes', icon: Video, cta: 'Start', color: '#5b6cff', onClick: () => open('greet') },
     { id: 'proposal', label: 'Proposal Generator', description: 'Build, send and e-sign proposals', icon: FileText, cta: 'Create', color: '#a78bfa', onClick: () => open('proposals-builder') },
     { id: 'dialer', label: 'AI Dialer', description: 'Call leads with notes and call history', icon: PhoneCall, cta: 'Dial', color: '#34d399', onClick: () => open('voice_dialer') },
     { id: 'calendar', label: 'Calendar Scheduler', description: 'Book a meeting or follow-up', icon: CalendarPlus, cta: 'Schedule', color: '#fbbf24', onClick: () => (onQuickAction ? onQuickAction('event') : open('calendar')) },

@@ -4,7 +4,11 @@
  * exposes remote video tracks, reports who is speaking, and carries meeting chat over the data channel.
  * Remote participants are identified by their roster id (the token identity), so the UI can match tiles.
  */
-import { ConnectionState, Room, RoomEvent, Track, type LocalTrackPublication, type Participant, type RemoteParticipant, type RemoteTrack } from 'livekit-client';
+import { ConnectionQuality, ConnectionState, Room, RoomEvent, Track, type LocalTrackPublication, type Participant, type RemoteParticipant, type RemoteTrack } from 'livekit-client';
+
+export type NetworkQuality = 'excellent' | 'good' | 'poor' | 'lost' | 'unknown';
+const toQuality = (q: ConnectionQuality | undefined): NetworkQuality =>
+  q === ConnectionQuality.Excellent ? 'excellent' : q === ConnectionQuality.Good ? 'good' : q === ConnectionQuality.Poor ? 'poor' : q === ConnectionQuality.Lost ? 'lost' : 'unknown';
 
 export type MediaStatus = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'not_configured' | 'failed' | 'disconnected';
 
@@ -15,6 +19,8 @@ export interface RemoteMedia {
   micMuted: boolean;
   camOff: boolean;
   isSpeaking: boolean;
+  /** LiveKit's estimate of this person's connection. */
+  quality: NetworkQuality;
 }
 
 export interface ChatPacket { type: 'chat'; id: string; text: string; to?: string; senderName: string; sentAt: number }
@@ -23,6 +29,8 @@ interface Handlers {
   onRemote: (remote: Record<string, RemoteMedia>) => void;
   onStatus: (status: MediaStatus, message?: string) => void;
   onChat: (packet: ChatPacket, fromIdentity: string) => void;
+  /** Your own connection quality (LiveKit ConnectionQualityChanged). */
+  onLocalQuality?: (quality: NetworkQuality) => void;
 }
 
 export class MeetingMedia {
@@ -55,6 +63,10 @@ export class MeetingMedia {
       .on(RoomEvent.ParticipantConnected, () => this.emit())
       .on(RoomEvent.ParticipantDisconnected, () => this.emit())
       .on(RoomEvent.ActiveSpeakersChanged, () => this.emit())
+      .on(RoomEvent.ConnectionQualityChanged, (q: ConnectionQuality, p: Participant) => {
+        if (p.identity === room.localParticipant.identity) this.h.onLocalQuality?.(toQuality(q));
+        else this.emit();
+      })
       .on(RoomEvent.Reconnecting, () => this.h.onStatus('reconnecting', 'Reconnecting audio and video…'))
       .on(RoomEvent.Reconnected, () => this.h.onStatus('connected'))
       .on(RoomEvent.Disconnected, () => { this.h.onStatus('disconnected'); this.clearAudio(); })
@@ -138,6 +150,7 @@ export class MeetingMedia {
         micMuted: !mic || mic.isMuted,
         camOff: !cam || cam.isMuted,
         isSpeaking: speaking.has(p.identity),
+        quality: toQuality(p.connectionQuality),
       };
     });
     this.h.onRemote(out);

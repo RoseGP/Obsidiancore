@@ -10,6 +10,7 @@ import { CalendarEvent } from '../types';
 import { copyToClipboard } from '../utils/clipboard';
 import PublicSchedulingPage from './PublicSchedulingPage';
 import CreateMeetingView from './CreateMeetingView';
+import { cancelMeeting, meetingToCalendarEvent, useServerMeetings } from '../lib/greetClient';
 
 interface CalendarViewProps {
   events: CalendarEvent[];
@@ -20,16 +21,24 @@ interface CalendarViewProps {
 type ViewMode = 'month' | 'week' | 'day';
 type CategoryFilter = 'all' | 'interview' | 'task' | 'timeoff' | 'demo' | 'call' | 'contract';
 
-interface SampleParticipant {
-  name: string;
-  avatarBg: string;
-  avatarText: string;
-}
 
-// TO COMPLETE: load invitable participants from workspace members and CRM contacts.
-const PARTICIPANTS: SampleParticipant[] = [];
-
-export default function CalendarView({ events, onAddEvent, onRemoveEvent }: CalendarViewProps) {
+export default function CalendarView({ events: localEvents, onAddEvent, onRemoveEvent }: CalendarViewProps) {
+  // One calendar: GREET meetings come from the server (organizations/{org}/scheduled_meetings); anything in
+  // `localEvents` was saved on this device only (server unreachable) and is shown after them, never twice.
+  const { meetings: serverMeetings, state: serverState, error: serverError } = useServerMeetings();
+  const events: CalendarEvent[] = React.useMemo(() => {
+    const fromServer = serverMeetings.filter((m) => m.status !== 'CANCELLED').map(meetingToCalendarEvent);
+    const ids = new Set(fromServer.map((e) => e.id));
+    return [...fromServer, ...localEvents.filter((e) => !ids.has(e.id))];
+  }, [serverMeetings, localEvents]);
+  const removeEvent = async (evt: CalendarEvent) => {
+    if ((evt as any).serverMeeting) {
+      if (!window.confirm(`Cancel the GREET meeting "${evt.title}"? Guests' invitation links stop working.`)) return;
+      try { await cancelMeeting(evt.id); } catch (e) { window.alert((e as Error).message); }
+      return;
+    }
+    onRemoveEvent(evt.id);
+  };
   // Navigation & View Mode
   const [activeTab, setActiveTab] = useState<'internal' | 'public'>('internal');
   const [viewMode, setViewMode] = useState<ViewMode>('month');
@@ -390,6 +399,11 @@ export default function CalendarView({ events, onAddEvent, onRemoveEvent }: Cale
         </div>
       </div>
 
+      {(serverState === 'offline' || serverState === 'error') && (
+        <div role="status" className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-900">
+          {serverState === 'offline' ? 'The server can\'t be reached, so GREET meetings aren\'t shown. Anything you add is kept on this device until it can be saved.' : `GREET meetings couldn't be loaded: ${serverError}`}
+        </div>
+      )}
       {/* Conditional View Switching */}
       {activeTab === 'public' ? (
         <div className="flex-1 w-full bg-white rounded-2xl border border-slate-200/80 p-2 sm:p-6 shadow-xl overflow-y-auto min-h-[600px]">
@@ -502,7 +516,7 @@ export default function CalendarView({ events, onAddEvent, onRemoveEvent }: Cale
                       const isToday = cell.date.hasSame(DateTime.local(), 'day');
 
                       // Find matching events for this cell
-                      const dayEvents = filteredEvents.filter(e => e.time.startsWith(dateStr) || (idx === 10 && e.title.includes('Leave')));
+                      const dayEvents = filteredEvents.filter(e => e.time.startsWith(dateStr));
 
                       // Non-working/out of month background pattern
                       const isNonWorkingCell = !cell.isCurrentMonth || cell.date.weekday === 6 || cell.date.weekday === 7;
@@ -665,7 +679,9 @@ export default function CalendarView({ events, onAddEvent, onRemoveEvent }: Cale
                               </a>
                             )}
                             <button
-                              onClick={() => onRemoveEvent(evt.id)}
+                              onClick={() => removeEvent(evt)}
+                              aria-label={(evt as any).serverMeeting ? `Cancel ${evt.title}` : `Remove ${evt.title}`}
+                              title={(evt as any).serverMeeting ? 'Cancel this GREET meeting' : 'Remove (saved on this device only)'}
                               className="p-1.5 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50"
                             >
                               <Trash2 className="h-4 w-4" />
@@ -731,7 +747,9 @@ export default function CalendarView({ events, onAddEvent, onRemoveEvent }: Cale
               <div className="space-y-2.5 overflow-y-auto flex-1 max-h-[500px] pr-1">
                 {filteredEvents.map((evt, idx) => {
                   const style = getCategoryStyles(evt.type);
-                  const participant = PARTICIPANTS[idx % PARTICIPANTS.length];
+                  // Avatar from the event's own contact (no sample people).
+                  const who = (evt.contact || evt.title || '?').trim();
+                  const participant = { name: who, avatarBg: 'bg-indigo-500', avatarText: who.split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase() || '?' };
 
                   return (
                     <div

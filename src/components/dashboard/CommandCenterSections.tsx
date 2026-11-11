@@ -168,7 +168,7 @@ export function MeetingsList({ items, loading, error, onJoin, onSchedule }: { it
   const [all, setAll] = useState(false);
   if (loading && !items.length) return <div className="space-y-2 px-4 sm:px-5 pb-5">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-14 w-full rounded-xl" />)}</div>;
   if (error && !items.length) return <EmptyState icon={<AlertTriangle className="h-4 w-4" />} title="Meetings couldn’t load" body={error} />;
-  if (!items.length) return <EmptyState icon={<CalendarClock className="h-4 w-4" />} title="No meetings coming up" body="Scheduled video meetings and calendar events for the next two weeks appear here." action={<Button size="sm" variant="secondary" icon={<Plus className="h-3.5 w-3.5" />} onClick={onSchedule}>Schedule a meeting</Button>} />;
+  if (!items.length) return <EmptyState icon={<CalendarClock className="h-4 w-4" />} title="No meetings coming up" body="Scheduled GREET meetings and calendar events for the next two weeks appear here." action={<Button size="sm" variant="secondary" icon={<Plus className="h-3.5 w-3.5" />} onClick={onSchedule}>Schedule a meeting</Button>} />;
   const shown = all ? items : items.slice(0, 5);
   let lastDay = '';
   return (

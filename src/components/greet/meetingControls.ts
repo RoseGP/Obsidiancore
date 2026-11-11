@@ -102,7 +102,7 @@ export function buildMoreMenu(state: MeetingControlState, perms: MeetingPermissi
     {
       id: 'panels', title: 'Panels', items: [
         { id: 'open-notes', label: 'Meeting notes', checked: panelOpen('notes'), icon: 'notes' },
-        { id: 'open-greet', label: 'Meet & Greet', checked: panelOpen('greet'), icon: 'greet' },
+        { id: 'open-greet', label: 'Welcome guests', checked: panelOpen('greet'), icon: 'greet' },
         { id: 'open-transcript', label: 'Transcript', checked: panelOpen('transcript'), icon: 'transcript' },
         { id: 'open-crm', label: 'CRM records', checked: panelOpen('crm'), icon: 'crm' },
       ],

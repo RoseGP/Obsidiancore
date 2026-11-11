@@ -69,6 +69,8 @@ export const PUBLIC = {
   voice: [/^\/(inbound|menu|support|queue-wait|dial-status|status)$/, /^\/otp\/verify$/],
   // Stripe and Square webhooks (signature verified in each handler).
   paymentWebhooks: [/^\/(stripe|square)$/],
+  // GREET guest invitation links (signed, expiring tokens checked in the handler) and LiveKit's signed webhook.
+  greet: [/^\/invite\/[A-Za-z0-9_.-]{20,600}(\/(join|session|media-token|recording-consent|leave))?$/, /^\/livekit-webhook$/],
   // Customer-facing proposal links: only /share/<token>/… (the token is checked against its stored hash).
   proposals: [/^\/share\/[A-Za-z0-9_-]{20,64}(\/(items\/[A-Za-z0-9_-]+|accept|decline|checkout|document))?$/],
 };

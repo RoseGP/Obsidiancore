@@ -23,7 +23,7 @@ export const APP_SECTIONS: Array<{ id: string; label: string; covers: string }> 
   { id: 'deals', label: 'Sales & Leads Pipeline', covers: 'leads, deals, Kanban stages, lead scoring, converting leads to deals, CSV import/export, bulk updates' },
   { id: 'messages', label: 'Email & Messaging', covers: 'inbox, WhatsApp, email, SMS conversations, canned templates, live visitors' },
   { id: 'calendar', label: 'Calendar & Bookings', covers: 'appointments, public booking page, Google Calendar sync' },
-  { id: 'greet', label: 'Greet Hub', covers: 'video meetings, recordings, transcripts' },
+  { id: 'greet', label: 'GREET', covers: 'GREET video meetings (LiveKit): schedule, start, join, recordings, transcripts' },
   { id: 'proposals', label: 'Enterprise Proposals', covers: 'proposals, SOWs, invoices, billing, payment providers (Stripe, Square)' },
   { id: 'social_planner', label: 'Social Planner', covers: 'social posts, scheduling, content calendar, connecting social accounts (Postiz)' },
   { id: 'gbp', label: 'Local GBP & Locations', covers: 'Google Business Profile, reviews, local posts, locations' },

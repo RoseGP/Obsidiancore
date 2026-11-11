@@ -1185,8 +1185,8 @@ export default function ReceptionistTrainingCenter({
                             {/* Video Call Details */}
                             {msg.executedAction.type === 'video_call' && (
                               <div className="space-y-1.5 text-[11px]">
-                                <div className="text-neutral-300 font-semibold">{msg.executedAction.data?.roomName || 'My Meet & Greet Video Consultation'}</div>
-                                <div className="text-[10px] text-neutral-400">Encrypted Room ID: <span className="font-mono text-emerald-400">{msg.executedAction.data?.roomId || 'meet-and-greet'}</span> • Destination: <span className="text-blue-300 font-semibold">My Meet & Greet</span></div>
+                                <div className="text-neutral-300 font-semibold">{msg.executedAction.data?.roomName || 'GREET meeting'}</div>
+                                <div className="text-[10px] text-neutral-400">Encrypted Room ID: <span className="font-mono text-emerald-400">{msg.executedAction.data?.roomId || 'meet-and-greet'}</span> • Destination: <span className="text-blue-300 font-semibold">GREET</span></div>
                                 <div className="pt-1">
                                   <button
                                     type="button"
@@ -1201,7 +1201,7 @@ export default function ReceptionistTrainingCenter({
                                     className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold transition-all shadow-sm cursor-pointer"
                                   >
                                     <Video className="h-3 w-3" />
-                                    <span>Open My Meet & Greet</span>
+                                    <span>Open GREET</span>
                                     <ArrowRight className="h-3 w-3 ml-0.5 opacity-90" />
                                   </button>
                                 </div>

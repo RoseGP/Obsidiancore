@@ -4,8 +4,8 @@ import { CRMContact, CalendarEvent } from '../types';
 import { useOptionalAuth } from './AuthContext';
 import { useOptionalNotifications } from './NotificationContext';
 import { useMeetingNotesSync, type MeetingNotesSync } from './useMeetingNotesSync';
-import { MeetingMedia, type ChatPacket, type MediaStatus, type RemoteMedia } from '../lib/meetingMedia';
-export type { MediaStatus, RemoteMedia } from '../lib/meetingMedia';
+import { MeetingMedia, type ChatPacket, type MediaStatus, type RemoteMedia, type NetworkQuality } from '../lib/meetingMedia';
+export type { MediaStatus, RemoteMedia, NetworkQuality } from '../lib/meetingMedia';
 
 export interface MeetingParticipant {
   id: string;
@@ -134,10 +134,12 @@ export interface ServerSessionView {
   limits: PlanLimits; features: PlanFeatures; warnMinutesBefore: number; capacityWarnPercent: number;
   startedAt: number; endsAt: number; serverNow: number; status: 'active' | 'ended'; endedReason: 'host' | 'time_limit' | 'admin' | null;
   remainingSeconds: number; participantCount: number; waitingCount: number; capacityState: CapacityState;
-  waitingRoomEnabled: boolean; locked: boolean; recording: { active: boolean; startedAt: number | null };
+  waitingRoomEnabled: boolean; locked: boolean;
+  recording: { active: boolean; startedAt: number | null; mode?: 'cloud' | 'device' | null; requested?: boolean; yourConsent?: 'agreed' | 'declined' | null; waitingFor?: Array<{ id: string; name: string }>; declinedIds?: string[] };
+  scheduledMeetingId?: string | null;
   host: { userId: string; name: string };
   you: { participantId: string | null; role: 'host' | 'cohost' | 'guest' | null; status: string | null; canManage: boolean };
-  participants: Array<{ id: string; name: string; role: 'host' | 'cohost' | 'guest'; status: 'in' | 'waiting'; joinedAt: number | null; email?: string; userId?: string | null }>;
+  participants: Array<{ id: string; name: string; role: 'host' | 'cohost' | 'guest'; status: 'in' | 'waiting'; joinedAt: number | null; email?: string; userId?: string | null; external?: boolean }>;
 }
 
 /** A plan limit or missing feature the person ran into (shown with an upgrade option). */
@@ -218,6 +220,8 @@ interface MeetingSessionContextType {
   // Real audio/video (LiveKit). 'not_configured' = the server has no media service: nobody is simulated.
   mediaStatus: MediaStatus;
   mediaMessage: string | null;
+  /** Your connection quality as LiveKit measures it ('unknown' until connected). */
+  networkQuality: NetworkQuality;
   /** Remote people's live media by roster id. */
   remoteMedia: Record<string, RemoteMedia>;
   /** The signed-in person's name (shown on your own tile and in chat). */
@@ -244,6 +248,8 @@ interface MeetingSessionContextType {
       autoTranscribe?: boolean;
       startMuted?: boolean;
       startCamOff?: boolean;
+      /** Start a scheduled GREET meeting (its room code, invitations and CRM links). */
+      scheduledMeetingId?: string;
     }
   ) => Promise<{ success: boolean; message?: string }>;
   joinMeeting: (codeOrLink: string, linkedContact?: CRMContact) => Promise<{ success: boolean; message?: string }>;
@@ -281,6 +287,16 @@ interface MeetingSessionContextType {
   recordingDurationSeconds: number;
   recordingConsentGranted: boolean;
   setRecordingConsentGranted: (granted: boolean) => void;
+  /** The host asked to record and you haven't answered yet (show the consent prompt). */
+  recordingConsentRequested: boolean;
+  /** Your answer to the host's request to record (sent to the server). */
+  answerRecordingConsent: (agree: boolean) => Promise<{ success: boolean; message: string }>;
+  /** Someone in this meeting is recording it (shown to everyone). */
+  meetingIsBeingRecorded: boolean;
+  /** 'cloud' = saved to the organization's storage through LiveKit; 'device' = on the host's computer. */
+  recordingMode: 'cloud' | 'device' | null;
+  /** Status of the host's recording request (who still has to agree, who declined). */
+  recordingNotice: string | null;
   startRecording: () => Promise<boolean>;
   pauseRecording: () => void;
   resumeRecording: () => void;
@@ -388,13 +404,15 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
   const localUserName = auth?.userProfile?.displayName?.trim() || auth?.userProfile?.email || 'You';
   const [mediaStatus, setMediaStatus] = useState<MediaStatus>('idle');
   const [mediaMessage, setMediaMessage] = useState<string | null>(null);
+  const [networkQuality, setNetworkQuality] = useState<NetworkQuality>('unknown');
   const [remoteMedia, setRemoteMedia] = useState<Record<string, RemoteMedia>>({});
   const mediaRef = useRef<MeetingMedia | null>(null);
   const mediaConnectingRef = useRef(false);
   const getMedia = () => {
     if (!mediaRef.current) {
       mediaRef.current = new MeetingMedia({
-        onStatus: (status, message) => { setMediaStatus(status); setMediaMessage(message ?? null); },
+        onStatus: (status, message) => { setMediaStatus(status); setMediaMessage(message ?? null); if (status !== 'connected' && status !== 'reconnecting') setNetworkQuality('unknown'); },
+        onLocalQuality: (q) => setNetworkQuality(q),
         onRemote: (remote) => {
           setRemoteMedia(remote);
           // Speaking / muted / camera state on the roster comes from the real media.
@@ -580,6 +598,8 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
   const [isRecordingPaused, setIsRecordingPaused] = useState(false);
   const [recordingDurationSeconds, setRecordingDurationSeconds] = useState(0);
   const [recordingConsentGranted, setRecordingConsentGranted] = useState(false);
+  const [recordingNotice, setRecordingNotice] = useState<string | null>(null);
+  const pendingRecordStartRef = useRef(false);
   const [lastCompletedRecording, setLastCompletedRecording] = useState<MeetingRecordingData | null>(null);
 
   // Transcripts State
@@ -887,6 +907,7 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
       autoTranscribe?: boolean;
       startMuted?: boolean;
       startCamOff?: boolean;
+      scheduledMeetingId?: string;
     }
   ): Promise<{ success: boolean; message?: string }> => {
     setMeetingError(null);
@@ -898,7 +919,11 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
         : 'Meeting';
 
     // The server starts the meeting on the organizer's plan; without it, only sandbox builds may preview.
-    const r = await meetingsApi('/sessions', { method: 'POST', body: JSON.stringify({ title: meetingTitle, ...(cleanRoom.length >= 3 ? { roomCode: cleanRoom } : {}) }) });
+    const r = await meetingsApi('/sessions', { method: 'POST', body: JSON.stringify({
+      ...(customTitle?.trim() || !initialOptions?.scheduledMeetingId ? { title: meetingTitle } : {}),
+      ...(cleanRoom.length >= 3 ? { roomCode: cleanRoom } : {}),
+      ...(initialOptions?.scheduledMeetingId ? { scheduledMeetingId: initialOptions.scheduledMeetingId } : {}),
+    }) });
     if (!r.ok && r.data?.code === 'room_in_use' && cleanRoom) return joinMeeting(cleanRoom, linkedContact);
     const view: ServerSessionView | null = r.ok ? r.data.session : null;
     if (!view) {
@@ -1206,7 +1231,30 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
     const cur = serverSessionRef.current;
     if (cur) {
       const r = await meetingsApi(`/sessions/${encodeURIComponent(cur.id)}/recording`, { method: 'POST', body: JSON.stringify({ action: 'start' }) });
+      if (!r.ok && r.data?.code === 'consent_pending') {
+        // Nothing is recorded until everyone agrees: ask, then start automatically once they all have.
+        if (!cur.recording?.requested) {
+          const q = await meetingsApi(`/sessions/${encodeURIComponent(cur.id)}/recording`, { method: 'POST', body: JSON.stringify({ action: 'request' }) });
+          if (!q.ok) { noticeFrom(q.data, q.data?.error || "Couldn't ask for consent to record."); return false; }
+          if (q.data?.session) applyServerSession(q.data.session);
+        }
+        pendingRecordStartRef.current = true;
+        const waiting = (r.data?.waitingFor || []).map((p: any) => p.name).filter(Boolean);
+        setRecordingNotice(waiting.length ? `Asked everyone to agree to recording. Waiting for: ${waiting.join(', ')}.` : 'Asked everyone to agree to recording.');
+        return false;
+      }
       if (!r.ok) { noticeFrom(r.data, r.data?.error || "Recording couldn't start."); return false; }
+      pendingRecordStartRef.current = false;
+      setRecordingNotice(null);
+      if (r.data?.session) applyServerSession(r.data.session);
+      if (r.data?.session?.recording?.mode === 'cloud') {
+        // LiveKit records the whole room into the organization's storage; nothing is recorded in this browser.
+        setIsRecording(true); setIsRecordingPaused(false); setRecordingDurationSeconds(0); setRecordingConsentGranted(true);
+        if (recordingIntervalRef.current) clearInterval(recordingIntervalRef.current);
+        recordingIntervalRef.current = setInterval(() => setRecordingDurationSeconds(prev => prev + 1), 1000);
+        sendChatMessage('🔴 Recording started. Everyone agreed; it is saved to the organization\'s GREET recordings.');
+        return true;
+      }
     } else if (!meetingFeatures.recording) {
       const next = nextPlanFor({ feature: 'recording' });
       setPlanNotice({ kind: 'feature', feature: 'recording', message: `Recording isn't included in the ${meetingPlanLabel} plan.`, ...(next ? { upgradeTo: next.upgradeTo, upgradeLabel: next.upgradeLabel } : {}) });
@@ -1220,19 +1268,9 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
       let recordStream = localStreamRef.current || screenStreamRef.current;
       
       if (!recordStream) {
-        // Fallback synthetic stream so recorder still produces a valid video blob
-        const canvas = document.createElement('canvas');
-        canvas.width = 640;
-        canvas.height = 360;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.fillStyle = '#0f172a';
-          ctx.fillRect(0, 0, 640, 360);
-          ctx.fillStyle = '#38bdf8';
-          ctx.font = '20px sans-serif';
-          ctx.fillText('Obsidian Live Stream Recording', 160, 180);
-        }
-        recordStream = (canvas as any).captureStream ? (canvas as any).captureStream(10) : null;
+        setRecordingNotice('Nothing to record on this device: turn on your camera, microphone or screen share first.');
+        if (cur) meetingsApi(`/sessions/${encodeURIComponent(cur.id)}/recording`, { method: 'POST', body: JSON.stringify({ action: 'stop' }) });
+        return false;
       }
 
       if (typeof MediaRecorder !== 'undefined' && recordStream) {
@@ -1312,6 +1350,7 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
       recordingIntervalRef.current = null;
     }
 
+    const wasCloud = curSession?.recording?.mode === 'cloud';
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       try {
         mediaRecorderRef.current.stop();
@@ -1320,19 +1359,27 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
 
     setIsRecording(false);
     setIsRecordingPaused(false);
+    pendingRecordStartRef.current = false;
+    setRecordingNotice(null);
 
-    // Build recorded video blob
+    if (wasCloud) {
+      sendChatMessage('⏹️ Recording stopped. It will appear under GREET recordings once processing finishes.');
+      return null;
+    }
+
+    // The recorded video (only what this browser actually captured).
     const chunks = recordedChunksRef.current;
-    const blob = chunks.length > 0
-      ? new Blob(chunks, { type: 'video/webm' })
-      : new Blob(['obsidian-video-recording-stream'], { type: 'video/webm' });
-    
+    if (chunks.length === 0) {
+      sendChatMessage('⏹️ Recording stopped. Nothing was captured on this device.');
+      return null;
+    }
+    const blob = new Blob(chunks, { type: 'video/webm' });
     const videoUrl = URL.createObjectURL(blob);
-    const fileSizeBytes = Math.max(blob.size, 1024 * 1024 * 12); // Realistic file size
-    const fileSizeFormatted = `${(fileSizeBytes / (1024 * 1024)).toFixed(1)} MB`;
+    const fileSizeBytes = blob.size;
+    const fileSizeFormatted = fileSizeBytes >= 1024 * 1024 ? `${(fileSizeBytes / (1024 * 1024)).toFixed(1)} MB` : `${Math.max(1, Math.round(fileSizeBytes / 1024))} KB`;
 
     const now = Date.now();
-    const duration = Math.max(recordingDurationSeconds, 15);
+    const duration = recordingDurationSeconds;
     const mins = Math.floor(duration / 60);
     const secs = duration % 60;
     const durationFormatted = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
@@ -1341,7 +1388,7 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
       id: `rec-${now}`,
       meetingId: activeMeeting?.id || `mtg-${now}`,
       roomId: activeMeeting?.roomId || 'room-demo',
-      title: activeMeeting?.title || 'Executive Video Consultation',
+      title: activeMeeting?.title || 'GREET meeting',
       startedAt: activeMeeting?.startedAt || now - duration * 1000,
       durationSeconds: duration,
       recordedAt: new Date().toLocaleString(),
@@ -1351,7 +1398,7 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
       mimeType: 'video/webm',
       transcript: [...liveTranscript],
       participants: activeMeeting ? [...activeMeeting.participants] : [...DEFAULT_PARTICIPANTS],
-      notes: activeMeeting?.notes || 'Recorded session archived into Obsidian CRM history.'
+      notes: activeMeeting?.notes || ''
     };
 
     setLastCompletedRecording(recordingData);
@@ -1365,7 +1412,7 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       durationSeconds: duration,
       durationFormatted,
-      hostName: activeMeeting?.hostName || 'Camelia Rose',
+      hostName: activeMeeting?.hostName || localUserName,
       participants: recordingData.participants.map(p => ({
         name: p.name,
         title: p.title,
@@ -1375,14 +1422,14 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
       hasRecording: true,
       recordingUrl: videoUrl,
       recordingSize: fileSizeFormatted,
-      hasTranscript: true,
+      hasTranscript: recordingData.transcript.length > 0,
       transcript: recordingData.transcript,
       notes: recordingData.notes || '',
-      tasksCount: activeMeeting?.tasks.length || 2
+      tasksCount: activeMeeting?.tasks.length || 0
     };
 
     setMeetingHistory(prev => [historyItem, ...prev]);
-    sendChatMessage(`⏹️ Meeting recording stopped. File archived (${fileSizeFormatted}) with synchronized transcript.`);
+    sendChatMessage(`⏹️ Recording stopped. Saved on this device (${fileSizeFormatted}).`);
     return recordingData;
   };
 
@@ -1428,7 +1475,7 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
               const s = (curSec % 60).toString().padStart(2, '0');
               addTranscriptItem({
                 speakerId: 'host',
-                speakerName: 'Camelia Rose (You)',
+                speakerName: `${localUserName} (You)`,
                 timestamp: `${m}:${s}`,
                 timeSeconds: curSec,
                 text: spokenText,
@@ -1528,12 +1575,12 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
       const newHistoryRecord: MeetingHistoryRecord = {
         id: newRecordId,
         roomId: activeMeeting?.roomId || `room-${now}`,
-        title: activeMeeting?.title || 'Video Consultation Transcript',
+        title: activeMeeting?.title || 'GREET meeting transcript',
         date: 'Today',
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         durationSeconds: duration,
         durationFormatted,
-        hostName: activeMeeting?.hostName || 'Camelia Rose',
+        hostName: activeMeeting?.hostName || localUserName,
         participants: activeMeeting?.participants.map(p => ({
           name: p.name,
           title: p.title,
@@ -1867,13 +1914,32 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
     setActiveMeeting(prev => prev ? { ...prev, participants: fn(prev.participants) } : prev);
   }, []);
 
+  // Host mute goes through LiveKit's server API (the server checks you may manage this meeting).
   const muteParticipant = useCallback((participantId: string) => {
-    updateParticipants(list => list.map(p => p.id === participantId ? { ...p, isMuted: true, isSpeaking: false } : p));
-  }, [updateParticipants]);
+    const cur = serverSessionRef.current;
+    if (!cur) { updateParticipants(list => list.map(p => p.id === participantId ? { ...p, isMuted: true, isSpeaking: false } : p)); return; }
+    meetingsApi(`/sessions/${encodeURIComponent(cur.id)}/participants/${encodeURIComponent(participantId)}/mute`, { method: 'POST' }).then((r) => {
+      if (r.ok) updateParticipants(list => list.map(p => p.id === participantId ? { ...p, isMuted: true, isSpeaking: false } : p));
+      else noticeFrom(r.data, r.data?.error || "Couldn't mute them.");
+    });
+  }, [updateParticipants, meetingsApi]);
 
   const muteAllParticipants = useCallback(() => {
-    updateParticipants(list => list.map(p => ({ ...p, isMuted: true, isSpeaking: false })));
-  }, [updateParticipants]);
+    const cur = serverSessionRef.current;
+    if (!cur) { updateParticipants(list => list.map(p => ({ ...p, isMuted: true, isSpeaking: false }))); return; }
+    meetingsApi(`/sessions/${encodeURIComponent(cur.id)}/mute-all`, { method: 'POST' }).then((r) => {
+      if (r.ok) updateParticipants(list => list.map(p => (p.id === 'local-user' ? p : { ...p, isMuted: true, isSpeaking: false })));
+      else noticeFrom(r.data, r.data?.error || "Couldn't mute everyone.");
+    });
+  }, [updateParticipants, meetingsApi]);
+
+  const answerRecordingConsent = useCallback(async (agree: boolean) => {
+    const cur = serverSessionRef.current;
+    if (!cur) return { success: false, message: 'Not in a meeting.' };
+    const r = await meetingsApi(`/sessions/${encodeURIComponent(cur.id)}/recording/consent`, { method: 'POST', body: JSON.stringify({ consent: agree }) });
+    if (r.ok && r.data?.session) applyServerSession(r.data.session);
+    return r.ok ? { success: true, message: agree ? 'Thanks. You agreed to be recorded.' : 'You declined. The host has been told.' } : { success: false, message: r.data?.error || "Couldn't send your answer." };
+  }, [meetingsApi, applyServerSession]);
 
   const removeParticipant = async (participantId: string): Promise<{ success: boolean; message: string }> => {
     const name = activeMeeting?.participants.find(p => p.id === participantId)?.name ?? 'They';
@@ -1964,6 +2030,7 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
         clearPlanNotice,
         mediaStatus,
         mediaMessage,
+        networkQuality,
         remoteMedia,
         localUserName,
         localStream,
@@ -2001,6 +2068,11 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
         isRecordingPaused,
         recordingDurationSeconds,
         recordingConsentGranted,
+        recordingConsentRequested: !!serverSession?.recording?.requested && !serverSession?.recording?.yourConsent && !(serverSession?.you?.canManage),
+        answerRecordingConsent,
+        meetingIsBeingRecorded: !!serverSession?.recording?.active || isRecording,
+        recordingMode: serverSession?.recording?.mode ?? (isRecording ? 'device' : null),
+        recordingNotice,
         setRecordingConsentGranted,
         startRecording,
         pauseRecording,

@@ -200,7 +200,7 @@ export function upcomingMeetings(input: Pick<CommandCenterInput, 'meetings' | 'e
       if (start === null || end === null || end < now || start > now + horizon) return;
       items.push({
         id: `${m.id}:${i}`, title: m.title, contact: (m.guests || [])[0] || '', start, end, live: start <= now && now < end,
-        typeLabel: (m.guests || []).length ? `Video meeting · ${(m.guests || []).length + 1} people` : 'Video meeting',
+        typeLabel: (m.guests || []).length ? `GREET meeting · ${(m.guests || []).length + 1} people` : 'GREET meeting',
         timeLabel: `${clock(start)} – ${clock(end)}`, dayLabel: dayLabel(start, now), roomCode: m.roomCode, source: 'meeting',
       });
     });

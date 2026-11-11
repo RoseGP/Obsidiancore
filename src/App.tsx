@@ -13,7 +13,9 @@ import { NotificationProvider } from './context/NotificationContext';
 import { LuxuryNotificationToasts } from './components/notifications/LuxuryNotificationToasts';
 import UnifiedCommandSearchBar from './components/UnifiedCommandSearchBar';
 import DashboardView from './components/DashboardView';
-import VideoWelcomePage from './components/VideoWelcomePage';
+import GreetHub from './components/greet/GreetHub';
+import GreetGuestPage from './components/greet/GreetGuestPage';
+import { announceMeetingsChanged, scheduleFromCalendarEvent, scheduleMeeting } from './lib/greetClient';
 import ProductionMessagingPlatform from './components/messaging/ProductionMessagingPlatform';
 import AnalyticsView from './components/AnalyticsView';
 import SettingsView, { SettingsTab } from './components/SettingsView';
@@ -225,14 +227,36 @@ function AppMain() {
     setContacts(prev => prev.map(c => c.id === contactId ? { ...c, status } : c));
   }, []);
 
-  const handleAddCalendarEvent = useCallback((newEvent: Omit<CalendarEvent, 'id'> | CalendarEvent) => {
+  // Kept only in this browser: used when the server can't be reached, and by the public booking page preview.
+  const handleAddLocalCalendarEvent = useCallback((newEvent: Omit<CalendarEvent, 'id'> | CalendarEvent, note?: string) => {
     const eventWithId: CalendarEvent = {
       ...newEvent,
       id: 'id' in newEvent ? newEvent.id : `evt-${Date.now()}`
     };
     setEvents(prev => [eventWithId, ...prev]);
-    showToast(`Meeting "${eventWithId.title}" added to calendar.`);
+    showToast(note || `"${eventWithId.title}" added to the calendar on this device.`);
   }, [showToast]);
+
+  // One calendar: every scheduling entry point (calendar form, quick actions, dialer, free-time finder,
+  // meeting room) saves a GREET meeting on the server. Already-saved meetings just refresh the views.
+  const handleAddCalendarEvent = useCallback(async (newEvent: Omit<CalendarEvent, 'id'> | CalendarEvent) => {
+    const ev = newEvent as CalendarEvent & { serverMeeting?: boolean };
+    if (ev.serverMeeting || (typeof ev.id === 'string' && ev.id.startsWith('smt_'))) {
+      announceMeetingsChanged();
+      showToast(`GREET meeting "${ev.title}" is on the calendar.`);
+      return;
+    }
+    const input = scheduleFromCalendarEvent(ev);
+    if (!input) { handleAddLocalCalendarEvent(newEvent, `"${ev.title}" has no date and time, so it was added on this device only.`); return; }
+    try {
+      await scheduleMeeting(input);
+      showToast(`GREET meeting "${input.title}" scheduled for ${input.date} at ${input.time}.`);
+    } catch (e) {
+      const err = e as Error & { code?: string };
+      if (err.code === 'network') handleAddLocalCalendarEvent(newEvent, `The server couldn't be reached: "${ev.title}" was saved on this device only.`);
+      else showToast(err.message);
+    }
+  }, [showToast, handleAddLocalCalendarEvent]);
 
   const handleRemoveCalendarEvent = useCallback((id: string) => {
     setEvents(prev => prev.filter(e => e.id !== id));
@@ -318,21 +342,20 @@ function AppMain() {
       case 'welcome':
       case 'meet_and_greet':
         return (
-          <VideoWelcomePage
+          <GreetHub
             contacts={contacts}
-            onStartInstantMeeting={async (roomCode, contact, title, options) => {
+            onNavigate={(v) => setActiveView(v as SemanticView)}
+            onStart={async (roomCode, contact, title, options) => {
               // The server starts the meeting on the organization's plan; if it refuses, say why and stay here.
               const r = await meetingSession.startInstantMeeting(roomCode, contact, title, options);
               if (r.success) setActiveView('call_canvas');
               else if (r.message) showToast(r.message);
             }}
-            onJoinMeeting={async (code) => {
+            onJoin={async (code) => {
               const r = await meetingSession.joinMeeting(code);
               if (r.success) { setActiveView('call_canvas'); if (r.message) showToast(r.message); }
               else if (r.message) showToast(r.message);
             }}
-            onScheduleMeeting={handleAddCalendarEvent}
-            onNavigateToDashboard={() => setActiveView('dashboard')}
           />
         );
       case 'analytics':
@@ -382,7 +405,7 @@ function AppMain() {
       case 'public_scheduling':
         return (
           <PublicSchedulingPage
-            onBookingCreated={handleAddCalendarEvent}
+            onBookingCreated={(ev) => handleAddLocalCalendarEvent(ev)}
             onClose={() => setActiveView('calendar')}
           />
         );
@@ -403,6 +426,9 @@ function AppMain() {
   // Proposal links (/?proposal=<token>) are for clients: no CRM account needed.
   const proposalToken = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('proposal') : null;
   if (proposalToken) return <ProposalSharePage token={proposalToken} />;
+  // GREET guest invitations (/?greet_invite=<token>) are for external guests: no CRM account needed.
+  const greetInvite = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('greet_invite') : null;
+  if (greetInvite) return <GreetGuestPage token={greetInvite} />;
 
   if (!isAuthenticated && !isAuthLoading) {
     return (
