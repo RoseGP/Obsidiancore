@@ -17,6 +17,7 @@ open. Branch `ccr-3cb69e97-gobm6h`.
 | GREET | The new name for video meetings, on LiveKit. Hub (start, schedule, join, upcoming, invitations, history, recordings). Meetings linked to CRM records. Reschedule and cancel. Signed guest invitation links with a waiting room. Host mute, remove and end for everyone. Network quality. Recording only with consent. Outcomes and follow-up tasks. | `docs/greet/README.md` |
 | Calendar | One server calendar. Every scheduling form saves GREET meetings on the server. Public booking saves or answers 501. | `CalendarView.tsx`, `availability.ts` |
 | Search | Real deals, contacts and navigation, using the sidebar labels. | `UnifiedCommandSearchBar.tsx` |
+| Reports & Analytics | Sales forecast with an uncertainty range, pipeline health, deal next actions, RFM customer segments, lead-source conversion; fuzzy duplicate matching for contacts and leads. Every figure explains how it is calculated. | `docs/analytics/README.md` |
 
 ## 2. Redundancy removed
 

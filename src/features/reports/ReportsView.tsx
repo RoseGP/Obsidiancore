@@ -199,8 +199,8 @@ function ForecastSection({ r, months, setMonths, onOpenDeal }: { r: R<ForecastDa
 
           <p className="text-[12px] text-[var(--text-muted)]">
             {f.history.deals
-              ? <>For comparison, you won <strong className="text-[var(--text)] tabular-nums">{usd(f.history.total)}</strong> in the last 3 months ({f.history.months.map((m) => `${m.label.split(' ')[0]} ${usd(m.won)}`).join(' · ')}).</>
-              : 'No deals were won in the last 3 months, so there is no recent result to compare with.'}
+              ? <>For comparison, you won <strong className="text-[var(--text)] tabular-nums">{usd(f.history.total)}</strong> in the last 3 full months ({f.history.months.map((m) => `${m.label.split(' ')[0]} ${usd(m.won)}`).join(' · ')}).</>
+              : `No deals were won in the last 3 full months (${f.history.months.map((m) => m.label.split(' ')[0]).join(', ')}), so there is no recent result to compare with. This month's wins count from next month.`}
           </p>
           <Notes notes={f.notes} />
 

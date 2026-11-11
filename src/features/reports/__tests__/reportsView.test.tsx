@@ -60,7 +60,7 @@ await wait(() => text().includes('No open deals to forecast') && text().includes
 assert.ok(!/\$[1-9]/.test(text()), `no invented amounts in the empty state:\n${text().match(/.{40}\$[1-9].{20}/)?.[0]}`);
 assert.ok(!/NaN|undefined|Infinity/.test(text()));
 assert.match(text(), /Low confidence/);
-assert.match(text(), /No deals were won in the last 3 months/);
+assert.match(text(), /No deals were won in the last 3 full months/);
 assert.equal(document.querySelectorAll('details summary').length >= 5, true);
 ok('empty organization: every section shows an empty state, a low-confidence badge and no invented amounts');
 await act(async () => { root.render(React.createElement('div')); });
@@ -84,7 +84,7 @@ assert.match(text(), /Expected/); assert.ok(text().includes(usd(api.total.expect
 assert.ok(text().includes(usd(api.total.commit))); assert.ok(text().includes(usd(api.total.pipeline)));
 assert.ok(text().includes(`${usd(api.total.low)}–${usd(api.total.high)}`), 'the 80% range is shown');
 assert.match(text(), /Medium confidence/); // 5 closed deals: enough for history, fewer than 20
-assert.ok(text().includes(`you won ${usd(api.history.total)} in the last 3 months`));
+assert.ok(text().includes(`you won ${usd(api.history.total)} in the last 3 full months`));
 ok('populated: the forecast tiles show the server’s expected, commit, pipeline and range');
 assert.ok(text().includes('Update the close date or mark it lost'));
 assert.ok(text().includes('Champions') && text().includes('Prospects'));

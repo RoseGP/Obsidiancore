@@ -470,7 +470,8 @@ router.post('/:id/convert', async (req, res) => {
       const value = Number(b.dealValue) > 0 ? Number(b.dealValue) : (Number(lead.qualification?.budget) || 0);
       const deal = {
         id: dealId, name: str(b.dealTitle, 200) || `${lead.company || lead.name} Solution Contract`, client: lead.company || lead.name,
-        value, stage: dealStage, probability: probabilities[dealStage], expectedClose: str(b.expectedClose, 60) || 'Next Month',
+        value, stage: dealStage, probability: probabilities[dealStage], expectedClose: str(b.expectedClose, 60) || '',
+        stageHistory: [{ stage: dealStage, from: null, at: ts }], stageEnteredAt: ts,
         momentum: 'hot', channelOrigin: lead.source || 'other', owner: lead.owner || actorOf(req),
         originLeadId: lead.id, contactId, companyId, createdAt: ts, updatedAt: ts,
       };

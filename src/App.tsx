@@ -25,7 +25,6 @@ import ProposalsView from './components/ProposalsView';
 import SocialPlannerTab from './components/SocialPlannerTab';
 import GbpView from './components/GbpView';
 import DealsPipelineView from './components/DealsPipelineView';
-import LeadsView from './components/leads/LeadsView';
 import CRMVoiceDialer from './components/CRMVoiceDialer';
 import VideoMeetingWorkspace from './components/greet/VideoMeetingWorkspace';
 import FloatingMeetingHUD from './components/greet/FloatingMeetingHUD';
