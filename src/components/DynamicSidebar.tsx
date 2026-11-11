@@ -1,6 +1,8 @@
 /**
  * App navigation, grouped the way the business runs: Command Center, Customers, Communications,
- * Operations, Marketing, AI Management and Settings. Every item opens a real page or dashboard section.
+ * Operations, Marketing and Settings. Every item opens one page; nothing is listed twice (dashboard
+ * sections are reached on the dashboard, leads/contacts/companies inside the Sales Pipeline, and the
+ * AI receptionist inside Voice Calls).
  * Item ids: a view ('leads'), a dashboard section ('dashboard#missions') or a Settings tab ('settings:integrations').
  * Desktop: collapsible rail and collapsible groups (remembered per browser), tooltips when collapsed.
  * Phones/tablets (< md): an off-canvas drawer opened from the header's menu button.
@@ -8,7 +10,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   LayoutDashboard, MessageSquare, FileText, BarChart3, Settings, ChevronLeft, ChevronRight, ChevronDown, Video, Calendar, Share2,
-  Globe, Phone, X, Bot, Brain, Bell, Users, KanbanSquare, MessageCircle, Headphones, Trophy, Lightbulb, Plug, UserCog, UserCircle2,
+  Globe, Phone, X, Brain, Bell, KanbanSquare, MessageCircle, Plug, UserCog, UserCircle2, ListChecks, ShieldCheck, Scale,
 } from 'lucide-react';
 
 interface SidebarItem { id: string; label: string; icon: React.ComponentType<any>; hint: string }
@@ -16,40 +18,35 @@ interface SidebarGroup { id: string; label: string | null; items: SidebarItem[] 
 
 export const NAV_GROUPS: SidebarGroup[] = [
   { id: 'command', label: 'Command Center', items: [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, hint: 'Your business at a glance' },
-    { id: 'dashboard#copilot', label: 'AI Copilot', icon: Bot, hint: 'Ask Claude or Gemini to help' },
-    { id: 'dashboard#attention', label: 'Needs Your Attention', icon: Bell, hint: 'What needs you today' },
+    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, hint: 'Your business at a glance, with your AI copilot' },
+    { id: 'tasks', label: 'Tasks', icon: ListChecks, hint: 'Everyone’s tasks, follow-ups and reminders in one list' },
   ] },
   { id: 'customers', label: 'Customer Management', items: [
-    { id: 'leads', label: 'Contacts & Leads', icon: Users, hint: 'Everyone in your CRM' },
+    { id: 'deals', label: 'Sales Pipeline & Deals', icon: KanbanSquare, hint: 'Pipeline, leads, contacts and companies' },
     { id: 'lead_intelligence', label: 'Lead Intelligence', icon: Brain, hint: 'Hot, warm and cold leads with next best actions' },
-    { id: 'deals', label: 'Sales Pipeline & Deals', icon: KanbanSquare, hint: 'Deals by stage' },
   ] },
   { id: 'communications', label: 'Communications', items: [
     { id: 'messages', label: 'Unified Inbox', icon: MessageSquare, hint: 'Website chat, team and customer conversations' },
     { id: 'voice_messages', label: 'WhatsApp & SMS', icon: MessageCircle, hint: 'Messages and voicemails on your numbers' },
-    { id: 'voice_dialer', label: 'Voice Calls', icon: Phone, hint: 'Dialer and call history' },
+    { id: 'voice_dialer', label: 'Voice Calls', icon: Phone, hint: 'Dialer, call history and the AI receptionist' },
   ] },
   { id: 'operations', label: 'Business Operations', items: [
-    { id: 'calendar', label: 'Calendar', icon: Calendar, hint: 'Events and bookings' },
-    { id: 'greet', label: 'Video Meetings', icon: Video, hint: 'Meetings with screen sharing and notes' },
+    { id: 'calendar', label: 'Calendar', icon: Calendar, hint: 'GREET meetings, bookings and events' },
+    { id: 'greet', label: 'GREET', icon: Video, hint: 'Video meetings: schedule, start and join' },
     { id: 'proposals', label: 'Proposals & Invoices', icon: FileText, hint: 'Quotes, e-signature, invoicing' },
-    { id: 'voice_receptionist', label: 'AI Voice Receptionist', icon: Headphones, hint: 'Answers and routes your calls' },
     { id: 'analytics', label: 'Reports & Analytics', icon: BarChart3, hint: 'Reports and trends' },
   ] },
   { id: 'marketing', label: 'Marketing', items: [
     { id: 'social_planner', label: 'Social Planner', icon: Share2, hint: 'Schedule social posts' },
     { id: 'gbp', label: 'Local SEO', icon: Globe, hint: 'Google Business Profile' },
   ] },
-  { id: 'ai', label: 'AI Management', items: [
-    { id: 'dashboard#missions', label: 'Daily Missions', icon: Trophy, hint: 'Goals, XP and streaks' },
-    { id: 'dashboard#insights', label: 'AI Insights', icon: Lightbulb, hint: 'Opportunities and risks' },
-  ] },
   { id: 'settings', label: 'Settings', items: [
     { id: 'settings:integrations', label: 'Integrations', icon: Plug, hint: 'Connected services and AI providers' },
     { id: 'settings:notifications', label: 'Notifications', icon: Bell, hint: 'What you’re told about, and how' },
     { id: 'settings:workspace', label: 'Team Management', icon: UserCog, hint: 'Members, roles, plan' },
-    { id: 'settings:account', label: 'Account Settings', icon: UserCircle2, hint: 'Profile and security' },
+    { id: 'settings:security', label: 'Security', icon: ShieldCheck, hint: 'Two-step sign-in and session rules' },
+    { id: 'settings:compliance', label: 'Privacy & Compliance', icon: Scale, hint: 'Consent, data requests, retention, audit log' },
+    { id: 'settings:account', label: 'Account Settings', icon: UserCircle2, hint: 'Your profile' },
   ] },
 ];
 

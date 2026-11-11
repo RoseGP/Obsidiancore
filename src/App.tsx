@@ -7,6 +7,7 @@ import AuthFlowView from './components/auth/AuthFlowView';
 import ProposalSharePage from './features/proposals/ProposalSharePage';
 import SessionLockScreen from './components/auth/SessionLockScreen';
 import DynamicSidebar from './components/DynamicSidebar';
+import { TasksView } from './features/crm-records';
 import TopNavProfileDropdown from './components/TopNavProfileDropdown';
 import { NotificationDropdown } from './components/NotificationDropdown';
 import { NotificationProvider } from './context/NotificationContext';
@@ -81,20 +82,22 @@ const INITIAL_NOTIFICATIONS: AppNotification[] = [];
 
 // Views laid out as one long page scroll the main area; the others (inbox, calendar, meetings, proposals…)
 // fill the viewport and scroll inside their own panels.
-const PAGE_SCROLL_VIEWS = new Set<string>(['dashboard', 'home', 'analytics', 'settings', 'lead_intelligence']);
+const PAGE_SCROLL_VIEWS = new Set<string>(['dashboard', 'home', 'analytics', 'settings', 'lead_intelligence', 'tasks']);
 
 const SEARCH_NAV_ITEMS = [
   { id: 'dashboard', label: 'Dashboard', icon: 'LayoutDashboard' },
-  { id: 'deals', label: 'Leads & deals', icon: 'DollarSign' },
-  { id: 'lead_intelligence', label: 'Lead Intelligence (Hot, Warm, Cold)', icon: 'Sparkles' },
-  { id: 'proposals', label: 'Proposals & invoices', icon: 'FileText' },
-  { id: 'messages', label: 'Inbox', icon: 'MessageSquare' },
-  { id: 'greet', label: 'Meetings', icon: 'Video' },
+  { id: 'tasks', label: 'Tasks', icon: 'CheckSquare' },
+  { id: 'deals', label: 'Sales Pipeline & Deals', icon: 'DollarSign' },
+  { id: 'lead_intelligence', label: 'Lead Intelligence', icon: 'Sparkles' },
+  { id: 'messages', label: 'Unified Inbox', icon: 'MessageSquare' },
+  { id: 'voice_messages', label: 'WhatsApp & SMS', icon: 'MessageSquare' },
+  { id: 'voice_dialer', label: 'Voice Calls', icon: 'Phone' },
   { id: 'calendar', label: 'Calendar', icon: 'Calendar' },
-  { id: 'voice_dialer', label: 'Phone', icon: 'Phone' },
-  { id: 'social_planner', label: 'Social planner', icon: 'Share2' },
+  { id: 'greet', label: 'GREET', icon: 'Video' },
+  { id: 'proposals', label: 'Proposals & Invoices', icon: 'FileText' },
+  { id: 'analytics', label: 'Reports & Analytics', icon: 'BarChart3' },
+  { id: 'social_planner', label: 'Social Planner', icon: 'Share2' },
   { id: 'gbp', label: 'Local SEO', icon: 'Globe' },
-  { id: 'analytics', label: 'Analytics', icon: 'BarChart3' },
   { id: 'settings', label: 'Settings', icon: 'Settings' }
 ] as const;
 
@@ -296,8 +299,9 @@ function AppMain() {
     if (['messages', 'email_assistant'].includes(activeView)) return 'messages';
     if (['voice_dialer', 'voice_hub'].includes(activeView)) return 'voice_dialer';
     if (['proposals', 'enterprise_proposals'].includes(activeView)) return 'proposals';
-    if (['deals', 'sales_pipelines', 'pipeline'].includes(activeView)) return 'deals';
-    if (activeView === 'settings') return ['account', 'notifications', 'workspace', 'integrations'].includes(settingsDefaultTab) ? `settings:${settingsDefaultTab}` : 'settings';
+    if (['deals', 'sales_pipelines', 'pipeline', 'leads', 'contacts', 'companies'].includes(activeView)) return 'deals';
+    if (['voice_dialer', 'voice_hub', 'voice_receptionist'].includes(activeView)) return 'voice_dialer';
+    if (activeView === 'settings') return ['account', 'notifications', 'workspace', 'integrations', 'security', 'compliance'].includes(settingsDefaultTab) ? `settings:${settingsDefaultTab}` : 'settings';
     return activeView;
   })();
 
@@ -331,9 +335,14 @@ function AppMain() {
           />
         );
       case 'leads':
+      case 'contacts':
+      case 'companies':
       case 'deals':
       case 'sales_pipelines':
-        return <DealsPipelineView initialTab={activeView === 'leads' ? 'leads' : 'board'} />;
+        // One home for people and opportunities: the old "Contacts & Leads" page opens its tab here.
+        return <DealsPipelineView key={activeView} initialTab={activeView === 'leads' ? 'leads' : activeView === 'contacts' ? 'contacts' : activeView === 'companies' ? 'companies' : 'board'} onNavigate={navigateTo} />;
+      case 'tasks':
+        return <TasksView onNavigate={navigateTo} />;
       case 'chat':
       case 'messages':
       case 'email_assistant':

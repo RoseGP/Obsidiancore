@@ -76,8 +76,10 @@ ok("the organization's real deals are searchable");
 
 await type('pipeline');
 assert.match(text(), /Sales Pipeline & Deals/);
-await type('copilot');
-assert.match(text(), /AI Copilot/);
+await type('greet');
+assert.match(text(), /GREET/);
+await type('receptionist');
+assert.match(text(), /Voice Calls/, 'the receptionist is found under Voice Calls');
 ok('navigation results use the sidebar labels');
 
 const dealBtn = [...host.querySelectorAll('button')].find((b: any) => /Harbor website rebuild/.test(b.textContent)) as any;

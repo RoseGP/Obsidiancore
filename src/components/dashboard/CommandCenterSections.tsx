@@ -448,28 +448,6 @@ export function LiveFeed({ items, loading, errors, notConnected, onReply, onOpen
   );
 }
 
-// ---------------------------------------------------------------------------
-// 8. Business tools
-// ---------------------------------------------------------------------------
-export interface Tool { id: string; label: string; description: string; icon: React.ComponentType<{ className?: string }>; cta: string; onClick: () => void; color: string }
-export function ToolsGrid({ tools }: { tools: Tool[] }) {
-  return (
-    <ul className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-2 2xl:grid-cols-3 gap-2.5 px-4 sm:px-5 pb-5">
-      {tools.map((t) => (
-        <li key={t.id}>
-          <button type="button" onClick={t.onClick} className={cx('group w-full h-full text-left rounded-xl border border-[var(--border)] bg-[var(--surface-sunken)] p-3 flex flex-col gap-2 transition-all cursor-pointer hover:-translate-y-px hover:border-[var(--border-strong)]', focusRing)}>
-            <span className="flex h-8 w-8 items-center justify-center rounded-lg transition-shadow group-hover:shadow-[0_0_16px_-2px_currentColor]" style={{ color: t.color, background: `color-mix(in srgb, ${t.color} 16%, transparent)` }} aria-hidden="true"><t.icon className="h-4 w-4" /></span>
-            <span>
-              <span className="block text-[13px] font-medium text-[var(--text)]">{t.label}</span>
-              <span className="block text-[11px] text-[var(--text-muted)] line-clamp-2">{t.description}</span>
-            </span>
-            <span className="mt-auto inline-flex items-center gap-1 text-[11px] font-semibold text-[var(--accent-text)]">{t.cta}<ArrowRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5" aria-hidden="true" /></span>
-          </button>
-        </li>
-      ))}
-    </ul>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // 9. SLA and service monitoring

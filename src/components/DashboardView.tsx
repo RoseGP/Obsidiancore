@@ -15,12 +15,12 @@
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  AlertCircle, BarChart3, Bell, Bot, CalendarClock, CheckCircle2, Download, FileSpreadsheet, FileText, Gauge, Headphones,
-  LayoutGrid, Lightbulb, PhoneCall, Plus, Printer, Radio, RefreshCw, SlidersHorizontal, Trophy, UserPlus, Video, Wrench, CalendarPlus,
+  AlertCircle, BarChart3, Bell, Bot, CalendarClock, CheckCircle2, Download, FileSpreadsheet, FileText, Gauge,
+  LifeBuoy, Lightbulb, Printer, Radio, RefreshCw, SlidersHorizontal, Trophy,
 } from 'lucide-react';
 import { CRMContact, CalendarEvent } from '../types';
 import UnifiedAssistant, { askCopilot } from './assistant/UnifiedAssistant';
-import CustomizableWidgetGrid from './dashboard/CustomizableWidgetGrid';
+import { SupportTicketsWidget } from './dashboard/SupportTicketsWidget';
 import { useOptionalAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
 import { useMeetingSession } from '../context/MeetingSessionContext';
@@ -31,8 +31,8 @@ import { RANGE_OPTIONS, type RangeKey, buildInsights, exportRows, relativeTime, 
 import { type AgendaItem, type AttentionItem, buildAttention, commandCenterInsights, greetingLine, headlineKpis, upcomingMeetings } from '../lib/commandCenter';
 import { LeadSourcesCard, PerformanceCard, PipelineCard } from './dashboard/AnalyticsSections';
 import {
-  AttentionGrid, CcSection, InsightsList, KpiStrip, LiveFeed, MeetingsList, MissionsPanel, ServicePanel, ToolsGrid, WelcomeHeader, buildFeed,
-  type FeedItem, type Tool,
+  AttentionGrid, CcSection, InsightsList, KpiStrip, LiveFeed, MeetingsList, MissionsPanel, ServicePanel, WelcomeHeader, buildFeed,
+  type FeedItem,
 } from './dashboard/CommandCenterSections';
 import TasksDueCard from '../features/crm-records/TasksDueCard';
 import { GettingStartedCard, type ChecklistStep } from './dashboard/WorkSections';
@@ -57,19 +57,21 @@ const SECTIONS: SectionPref[] = [
   { id: 'missions', label: 'Daily missions', description: 'High-impact goals, XP and streaks' },
   { id: 'service', label: 'Service monitoring', description: 'SLA, response times, missed calls, channels' },
   { id: 'insights', label: 'AI business insights', description: 'Opportunities and risks in your records' },
-  { id: 'tools', label: 'Business tools', description: 'Receptionist, meetings, proposals, dialer, calendar, deals' },
-  { id: 'work_queues', label: 'Work queues', description: 'Leads, opportunities and tickets to act on' },
+  { id: 'tickets', label: 'Support tickets', description: 'Open tickets: reply or mark done' },
 ];
+// Removed as duplicates (saved layouts that still list them are cleaned on load):
+// 'tools' repeated the sidebar and Quick Action; 'work_queues' repeated Business performance (sales,
+// opportunities) and Needs your attention / Lead Intelligence (recent leads). Its support tickets live on as 'tickets'.
 const DEFAULT_ORDER = SECTIONS.map((s) => s.id);
 const SPAN: Record<string, string> = {
-  copilot: 'lg:col-span-12', attention: 'lg:col-span-12', performance: 'lg:col-span-12', work_queues: 'lg:col-span-12',
-  meetings: 'lg:col-span-5', activity: 'lg:col-span-7', missions: 'lg:col-span-7', service: 'lg:col-span-5', insights: 'lg:col-span-7', tools: 'lg:col-span-5',
+  copilot: 'lg:col-span-12', attention: 'lg:col-span-12', performance: 'lg:col-span-12',
+  meetings: 'lg:col-span-5', activity: 'lg:col-span-7', missions: 'lg:col-span-7', service: 'lg:col-span-5', insights: 'lg:col-span-7', tickets: 'lg:col-span-5',
 };
 
 interface Prefs { order: string[]; hidden: string[]; collapsed: string[]; range: RangeKey; custom: { from: string; to: string }; checklistDismissed: boolean; customized: boolean }
 const isoDay = (t: number) => new Date(t - new Date(t).getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
 const DEFAULT_PREFS: Prefs = {
-  order: DEFAULT_ORDER, hidden: [], collapsed: ['work_queues'], range: '30d',
+  order: DEFAULT_ORDER, hidden: [], collapsed: [], range: '30d',
   custom: { from: isoDay(Date.now() - 29 * 86_400_000), to: isoDay(Date.now()) }, checklistDismissed: false, customized: false,
 };
 
@@ -213,14 +215,6 @@ export default function DashboardView({ contacts, onSelectContact, onNavigate, o
     return { ok: false, message: 'Call them back from the Phone page.' };
   }, [cc]);
 
-  const tools: Tool[] = [
-    { id: 'receptionist', label: 'AI Voice Receptionist', description: 'Answers calls, takes messages, routes callers', icon: Headphones, cta: 'Open', color: '#22d3ee', onClick: () => open('voice_dialer') },
-    { id: 'meetings', label: 'GREET', description: 'Start or join a GREET video meeting with screen sharing and notes', icon: Video, cta: 'Start', color: '#5b6cff', onClick: () => open('greet') },
-    { id: 'proposal', label: 'Proposal Generator', description: 'Build, send and e-sign proposals', icon: FileText, cta: 'Create', color: '#a78bfa', onClick: () => open('proposals-builder') },
-    { id: 'dialer', label: 'AI Dialer', description: 'Call leads with notes and call history', icon: PhoneCall, cta: 'Dial', color: '#34d399', onClick: () => open('voice_dialer') },
-    { id: 'calendar', label: 'Calendar Scheduler', description: 'Book a meeting or follow-up', icon: CalendarPlus, cta: 'Schedule', color: '#fbbf24', onClick: () => (onQuickAction ? onQuickAction('event') : open('calendar')) },
-    { id: 'deal', label: 'Register New Deal', description: 'Add an opportunity to your pipeline', icon: Plus, cta: 'Register', color: '#f472b6', onClick: () => setDealOpen(true) },
-  ];
 
   const steps: ChecklistStep[] = [
     { id: 'lead', label: 'Add your first lead', detail: 'Leads feed every figure on this page.', done: records.leads.length > 0, action: { label: 'Add a lead', onClick: () => (onQuickAction ? onQuickAction('lead') : open('leads')) } },
@@ -337,16 +331,10 @@ export default function DashboardView({ contacts, onSelectContact, onNavigate, o
           <InsightsList insights={insights} loading={loading} onOpen={open} onAsk={askCopilot} />
         </CcSection>
       );
-      case 'tools': return (
-        <CcSection id="tools" title="Your Business Tools" subtitle="Everything you use most, one click away." icon={<Wrench className="h-4 w-4" />}
-          collapsed={collapsed('tools')} onToggle={() => toggle('tools')}>
-          <ToolsGrid tools={tools} />
-        </CcSection>
-      );
-      case 'work_queues': return (
-        <CcSection id="work-queues" title="Work Queues" subtitle="Act on leads, move deals forward and answer tickets." icon={<LayoutGrid className="h-4 w-4" />}
-          collapsed={collapsed('work_queues')} onToggle={() => toggle('work_queues')}>
-          <div className="px-3 sm:px-4 pb-4"><CustomizableWidgetGrid contacts={contacts} onSelectContact={onSelectContact} onNavigate={onNavigate} /></div>
+      case 'tickets': return (
+        <CcSection id="tickets" title="Support Tickets" subtitle="Open customer issues: reply or mark them done." icon={<LifeBuoy className="h-4 w-4" />}
+          collapsed={collapsed('tickets')} onToggle={() => toggle('tickets')}>
+          <div className="px-3 sm:px-4 pb-4"><SupportTicketsWidget onNavigate={onNavigate} /></div>
         </CcSection>
       );
       default: return null;
@@ -364,8 +352,6 @@ export default function DashboardView({ contacts, onSelectContact, onNavigate, o
           ai={{ claude: cc.service.data ? cc.service.data.ai.claude.configured : null, gemini: cc.service.data ? cc.service.data.ai.gemini.configured : null }}
           actions={
             <div className="flex flex-wrap items-center gap-2 print:hidden">
-              <Button variant="primary" icon={<Plus className="h-4 w-4" />} onClick={() => setDealOpen(true)} className="bg-gradient-to-br from-[#4f8df7] to-[#6b6cf2] shadow-[0_10px_24px_-8px_rgb(79_110_247/0.6)]">Register deal</Button>
-              <Button variant="secondary" icon={<UserPlus className="h-4 w-4" />} onClick={() => (onQuickAction ? onQuickAction('lead') : open('leads'))}>Add lead</Button>
               <Button variant="secondary" icon={<Bot className="h-4 w-4" />} className="cc-aurora" onClick={() => { document.getElementById('copilot')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); document.getElementById('assistant-input')?.focus({ preventScroll: true }); }}>Ask copilot</Button>
               <span className="mx-1 h-5 w-px bg-[var(--border)]" aria-hidden="true" />
               <Button size="sm" variant="ghost" icon={<SlidersHorizontal className="h-4 w-4" />} onClick={() => setCustomizeOpen(true)}>Customize</Button>
@@ -393,7 +379,6 @@ export default function DashboardView({ contacts, onSelectContact, onNavigate, o
             <Button className="mt-3" variant="secondary" onClick={() => setCustomizeOpen(true)}>Choose sections</Button>
           </div>
         )}
-        <p className="text-center text-[11px] text-[var(--text-subtle)] pb-2">Your AI business partner is ready. Your business is under control. Let’s grow.</p>
       </div>
 
       <NewDealDialog open={dealOpen} onClose={() => setDealOpen(false)} onCreated={(m) => notify('ok', m)} />

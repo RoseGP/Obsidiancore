@@ -353,14 +353,7 @@ export function commandCenterInsights(input: CommandCenterInput, now: number = D
       ask: 'Which of my deals at proposal or negotiation stage are likely to close this week, and what is blocking the others?',
     });
   }
-  const unanswered = input.service?.unansweredCount ?? null;
-  if (unanswered !== null && unanswered > 0) {
-    out.push({
-      id: 'unanswered_trend', tone: 'warning', title: `${unanswered} message${unanswered === 1 ? '' : 's'} waiting for a reply`,
-      detail: 'Fast replies convert better. Clear the queue or let the copilot draft replies.',
-      action: { label: 'Open inbox', view: 'messages' }, ask: 'Summarize today’s customer conversations and draft replies for the unanswered ones.',
-    });
-  }
+  // Unanswered messages are shown once, in Needs Your Attention (not repeated here).
   const idle = input.leads.filter((l) => l.status !== 'converted' && (ts((l as any).updatedAt) ?? ts(l.createdAt) ?? now) < now - 30 * DAY);
   if (idle.length >= 3) {
     out.push({

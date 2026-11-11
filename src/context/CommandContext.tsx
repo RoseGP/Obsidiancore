@@ -27,7 +27,10 @@ export type SemanticView =
   | 'public_scheduling'
   | 'voice_messages'      // Phone → WhatsApp & SMS (inbound messages and voicemail)
   | 'voice_receptionist' // Phone → AI voice receptionist
-  | 'lead_intelligence';
+  | 'lead_intelligence'
+  | 'tasks'
+  | 'contacts'
+  | 'companies';
 
 export interface EmailDraft {
   recipient?: string;
@@ -89,10 +92,10 @@ export function mapSemanticToView(view: SemanticView): string {
 export function CommandProvider({ children }: { children: ReactNode }) {
   const [activeView, setActiveViewState] = useState<SemanticView>(() => {
     const hash = typeof window !== 'undefined' ? window.location.hash.replace('#', '') as SemanticView : '';
-    if (hash && ['greet', 'dashboard', 'messages', 'calendar', 'analytics', 'settings', 'gbp', 'proposals', 'social_planner', 'deals', 'sales_pipelines', 'voice_dialer', 'call_canvas', 'public_scheduling'].includes(hash)) {
+    if (hash && ['greet', 'dashboard', 'messages', 'calendar', 'analytics', 'settings', 'gbp', 'proposals', 'social_planner', 'deals', 'sales_pipelines', 'voice_dialer', 'call_canvas', 'public_scheduling', 'tasks', 'lead_intelligence', 'contacts', 'companies', 'voice_messages'].includes(hash)) {
       return hash;
     }
-    return 'messages';
+    return 'dashboard'; // the Command Center dashboard is the homepage
   });
 
   const [notifications, setNotifications] = useState<NotificationMessage[]>([

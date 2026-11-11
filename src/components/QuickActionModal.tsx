@@ -466,7 +466,7 @@ export default function QuickActionModal({
                   >
                     <option value="website">Website Form</option>
                     <option value="whatsapp">WhatsApp Direct</option>
-                    <option value="voice">AI Voice Receptionist</option>
+                    <option value="voice">Voice Calls (AI receptionist)</option>
                     <option value="linkedin">LinkedIn</option>
                     <option value="referral">Client Referral</option>
                     <option value="inbound_call">Inbound Call</option>

@@ -18,6 +18,7 @@ import {
   ActionPriority
 } from '../services/salesIntelligenceService';
 import { CRMLead, CRMLeadTask, CRMLeadActivity, LeadQualification } from '../types';
+import { ContactsView, CompaniesView } from '../features/crm-records';
 import { BOARD_COLUMNS, BOARD_COLUMN_LABELS, DEAL_STAGE_PROBABILITY, columnForDealStage, columnForLeadStatus, dealStageForColumn, isBoardColumn, leadStatusForColumn, type BoardColumn } from '../lib/pipelineStages';
 
 export interface PipelineItem {
@@ -66,14 +67,24 @@ const STAGE_STYLE: Record<BoardColumn, { color: string; badge: string }> = {
 const STAGES = BOARD_COLUMNS.map((id) => ({ id, ...BOARD_COLUMN_LABELS[id], ...STAGE_STYLE[id] }));
 const money = (item: { value: number; valueSet: boolean }) => (item.valueSet ? `$${item.value.toLocaleString()}` : 'Not set');
 
+export type PipelineTab = 'board' | 'leads' | 'contacts' | 'companies' | 'analytics';
 interface DealsPipelineViewProps {
-  initialTab?: 'board' | 'leads' | 'analytics';
+  initialTab?: PipelineTab;
+  /** Opens another screen (inbox, calendar, proposals…) from a contact or company profile. */
+  onNavigate?: (view: string) => void;
 }
 
-export default function DealsPipelineView({ initialTab = 'board' }: DealsPipelineViewProps) {
+/**
+ * Sales Pipeline & Deals: the one home for people and opportunities. Tabs: the pipeline board, leads,
+ * contacts, companies and conversion analytics (the former "Contacts & Leads" page lives here now).
+ */
+export default function DealsPipelineView({ initialTab = 'board', onNavigate }: DealsPipelineViewProps) {
   const team = useTeamMembers();
   // Navigation / View state
-  const [activeTab, setActiveTab] = useState<'board' | 'leads' | 'analytics'>(initialTab);
+  const [activeTab, setActiveTab] = useState<PipelineTab>(initialTab);
+  const [openContactId, setOpenContactId] = useState<string | null>(null);
+  const [openCompanyId, setOpenCompanyId] = useState<string | null>(null);
+  const peopleTab = activeTab === 'contacts' || activeTab === 'companies';
 
   // Live Data State (zero mock data, backed by /api/leads and /api/dashboard/deals)
   const [leads, setLeads] = useState<CRMLead[]>([]);
@@ -1207,6 +1218,32 @@ export default function DealsPipelineView({ initialTab = 'board' }: DealsPipelin
             </button>
 
             <button
+              onClick={() => setActiveTab('contacts')}
+              aria-pressed={activeTab === 'contacts'}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                activeTab === 'contacts'
+                  ? 'bg-blue-600 text-white shadow-md'
+                  : 'text-slate-400 hover:text-white hover:bg-white/5'
+              }`}
+            >
+              <Users className="h-3.5 w-3.5" />
+              <span>Contacts</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('companies')}
+              aria-pressed={activeTab === 'companies'}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                activeTab === 'companies'
+                  ? 'bg-blue-600 text-white shadow-md'
+                  : 'text-slate-400 hover:text-white hover:bg-white/5'
+              }`}
+            >
+              <Building2 className="h-3.5 w-3.5" />
+              <span>Companies</span>
+            </button>
+
+            <button
               onClick={() => setActiveTab('analytics')}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 activeTab === 'analytics'
@@ -1220,7 +1257,7 @@ export default function DealsPipelineView({ initialTab = 'board' }: DealsPipelin
           </div>
 
           {/* Search & Filter Dropdowns */}
-          <div className="flex flex-wrap items-center gap-2 flex-1 max-w-2xl justify-end">
+          <div className={`flex flex-wrap items-center gap-2 flex-1 max-w-2xl justify-end ${peopleTab ? 'hidden' : ''}`}>
             <div className="relative flex-1 min-w-[180px]">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
               <input
@@ -1285,7 +1322,11 @@ export default function DealsPipelineView({ initialTab = 'board' }: DealsPipelin
 
       {/* MAIN VIEW CONTENT CONTAINER */}
       <div className="flex-1 overflow-hidden relative">
-        {isLoading ? (
+        {activeTab === 'contacts' ? (
+          <div className="h-full overflow-y-auto bg-[var(--app-bg)] p-3 sm:p-4"><ContactsView onNavigate={onNavigate} initialContactId={openContactId} onOpenCompany={(id) => { setOpenCompanyId(id); setActiveTab('companies'); }} /></div>
+        ) : activeTab === 'companies' ? (
+          <div className="h-full overflow-y-auto bg-[var(--app-bg)] p-3 sm:p-4"><CompaniesView onNavigate={onNavigate} initialCompanyId={openCompanyId} onOpenContact={(id) => { setOpenContactId(id); setActiveTab('contacts'); }} /></div>
+        ) : isLoading ? (
           <div className="h-full flex flex-col items-center justify-center gap-3 text-slate-400">
             <RefreshCw className="h-7 w-7 animate-spin text-blue-400" />
             <p className="text-xs font-semibold">Synchronizing unified revenue pipeline from database...</p>

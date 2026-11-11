@@ -81,8 +81,8 @@ ok('greeting summarises real priorities, new leads and the next meeting');
 assert.deepEqual(commandCenterInsights(empty, NOW), []);
 const ins = Object.fromEntries(commandCenterInsights({ ...input, service: { unansweredCount: 3 } } as any, NOW).map((i) => [i.id, i]));
 assert.match(ins.likely_convert.detail, /Hot Hannah \(90\)/); assert.match(ins.revenue_opportunity.title, /\$51,000/);
-assert.match(ins.unanswered_trend.title, /^3 messages/); assert.equal(ins.reconnect, undefined);
+assert.equal(ins.unanswered_trend, undefined, 'unanswered messages are shown once, in Needs Your Attention'); assert.equal(ins.reconnect, undefined);
 assert.ok(Object.values(ins).every((i: any) => i.ask));
-ok('insights: likely converters, late-stage revenue, unanswered messages; each can be handed to the copilot');
+ok('insights: likely converters and late-stage revenue (no repeat of Needs Your Attention); each can be handed to the copilot');
 
 console.log(`\n${passed} passed (command center)`);
