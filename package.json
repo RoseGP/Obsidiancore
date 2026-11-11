@@ -16,7 +16,7 @@
     "test:social-accounts": "npx tsx src/features/social-accounts/__tests__/api.test.ts oauth && npx tsx src/features/social-accounts/__tests__/api.test.ts shared && npx tsx src/features/social-accounts/__tests__/firestoreStore.test.ts",
     "test:local-seo": "npx tsx src/features/gbp/__tests__/localSeo.test.ts",
     "test:voice-ivr": "npx tsx src/features/voice/__tests__/ivr.test.ts",
-    "test:security": "npx tsx src/server/__tests__/security.test.ts && npx tsx src/server/__tests__/phase0.test.ts && npx tsx src/server/__tests__/tenancy.test.ts",
+    "test:security": "npx tsx src/server/__tests__/security.test.ts && npx tsx src/server/__tests__/securityHardening.test.ts && npx tsx src/server/__tests__/phase0.test.ts && npx tsx src/server/__tests__/tenancy.test.ts",
     "test:meeting-controls": "npx tsx src/components/greet/__tests__/meetingControls.test.tsx",
     "test:assistant": "npx tsx src/services/__tests__/assistant.test.ts",
     "test:ai": "npx tsx src/services/ai/__tests__/aiService.test.ts",

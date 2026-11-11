@@ -55,6 +55,21 @@ let fetchInstalled = false;
  * Adds the user's credentials to every same-origin /api/ request made with fetch,
  * unless the caller already set Authorization. Install once at startup (main.tsx).
  */
+/**
+ * When the organization's security policy refuses a request (two-step sign-in required, or the session is
+ * older than allowed), tell the app with a window event so it can explain what to do. The response is
+ * returned unchanged.
+ */
+export const SECURITY_POLICY_EVENT = 'obsidian:security-policy';
+function watchPolicy(res: Response): Response {
+  if (res.status === 401 || res.status === 403) {
+    res.clone().json().then((b) => {
+      if (b && (b.code === 'mfa_required' || b.code === 'session_expired')) window.dispatchEvent(new CustomEvent(SECURITY_POLICY_EVENT, { detail: { code: b.code, message: b.error } }));
+    }).catch(() => undefined);
+  }
+  return res;
+}
+
 export function installGlobalApiAuth() {
   if (fetchInstalled || typeof window === 'undefined') return;
   fetchInstalled = true;
@@ -69,7 +84,7 @@ export function installGlobalApiAuth() {
             const headers = new Headers(init?.headers || (input instanceof Request ? input.headers : undefined));
             if (!headers.has('Authorization') && !headers.has('X-Dev-User-Id')) {
               for (const [k, v] of Object.entries(await getApiAuthHeaders())) headers.set(k, v);
-              return original(input, { ...init, headers });
+              return watchPolicy(await original(input, { ...init, headers }));
             }
           }
         } catch { /* fall through to the original request */ }

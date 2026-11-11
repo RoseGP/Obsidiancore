@@ -14,6 +14,9 @@ import {
   EmailAuthProvider,
   reauthenticateWithCredential,
   reauthenticateWithPopup,
+  getMultiFactorResolver,
+  TotpMultiFactorGenerator,
+  type MultiFactorResolver,
 } from 'firebase/auth';
 import { 
   doc, 
@@ -164,6 +167,11 @@ interface AuthContextType {
   loginWithEnterpriseSSO: (email: string, code?: string) => Promise<void>;
   logout: () => Promise<void>;
 
+  // Two-step sign-in: set when the password/Google step succeeded and a code is still needed.
+  mfaPending: { factor: 'totp' | 'unsupported'; hint: string } | null;
+  completeMfaSignIn: (code: string) => Promise<void>;
+  cancelMfaSignIn: () => void;
+
   // Role-Based Authorization
   hasPermission: (permission: Permission) => boolean;
   userPermissions: Permission[];
@@ -269,6 +277,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Inactivity tracking
   const lastActivityRef = useRef<number>(Date.now());
+  const mfaResolverRef = useRef<MultiFactorResolver | null>(null);
+  const [mfaPending, setMfaPending] = useState<{ factor: 'totp' | 'unsupported'; hint: string } | null>(null);
+
+  /** Firebase asked for a second factor: keep the resolver and ask the person for their code. */
+  const beginMfa = (err: any): boolean => {
+    if (err?.code !== 'auth/multi-factor-auth-required' || !auth) return false;
+    const resolver = getMultiFactorResolver(auth, err);
+    mfaResolverRef.current = resolver;
+    const totp = resolver.hints.find((h) => h.factorId === TotpMultiFactorGenerator.FACTOR_ID);
+    setMfaPending(totp ? { factor: 'totp', hint: totp.displayName || 'Authenticator app' } : { factor: 'unsupported', hint: resolver.hints[0]?.displayName || resolver.hints[0]?.factorId || '' });
+    return true;
+  };
+
+  const completeMfaSignIn = async (code: string) => {
+    const resolver = mfaResolverRef.current;
+    if (!resolver) throw new Error('Start signing in again.');
+    const totp = resolver.hints.find((h) => h.factorId === TotpMultiFactorGenerator.FACTOR_ID);
+    if (!totp) throw new Error('This account uses a kind of second step this app can’t ask for yet. Contact your administrator.');
+    try {
+      await resolver.resolveSignIn(TotpMultiFactorGenerator.assertionForSignIn(totp.uid, code.replace(/\s+/g, '')));
+      mfaResolverRef.current = null;
+      setMfaPending(null);
+      setIsDemoSession(false);
+      setIsSessionLocked(false);
+      lastActivityRef.current = Date.now();
+    } catch (err: any) {
+      if (err?.code === 'auth/invalid-verification-code' || err?.code === 'auth/invalid-credential') throw new Error('That code didn’t work. Check the time on your phone and try the newest code.');
+      if (err?.code === 'auth/too-many-requests') throw new Error('Too many attempts. Wait a few minutes and try again.');
+      throw new Error('The code couldn’t be checked. Try again.');
+    }
+  };
+  const cancelMfaSignIn = () => { mfaResolverRef.current = null; setMfaPending(null); };
 
   // Sync profile & settings changes to storage
   useEffect(() => {
@@ -460,6 +500,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       return userCredential.user;
     } catch (err: any) {
+      if (beginMfa(err)) {
+        const e: any = new Error('Enter the 6-digit code from your authenticator app.');
+        e.code = 'mfa_required';
+        throw e;
+      }
       console.error('[Firebase Auth Login Error]', err);
       let message = 'Failed to sign in. Please verify your email and password.';
       if (err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password' || err.code === 'auth/user-not-found') {
@@ -610,6 +655,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
     } catch (err: any) {
+      if (beginMfa(err)) {
+        const e: any = new Error('Enter the 6-digit code from your authenticator app.');
+        e.code = 'mfa_required';
+        throw e;
+      }
       console.error('[Google Sign-In Error]', err);
       if (err.code === 'auth/popup-closed-by-user') {
         setAuthError('Sign-in popup closed by user.');
@@ -851,6 +901,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       loginWithSocial,
       loginWithEnterpriseSSO,
       logout,
+      mfaPending,
+      completeMfaSignIn,
+      cancelMfaSignIn,
       hasPermission,
       userPermissions,
       switchRole,
