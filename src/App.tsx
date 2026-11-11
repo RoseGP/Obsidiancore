@@ -368,8 +368,7 @@ function AppMain() {
           />
         );
       case 'analytics':
-        // Built as a dark console: shown in the graphite frame in both themes (light variant: future work).
-        return <div className="obsidian min-h-full shrink-0 p-6 bg-[var(--obsidian-1)] text-neutral-200"><AnalyticsView /></div>;
+        return <div className="cc min-h-full shrink-0 w-full"><AnalyticsView onNavigate={(v) => setActiveView(v as SemanticView)} /></div>;
       case 'settings':
         return <div className="obsidian min-h-full shrink-0 bg-[var(--obsidian-1)] text-neutral-200"><SettingsView defaultTab={settingsDefaultTab} /></div>;
       case 'calendar':

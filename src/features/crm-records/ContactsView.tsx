@@ -16,7 +16,8 @@ export interface Contact {
   owner: string; ownerId: string | null; tags: string[]; category: string; notes: string; status: string;
   altEmails?: string[]; altPhones?: string[]; createdAt: string; updatedAt: string; deletedAt?: string | null;
 }
-interface Match { id: string; name: string; email: string; company: string; reasons: string[] }
+interface Match { id: string; name: string; email: string; company: string; reasons: string[]; score?: number; level?: 'likely' | 'possible' }
+const scoreLabel = (m: { score?: number; level?: string }) => (typeof m.score === 'number' ? `${Math.round(m.score * 100)}% ${m.level === 'likely' ? 'likely match' : 'possible match'}` : '');
 
 export interface ContactsViewProps {
   /** Opens another screen (e.g. 'messages', 'calendar', 'proposals'). */
@@ -34,7 +35,19 @@ function ContactForm({ contact, onClose, onSaved, onOpenExisting }: { contact?: 
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [matches, setMatches] = useState<Match[] | null>(null);
+  const [similar, setSimilar] = useState<Match[]>([]);
   useEffect(() => { api<{ companies: any[] }>('/api/companies').then((r) => setCompanies(r.companies.map((c) => ({ id: c.id, name: c.name })))).catch(() => setCompanies([])); }, []);
+  // While typing a new contact: the closest existing contacts (fuzzy match), so a duplicate is caught before saving.
+  const companyName = companies.find((c) => c.id === f.companyId)?.name || f.company;
+  useEffect(() => {
+    if (contact || (!f.name.trim() && !f.email.trim() && f.phone.replace(/\D/g, '').length < 7)) { setSimilar([]); return; }
+    let alive = true;
+    const h = setTimeout(() => {
+      api<{ matches: Match[] }>('/api/contacts/match', { method: 'POST', body: JSON.stringify({ name: f.name, email: f.email, phone: f.phone, company: companyName }) })
+        .then((r) => { if (alive) setSimilar(r.matches || []); }).catch(() => { if (alive) setSimilar([]); });
+    }, 300);
+    return () => { alive = false; clearTimeout(h); };
+  }, [contact, f.name, f.email, f.phone, companyName]);
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => setF((p) => ({ ...p, [k]: e.target.value }));
 
   const save = async (force = false) => {
@@ -79,26 +92,37 @@ function ContactForm({ contact, onClose, onSaved, onOpenExisting }: { contact?: 
       </div>
       <Field label="Notes"><textarea rows={3} className={inputCls} value={f.notes} onChange={set('notes')} /></Field>
       {err && <ErrorNote text={err} />}
-      {matches && matches.length > 0 && (
-        <ul className="space-y-1">
-          {matches.map((m) => (
-            <li key={m.id} className="flex items-center justify-between gap-2 rounded-[var(--radius-control)] border border-[var(--border)] px-3 py-2 text-[13px]">
-              <span className="min-w-0 truncate">{m.name || m.email} <span className="text-[var(--text-muted)]">· {m.reasons.join(', ')}</span></span>
-              <Button variant="ghost" onClick={() => { onClose(); onOpenExisting(m.id); }}>Open</Button>
-            </li>
-          ))}
-        </ul>
-      )}
+      {(() => {
+        const list = matches && matches.length ? matches : !contact ? similar : [];
+        if (!list.length) return null;
+        return (
+          <div className="space-y-1" role={matches ? undefined : 'status'}>
+            {!matches && <p className="flex items-center gap-1.5 text-[12px] text-[var(--warning)]"><AlertTriangle className="h-3.5 w-3.5" aria-hidden="true" />This may already be in your contacts:</p>}
+            <ul className="space-y-1" aria-label="Similar contacts">
+              {list.map((m) => (
+                <li key={m.id} className="flex items-center justify-between gap-2 rounded-[var(--radius-control)] border border-[var(--border)] px-3 py-2 text-[13px]">
+                  <span className="min-w-0">
+                    <span className="block truncate">{m.name || m.email}{scoreLabel(m) && <> <Badge>{scoreLabel(m)}</Badge></>}</span>
+                    <span className="block text-[12px] text-[var(--text-muted)]">{m.reasons.join(' · ')}</span>
+                  </span>
+                  <Button variant="ghost" onClick={() => { onClose(); onOpenExisting(m.id); }}>Open</Button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        );
+      })()}
     </Modal>
   );
 }
 
 function DuplicatesPanel({ onDone, onOpen }: { onDone: () => void; onOpen: (id: string) => void }) {
-  const [groups, setGroups] = useState<Array<{ reasons: string[]; contacts: Contact[] }> | null>(null);
+  const [groups, setGroups] = useState<Array<{ reasons: string[]; contacts: Contact[]; score?: number; level?: 'likely' | 'possible'; pairs?: Array<{ ids: string[]; score: number; level: string; summary: string }> }> | null>(null);
+  const [leadMatches, setLeadMatches] = useState<Array<{ lead: { id: string; name: string; email: string; company: string }; contact: { id: string; name: string; email: string }; score: number; level: string; summary: string }>>([]);
   const [keep, setKeep] = useState<Record<number, string>>({});
   const [busy, setBusy] = useState<number | null>(null);
   const [err, setErr] = useState('');
-  const load = useCallback(() => api<{ groups: any[] }>('/api/contacts/duplicates').then((r) => setGroups(r.groups)).catch((e) => { setErr(e.message); setGroups([]); }), []);
+  const load = useCallback(() => api<{ groups: any[]; leadMatches?: any[] }>('/api/contacts/duplicates').then((r) => { setGroups(r.groups); setLeadMatches(r.leadMatches || []); }).catch((e) => { setErr(e.message); setGroups([]); }), []);
   useEffect(() => { void load(); }, [load]);
   const merge = async (i: number) => {
     const g = groups![i]; const keepId = keep[i] || g.contacts[0].id;
@@ -112,7 +136,12 @@ function DuplicatesPanel({ onDone, onOpen }: { onDone: () => void; onOpen: (id: 
       {err && <ErrorNote text={err} />}
       {groups.length === 0 ? <p className="text-[13px] text-[var(--text-muted)]">No possible duplicates.</p> : groups.map((g, i) => (
         <fieldset key={g.contacts.map((c) => c.id).join()} className="rounded-[var(--radius-card)] border border-[var(--border)] p-3">
-          <legend className="px-1 text-[12px] text-[var(--text-muted)]">{g.reasons.join(' · ')}</legend>
+          <legend className="px-1 text-[12px] text-[var(--text-muted)]">{scoreLabel(g) && <Badge>{scoreLabel(g)}</Badge>} {g.reasons.join(' · ')}</legend>
+          {g.pairs && g.pairs.length > 1 && (
+            <ul className="mb-2 space-y-0.5 text-[12px] text-[var(--text-muted)]">
+              {g.pairs.map((p) => <li key={p.ids.join()}>{p.ids.map((id) => g.contacts.find((c) => c.id === id)?.name || 'Contact').join(' ↔ ')}: {Math.round(p.score * 100)}% · {p.summary}</li>)}
+            </ul>
+          )}
           <p className="mb-2 text-[12px] text-[var(--text-muted)]">Pick the record to keep. Everything linked to the others (leads, deals, tasks, proposals, meetings, history) moves to it; the others are kept as merged records.</p>
           <ul className="space-y-1.5">
             {g.contacts.map((c) => (
@@ -126,6 +155,23 @@ function DuplicatesPanel({ onDone, onOpen }: { onDone: () => void; onOpen: (id: 
           <div className="mt-2 flex justify-end"><Button variant="primary" onClick={() => merge(i)} disabled={busy !== null}><GitMerge className="h-4 w-4" />{busy === i ? 'Merging…' : 'Merge'}</Button></div>
         </fieldset>
       ))}
+      {leadMatches.length > 0 && (
+        <section aria-label="Leads that look like contacts" className="space-y-1.5">
+          <h3 className="text-[13px] font-semibold">Leads that look like an existing contact</h3>
+          <ul className="space-y-1">
+            {leadMatches.map((m) => (
+              <li key={m.lead.id} className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--radius-control)] border border-[var(--border)] px-3 py-2 text-[13px]">
+                <span className="min-w-0">
+                  <span className="block">Lead <strong>{m.lead.name || m.lead.email}</strong> looks like contact <strong>{m.contact.name || m.contact.email}</strong> <Badge>{scoreLabel(m)}</Badge></span>
+                  <span className="block text-[12px] text-[var(--text-muted)]">{m.summary}</span>
+                </span>
+                <Button variant="ghost" onClick={() => onOpen(m.contact.id)}>Open contact</Button>
+              </li>
+            ))}
+          </ul>
+          <p className="text-[12px] text-[var(--text-subtle)]">Nothing is merged automatically. Convert the lead from the Leads tab to link it to the contact.</p>
+        </section>
+      )}
     </div>
   );
 }
@@ -235,8 +281,8 @@ export default function ContactsView({ onNavigate, onOpenCompany, initialContact
     setErr('');
     try {
       const qs = new URLSearchParams(); if (q.trim()) qs.set('q', q.trim()); if (tag) qs.set('tag', tag);
-      const [r, d] = await Promise.all([api<{ contacts: Contact[] }>(`/api/contacts?${qs}`), api<{ groups: any[] }>('/api/contacts/duplicates').catch(() => ({ groups: [] }))]);
-      setRows(r.contacts); setDupCount(d.groups.length);
+      const [r, d] = await Promise.all([api<{ contacts: Contact[] }>(`/api/contacts?${qs}`), api<{ groups: any[]; leadMatches?: any[] }>('/api/contacts/duplicates').catch(() => ({ groups: [], leadMatches: [] }))]);
+      setRows(r.contacts); setDupCount(d.groups.length + (d.leadMatches?.length || 0));
     } catch (e: any) { setErr(e.message); setRows((x) => x ?? []); }
   }, [q, tag]);
   useEffect(() => { const h = setTimeout(load, q ? 250 : 0); return () => clearTimeout(h); }, [load, q]);

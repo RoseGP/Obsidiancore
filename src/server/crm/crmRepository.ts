@@ -75,7 +75,9 @@ export class CrmRepository {
   async createDeal(deal: Record<string, any>) {
     const id = deal.id ? assertId(deal.id) : newId('deal');
     const now = new Date().toISOString();
-    const d = { createdAt: now, updatedAt: now, ...deal, id, orgId: this.orgId };
+    const d: Record<string, any> = { createdAt: now, updatedAt: now, ...deal, id, orgId: this.orgId };
+    // Where the deal starts, so reports can measure time in stage (additive; older deals fall back to createdAt).
+    if (d.stage && !Array.isArray(d.stageHistory)) { d.stageHistory = [{ stage: d.stage, from: null, at: d.createdAt }]; d.stageEnteredAt = d.stageEnteredAt || d.createdAt; }
     await this.st.set(this.base('deals', id), d);
     return d;
   }

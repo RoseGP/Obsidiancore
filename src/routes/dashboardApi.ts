@@ -99,7 +99,14 @@ router.patch('/deals/:id/stage', async (req, res) => {
     const repo = await repoFor(req);
     const deal = await repo.getDeal(req.params.id);
     if (!deal) return res.status(404).json({ success: false, error: 'Deal not found' });
-    await repo.updateDeal(deal.id, { stage, probability: PROBABILITY[stage], updatedAt: new Date().toISOString() });
+    // Stage history (additive): lets reports measure time in stage and win rates by the furthest stage reached.
+    const at = new Date().toISOString();
+    const history = [...(Array.isArray(deal.stageHistory) ? deal.stageHistory : []), { stage, from: deal.stage ?? null, at }].slice(-100);
+    const closing = (stage === 'won' || stage === 'lost') && deal.stage !== stage;
+    await repo.updateDeal(deal.id, {
+      stage, probability: PROBABILITY[stage], updatedAt: at, ...(deal.stage !== stage ? { stageHistory: history, stageEnteredAt: at } : {}),
+      ...(closing ? { closedAt: at } : {}), ...(stage === 'lost' && deal.stage !== 'lost' && deal.stage !== 'won' ? { lostFromStage: deal.stage ?? null } : {}),
+    });
     await repo.logActivity({ type: 'stage_advanced', title: `Deal Stage Changed: ${deal.name}`, description: `Stage moved to ${stage.toUpperCase()} (${PROBABILITY[stage]}% probability).`, actor: actorOf(req), targetId: deal.id, targetType: 'deal' });
     res.json({ success: true, id: deal.id, stage });
   } catch (err) { sendError(res, err, 'dashboard.dealStage'); }

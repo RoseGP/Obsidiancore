@@ -57,11 +57,18 @@ assert.equal(r.status, 201); const hana2 = r.body.contact;
 ok('contacts: normalized email/tags, validation, duplicate check by phone; "save anyway" with force');
 
 r = await as('olivia').get(`${C}/duplicates`);
-assert.equal(r.body.groups.length, 0, 'different email, no company id: name+company only matches with the same company text');
+// Fuzzy matching: same name and a similar email name (hana / hana.lee) but nothing else in common → "possible", not "likely".
+assert.equal(r.body.groups.length, 1); assert.equal(r.body.groups[0].level, 'possible');
+assert.ok(r.body.groups[0].score >= 0.7 && r.body.groups[0].score < 0.85, String(r.body.groups[0].score));
+assert.ok(!r.body.groups[0].reasons.includes('Same name and company'));
+assert.ok(r.body.groups[0].reasons.some((x: string) => /Email names .* similar/.test(x)));
+assert.deepEqual(r.body.leadMatches, []);
 await as('olivia').patch(`${C}/${hana.id}`, { company: 'Acme Inc' });
 r = await as('olivia').get(`${C}/duplicates`);
 assert.equal(r.body.groups.length, 1); assert.equal(r.body.groups[0].contacts.length, 2); assert.ok(r.body.groups[0].reasons.includes('Same name and company'));
-ok('possible-duplicates list groups contacts with the same name and company');
+assert.equal(r.body.groups[0].level, 'likely'); assert.ok(r.body.groups[0].reasons.includes('Same company after normalization'));
+assert.equal(r.body.groups[0].pairs.length, 1); assert.deepEqual([...r.body.groups[0].pairs[0].ids].sort(), [hana.id, hana2.id].sort());
+ok('possible-duplicates list: a fuzzy "possible" match, then "likely" once the company matches after normalization (Acme Inc / acme inc.)');
 
 r = await as('olivia').get(`${C}?q=hana`); assert.equal(r.body.count, 2);
 r = await as('olivia').get(`${C}?q=0100`); assert.equal(r.body.count, 1);

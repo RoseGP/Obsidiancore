@@ -18,6 +18,7 @@ import { assertId, getDocStore, newId, type DocStore } from '../data/docStore';
 import { TenancyError } from '../tenancy/orgs';
 import { recordAudit } from '../audit/auditLog';
 import { inboxMessagesByEmail } from '../../routes/messagingPlatform';
+import { LIKELY, POSSIBLE, buildIndex, findMatchingPairs, levelOf, matchAgainst, matchLeadsToContacts, type MatchLevel } from './analytics/entityMatch';
 
 export const normEmail = (v: unknown) => (typeof v === 'string' ? v.trim().toLowerCase() : '');
 export const normPhone = (v: unknown) => { const d = String(v ?? '').replace(/\D/g, ''); return d.length >= 7 ? d.slice(-10) : ''; };
@@ -102,10 +103,31 @@ export class ContactService {
     return c && !c.mergedInto ? c : c && c.mergedInto ? { ...c, redirectTo: c.mergedInto } : null;
   }
 
-  async findDuplicates(candidate: any, excludeId?: string) {
-    return (await this.listAll()).filter((c: any) => live(c) && c.id !== excludeId)
-      .map((c: any) => ({ contact: c, reasons: duplicateReasons(candidate, c) }))
-      .filter((m) => m.reasons.length);
+  /**
+   * Contacts that look like `candidate`: exact matches (same email, same phone, same name and company) and fuzzy
+   * matches at or above `min` (see analytics/entityMatch.ts), best first, each with its score and reasons.
+   */
+  async findDuplicates(candidate: any, excludeId?: string, min = LIKELY) {
+    const pool = (await this.listAll()).filter((c: any) => live(c) && c.id !== excludeId);
+    const probe = { ...candidate, id: candidate.id || '__candidate__' };
+    const fuzzy = new Map(matchAgainst(probe, pool, { min: POSSIBLE, limit: 50, index: buildIndex(pool) }).map((m) => [m.record.id, m.match]));
+    return pool
+      .map((c: any) => {
+        const exact = duplicateReasons(candidate, c);
+        const f = fuzzy.get(c.id);
+        const score = exact.length ? Math.max(f?.score ?? 0, 0.9) : f?.score ?? 0;
+        return { contact: c, reasons: [...new Set([...exact, ...(f?.reasons || [])])], score, level: (exact.length ? (score >= LIKELY ? 'likely' : 'possible') : levelOf(score)) as MatchLevel, exact: exact.length > 0 };
+      })
+      .filter((m) => m.exact || m.score >= min)
+      .sort((a, b) => Number(b.exact) - Number(a.exact) || b.score - a.score);
+  }
+
+  /** Closest contacts for a contact being typed in (possible and likely matches), for the create form. */
+  async matchCandidates(input: ContactInput & { id?: string }) {
+    const probe = { name: str(input.name, 120), email: normEmail(input.email), phone: str(input.phone, 40), company: str(input.company, 160) };
+    if (!probe.name && !probe.email && !normPhone(probe.phone)) return [];
+    return (await this.findDuplicates(probe, input.id, POSSIBLE)).slice(0, 5)
+      .map((d) => ({ id: d.contact.id, name: d.contact.name, email: d.contact.email, phone: d.contact.phone, company: d.contact.company, score: d.score, level: d.level, reasons: d.reasons }));
   }
 
   async findByEmail(email: string) {
@@ -123,7 +145,7 @@ export class ContactService {
       const dups = await this.findDuplicates(fields);
       if (dups.length) {
         throw Object.assign(new TenancyError(409, 'possible_duplicate', `This looks like ${dups[0].contact.name || dups[0].contact.email} (${dups[0].reasons.join(', ').toLowerCase()}). Open that contact, merge, or save anyway.`),
-          { details: { matches: dups.slice(0, 5).map((d) => ({ id: d.contact.id, name: d.contact.name, email: d.contact.email, company: d.contact.company, reasons: d.reasons })) } });
+          { details: { matches: dups.slice(0, 5).map((d) => ({ id: d.contact.id, name: d.contact.name, email: d.contact.email, company: d.contact.company, reasons: d.reasons, score: d.score, level: d.level })) } });
       }
     }
     const ts = nowIso();
@@ -166,24 +188,56 @@ export class ContactService {
     return { ...cur, deletedAt: null };
   }
 
-  /** Groups of live contacts that look like the same person. */
+  /**
+   * Groups of live contacts that look like the same person: exact matches (same email, phone, or name and
+   * company) and fuzzy matches scored ≥ 0.7 (analytics/entityMatch.ts). Each group keeps the original fields
+   * (reasons, contacts) and adds its best score, level and the scored pairs. Merging stays a manual step.
+   */
   async duplicateGroups() {
     const rows = (await this.listAll()).filter(live);
-    const parent = new Map<string, string>(rows.map((r: any) => [r.id, r.id]));
-    const find = (x: string): string => { while (parent.get(x) !== x) x = parent.get(x)!; return x; };
-    const reasons = new Map<string, Set<string>>();
-    for (let i = 0; i < rows.length; i++) for (let j = i + 1; j < rows.length; j++) {
-      const why = duplicateReasons(rows[i], rows[j]);
-      if (!why.length) continue;
-      const a = find(rows[i].id), b = find(rows[j].id);
-      if (a !== b) parent.set(b, a);
-      const k = find(rows[i].id);
-      reasons.set(k, new Set([...(reasons.get(k) || []), ...(reasons.get(a) || []), ...(reasons.get(b) || []), ...why]));
+    const pairs = new Map<string, { a: number; b: number; score: number; reasons: string[] }>();
+    for (const p of findMatchingPairs(rows, POSSIBLE)) pairs.set(`${p.a}|${p.b}`, { a: p.a, b: p.b, score: p.match.score, reasons: p.match.reasons });
+    // Exact rules first: they always count, whatever the fuzzy score.
+    const byEmail = new Map<string, number[]>(), byPhone = new Map<string, number[]>();
+    rows.forEach((r: any, i: number) => {
+      for (const e of [r.email, ...(r.altEmails || [])].map(normEmail).filter(Boolean)) byEmail.set(e, [...(byEmail.get(e) || []), i]);
+      for (const ph of [r.phone, ...(r.altPhones || [])].map(normPhone).filter(Boolean)) byPhone.set(ph, [...(byPhone.get(ph) || []), i]);
+    });
+    const exactCandidates = new Set<string>(pairs.keys());
+    for (const list of [...byEmail.values(), ...byPhone.values()]) for (let x = 0; x < list.length; x++) for (let y = x + 1; y < list.length; y++) exactCandidates.add(`${Math.min(list[x], list[y])}|${Math.max(list[x], list[y])}`);
+    for (const k of exactCandidates) {
+      const [a, b] = k.split('|').map(Number);
+      if (a === b) continue;
+      const exact = duplicateReasons(rows[a], rows[b]);
+      if (!exact.length) continue;
+      const cur = pairs.get(k);
+      pairs.set(k, { a, b, score: Math.max(cur?.score ?? 0, 0.9), reasons: [...new Set([...exact, ...(cur?.reasons || [])])] });
     }
-    const groups = new Map<string, any[]>();
-    for (const r of rows) { const k = find(r.id); groups.set(k, [...(groups.get(k) || []), r]); }
-    return [...groups.entries()].filter(([, g]) => g.length > 1)
-      .map(([k, g]) => ({ reasons: [...(reasons.get(k) || [])], contacts: g.sort((a: any, b: any) => String(a.createdAt).localeCompare(String(b.createdAt))) }));
+    const parent = rows.map((_: any, i: number) => i);
+    const find = (x: number): number => { while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; };
+    for (const p of pairs.values()) { const ra = find(p.a), rb = find(p.b); if (ra !== rb) parent[rb] = ra; }
+    const groups = new Map<number, number[]>();
+    rows.forEach((_: any, i: number) => { const r = find(i); groups.set(r, [...(groups.get(r) || []), i]); });
+    return [...groups.entries()].filter(([, g]) => g.length > 1).map(([root, g]) => {
+      const gp = [...pairs.values()].filter((p) => find(p.a) === root).sort((x, y) => y.score - x.score);
+      const score = gp.length ? gp[0].score : 0;
+      return {
+        reasons: [...new Set(gp.flatMap((p) => p.reasons))],
+        contacts: g.map((i) => rows[i]).sort((a: any, b: any) => String(a.createdAt).localeCompare(String(b.createdAt))),
+        score, level: score >= LIKELY ? 'likely' : 'possible',
+        pairs: gp.map((p) => ({ ids: [rows[p.a].id, rows[p.b].id], score: p.score, level: p.score >= LIKELY ? 'likely' : 'possible', reasons: p.reasons, summary: p.reasons.join('; ') })),
+      };
+    }).sort((x, y) => y.score - x.score);
+  }
+
+  /** Open leads that look like an existing contact ("this lead looks like contact X"). Nothing is merged. */
+  async leadMatches() {
+    const [leads, contacts] = await Promise.all([this.st.list(this.col('leads')), this.listAll()]);
+    return matchLeadsToContacts(leads.filter((l: any) => !l.deletedAt && !l.archived), contacts.filter(live)).slice(0, 100).map((m) => ({
+      lead: { id: m.lead.id, name: m.lead.name || '', email: m.lead.email || '', phone: m.lead.phone || '', company: m.lead.company || '', status: m.lead.status || '' },
+      contact: { id: m.contact.id, name: m.contact.name || '', email: m.contact.email || '', phone: m.contact.phone || '', company: m.contact.company || '' },
+      score: m.score, level: m.level, reasons: m.reasons, summary: m.summary,
+    }));
   }
 
   /**
