@@ -510,7 +510,8 @@ export default function DealsPipelineView({ initialTab = 'board' }: DealsPipelin
       if (item.type === 'lead') {
         // Update lead status on backend
         const newStatus = targetStage === 'qualified' ? 'qualified' : targetStage === 'new_leads' ? 'contacted' : 'qualifying';
-        await axios.put(`/api/leads/${item.id}`, { status: newStatus });
+        // Status changes go through the validated lifecycle endpoint (PATCH /api/leads/:id/status).
+        await axios.patch(`/api/leads/${item.id}/status`, { status: newStatus });
       } else {
         // Update deal stage on backend
         const dealStageMap: Record<string, string> = {
@@ -676,9 +677,8 @@ export default function DealsPipelineView({ initialTab = 'board' }: DealsPipelin
     if (!selectedItem || selectedItem.type !== 'lead') return;
 
     try {
-      const res = await axios.patch(`/api/leads/${selectedItem.id}/tasks/${taskId}`, {
-        completed: !currentCompleted
-      });
+      // Server toggles the task's completed flag (PATCH /api/leads/:id/tasks/:taskId/toggle).
+      const res = await axios.patch(`/api/leads/${selectedItem.id}/tasks/${taskId}/toggle`);
 
       if (res.data?.success) {
         setDrawerTasks(prev => prev.map(t => t.id === taskId ? { ...t, completed: !currentCompleted } : t));
@@ -696,14 +696,16 @@ export default function DealsPipelineView({ initialTab = 'board' }: DealsPipelin
     setIsBulkProcessing(true);
 
     try {
-      const payload: any = {
-        action,
-        leadIds: selectedLeadIds
-      };
-      if (action === 'assign') payload.owner = value || 'Rene Pierrette';
-      if (action === 'status') payload.status = value || 'qualified';
-
-      const res = await axios.post('/api/leads/bulk', payload);
+      // Bulk delete is intentionally not wired: DELETE /api/leads/:id is a hard delete, and leads
+      // must be preserved for audit history. Archive/soft-delete is tracked in docs/CRM_CONSOLIDATION_AUDIT.md.
+      if (action === 'delete') {
+        showToast('Bulk delete is disabled to protect lead history. Set status to "unqualified" instead.', 'error');
+        return;
+      }
+      // The API exposes one endpoint per bulk action: /bulk/status and /bulk/assign (body: { ids, ... }).
+      const res = action === 'assign'
+        ? await axios.post('/api/leads/bulk/assign', { ids: selectedLeadIds, owner: value || 'Rene Pierrette' })
+        : await axios.post('/api/leads/bulk/status', { ids: selectedLeadIds, status: value || 'qualified' });
       if (res.data?.success) {
         showToast(`Bulk operation "${action}" applied to ${selectedLeadIds.length} leads.`, 'success');
         setSelectedLeadIds([]);
