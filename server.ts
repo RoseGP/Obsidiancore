@@ -33,6 +33,7 @@ import accountsApiRouter from './src/routes/accountsApi';
 import postsApiRouter from './src/routes/postsApi';
 import analyticsApiRouter from './src/routes/analyticsApi';
 import localSeoApiRouter from './src/routes/localSeoApi';
+import businessProfilesApiRouter from './src/routes/businessProfilesApi';
 import voiceIvrRouter from './src/routes/voiceIvr';
 import dashboardApiRouter from './src/routes/dashboardApi';
 import leadsApiRouter from './src/routes/leadsApi';
@@ -80,6 +81,8 @@ app.use('/api/billing', billingRouter);
 app.use('/api/accounts', accountsApiRouter);
 app.use('/api/analytics', analyticsApiRouter);
 app.use('/api/local-seo', localSeoApiRouter);
+// Business Profile Manager (own auth: verified user + per-profile roles, CSRF, rate limits).
+app.use('/api/business-profiles', businessProfilesApiRouter);
 app.use('/api/voice', voiceIvrRouter);
 app.use('/api/dashboard', dashboardApiRouter);
 app.use('/api/leads', leadsApiRouter);

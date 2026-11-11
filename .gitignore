@@ -9,3 +9,6 @@ coverage/
 
 # Billing data (per-business JSON store)
 data/billing/
+
+# Business Profile Manager local file store (dev)
+data/social-accounts/business-profiles.json

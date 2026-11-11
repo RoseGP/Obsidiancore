@@ -20,6 +20,7 @@ export type SemanticView =
   | 'analytics' 
   | 'settings' 
   | 'gbp' 
+  | 'business_profiles'
   | 'social_planner'
   | 'deals'
   | 'sales_pipelines'
@@ -85,7 +86,7 @@ export function mapSemanticToView(view: SemanticView): string {
 export function CommandProvider({ children }: { children: ReactNode }) {
   const [activeView, setActiveViewState] = useState<SemanticView>(() => {
     const hash = typeof window !== 'undefined' ? window.location.hash.replace('#', '') as SemanticView : '';
-    if (hash && ['greet', 'dashboard', 'messages', 'calendar', 'analytics', 'settings', 'gbp', 'proposals', 'social_planner', 'deals', 'sales_pipelines', 'voice_dialer', 'call_canvas', 'public_scheduling'].includes(hash)) {
+    if (hash && ['greet', 'dashboard', 'messages', 'calendar', 'analytics', 'settings', 'gbp', 'business_profiles', 'proposals', 'social_planner', 'deals', 'sales_pipelines', 'voice_dialer', 'call_canvas', 'public_scheduling'].includes(hash)) {
       return hash;
     }
     return 'messages';

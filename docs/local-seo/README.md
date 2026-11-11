@@ -20,6 +20,9 @@ dashboard figures are no longer used.
 | AI assistant drawer, Security log, Reports, Team settings, Photos, Attributes | **Not wired yet** (Phase 3); they show empty states, no fabricated data |
 | New-review notifications (Pub/Sub) | Not built (use **Sync now** or a scheduled job) |
 
+The **Business Profiles** tab (`docs/business-profiles/README.md`) builds on this connection to audit CRM
+profile records against linked locations and publish reviewed changes.
+
 ## Google Cloud setup (required before it works)
 
 1. In Google Cloud, create or choose a project and **request Business Profile API access**

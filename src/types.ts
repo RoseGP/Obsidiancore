@@ -69,6 +69,7 @@ export type ActiveView =
   | 'proposals'
   | 'social_planner'
   | 'gbp'
+  | 'business_profiles'
   | 'deals'
   | 'sales_pipelines'
   | 'voice_dialer'

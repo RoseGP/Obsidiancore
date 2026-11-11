@@ -20,6 +20,7 @@ import CalendarView from './components/CalendarView';
 import ProposalsView from './components/ProposalsView';
 import SocialPlannerTab from './components/SocialPlannerTab';
 import GbpView from './components/GbpView';
+import BusinessProfilesApp from './features/business-profiles/BusinessProfilesApp';
 import DealsPipelineView from './components/DealsPipelineView';
 import LeadsView from './components/leads/LeadsView';
 import CRMVoiceDialer from './components/CRMVoiceDialer';
@@ -150,6 +151,7 @@ const SEARCH_NAV_ITEMS = [
   { id: 'proposals', label: 'Enterprise Proposals', icon: 'FileText' },
   { id: 'social_planner', label: 'Social Planner', icon: 'Share2' },
   { id: 'gbp', label: 'Local GBP & Locations', icon: 'Globe' },
+  { id: 'business_profiles', label: 'Business Profiles & SEO Audit', icon: 'Store' },
   { id: 'voice_dialer', label: 'Voice Dialer & Softphone', icon: 'Phone' },
   { id: 'call_canvas', label: 'Live Video Call Canvas', icon: 'Video' },
   { id: 'analytics', label: 'Analytics & Insights', icon: 'BarChart3' },
@@ -383,6 +385,8 @@ function AppMain() {
         return <SocialPlannerTab />;
       case 'gbp':
         return <GbpView />;
+      case 'business_profiles':
+        return <BusinessProfilesApp onOpenGbp={() => setActiveView('gbp' as SemanticView)} />;
       case 'voice_dialer':
       case 'voice_hub':
         return (

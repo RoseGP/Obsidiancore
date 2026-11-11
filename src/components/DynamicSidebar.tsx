@@ -13,6 +13,7 @@ import {
   Calendar,
   Share2,
   Globe,
+  Store,
   Phone,
   DollarSign,
   Users
@@ -57,6 +58,7 @@ export default function DynamicSidebar({
     { id: 'proposals', label: 'Proposals', icon: FileText },
     { id: 'social_planner', label: 'Social Planner', icon: Share2 },
     { id: 'gbp', label: 'Local GBP', icon: Globe },
+    { id: 'business_profiles', label: 'Business Profiles', icon: Store },
     { id: 'voice_dialer', label: 'Voice Dialer', icon: Phone },
     { id: 'analytics', label: 'Analytics', icon: BarChart3 },
     { id: 'settings', label: 'Settings', icon: Settings },

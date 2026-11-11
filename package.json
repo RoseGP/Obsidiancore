@@ -16,6 +16,7 @@
     "test:invoicing": "npx tsx src/features/invoicing/__tests__/calc.test.ts && npx tsx src/features/invoicing/__tests__/api.test.ts",
     "test:social-accounts": "npx tsx src/features/social-accounts/__tests__/api.test.ts oauth && npx tsx src/features/social-accounts/__tests__/api.test.ts shared && npx tsx src/features/social-accounts/__tests__/firestoreStore.test.ts",
     "test:local-seo": "npx tsx src/features/gbp/__tests__/localSeo.test.ts",
+    "test:business-profiles": "npx tsx src/features/business-profiles/__tests__/audit.test.ts && npx tsx src/features/business-profiles/__tests__/api.test.ts",
     "test:voice-ivr": "npx tsx src/features/voice/__tests__/ivr.test.ts",
     "test:security": "npx tsx src/server/__tests__/security.test.ts"
   },
