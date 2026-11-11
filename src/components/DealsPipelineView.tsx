@@ -19,6 +19,7 @@ import {
 } from '../services/salesIntelligenceService';
 import { CRMLead, CRMLeadTask, CRMLeadActivity, LeadQualification } from '../types';
 import { ContactsView, CompaniesView } from '../features/crm-records';
+import DealActionsCard from '../features/reports/DealActionsCard';
 import { BOARD_COLUMNS, BOARD_COLUMN_LABELS, DEAL_STAGE_PROBABILITY, columnForDealStage, columnForLeadStatus, dealStageForColumn, isBoardColumn, leadStatusForColumn, type BoardColumn } from '../lib/pipelineStages';
 
 export interface PipelineItem {
@@ -311,6 +312,16 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
 
     return items;
   }, [leads, deals]);
+
+  // Deep link from Reports › Deal actions: ?deal=<id> opens that deal's drawer once the board has loaded.
+  useEffect(() => {
+    let id: string | null = null;
+    try { id = new URLSearchParams(window.location.search).get('deal'); } catch { id = null; }
+    const item = id ? pipelineItems.find((i) => (i.type === 'deal' && i.id === id) || i.convertedDealId === id) : null;
+    if (!item) return;
+    setActiveTab('board'); setSelectedItem(item);
+    try { const u = new URL(window.location.href); u.searchParams.delete('deal'); window.history.replaceState(null, '', u.toString()); } catch { /* ignore */ }
+  }, [pipelineItems]);
 
   // Pre-calculate sales intelligence & health for each item
   const itemsWithHealth = useMemo(() => {
@@ -1925,7 +1936,10 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
 
           {/* Drawer Scrollable Body */}
           <div className="flex-1 overflow-y-auto p-5 space-y-5 text-left text-xs">
-            
+            {drawerSubtab === 'intel' && (selectedItem.type === 'deal' || selectedItem.convertedDealId) && (
+              <DealActionsCard dealId={selectedItem.type === 'deal' ? selectedItem.id : selectedItem.convertedDealId!} />
+            )}
+
             {drawerSubtab === 'intel' && (
               /* TAB 1: AI SALES INTELLIGENCE & TALK TRACK */
               <>
