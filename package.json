@@ -25,7 +25,7 @@
     "test:api-key": "npx tsx src/server/__tests__/apiKeyAuth.test.ts",
     "typecheck": "tsc --noEmit",
     "test:communication": "npx tsx src/routes/__tests__/communication.test.ts",
-    "test:ci": "npm run -s test && npm run -s test:lead-intelligence && npm run -s test:command-center && npm run -s test:meeting-notes && npm run -s test:account && npm run -s test:dashboard && npm run -s test:communication && npm run -s test:messaging && npm run -s test:stripe && npm run -s test:video && npm run -s test:invoicing && npm run -s test:proposals && npm run -s test:social-accounts && npm run -s test:local-seo && npm run -s test:voice-ivr && npm run -s test:security && npm run -s test:meeting-controls && npm run -s test:meeting-session && npm run -s test:meeting-plans && npm run -s test:meeting-summary && npm run -s test:assistant && npm run -s test:ai && npm run -s test:embed && npm run -s test:api-key && npm run -s test:google",
+    "test:ci": "npm run -s test && npm run -s test:lead-intelligence && npm run -s test:command-center && npm run -s test:meeting-notes && npm run -s test:account && npm run -s test:dashboard && npm run -s test:communication && npm run -s test:messaging && npm run -s test:stripe && npm run -s test:video && npm run -s test:invoicing && npm run -s test:proposals && npm run -s test:social-accounts && npm run -s test:local-seo && npm run -s test:voice-ivr && npm run -s test:security && npm run -s test:meeting-controls && npm run -s test:meeting-session && npm run -s test:meeting-plans && npm run -s test:meeting-summary && npm run -s test:assistant && npm run -s test:ai && npm run -s test:embed && npm run -s test:api-key && npm run -s test:google && npm run -s test:contacts && npm run -s test:tasks && npm run -s test:timeline && npm run -s test:crm-screens",
     "test:google": "npx tsx src/server/__tests__/googleTokens.test.ts",
     "test:meeting-session": "npx tsx src/context/__tests__/meetingSession.test.tsx",
     "test:meeting-summary": "npx tsx src/services/__tests__/meetingSummary.test.ts",
@@ -36,6 +36,10 @@
     "test:dashboard": "npx tsx src/lib/__tests__/dashboardMetrics.test.ts && npx tsx src/lib/__tests__/commandCenter.test.ts && npx tsx src/components/dashboard/__tests__/widgets.test.tsx",
     "test:account": "npx tsx src/routes/__tests__/account.test.ts",
     "test:lead-intelligence": "npx tsx src/server/crm/__tests__/leadIntelligence.test.ts",
+    "test:contacts": "npx tsx src/server/crm/__tests__/contacts.test.ts",
+    "test:tasks": "npx tsx src/server/crm/__tests__/tasks.test.ts",
+    "test:timeline": "npx tsx src/server/crm/__tests__/timeline.test.ts",
+    "test:crm-screens": "npx tsx src/features/crm-records/__tests__/views.test.tsx",
     "test:command-center": "npx tsx src/routes/__tests__/commandCenter.test.ts"
   },
   "dependencies": {

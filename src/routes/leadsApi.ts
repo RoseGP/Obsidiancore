@@ -15,6 +15,8 @@ import rateLimit from 'express-rate-limit';
 import { calculateLeadScore } from './dashboardApi';
 import { CrmRepository, orgForLeadCaptureKey } from '../server/crm/crmRepository';
 import { newId } from '../server/data/docStore';
+import { TaskService } from '../server/crm/tasks';
+import { existingForLead } from '../server/crm/contacts';
 import { requirePermission, requireReadOrWrite, requireTenant, sendError, tenantOf } from '../server/tenancy/middleware';
 import { TenancyError } from '../server/tenancy/orgs';
 
@@ -105,7 +107,8 @@ router.post('/capture', captureLimiter, async (req: Request, res: Response) => {
     lead.score = calculateLeadScore(lead);
     const saved = await repo.saveLead(lead);
     await repo.addLeadActivity(lead.id, { type: 'created', title: 'Inbound Website Lead Captured', description: `Captured from ${sourceUrl || 'Website'}. Score: ${lead.score}/100.`, actor: 'Website Form' });
-    await repo.addLeadTask(lead.id, { title: `Follow up with ${lead.name} regarding website inquiry`, dueDate: new Date(Date.now() + 2 * 3600_000).toISOString(), completed: false, priority: 'urgent', createdAt: nowIso() });
+    await (await TaskService.forOrg(orgId)).create({ title: `Follow up with ${lead.name} regarding website inquiry`, type: 'follow_up', dueDate: new Date(Date.now() + 2 * 3600_000).toISOString(), priority: 'urgent', leadId: lead.id, assignedTo: lead.owner || '', assigneeId: null },
+      { userId: 'website-form', name: 'Website Form' }, { source: 'website' });
     await repo.logActivity({ type: 'lead_created', title: `New Website Lead: ${lead.name}`, description: `Website form capture for ${lead.company}.`, actor: 'Website Form', targetId: lead.id, targetType: 'lead' });
 
     // The public response doesn't echo the stored record back to an anonymous caller.
@@ -306,7 +309,10 @@ router.get('/:id', async (req, res) => {
     const repo = await repoFor(req);
     const lead = await repo.getLead(req.params.id);
     if (!lead) return res.status(404).json({ success: false, error: 'Lead not found.' });
-    const [tasks, activities] = await Promise.all([repo.listLeadTasks(lead.id), repo.listLeadActivities(lead.id)]);
+    const [tasks, activities] = await Promise.all([
+      TaskService.forOrg(tenantOf(req).orgId).then((s) => s.list({ leadId: lead.id, includeDone: true, view: 'all' })),
+      repo.listLeadActivities(lead.id),
+    ]);
     res.json({ success: true, lead, tasks, activities });
   } catch (err) { sendError(res, err, 'leads.get'); }
 });
@@ -383,21 +389,24 @@ router.post('/:id/tasks', async (req, res) => {
     if (!lead) return res.status(404).json({ success: false, error: 'Lead not found.' });
     const due = str(req.body?.dueDate, 40);
     const priority = ['low', 'normal', 'high', 'urgent'].includes(req.body?.priority) ? req.body.priority : 'normal';
-    const task = await repo.addLeadTask(lead.id, {
-      title, dueDate: due && !isNaN(Date.parse(due)) ? new Date(due).toISOString() : new Date(Date.now() + 2 * 86400_000).toISOString(),
-      completed: false, priority, assignedTo: str(req.body?.assignedTo, 120) || lead.owner || '', createdAt: nowIso(),
-    });
-    await repo.addLeadActivity(lead.id, { type: 'task_created', title: `Task Added: ${title}`, description: `Follow-up scheduled for ${new Date(task.dueDate).toLocaleDateString()}. Priority: ${priority}.`, actor: actorOf(req) });
+    const t = tenantOf(req);
+    const task = await (await TaskService.forOrg(t.orgId)).create({
+      title, type: 'follow_up', priority, leadId: lead.id,
+      dueDate: due && !isNaN(Date.parse(due)) ? new Date(due).toISOString() : new Date(Date.now() + 2 * 86400_000).toISOString(),
+      assignedTo: str(req.body?.assignedTo, 120) || lead.owner || '', assigneeId: str(req.body?.assigneeId, 128) || (lead.ownerId ?? null),
+    }, { userId: t.userId, name: actorOf(req) }, { source: 'lead' });
+    await repo.addLeadActivity(lead.id, { type: 'task_created', title: `Task Added: ${title}`, description: `Follow-up scheduled for ${new Date(task.dueDate!).toLocaleDateString()}. Priority: ${priority}.`, actor: actorOf(req) });
     res.status(201).json({ success: true, task });
   } catch (err) { sendError(res, err, 'leads.addTask'); }
 });
 
 async function setTaskCompleted(req: Request, res: Response, desired: boolean | null) {
-  const repo = await repoFor(req);
-  const task = await repo.getLeadTask(req.params.id, req.params.taskId);
-  if (!task) return res.status(404).json({ success: false, error: 'Task not found.' });
+  const t = tenantOf(req);
+  const tasks = await TaskService.forOrg(t.orgId);
+  const task = await tasks.adopt(req.params.taskId);
+  if (!task || task.leadId !== req.params.id) return res.status(404).json({ success: false, error: 'Task not found.' });
   const completed = desired ?? !task.completed;
-  await repo.updateLeadTask(req.params.id, req.params.taskId, { completed, completedAt: completed ? nowIso() : null });
+  await tasks.update(task.id, { completed }, { userId: t.userId, name: actorOf(req) });
   res.json({ success: true, taskId: task.id, completed });
 }
 // PATCH /api/leads/:id/tasks/:taskId/toggle   and   PATCH /api/leads/:id/tasks/:taskId { completed }
@@ -415,8 +424,10 @@ router.post('/:id/convert', async (req, res) => {
     const probabilities: Record<string, number> = { discovery: 30, qualified: 50, proposal: 70, negotiation: 85, won: 100 };
     const dealStage = probabilities[b.dealStage] !== undefined ? b.dealStage : 'qualified';
     const ts = nowIso();
+    const pre = await repo.getLead(req.params.id);
+    const known = pre ? await existingForLead(tenantOf(req).orgId, pre) : { contact: null, company: null };
     const result = await repo.convertLead(req.params.id, (lead) => {
-      const contactId = newId('contact'), companyId = newId('company'), dealId = newId('deal');
+      const contactId = known.contact?.id || newId('contact'), companyId = known.company?.id || newId('company'), dealId = newId('deal');
       const value = Number(b.dealValue) > 0 ? Number(b.dealValue) : (Number(lead.qualification?.budget) || 0);
       const deal = {
         id: dealId, name: str(b.dealTitle, 200) || `${lead.company || lead.name} Solution Contract`, client: lead.company || lead.name,
@@ -425,8 +436,12 @@ router.post('/:id/convert', async (req, res) => {
         originLeadId: lead.id, contactId, companyId, createdAt: ts, updatedAt: ts,
       };
       return {
-        contact: { id: contactId, name: lead.name, email: lead.email, phone: lead.phone || '', company: lead.company || '', title: lead.title || '', channel: lead.channel || lead.source || 'other', status: 'active', priority: (lead.score || 0) > 80 ? 'high' : 'medium', originLeadId: lead.id, createdAt: ts, updatedAt: ts },
-        company: { id: companyId, name: lead.company || `${lead.name} Corp`, industry: str(b.companyIndustry, 80) || 'Unspecified', tier: str(b.companyTier, 80) || 'Unspecified', primaryContactId: contactId, originLeadId: lead.id, createdAt: ts, updatedAt: ts },
+        contact: known.contact
+          ? { ...known.contact, leadIds: [...new Set([...(known.contact.leadIds || []), lead.id])], companyId: known.contact.companyId || companyId, phone: known.contact.phone || lead.phone || '', title: known.contact.title || lead.title || '', updatedAt: ts }
+          : { id: contactId, name: lead.name, email: lead.email, phone: lead.phone || '', company: lead.company || '', companyId, title: lead.title || '', channel: lead.channel || lead.source || 'other', status: 'active', priority: (lead.score || 0) > 80 ? 'high' : 'medium', ownerId: lead.ownerId ?? null, owner: lead.owner || '', tags: [], leadIds: [lead.id], originLeadId: lead.id, createdAt: ts, updatedAt: ts },
+        company: known.company
+          ? { ...known.company, primaryContactId: known.company.primaryContactId || contactId, updatedAt: ts }
+          : { id: companyId, name: lead.company || `${lead.name} Corp`, industry: str(b.companyIndustry, 80) || 'Unspecified', tier: str(b.companyTier, 80) || 'Unspecified', primaryContactId: contactId, originLeadId: lead.id, createdAt: ts, updatedAt: ts },
         deal,
         activity: { id: newId('act'), type: 'converted', title: 'Converted to Deal & Contact', description: `Lead converted into Contact, Company, and Deal: "${deal.name}" ($${value.toLocaleString()}).`, actor: actorOf(req), timestamp: ts },
         leadPatch: { status: 'converted', isConverted: true, convertedAt: ts, convertedContactId: contactId, convertedCompanyId: companyId, convertedDealId: dealId, updatedAt: ts },

@@ -38,6 +38,8 @@ import marketingApiRouter from './src/routes/marketingApi';
 import orgsApiRouter from './src/routes/orgsApi';
 import accountApiRouter from './src/routes/accountApi';
 import leadIntelligenceRouter from './src/routes/leadIntelligenceApi';
+import { contactsRouter, companiesRouter } from './src/routes/contactsApi';
+import tasksApiRouter from './src/routes/tasksApi';
 import { requireUser } from './src/features/social-accounts/server/auth';
 import { guard, PUBLIC } from './src/server/routeGuards';
 import { isExplicitDevOrTest } from './src/server/runtimeEnv';
@@ -94,6 +96,9 @@ app.use('/api/account', guard(PUBLIC.none), accountApiRouter);
 app.use('/api/lead-intelligence', guard(PUBLIC.none), leadIntelligenceRouter);
 app.use('/api/dashboard', guard(PUBLIC.none), dashboardApiRouter);
 app.use('/api/leads', guard(PUBLIC.leads), leadsApiRouter);
+app.use('/api/contacts', guard(PUBLIC.none), contactsRouter);
+app.use('/api/companies', guard(PUBLIC.none), companiesRouter);
+app.use('/api/tasks', guard(PUBLIC.none), tasksApiRouter);
 app.use('/api/marketing', guard(PUBLIC.none), marketingApiRouter);
 app.use('/api/v1/marketing', guard(PUBLIC.none), marketingApiRouter);
 // New application routes first; remaining legacy paths (/queue, /schedule, /retry, /accounts) require a verified user too.
