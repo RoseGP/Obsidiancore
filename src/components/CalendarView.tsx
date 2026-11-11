@@ -21,14 +21,6 @@ interface CalendarViewProps {
 type ViewMode = 'month' | 'week' | 'day';
 type CategoryFilter = 'all' | 'interview' | 'task' | 'timeoff' | 'demo' | 'call' | 'contract';
 
-interface SampleParticipant {
-  name: string;
-  avatarBg: string;
-  avatarText: string;
-}
-
-// TO COMPLETE: load invitable participants from workspace members and CRM contacts.
-const PARTICIPANTS: SampleParticipant[] = [];
 
 export default function CalendarView({ events: localEvents, onAddEvent, onRemoveEvent }: CalendarViewProps) {
   // One calendar: GREET meetings come from the server (organizations/{org}/scheduled_meetings); anything in
@@ -755,7 +747,9 @@ export default function CalendarView({ events: localEvents, onAddEvent, onRemove
               <div className="space-y-2.5 overflow-y-auto flex-1 max-h-[500px] pr-1">
                 {filteredEvents.map((evt, idx) => {
                   const style = getCategoryStyles(evt.type);
-                  const participant = PARTICIPANTS[idx % PARTICIPANTS.length];
+                  // Avatar from the event's own contact (no sample people).
+                  const who = (evt.contact || evt.title || '?').trim();
+                  const participant = { name: who, avatarBg: 'bg-indigo-500', avatarText: who.split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase() || '?' };
 
                   return (
                     <div

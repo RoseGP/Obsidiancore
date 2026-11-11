@@ -86,8 +86,12 @@ export async function recordOutcome(id: string, result: string, summary: string)
   return r;
 }
 export const getMeeting = (id: string) => greetApi<{ meeting: GreetMeeting; invites?: Array<{ id: string; email: string; name: string; expiresAt: string; revoked: boolean; lastUsedAt: string | null }>; invitesConfigured: boolean }>(`/api/meetings/${encodeURIComponent(id)}`);
-export const createInvites = (id: string, guests?: Array<{ email: string; name?: string }>) =>
-  greetApi<{ invites: Array<{ id: string; email: string; name: string; link: string; expiresAt: string }>; message: string }>(`/api/meetings/${encodeURIComponent(id)}/invites`, { method: 'POST', body: JSON.stringify(guests ? { guests } : {}) });
+/** Links come back absolute when the server knows APP_URL; otherwise they're made absolute with this site's origin. */
+export const absoluteLink = (link: string) => (/^https?:\/\//.test(link) ? link : `${typeof window !== 'undefined' ? window.location.origin : ''}${link.startsWith('/') ? '' : '/'}${link}`);
+export const createInvites = async (id: string, guests?: Array<{ email: string; name?: string }>) => {
+  const r = await greetApi<{ invites: Array<{ id: string; email: string; name: string; link: string; expiresAt: string }>; message: string }>(`/api/meetings/${encodeURIComponent(id)}/invites`, { method: 'POST', body: JSON.stringify(guests ? { guests } : {}) });
+  return { ...r, invites: r.invites.map((i) => ({ ...i, link: absoluteLink(i.link) })) };
+};
 export const revokeInvite = (id: string, inviteId: string) => greetApi(`/api/meetings/${encodeURIComponent(id)}/invites/${encodeURIComponent(inviteId)}`, { method: 'DELETE' });
 export const getHub = () => greetApi<Hub>('/api/meetings/hub');
 export const listMeetings = () => greetApi<{ meetings: GreetMeeting[] }>('/api/meetings');

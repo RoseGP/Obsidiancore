@@ -17,7 +17,7 @@ import { useNotifications } from '../../context/NotificationContext';
 import { useTeamMembers } from '../../hooks/useTeamMembers';
 import type { CRMContact } from '../../types';
 import {
-  GreetApiError, cancelMeeting, createFollowUpTask, createInvites, getHub, getMeeting, greetApi, recordOutcome, relWhen, revokeInvite,
+  GreetApiError, absoluteLink, cancelMeeting, createFollowUpTask, createInvites, getHub, getMeeting, greetApi, recordOutcome, relWhen, revokeInvite,
   scheduleMeeting, updateMeeting, MEETINGS_CHANGED, type GreetMeeting, type HistoryItem, type Hub, type ScheduleInput,
 } from '../../lib/greetClient';
 
@@ -150,7 +150,7 @@ function ScheduleForm({ initial, editing, contacts, onDone, onCancel }: {
       <ErrorLine text={error} />
       <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 pt-1">
         <Button type="button" variant="secondary" onClick={onCancel}>Cancel</Button>
-        <Button type="submit" disabled={busy || !title.trim()}>{busy ? 'Saving…' : editing ? 'Save changes' : 'Schedule meeting'}</Button>
+        <Button type="submit" variant="primary" disabled={busy || !title.trim()}>{busy ? 'Saving…' : editing ? 'Save changes' : 'Schedule meeting'}</Button>
       </div>
     </form>
   );
@@ -205,7 +205,7 @@ function MeetingDetails({ meetingId, contacts, onClose, onStart, onScheduleAnoth
         {m.status === 'CANCELLED' && <p className="text-[13px] text-[var(--danger)]">Cancelled{m.cancelReason ? `: ${m.cancelReason}` : '.'}</p>}
 
         <section className="space-y-1 text-[13px]">
-          <p><span className="text-[var(--text-muted)]">Host:</span> {m.hostName || 'Organizer'}</p>
+          <p><span className="text-[var(--text-muted)]">Host:</span> {m.yourRole === 'host' ? 'You' : m.hostName || 'Organizer'}</p>
           {m.invitees.length > 0 && <p><span className="text-[var(--text-muted)]">Teammates:</span> {m.invitees.map((i) => i.name).join(', ')}</p>}
           {m.guests.length > 0 && <p><span className="text-[var(--text-muted)]">Guests:</span> {m.guests.join(', ')}</p>}
           {m.additionalNotes && <p className="whitespace-pre-wrap"><span className="text-[var(--text-muted)]">Agenda:</span> {m.additionalNotes}</p>}
@@ -215,8 +215,8 @@ function MeetingDetails({ meetingId, contacts, onClose, onStart, onScheduleAnoth
 
         {(m.status === 'SCHEDULED' || m.status === 'LIVE') && (
           <div className="flex flex-wrap gap-2">
-            <Button icon={<Video className="h-4 w-4" />} onClick={() => onStart(m)}>{m.status === 'LIVE' ? 'Join now' : m.yourRole === 'host' || m.canEdit ? 'Start meeting' : 'Join'}</Button>
-            {m.videoLink && <Button variant="secondary" icon={<Copy className="h-4 w-4" />} onClick={() => copy(m.videoLink!, 'Link for teammates copied (they sign in to join).')}>Copy team link</Button>}
+            <Button variant="primary" icon={<Video className="h-4 w-4" />} onClick={() => onStart(m)}>{m.status === 'LIVE' ? 'Join now' : m.yourRole === 'host' || m.canEdit ? 'Start meeting' : 'Join'}</Button>
+            {m.videoLink && <Button variant="secondary" icon={<Copy className="h-4 w-4" />} onClick={() => copy(absoluteLink(m.videoLink!), 'Link for teammates copied (they sign in to join).')}>Copy team link</Button>}
             {m.canEdit && m.status === 'SCHEDULED' && <Button variant="secondary" icon={<CalendarClock className="h-4 w-4" />} onClick={() => setMode('edit')}>Reschedule</Button>}
             {m.canEdit && m.status === 'SCHEDULED' && <Button variant="ghost" onClick={() => setMode('cancel')}>Cancel meeting</Button>}
           </div>
@@ -272,7 +272,7 @@ function MeetingDetails({ meetingId, contacts, onClose, onStart, onScheduleAnoth
             <div className="grid sm:grid-cols-[180px_1fr_auto] gap-2">
               <select aria-label="Outcome" className={inputCls} value={outcome} onChange={(e) => setOutcome(e.target.value)}>{OUTCOMES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
               <input aria-label="Outcome summary" className={inputCls} placeholder="What was decided?" value={summary} onChange={(e) => setSummary(e.target.value)} />
-              <Button size="sm" disabled={busy} onClick={() => run(() => recordOutcome(m.id, outcome, summary), 'Outcome saved to the CRM.')}>Save outcome</Button>
+              <Button size="sm" variant="primary" disabled={busy} onClick={() => run(() => recordOutcome(m.id, outcome, summary), 'Outcome saved to the CRM.')}>Save outcome</Button>
             </div>
             <div className="grid sm:grid-cols-[1fr_auto] gap-2">
               <input aria-label="Follow-up task" className={inputCls} value={taskTitle} onChange={(e) => setTaskTitle(e.target.value)} />
@@ -336,7 +336,7 @@ function DeviceCheck({ onClose }: { onClose: () => void }) {
             <option value="">Default</option>{availableDevices.audioInputs.map((d) => <option key={d.deviceId} value={d.deviceId}>{d.label || 'Microphone'}</option>)}</select></div>
         </div>
         <ErrorLine text={error} />
-        <div className="flex justify-end"><Button onClick={onClose}>Done</Button></div>
+        <div className="flex justify-end"><Button variant="primary" onClick={onClose}>Done</Button></div>
       </div>
     </Modal>
   );
@@ -441,7 +441,7 @@ export default function GreetHub({ contacts = [], onStart, onJoin, onNavigate }:
             {isCallActive && <Button variant="secondary" icon={<Radio className="h-4 w-4" />} onClick={returnToMeeting}>Return to “{activeMeeting?.title || 'meeting'}”</Button>}
             <Button variant="secondary" icon={<Camera className="h-4 w-4" />} onClick={() => setModal({ kind: 'devices' })}>Check devices</Button>
             <Button variant="secondary" icon={<CalendarPlus className="h-4 w-4" />} onClick={() => setModal({ kind: 'schedule' })}>Schedule meeting</Button>
-            <Button icon={<Video className="h-4 w-4" />} onClick={() => setModal({ kind: 'instant' })}>Start instant meeting</Button>
+            <Button variant="primary" icon={<Video className="h-4 w-4" />} onClick={() => setModal({ kind: 'instant' })}>Start instant meeting</Button>
           </div>
         </header>
 
@@ -504,13 +504,13 @@ export default function GreetHub({ contacts = [], onStart, onJoin, onNavigate }:
                     </div>
                     <div className="flex gap-2 shrink-0">
                       <Button size="sm" variant="secondary" onClick={() => setModal({ kind: 'details', id: m.id })}>Details</Button>
-                      <Button size="sm" disabled={busy} icon={<Video className="h-4 w-4" />} onClick={() => start(m)}>{m.status === 'LIVE' ? 'Join' : m.canEdit ? 'Start' : 'Join'}</Button>
+                      <Button size="sm" variant="primary" disabled={busy} icon={<Video className="h-4 w-4" />} onClick={() => start(m)}>{m.status === 'LIVE' ? 'Join' : m.canEdit ? 'Start' : 'Join'}</Button>
                     </div>
                   </Card>
                 </li>))}</ul>
             ) : <EmptyState icon={<CalendarPlus className="h-5 w-5" />} title={tab === 'upcoming' ? 'No upcoming meetings' : 'No invitations'}
                 body={tab === 'upcoming' ? 'Schedule a GREET meeting and invite teammates or customers.' : 'When a teammate invites you to a GREET meeting, it appears here.'}
-                action={tab === 'upcoming' ? <Button onClick={() => setModal({ kind: 'schedule' })}>Schedule meeting</Button> : undefined} />
+                action={tab === 'upcoming' ? <Button variant="primary" onClick={() => setModal({ kind: 'schedule' })}>Schedule meeting</Button> : undefined} />
           )
         )}
 
@@ -519,7 +519,7 @@ export default function GreetHub({ contacts = [], onStart, onJoin, onNavigate }:
             {pendingDevice.length > 0 && (
               <div className="flex flex-col sm:flex-row sm:items-center gap-2 rounded-[var(--radius-card)] border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-[13px]">
                 <span className="flex-1">{pendingDevice.length} meeting{pendingDevice.length === 1 ? ' is' : 's are'} saved only in this browser. Move them to the server so they're kept and visible on your other devices.</span>
-                <Button size="sm" icon={<UploadCloud className="h-4 w-4" />} disabled={busy} onClick={importDeviceHistory}>Move to server</Button>
+                <Button size="sm" variant="primary" icon={<UploadCloud className="h-4 w-4" />} disabled={busy} onClick={importDeviceHistory}>Move to server</Button>
               </div>
             )}
             {!hub && !hubError ? <Skeleton className="h-24" /> : history.length === 0 ? <EmptyState icon={<HistoryIcon className="h-5 w-5" />} title="No meetings yet" body="Meetings you host or join appear here with who attended and how they went." /> : (
@@ -556,7 +556,7 @@ export default function GreetHub({ contacts = [], onStart, onJoin, onNavigate }:
                 <option value="">No CRM record</option>{contacts.map((c) => <option key={c.id} value={c.id}>{c.name}{c.company ? ` · ${c.company}` : ''}</option>)}</select></div>
             <label className="flex items-center gap-2 text-[14px]"><input type="checkbox" checked={instant.startMuted} onChange={(e) => setInstant({ ...instant, startMuted: e.target.checked })} />Join with microphone off</label>
             <label className="flex items-center gap-2 text-[14px]"><input type="checkbox" checked={instant.startCamOff} onChange={(e) => setInstant({ ...instant, startCamOff: e.target.checked })} />Join with camera off</label>
-            <div className="flex justify-end gap-2 pt-1"><Button type="button" variant="secondary" onClick={() => setModal(null)}>Cancel</Button><Button type="submit" icon={<Video className="h-4 w-4" />}>Start now</Button></div>
+            <div className="flex justify-end gap-2 pt-1"><Button type="button" variant="secondary" onClick={() => setModal(null)}>Cancel</Button><Button type="submit" variant="primary" icon={<Video className="h-4 w-4" />}>Start now</Button></div>
           </form>
         </Modal>
       )}
