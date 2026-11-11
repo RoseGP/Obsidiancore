@@ -46,7 +46,7 @@ export interface PolicyViolation { status: number; code: string; error: string }
 /** Why this credential may not be used for this organization right now, or null if it may. */
 export function checkCredentialAgainstPolicy(policy: SecurityPolicy, user: { via?: string; secondFactor?: string; authTime?: number }, now = Date.now()): PolicyViolation | null {
   if (policy.requireMfa && !user.secondFactor) {
-    return { status: 403, code: 'mfa_required', error: 'Your organization requires two-step sign-in. Turn it on in Settings › Security, then sign in again.' };
+    return { status: 403, code: 'mfa_required', error: 'Your organization requires two-step sign-in. Turn it on in Security & Access, then sign in again.' };
   }
   if (policy.maxSessionHours > 0 && user.authTime && now - user.authTime * 1000 > policy.maxSessionHours * 3600_000) {
     return { status: 401, code: 'session_expired', error: `Your organization asks you to sign in again every ${policy.maxSessionHours} hours. Sign out and sign in again.` };

@@ -1,5 +1,5 @@
 /**
- * Settings › Security: two-step sign-in for your own account (Firebase multi-factor, authenticator app / TOTP)
+ * Security & Access page: two-step sign-in for your own account (Firebase multi-factor, authenticator app / TOTP)
  * and, for admins, the organization's security policy (enforced on the server).
  *
  * Firebase TOTP multi-factor needs Identity Platform with TOTP enabled on the Firebase project; when it isn't,
@@ -144,7 +144,7 @@ export function OrgSecurityPolicyCard() {
       </div>
       <label className="flex items-start gap-3 text-xs text-neutral-200">
         <input type="checkbox" className="mt-0.5" disabled={!admin} checked={draft.requireMfa} onChange={(e) => setDraft({ ...draft, requireMfa: e.target.checked })} />
-        <span><strong className="text-white">Require two-step sign-in</strong><br /><span className="text-neutral-400">Members who haven’t set it up can only open Settings › Security until they do. Turn it on for yourself first.</span></span>
+        <span><strong className="text-white">Require two-step sign-in</strong><br /><span className="text-neutral-400">Members who haven’t set it up can only open Security &amp; Access until they do. Turn it on for yourself first.</span></span>
       </label>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <label className="text-xs text-neutral-300">Sign in again after (hours, 0 = never)

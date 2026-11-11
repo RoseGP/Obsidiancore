@@ -1,7 +1,7 @@
 /**
  * App-wide enforcement of the organization's security policy in the browser:
  * - when the server refuses a request because two-step sign-in is required or the session is too old,
- *   a banner explains it and links to Settings › Security (or offers to sign out);
+ *   a banner explains it and links to Security & Access (or offers to sign out);
  * - when the organization sets "sign out after inactivity", the app signs out after that long without
  *   any keyboard, mouse or touch activity.
  * The server enforces two-step and session age on every request; this only makes it understandable.

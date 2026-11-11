@@ -374,9 +374,9 @@ function AppMain() {
       case 'analytics':
         return <div className="cc min-h-full shrink-0 w-full"><AnalyticsView onNavigate={(v) => setActiveView(v as SemanticView)} /></div>;
       case 'settings':
-        return <div className="obsidian min-h-full shrink-0 bg-[var(--obsidian-1)] text-neutral-200"><SettingsView defaultTab={settingsDefaultTab} onNavigate={navigateTo} /></div>;
+        return <div className="obsidian min-h-full shrink-0 bg-[var(--obsidian-1)] text-neutral-200"><SettingsView key="settings" defaultTab={settingsDefaultTab} onNavigate={navigateTo} /></div>;
       case 'security_access':
-        return <div className="obsidian min-h-full shrink-0 bg-[var(--obsidian-1)] text-neutral-200"><SettingsView page="security_access" onNavigate={navigateTo} /></div>;
+        return <div className="obsidian min-h-full shrink-0 bg-[var(--obsidian-1)] text-neutral-200"><SettingsView key="security_access" page="security_access" onNavigate={navigateTo} /></div>;
       case 'billing':
         return <div className="obsidian min-h-full shrink-0 bg-[var(--obsidian-1)] text-neutral-200"><BillingSubscriptionView onNavigate={navigateTo} /></div>;
       case 'calendar':
