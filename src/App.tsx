@@ -39,6 +39,8 @@ import LeadIntelligenceView from './features/lead-intelligence/LeadIntelligenceV
 import { useTheme } from './context/ThemeContext';
 import ThemeSwitch from './components/ThemeSwitch';
 import { InvitationAcceptor } from './components/OrganizationSettings';
+import { onCrmChanged } from './lib/crmEvents';
+import { useTaskReminders } from './features/crm-records/useTaskReminders';
 
 // Contacts are the organization's leads (/api/leads, stored per organization on the server); loaded after sign-in.
 const INITIAL_CONTACTS: CRMContact[] = [];
@@ -60,6 +62,11 @@ function contactFromLead(lead: CRMLead): CRMContact {
     title: lead.title || '',
     notes: lead.notes || '',
   };
+}
+
+/** A saved contact (/api/contacts) in the same shape, for people who aren't (or are no longer) open leads. */
+function contactFromRecord(c: any): CRMContact {
+  return { id: c.id, name: c.name || c.email, avatar: '', channel: 'contact', lastMessage: c.notes || '', timestamp: '', unread: false, status: 'active', sentiment: 'neutral', email: c.email || '', phone: c.phone || '', company: c.company || '', title: c.title || '', notes: c.notes || '' };
 }
 
 // TO COMPLETE: load events from Google Calendar (/api/gcal OAuth is wired) or Firestore users/{uid}/events, and persist edits.
@@ -116,16 +123,24 @@ function AppMain() {
     setContacts(prev => (prev.some(c => c.id === newLead.id) ? prev : [contactFromLead(newLead), ...prev]));
   }, []);
 
-  // Load the organization's contacts (leads) once signed in.
+  // Load the organization's people (leads + saved contacts, one entry per email) once signed in, and again
+  // whenever a lead, contact or company changes anywhere in the app, so search and the dashboard stay current.
+  const [crmVersion, setCrmVersion] = React.useState(0);
+  React.useEffect(() => onCrmChanged((k) => { if (k === 'lead' || k === 'contact' || k === 'company') setCrmVersion((v) => v + 1); }), []);
+  useTaskReminders(isAuthenticated);
   React.useEffect(() => {
     if (!isAuthenticated) { setContacts([]); return; }
     let cancelled = false;
-    fetch('/api/leads')
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (!cancelled && d && Array.isArray(d.leads)) setContacts(d.leads.map(contactFromLead)); })
-      .catch(() => { /* offline: contacts stay empty */ });
+    const get = (u: string) => fetch(u).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+    Promise.all([get('/api/leads'), get('/api/contacts')]).then(([l, c]) => {
+      if (cancelled || (!l && !c)) return;
+      const rows: CRMContact[] = [...(Array.isArray(l?.leads) ? l.leads.map(contactFromLead) : [])];
+      const emails = new Set(rows.map((r) => (r.email || '').toLowerCase()).filter(Boolean));
+      for (const rec of Array.isArray(c?.contacts) ? c.contacts : []) if (!rec.email || !emails.has(String(rec.email).toLowerCase())) rows.push(contactFromRecord(rec));
+      setContacts(rows);
+    });
     return () => { cancelled = true; };
-  }, [isAuthenticated]);
+  }, [isAuthenticated, crmVersion]);
 
   // Meeting invitation links (/?view=greet&meet=<code>): join once signed in. The server applies the
   // organizer's plan (capacity, lock, waiting room) and refuses with a reason if the meeting can't be joined.

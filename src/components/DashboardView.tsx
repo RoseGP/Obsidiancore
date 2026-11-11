@@ -34,6 +34,7 @@ import {
   AttentionGrid, CcSection, InsightsList, KpiStrip, LiveFeed, MeetingsList, MissionsPanel, ServicePanel, ToolsGrid, WelcomeHeader, buildFeed,
   type FeedItem, type Tool,
 } from './dashboard/CommandCenterSections';
+import TasksDueCard from '../features/crm-records/TasksDueCard';
 import { GettingStartedCard, type ChecklistStep } from './dashboard/WorkSections';
 import { CustomizeDialog, NewDealDialog, type SectionPref } from './dashboard/Dialogs';
 import { Button, IconButton, Segmented, cx, focusRing } from './dashboard/ui';
@@ -254,6 +255,7 @@ export default function DashboardView({ contacts, onSelectContact, onNavigate, o
           badge={attention.length ? <span className="inline-flex items-center gap-1 rounded-full bg-[var(--danger-soft)] px-2 py-0.5 text-[11px] font-semibold text-[var(--danger)]">{attentionHigh ? `${attentionHigh} high priority` : `${attention.length} open`}</span> : undefined}
           collapsed={collapsed('attention')} onToggle={() => toggle('attention')}>
           <AttentionGrid items={attention} loading={loading || cc.conversations.loading} onAction={onAttention} />
+          <div className="mt-4"><TasksDueCard onNavigate={open} /></div>
         </CcSection>
       );
       case 'performance': return (
