@@ -11,7 +11,6 @@ npm run dev            # NODE_ENV=development; needs SOCIAL_ACCOUNTS_DEV_AUTH=tr
 npm run typecheck      # must stay at 0 errors (CI gate)
 npm run lint           # typecheck + scripts/lint-guards.mjs
 npm run test:ci        # all suites CI runs (in-memory store; no real services)
-npm run test:payments  # known failing (5) until Phase B, non-blocking in CI
 npm run build
 cd functions && npm install && npx tsc -p tsconfig.json
 npm run key:generate   # MASTER_API_KEY into .env (never printed)
@@ -20,17 +19,20 @@ Tests are plain `tsx` scripts with node:assert + supertest (React component test
 `test:<name>` script for new suites and include it in `test:ci`.
 
 ## Architecture (where things live)
-- **Auth:** `src/features/social-accounts/server/auth.ts` (`identify`, `requireUser`), `src/server/routeGuards.ts` (`guard(PUBLIC.x)` on every `/api` mount).
-- **Tenancy:** `src/server/tenancy/` (`requireTenant`, `requirePermission`, roles OWNER…READ_ONLY, invitations). Data path: `organizations/{orgId}/…`.
+- **Auth:** `src/features/social-accounts/server/auth.ts` (`identify`, `requireUser`; Firebase incl. two-step/TOTP), `src/server/routeGuards.ts` (`guard(PUBLIC.x)` on every `/api` mount; a test fails on an unguarded mount).
+- **Tenancy & permissions:** `src/server/tenancy/` (`requireTenant`, `requirePermission`, roles OWNER/ADMIN/MANAGER/SALES_REP/MARKETER/SUPPORT_AGENT/READ_ONLY/GUEST, invitations). Granular module × permission matrix with `requireAccess(module, perm)`; org security policy (require two-step, session age). Data path: `organizations/{orgId}/…`.
+- **Audit log:** `src/server/audit/auditLog.ts` `recordAudit()` → `organizations/{org}/audit_log` (append-only, no secrets/message bodies); `GET /api/admin/audit-log`. Use it for any security-relevant change.
+- **Compliance:** `src/server/compliance/` + `src/routes/complianceApi.ts` (consent, data requests with preview → approve → complete, retention with dry run, access reviews, incidents). Docs `docs/compliance/`.
 - **Storage:** `src/server/data/docStore.ts`: `getDocStore()` → Firestore in production, strict in-memory store in tests/dev (`CRM_STORE`). Always `assertId()` request ids.
-- **CRM data:** `src/server/crm/crmRepository.ts`; routes `src/routes/leadsApi.ts`, `dashboardApi.ts`, `orgsApi.ts`.
+- **CRM records (one source each):** leads/deals `src/server/crm/crmRepository.ts` (routes `leadsApi.ts`, `dashboardApi.ts`); contacts & companies `src/server/crm/contacts.ts` (`/api/contacts`, `/api/companies`, duplicate check + merge); tasks `src/server/crm/tasks.ts` (`/api/tasks`; lead and inbox task endpoints write through); timeline `src/server/crm/timeline.ts`. Pipeline vocabulary: `src/lib/pipelineStages.ts`. Lead scoring: `src/server/crm/leadIntelligence.ts`.
+- **Payments:** one org-scoped stack `src/services/payment/paymentDb.ts` + `src/routes/paymentIntegrations.ts` (`/api/integrations`, aliases `/api/payments`, `/api/invoices`); webhooks `paymentWebhooks.ts` mark Invoicing invoices paid. Invoicing `src/features/invoicing/` (`billing/{orgId}/…`), proposals `src/features/proposals/`.
 - **AI:** `src/services/ai/aiService.ts` (Gemini + Claude, fallback), prompt `src/services/assistantPrompt.ts`, tools `src/services/crmAiAssistant.ts`, SSE controller `src/controllers/omniRouteChatController.ts`.
 - **Google Calendar:** `src/server/integrations/googleTokens.ts` (AES-256-GCM per user), `src/services/gcalSyncService.ts`, `src/routes/gcalWebhook.ts`.
 - **Social Planner (Postiz):** `src/features/social-accounts/server/*`, `src/routes/accountsApi.ts`, `src/routes/postsApi.ts`, UI `src/features/social-planner/`.
 - **Embeddable calendar:** `public/widget.js`, `src/routes/embedEventsApi.ts`, `src/server/embed/embedKeys.ts`.
-- **Meetings UI:** `src/components/greet/MeetingControlBar.tsx`, `meetingControls.ts`, `VideoMeetingWorkspace.tsx`.
-- **Meeting plans & sessions (server-enforced):** `src/lib/meetingPlans.ts` (shared rules), `src/server/meetings/` (plans, subscriptions, sessions, stats), routes `src/routes/meetings.ts`, `src/routes/meetingAdminApi.ts`. See `docs/meetings/PLANS.md`. Never hardcode limits: read the org's plan.
-- **Docs:** `docs/embed-calendar/`, `docs/api-key-auth/`, `docs/social-accounts/`.
+- **GREET (video meetings, LiveKit only):** hub `src/components/greet/GreetHub.tsx`, room `VideoMeetingWorkspace.tsx`, guest page `GreetGuestPage.tsx`, client `src/lib/greetClient.ts`; server `src/server/greet/` (scheduled meetings, invitations, recordings) + `src/server/meetings/` (plans, sessions, media tokens); routes `src/routes/meetings.ts`, `greetApi.ts`, `meetingAdminApi.ts`. Calendar reads server meetings. See `docs/greet/README.md` and `docs/meetings/PLANS.md`. Never hardcode limits: read the org's plan.
+- **Navigation:** `src/components/DynamicSidebar.tsx` `NAV_GROUPS` (search uses it too). One entry per page: leads/contacts/companies are tabs of Sales Pipeline (`deals`), the AI receptionist is a tab of Voice Calls, dashboard sections aren't repeated in the sidebar. Old view ids (`leads`, `voice_receptionist`, …) still route.
+- **Docs:** `docs/MODERNIZATION_REPORT.md`, `docs/greet/`, `docs/compliance/`, `docs/embed-calendar/`, `docs/api-key-auth/`, `docs/social-accounts/`.
 
 ## Rules for this codebase
 1. **Nothing simulated.** No fake success, invented numbers, mock connections or sample data shown as real. If something isn't configured or built, say so (503 `*_not_configured` / 501 `not_available`, or a clear UI message). `scripts/lint-guards.mjs` blocks `/simulate` routes, removed legacy mounts and secret-looking literals.
@@ -41,24 +43,25 @@ Tests are plain `tsx` scripts with node:assert + supertest (React component test
 
 ## Status
 Done (see git log): Phase 0 security, Phase 1 organizations, meeting controls, Postiz planner, AI assistant
-(Gemini + Claude), embeddable calendar, master API key, Phase A part 1 (per-user Google tokens, legacy purge,
-0 type errors, CI).
+(Gemini + Claude), embeddable calendar, master API key, Phase A (all stores org-scoped in the document store:
+invoicing, payments, proposals, inbox), Command Center dashboard, Lead Intelligence, modernization
+(one contact/task/timeline, one payments stack, one pipeline vocabulary, GREET on LiveKit, audit log, RBAC
+matrix, two-step sign-in, privacy & compliance, deduplicated navigation and dashboard). Details and remaining
+limitations: `docs/MODERNIZATION_REPORT.md`.
 
-## Next: Phase A part 2, move remaining stores to Firestore, scoped by organization
-Do one store at a time, each with migration tests (cross-tenant reads/writes must fail; data survives a restart):
-1. **Invoicing**: `src/features/invoicing/server/store.ts` writes JSON files under `data/billing` (lost on most hosts). Key by organization, not `user_<uid>`; route `src/routes/billing.ts`.
-2. **Payments**: `src/services/payment/paymentDb.ts` (in-memory Maps, incl. webhook idempotency). Also `app.use('/api', guard(PUBLIC.payments), paymentsRouter)` in `server.ts` catches all `/api/*` paths: mount it on its own prefix.
-3. **Proposals**: `src/utils/proposalsDb.ts` (in-memory, seeded) + `ProposalsView.tsx` localStorage.
-4. **Messaging inbox**: `src/routes/messagingPlatform.ts` (in-memory Maps + seeded conversations).
-5. **Marketing**: `src/features/marketing/marketingEngine.ts` (in-memory engine).
-6. **Meeting bot**: `src/routes/meetingBot.ts` (simulated; persist or remove honestly).
-
-Then: Phase B (Stripe Connect Standard + Square invoicing, webhooks → Paid), C (inbox + lead capture),
-D (proposals + booking calendar), E (real multi-person video, provider TBD), F (polish: remove invented
-dashboard numbers, mobile nav, LocalPilot simulated actions), G (launch readiness).
+## Next
+1. **Marketing**: `src/features/marketing/marketingEngine.ts` is still in memory and has no UI caller: persist or remove.
+2. **One inbox**: bring WhatsApp/SMS/voicemail into the Unified Inbox; email/SMS inbox replies are stored but not sent.
+3. **AI through `aiService` only**: `communication.ts` (receptionist, voice dialer), `salesIntel`, `crmBrain`, GBP still call Gemini directly; remove unused assistant endpoints.
+4. **Proposals checkout** through the payments stack; **booking pages per organization** (today one env-configured host).
+5. **Unified dialer** should load real leads (`CRM_LEADS` is empty); global voice IVR config/call log should be per org.
+6. Invitation emails for GREET; Google Calendar events in the calendar; archived records filtered from lists.
 
 ## Environment
 See `.env.example`. Production needs at least: `APP_URL`, `JWT_SECRET`, `ENCRYPTION_KEY`,
-`SOCIAL_ACCOUNTS_ENCRYPTION_KEY`, `GOOGLE_TOKEN_ENCRYPTION_KEY`, `EMBED_TOKEN_SECRET`, Firebase credentials.
+`SOCIAL_ACCOUNTS_ENCRYPTION_KEY`, `GOOGLE_TOKEN_ENCRYPTION_KEY`, `EMBED_TOKEN_SECRET`, Firebase credentials;
+for GREET `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `GREET_INVITE_SECRET`; `AUDIT_IP_SALT`, `TRUST_PROXY`.
+Data moves for existing records (dry run by default, `--apply` to write): `src/scripts/backfillContacts.ts`,
+`src/scripts/migrateTasks.ts`.
 After first deploy, copy old shared data into an organization with
 `npx tsx src/scripts/migrateLegacyCrmToOrg.ts --owner-uid <uid> --org-name "<name>"` (dry run, then `--apply`).
