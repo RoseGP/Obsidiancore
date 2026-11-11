@@ -22,8 +22,8 @@ export default function ReceptionistFAQKnowledge({
       if (data.success && data.store?.qas) {
         setQAs(data.store.qas.filter((q: ReceptionistQA) => q.enabled));
       }
-    } catch (err) {
-      console.warn('[ReceptionistFAQKnowledge] Falling back to default list:', err);
+    } catch {
+      console.warn('[ReceptionistFAQKnowledge] Knowledge couldn\'t be loaded.');
     } finally {
       setLoading(false);
     }
@@ -33,44 +33,8 @@ export default function ReceptionistFAQKnowledge({
     fetchTrainedQAs();
   }, []);
 
-  const displayedQAs = qas.length > 0 ? qas.slice(0, 6) : [
-    {
-      id: "f1",
-      category: "general" as const,
-      priority: "high" as const,
-      enabled: true,
-      keywords: ["hours", "open"],
-      question: "What are your business hours?",
-      answer: "Monday through Friday, 8:00 AM to 6:00 PM Pacific Time. Emergency 24/7 on-call DevOps for Tier-1 enterprise SLAs."
-    },
-    {
-      id: "f2",
-      category: "general" as const,
-      priority: "high" as const,
-      enabled: true,
-      keywords: ["location", "address", "hq"],
-      question: "Where is your office located?",
-      answer: "500 Howard Street, Suite 1400, San Francisco, CA 94105. Visitor badges prepared by front desk security."
-    },
-    {
-      id: "f3",
-      category: "pricing" as const,
-      priority: "high" as const,
-      enabled: true,
-      keywords: ["pricing", "cost", "plans"],
-      question: "What are your platform pricing plans?",
-      answer: "Starter ($49/mo), Pro Suite ($1,000/mo with dedicated edge hosting), and Custom Enterprise Sovereign with zero-trust SLAs."
-    },
-    {
-      id: "f4",
-      category: "security" as const,
-      priority: "high" as const,
-      enabled: true,
-      keywords: ["security", "soc2", "compliance"],
-      question: "Can you tell me about your security and SOC2 compliance?",
-      answer: "SOC 2 Type II certified, HIPAA compliant, ISO 27001, and zero-trust WebRTC end-to-end encryption."
-    }
-  ];
+  // Only answers this organization trained (no sample answers shown as real).
+  const displayedQAs = qas.slice(0, 6);
 
   return (
     <div className="bg-white border border-slate-200 rounded-3xl p-4 shadow-sm text-left">
@@ -96,6 +60,11 @@ export default function ReceptionistFAQKnowledge({
         </div>
       </div>
 
+      {!loading && displayedQAs.length === 0 && (
+        <p className="text-xs text-slate-500 py-4 text-center">
+          No answers trained yet. Add your hours, address, prices and policies in the training studio so the receptionist can answer callers.
+        </p>
+      )}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
         {displayedQAs.map((faq) => (
           <div

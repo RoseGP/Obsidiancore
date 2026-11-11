@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
+import { getDashboardJson, invalidateDashboard } from '../../lib/dashboardData';
 import { 
   Headphones, MessageSquare, AlertCircle, Clock, 
-  CheckCircle2, ArrowUpRight, Star,
+  CheckCircle2, ArrowUpRight,
   Send, RefreshCw
 } from 'lucide-react';
 
@@ -12,9 +13,18 @@ export interface SupportTicket {
   channel: 'whatsapp' | 'email' | 'web' | 'phone' | 'sms' | string;
   subject: string;
   priority: 'critical' | 'high' | 'normal';
-  slaMinutesRemaining: number;
+  slaMinutesRemaining?: number;
   status: 'open' | 'in_progress' | 'resolved';
-  sentiment: 'urgent' | 'neutral' | 'positive';
+  createdAt?: string;
+}
+
+function age(iso?: string): string {
+  const t = iso ? new Date(iso).getTime() : NaN;
+  if (!Number.isFinite(t)) return '';
+  const m = Math.max(0, Math.round((Date.now() - t) / 60000));
+  if (m < 60) return `${m}m old`;
+  const h = Math.round(m / 60);
+  return h < 48 ? `${h}h old` : `${Math.round(h / 24)}d old`;
 }
 
 export const SupportTicketsWidget: React.FC<{ onNavigate?: (view: any) => void }> = ({ onNavigate }) => {
@@ -25,18 +35,19 @@ export const SupportTicketsWidget: React.FC<{ onNavigate?: (view: any) => void }
   const [replyTicketId, setReplyTicketId] = useState<string | null>(null);
   const [replyText, setReplyText] = useState<string>('');
   const [isSending, setIsSending] = useState<boolean>(false);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const fetchTickets = async () => {
     setIsLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/dashboard/tickets');
-      const data = await res.json();
+      const data: any = await getDashboardJson('/api/dashboard/tickets');
       if (data.success && Array.isArray(data.tickets)) {
         const normalized = data.tickets.map((t: any, idx: number) => ({
           ...t,
           id: String(t.id || `ticket-${idx}-${t.customerName || 'customer'}`)
         }));
+        normalized.sort((a: SupportTicket, b: SupportTicket) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
         setTickets(normalized);
       } else {
         throw new Error(data.error || 'Failed to fetch support tickets');
@@ -67,13 +78,16 @@ export const SupportTicketsWidget: React.FC<{ onNavigate?: (view: any) => void }
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });
-      const data = await res.json();
-      if (data.success) {
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
         setTickets(prev => prev.map(t => t.id === id ? { ...t, status: 'resolved' } : t));
         setReplyTicketId(null);
+        invalidateDashboard();
+      } else {
+        setNotice(data.error || 'Couldn’t mark the ticket as done.');
       }
     } catch (err) {
-      console.error('Failed to resolve ticket:', err);
+      setNotice('Couldn’t reach the server. The ticket was not changed.');
     }
   };
 
@@ -86,14 +100,18 @@ export const SupportTicketsWidget: React.FC<{ onNavigate?: (view: any) => void }
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ replyText: replyText.trim() })
       });
-      const data = await res.json();
-      if (data.success) {
-        setTickets(prev => prev.map(t => t.id === id ? { ...t, status: 'resolved' } : t));
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
+        // Saving a reply doesn't resolve the ticket; resolving is a separate action.
+        // The server says whether it was delivered; don't claim more.
+        setNotice(data.delivered ? 'Reply sent.' : (data.message || 'Reply saved to the ticket (not sent).'));
         setReplyText('');
         setReplyTicketId(null);
+      } else {
+        setNotice(data.error || 'Couldn’t save the reply. Your text is still in the box.');
       }
     } catch (err) {
-      console.error('Failed to send reply:', err);
+      setNotice('Couldn’t reach the server. Your reply was not saved.');
     } finally {
       setIsSending(false);
     }
@@ -102,11 +120,13 @@ export const SupportTicketsWidget: React.FC<{ onNavigate?: (view: any) => void }
   const getPriorityBadge = (priority: SupportTicket['priority']) => {
     switch (priority) {
       case 'critical':
-        return <span className="text-[10px] font-mono font-bold text-rose-400 bg-rose-500/15 border border-rose-500/30 px-1.5 py-0.5 rounded">Critical SLA</span>;
+        return <span className="text-[10px] font-mono font-bold text-rose-400 bg-rose-500/15 border border-rose-500/30 px-1.5 py-0.5 rounded">Critical</span>;
       case 'high':
         return <span className="text-[10px] font-mono font-bold text-amber-400 bg-amber-500/15 border border-amber-500/30 px-1.5 py-0.5 rounded">High Priority</span>;
       case 'normal':
         return <span className="text-[10px] font-mono font-bold text-neutral-400 bg-white/5 border border-white/10 px-1.5 py-0.5 rounded">Standard</span>;
+      default:
+        return null;
     }
   };
 
@@ -117,13 +137,13 @@ export const SupportTicketsWidget: React.FC<{ onNavigate?: (view: any) => void }
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-sm font-bold text-white tracking-tight">Customer Support & SLAs</span>
+              <span className="text-sm font-bold text-white tracking-tight">Support tickets</span>
               <span className="text-[10px] font-mono font-bold text-emerald-400 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">
-                98.4% SLA Met
+                {tickets.length - openTickets.length} resolved
               </span>
             </div>
             <p className="text-xs text-neutral-400 mt-0.5">
-              Omnichannel ticket queue, SLA response timers, and CSAT rating.
+              Open tickets, newest first. Reply or mark them done.
             </p>
           </div>
 
@@ -134,16 +154,8 @@ export const SupportTicketsWidget: React.FC<{ onNavigate?: (view: any) => void }
             </div>
             <div className="h-6 w-px bg-white/10" />
             <div>
-              <span className="text-[10px] text-neutral-500 block">Avg Response</span>
-              <span className="font-bold text-emerald-400 tabular-nums">1.2m</span>
-            </div>
-            <div className="h-6 w-px bg-white/10" />
-            <div>
-              <span className="text-[10px] text-neutral-500 block">CSAT Score</span>
-              <span className="font-bold text-white flex items-center gap-0.5 tabular-nums">
-                <Star className="h-3 w-3 text-amber-400 fill-current" />
-                <span>4.9</span>
-              </span>
+              <span className="text-[10px] text-neutral-500 block">Critical</span>
+              <span className="font-bold text-rose-400 tabular-nums">{openTickets.filter(t => t.priority === 'critical').length}</span>
             </div>
             <button
               onClick={fetchTickets}
@@ -185,16 +197,14 @@ export const SupportTicketsWidget: React.FC<{ onNavigate?: (view: any) => void }
             </button>
           </div>
 
-          <span className="text-[10px] font-mono text-neutral-500">
-            Source: WhatsApp · Email · Web · Voice · SMS
-          </span>
+          {notice && <span role="status" className="text-[10px] text-neutral-400 truncate">{notice}</span>}
         </div>
 
         {/* Tickets List */}
         {isLoading ? (
           <div className="py-12 flex flex-col items-center justify-center gap-2 text-neutral-400 text-xs">
             <RefreshCw className="h-5 w-5 animate-spin text-indigo-500" />
-            <span>Connecting to ticket queue...</span>
+            <span>Loading tickets…</span>
           </div>
         ) : error ? (
           <div className="py-8 text-center text-xs text-rose-400 bg-rose-500/10 border border-rose-500/20 rounded-xl p-3 flex flex-col items-center gap-2">
@@ -209,7 +219,7 @@ export const SupportTicketsWidget: React.FC<{ onNavigate?: (view: any) => void }
           </div>
         ) : filteredTickets.length === 0 ? (
           <div className="py-8 text-center text-xs text-neutral-500 rounded-xl border border-dashed border-white/10 p-4">
-            No support tickets in this view.
+            {tickets.length === 0 ? 'No support tickets yet.' : 'No tickets in this view.'}
           </div>
         ) : (
           <div className="space-y-2.5 overflow-y-auto max-h-[300px] pr-1">
@@ -226,7 +236,7 @@ export const SupportTicketsWidget: React.FC<{ onNavigate?: (view: any) => void }
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-xs font-bold text-white truncate">{ticket.customerName}</span>
-                      <span className="text-[11px] text-neutral-400 font-mono">({ticket.company})</span>
+                      {ticket.company && <span className="text-[11px] text-neutral-400 font-mono">({ticket.company})</span>}
                       {getPriorityBadge(ticket.priority)}
                     </div>
                     <p className="text-xs text-neutral-300 mt-1 line-clamp-1 leading-relaxed">
@@ -234,12 +244,12 @@ export const SupportTicketsWidget: React.FC<{ onNavigate?: (view: any) => void }
                     </p>
                   </div>
 
-                  {/* SLA countdown timer */}
+                  {/* Response deadline when the ticket has one, otherwise its age */}
                   <div className="text-right shrink-0">
                     <span className={`text-xs font-mono font-bold block tabular-nums ${
-                      ticket.slaMinutesRemaining < 30 ? 'text-rose-400 animate-pulse' : 'text-emerald-400'
+                      typeof ticket.slaMinutesRemaining === 'number' && ticket.slaMinutesRemaining < 30 && ticket.status !== 'resolved' ? 'text-rose-400' : 'text-emerald-400'
                     }`}>
-                      {ticket.status === 'resolved' ? 'Resolved' : `${ticket.slaMinutesRemaining}m SLA`}
+                      {ticket.status === 'resolved' ? 'Resolved' : typeof ticket.slaMinutesRemaining === 'number' ? `${ticket.slaMinutesRemaining}m to respond` : (age(ticket.createdAt) || 'Open')}
                     </span>
                     <span className="text-[10px] text-neutral-500 font-mono capitalize">
                       via {ticket.channel}
@@ -272,7 +282,7 @@ export const SupportTicketsWidget: React.FC<{ onNavigate?: (view: any) => void }
                         className="px-3 py-1 rounded-md bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-semibold flex items-center gap-1 cursor-pointer"
                       >
                         <Send className="h-3 w-3" />
-                        <span>{isSending ? 'Sending...' : 'Send & Resolve'}</span>
+                        <span>{isSending ? 'Saving…' : 'Save reply'}</span>
                       </button>
                     </div>
                   </div>
@@ -312,13 +322,13 @@ export const SupportTicketsWidget: React.FC<{ onNavigate?: (view: any) => void }
 
       {/* Footer */}
       <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between text-xs text-neutral-400">
-        <span className="font-mono text-[10px]">Auto-Triage Active (Gemini & Voice Bots)</span>
+        <span className="font-mono text-[10px]">{openTickets.length} open · {tickets.length} total</span>
         <button
           type="button"
           onClick={() => onNavigate && onNavigate('messages')}
           className="text-indigo-400 hover:text-indigo-300 text-xs font-semibold flex items-center gap-1 cursor-pointer transition-colors"
         >
-          <span>Open Unified Inbox</span>
+          <span>Open Inbox</span>
           <ArrowUpRight className="h-3.5 w-3.5" />
         </button>
       </div>

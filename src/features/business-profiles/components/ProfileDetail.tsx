@@ -8,13 +8,13 @@ import { ProfileForm, validate, type FieldErrors } from './ProfileForm';
 import { AuditPanel, FindingRow } from './AuditPanel';
 import { AssistantPanel } from './AssistantPanel';
 import { ListingsPanel } from './ListingsPanel';
-import { HistoryPanel, TeamPanel } from './HistoryTeam';
+import { HistoryPanel } from './HistoryTeam';
 import { Badge, Button, Card, Field, Meter, Modal, Notice, ScoreRing, inputCls, timeAgo, useToast, cx } from './ui';
 
-type Tab = 'overview' | 'edit' | 'audit' | 'assistant' | 'listings' | 'history' | 'team';
+type Tab = 'overview' | 'edit' | 'audit' | 'assistant' | 'listings' | 'history';
 const TABS: { id: Tab; label: string }[] = [
   { id: 'overview', label: 'Overview' }, { id: 'edit', label: 'Edit profile' }, { id: 'audit', label: 'Audit' }, { id: 'assistant', label: 'AI assistant' },
-  { id: 'listings', label: 'Listings' }, { id: 'history', label: 'History' }, { id: 'team', label: 'Team' },
+  { id: 'listings', label: 'Listings' }, { id: 'history', label: 'History' }
 ];
 const FIELD_ANCHOR: Record<string, string> = { name: 'bp-name', primaryCategory: 'bp-cat', additionalCategories: 'bp-cats', description: 'bp-desc', phone: 'bp-phone', website: 'bp-web', address: 'bp-a1', hours: 'bp-hours', specialHours: 'bp-special', services: 'bp-services', attributes: 'bp-attrs', media: 'bp-media' };
 const statusTone = { draft: 'neutral', active: 'success', archived: 'warning' } as const;
@@ -111,7 +111,7 @@ export function ProfileDetail({ id, aiConfigured, onBack, onDeleted, onOpenGbp, 
             <h1 className="text-xl font-semibold tracking-tight text-[var(--text)]">{p.data.name}</h1>
             <div className="mt-1 flex flex-wrap items-center gap-2 text-[13px] text-[var(--text-muted)]">
               <Badge tone={statusTone[p.status]}>{p.status[0].toUpperCase() + p.status.slice(1)}</Badge>
-              <Badge>Your role: {p.role}</Badge>
+              <Badge title="Access comes from your organization role (Settings › Team Management)">Your role: {p.role.replace('_', ' ').toLowerCase()}</Badge>
               {p.data.primaryCategory && <span>{p.data.primaryCategory}</span>}
               <span>v{p.version} · updated {timeAgo(p.updatedAt)} by {p.updatedBy}</span>
               {link ? <Badge tone="success"><Link2 className="h-3 w-3" />Linked to Google</Badge> : <Badge>No listing linked</Badge>}
@@ -123,7 +123,7 @@ export function ProfileDetail({ id, aiConfigured, onBack, onDeleted, onOpenGbp, 
             {p.permissions.edit && p.status === 'draft' && <Button size="sm" variant="primary" disabled={dirty} loading={busy === 'status'} onClick={() => act('status', () => bpApi.setStatus(p.id, p.version, 'active'), 'Profile marked active.')}>Mark active</Button>}
             {p.permissions.publish && p.status !== 'archived' && <Button size="sm" variant="ghost" icon={<Archive className="h-3.5 w-3.5" />} disabled={dirty} loading={busy === 'archive'} onClick={() => act('archive', () => bpApi.setStatus(p.id, p.version, 'archived'), 'Profile archived.')}>Archive</Button>}
             {p.permissions.publish && p.status === 'archived' && <Button size="sm" icon={<RotateCcw className="h-3.5 w-3.5" />} loading={busy === 'restore'} onClick={() => act('restore', () => bpApi.setStatus(p.id, p.version, 'active'), 'Profile restored.')}>Restore</Button>}
-            {p.role === 'owner' && <Button size="sm" variant="ghost" icon={<Trash2 className="h-3.5 w-3.5" />} onClick={() => { setDeleteName(''); setConfirmDelete(true); }}>Delete</Button>}
+            {p.permissions.delete && <Button size="sm" variant="ghost" icon={<Trash2 className="h-3.5 w-3.5" />} onClick={() => { setDeleteName(''); setConfirmDelete(true); }}>Delete</Button>}
           </div>
         </div>
         <nav className="mt-4 flex gap-1 overflow-x-auto" role="tablist" aria-label="Profile sections">
@@ -199,7 +199,6 @@ export function ProfileDetail({ id, aiConfigured, onBack, onDeleted, onOpenGbp, 
         {tab === 'assistant' && <AssistantPanel profileId={p.id} version={p.version} aiConfigured={aiConfigured} canEdit={p.permissions.edit} pending={p.suggestions} hasServices={draft.services.length > 0} onApply={applySuggestion} onChanged={() => load(true)} />}
         {tab === 'listings' && <ListingsPanel p={p} onUpdated={(v) => accept(v)} onOpenGbp={onOpenGbp} />}
         {tab === 'history' && <HistoryPanel changes={p.changes} />}
-        {tab === 'team' && <TeamPanel p={p} onUpdated={(v) => accept(v)} onLeft={onDeleted} />}
       </div>
 
       {dirty && p.permissions.edit && (

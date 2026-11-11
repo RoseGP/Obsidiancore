@@ -84,7 +84,7 @@ export const LocationHealthTable: React.FC<LocationHealthTableProps> = ({
                         loc.visibilityScore >= 80 ? 'bg-blue-50 text-blue-700' :
                         'bg-amber-50 text-amber-700'
                       }`}>
-                        {loc.visibilityScore >= 90 ? 'Top 5%' : loc.visibilityScore >= 80 ? 'Top 15%' : 'Average'}
+                        {loc.visibilityScore >= 90 ? 'Strong' : loc.visibilityScore >= 80 ? 'Good' : 'Needs work'}
                       </span>
                     </div>
                   </td>

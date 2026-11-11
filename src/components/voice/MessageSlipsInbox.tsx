@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import { ReceptionistMessageSlip } from "@cloudflare/voice/react";
 import { copyToClipboard } from "../../utils/clipboard";
+import { useTeamMembers } from "../../hooks/useTeamMembers";
 
 interface MessageSlipsInboxProps {
   messageSlips: ReceptionistMessageSlip[];
@@ -26,19 +27,20 @@ export default function MessageSlipsInbox({
   const [formCallerName, setFormCallerName] = useState("");
   const [formCompany, setFormCompany] = useState("");
   const [formPhone, setFormPhone] = useState("");
-  const [formRecipient, setFormRecipient] = useState("Alex Vance (Sales)");
+  const team = useTeamMembers();
+  const [formRecipient, setFormRecipient] = useState("");
   const [formUrgency, setFormUrgency] = useState<"normal" | "high" | "urgent">("high");
   const [formNotes, setFormNotes] = useState("");
 
   const handleSubmitManualSlip = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formCallerName || !formNotes) return;
+    if (!formCallerName || !formNotes || !formPhone.trim()) return;
 
     onAddSlip({
       callerName: formCallerName,
-      callerCompany: formCompany || "Direct Caller",
-      callbackNumber: formPhone || "+1 (555) 000-0000",
-      recipient: formRecipient,
+      callerCompany: formCompany,
+      callbackNumber: formPhone.trim(),
+      recipient: formRecipient || "Anyone on the team",
       urgency: formUrgency,
       notes: formNotes
     });
@@ -181,7 +183,7 @@ export default function MessageSlipsInbox({
                   required
                   value={formCallerName}
                   onChange={(e) => setFormCallerName(e.target.value)}
-                  placeholder="e.g. Richard Thorne"
+                  placeholder="Caller name"
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500"
                 />
               </div>
@@ -193,7 +195,7 @@ export default function MessageSlipsInbox({
                     type="text"
                     value={formCompany}
                     onChange={(e) => setFormCompany(e.target.value)}
-                    placeholder="Apex BioTech"
+                    placeholder="Company (optional)"
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500"
                   />
                 </div>
@@ -203,7 +205,8 @@ export default function MessageSlipsInbox({
                     type="text"
                     value={formPhone}
                     onChange={(e) => setFormPhone(e.target.value)}
-                    placeholder="+1 (555) 492-1049"
+                    required
+                    placeholder="Call-back number"
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 font-mono"
                   />
                 </div>
@@ -217,11 +220,10 @@ export default function MessageSlipsInbox({
                     onChange={(e) => setFormRecipient(e.target.value)}
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-blue-500"
                   >
-                    <option value="Evelyn Sinclair (CEO Office)">Evelyn Sinclair (CEO)</option>
-                    <option value="Alex Vance (Sales)">Alex Vance (Sales)</option>
-                    <option value="Jordan Reed (Support)">Jordan Reed (Support)</option>
-                    <option value="Marcus Zhao (Billing)">Marcus Zhao (Billing)</option>
-                    <option value="David Kim (Partnerships)">David Kim (Partnerships)</option>
+                    <option value="">Anyone on the team</option>
+                    {team.names.map((n) => (
+                      <option key={n} value={n}>{n}</option>
+                    ))}
                   </select>
                 </div>
                 <div>

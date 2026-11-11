@@ -1,6 +1,6 @@
 /** Browser client for /api/business-profiles. Auth headers come from the shared API auth helper. */
 import { getApiAuthHeaders } from '../../../lib/apiAuth';
-import type { AuditResult, BusinessProfile, BusinessProfileData, ProfileSummaryView, PublishableField, Role, Suggestion, SuggestionKind } from '../domain/types';
+import type { AuditResult, BusinessProfile, BusinessProfileData, ProfilePermissions, ProfileSummaryView, PublishableField, Suggestion, SuggestionKind } from '../domain/types';
 
 export class ApiError extends Error { constructor(message: string, public status: number, public code: string, public field?: string) { super(message); } }
 
@@ -23,8 +23,9 @@ async function call<T>(path: string, init: RequestInit & { json?: unknown } = {}
 }
 
 export interface ProfileView extends BusinessProfile {
-  role: Role;
-  permissions: { edit: boolean; publish: boolean; manageMembers: boolean };
+  /** The caller's organization role (permissions come from the org's RBAC matrix, module `listings`). */
+  role: string;
+  permissions: ProfilePermissions;
   liveAudit: AuditResult;
   auditStale: boolean;
   stale: string[];
@@ -39,7 +40,7 @@ export interface PublishPreview {
 
 const GBP = 'google_business_profile';
 export const bpApi = {
-  list: () => call<{ profiles: ProfileSummaryView[]; aiConfigured: boolean }>('/'),
+  list: () => call<{ profiles: ProfileSummaryView[]; aiConfigured: boolean; permissions: ProfilePermissions; role: string }>('/'),
   create: (data: BusinessProfileData, source: 'manual' | 'import' = 'manual') => call<ProfileView>('/', { method: 'POST', json: { data, source } }),
   get: (id: string) => call<ProfileView>(`/${encodeURIComponent(id)}`),
   update: (id: string, version: number, data: BusinessProfileData, extra: { suggestionId?: string; note?: string } = {}) => call<ProfileView>(`/${encodeURIComponent(id)}`, { method: 'PUT', json: { version, data, ...extra } }),
@@ -49,7 +50,6 @@ export const bpApi = {
   runAudit: (id: string) => call<ProfileView>(`/${encodeURIComponent(id)}/audits`, { method: 'POST', json: {} }),
   suggest: (id: string, kind: SuggestionKind, tone: string, notes?: string) => call<Suggestion>(`/${encodeURIComponent(id)}/suggestions`, { method: 'POST', json: { kind, tone, notes: notes || undefined } }),
   dismiss: (id: string, sid: string) => call<{ dismissed: boolean }>(`/${encodeURIComponent(id)}/suggestions/${encodeURIComponent(sid)}`, { method: 'DELETE' }),
-  setMember: (id: string, userId: string, role: Role | null) => call<ProfileView | { removedSelf: true }>(`/${encodeURIComponent(id)}/members`, { method: 'PUT', json: { userId, role } }),
   integrations: () => call<ProviderStatus[]>('/integrations'),
   linkable: () => call<LinkableListing[]>(`/integrations/${GBP}/listings`),
   importDraft: (externalId: string) => call<BusinessProfileData & { _source?: unknown }>(`/integrations/${GBP}/import`, { method: 'POST', json: { externalId } }),

@@ -1,5 +1,7 @@
 name = "cloudflare-email-handler"
-main = "src/workers/cloudflareEmailHandler.ts"
+# The email worker is src/index.ts (inbound parsing, D1/R2 storage, Workers AI); the old
+# src/workers/cloudflareEmailHandler.ts entry never existed in this repository.
+main = "src/index.ts"
 compatibility_date = "2026-08-08"
 
 # Cloudflare D1 Database Binding for Metadata & Message Indexing
@@ -31,5 +33,5 @@ binding = "AI"
 # Environment Variables & Secrets
 [vars]
 DOMAIN_NAME = "devdesk.webmail.edge"
-JWT_SECRET = "cloudflare_r2_attachment_secret_key_2026"
+# JWT_SECRET is a secret: set it with `npx wrangler secret put JWT_SECRET` (never in this file).
 LOG_LEVEL = "info"

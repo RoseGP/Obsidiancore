@@ -60,7 +60,7 @@ export default function NotificationPreferencesModal({
 
   const handleTest = (channel: 'inApp' | 'email' | 'push', type: 'lead' | 'task' | 'system') => {
     sendTestNotification(channel, type);
-    setTestStatus(`Dispatched test ${type} notification via ${channel.toUpperCase()}!`);
+    setTestStatus(channel === 'email' ? 'Test logged. Email alerts aren\'t connected to a mail service yet, so nothing was emailed.' : `Test ${type} notification shown via ${channel === 'inApp' ? 'in-app alerts' : 'browser push'}.`);
     setTimeout(() => setTestStatus(null), 3500);
   };
 
@@ -777,7 +777,7 @@ export default function NotificationPreferencesModal({
 
             {emailDispatches.length === 0 ? (
               <div className="rounded-xl border border-white/5 bg-neutral-900/30 p-12 text-center text-neutral-500 text-xs">
-                No email alerts dispatched yet. Turn on email alerts for leads or tasks to populate the audit log.
+                No email alerts yet. Email alerts aren't connected to a mail service yet: alerts are logged here but not emailed.
               </div>
             ) : (
               <div className="space-y-2.5">
@@ -789,8 +789,8 @@ export default function NotificationPreferencesModal({
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
                         <span className="font-semibold text-white">{item.subject}</span>
-                        <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-500/20 text-emerald-300 font-bold">
-                          {item.status.toUpperCase()}
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${item.status === 'sent' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-neutral-700/60 text-neutral-300'}`}>
+                          {item.status === 'not_sent' ? 'NOT SENT' : item.status.toUpperCase()}
                         </span>
                       </div>
                       <p className="text-neutral-400 text-[11px] leading-relaxed line-clamp-1">{item.preview}</p>

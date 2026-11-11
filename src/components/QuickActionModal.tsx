@@ -232,9 +232,8 @@ export default function QuickActionModal({
     setErrorMessage(null);
 
     try {
-      const generatedLink = eventAutoLink 
-        ? `https://meet.omnichannel.live/room-${Math.random().toString(36).substring(2, 8)}`
-        : undefined;
+      // The GREET join link comes from the server once the meeting is scheduled (no made-up links).
+      const generatedLink: string | undefined = undefined;
 
       const newEvent: CalendarEvent = {
         id: `evt-${Date.now()}`,
@@ -251,20 +250,25 @@ export default function QuickActionModal({
         status: 'upcoming'
       };
 
-      // Also call meetings API if guest email or location is given
+      // Schedule through the meetings API: the server checks the organizer's plan (duration, participants).
+      // If it refuses, show why and don't add the event.
       try {
-        await axios.post('/api/meetings/create', {
+        const created = await axios.post('/api/meetings/create', {
           title: eventTitle.trim(),
           date: eventDate,
           time: eventTime,
           duration: Number(eventDuration) || 30,
           locations: [eventLocation.trim() || 'Live Call Canvas'],
-          guests: eventContact.includes('@') ? [eventContact.trim()] : ['team@omnichannel.local'],
-          additionalNotes: eventNotes.trim()
+          guests: eventContact.includes('@') ? [eventContact.trim()] : [],
+          additionalNotes: eventNotes.trim(),
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         });
-      } catch (apiErr) {
-        // Fallback gracefully to frontend event sync
-        console.warn('[QuickActionModal Meetings API Warning]', apiErr);
+        const m = created?.data?.meeting;
+        if (m?.id) { newEvent.id = m.id; if (eventAutoLink && m.videoLink) newEvent.meetingLink = m.videoLink; (newEvent as any).serverMeeting = true; }
+      } catch (apiErr: any) {
+        const data = apiErr?.response?.data;
+        const hint = data?.upgradeLabel ? ` ${data.upgradeLabel} allows it.` : '';
+        throw new Error(data?.error ? `${data.error}${hint}` : "Couldn't reach the server. The event wasn't scheduled.");
       }
 
       onEventCreated?.(newEvent);
@@ -462,7 +466,7 @@ export default function QuickActionModal({
                   >
                     <option value="website">Website Form</option>
                     <option value="whatsapp">WhatsApp Direct</option>
-                    <option value="voice">AI Voice Receptionist</option>
+                    <option value="voice">Voice Calls (AI receptionist)</option>
                     <option value="linkedin">LinkedIn</option>
                     <option value="referral">Client Referral</option>
                     <option value="inbound_call">Inbound Call</option>
@@ -711,7 +715,7 @@ export default function QuickActionModal({
                   <Video className="w-4 h-4 text-purple-600 dark:text-purple-400" />
                   <div>
                     <div className="font-medium text-neutral-900 dark:text-neutral-100">
-                      Auto-generate Video Call Link
+                      Add a GREET video meeting link
                     </div>
                     <div className="text-[11px] text-neutral-500 dark:text-neutral-400">
                       Instant WebRTC room for screen share & recording

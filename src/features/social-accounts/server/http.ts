@@ -61,7 +61,11 @@ export const ipKey = (req: Request) => req.ip || 'anon';
  * Authorization header (never sent automatically by browsers), and this check
  * adds defence in depth for any cookie that might be present.
  */
-export function csrfGuard(appUrl: string) {
+/**
+ * Same-origin check for state-changing requests, and JSON-only bodies. `allowMultipart` is for file
+ * upload routes: the Origin check still applies, which is what stops cross-site form posts.
+ */
+export function csrfGuard(appUrl: string, opts: { allowMultipart?: boolean } = {}) {
   const allowed = new Set<string>();
   try { if (appUrl) allowed.add(new URL(appUrl).origin); } catch { /* ignore */ }
   return (req: Request, res: Response, next: NextFunction) => {
@@ -73,7 +77,7 @@ export function csrfGuard(appUrl: string) {
       return;
     }
     const hasBody = Number(req.get('content-length') || 0) > 0;
-    if (hasBody && !req.is('application/json')) {
+    if (hasBody && !req.is('application/json') && !(opts.allowMultipart && req.is('multipart/form-data'))) {
       res.status(415).json({ code: 'unsupported_media_type', error: 'Send JSON.' });
       return;
     }

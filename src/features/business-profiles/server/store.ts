@@ -1,100 +1,54 @@
 /**
- * Persistence for business profiles (server only): one document per profile.
- * Firestore collection `business_profiles` when credentials resolve, else a JSON file
- * (same selection rules as the Local SEO store: SOCIAL_ACCOUNTS_STORE=auto|firestore|file).
- * Writes are serialised (file) or transactional (Firestore).
+ * Persistence for business profiles (server only), on the CRM's shared document store
+ * (src/server/data/docStore.ts): Firestore in production, the strict in-memory store in tests/dev.
+ *
+ * Path: organizations/{orgId}/business_profiles/{profileId}. Every id goes through assertId().
+ * Updates run in a store transaction so concurrent edits can't interleave.
  */
-import { promises as fs } from 'node:fs';
-import path from 'node:path';
+import { assertId, clean, getDocStore, type DocStore } from '../../../server/data/docStore';
 import type { BusinessProfile } from '../domain/types';
 
 export interface ProfileStore {
-  get(id: string): Promise<BusinessProfile | null>;
-  listForMember(userId: string): Promise<BusinessProfile[]>;
+  get(orgId: string, id: string): Promise<BusinessProfile | null>;
+  list(orgId: string): Promise<BusinessProfile[]>;
   create(p: BusinessProfile): Promise<void>;
   /** Atomically read-modify-write. `fn` may throw to abort. Returns fn's result. */
-  update<T>(id: string, fn: (p: BusinessProfile) => T): Promise<T>;
-  remove(id: string): Promise<void>;
-  mode(): Promise<'firestore' | 'file'>;
+  update<T>(orgId: string, id: string, fn: (p: BusinessProfile) => T): Promise<T>;
+  remove(orgId: string, id: string): Promise<void>;
 }
 
 export const CAPS = { audits: 30, changes: 300, suggestions: 20, publishLog: 50 };
+export const MAX_PROFILES_PER_ORG = 500;
+
 function prune(p: BusinessProfile) {
   p.audits = p.audits.slice(-CAPS.audits);
   p.changes = p.changes.slice(-CAPS.changes);
   p.suggestions = p.suggestions.slice(-CAPS.suggestions);
   p.publishLog = p.publishLog.slice(-CAPS.publishLog);
-  p.memberIds = Object.keys(p.members);
 }
 
 export class NotFound extends Error { constructor() { super('not_found'); } }
 
-function fileStore(dataDir: string): ProfileStore {
-  const file = path.resolve(dataDir, 'business-profiles.json');
-  let chain: Promise<unknown> = Promise.resolve();
-  const load = async (): Promise<Record<string, BusinessProfile>> => { try { return JSON.parse(await fs.readFile(file, 'utf8')); } catch (e: any) { if (e?.code === 'ENOENT') return {}; throw e; } };
-  const save = async (all: Record<string, BusinessProfile>) => {
-    await fs.mkdir(path.dirname(file), { recursive: true });
-    const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
-    await fs.writeFile(tmp, JSON.stringify(all), { mode: 0o600 });
-    await fs.rename(tmp, file);
-  };
-  const serial = <T,>(fn: () => Promise<T>): Promise<T> => { const run = chain.catch(() => undefined).then(fn); chain = run; return run; };
-  return {
-    async get(id) { return (await load())[id] ?? null; },
-    async listForMember(uid) { return Object.values(await load()).filter((p) => p.memberIds?.includes(uid)); },
-    create: (p) => serial(async () => { const all = await load(); prune(p); all[p.id] = p; await save(all); }),
-    update: (id, fn) => serial(async () => {
-      const all = await load(); const p = all[id]; if (!p) throw new NotFound();
-      const r = fn(p); prune(p); all[id] = p; await save(all); return r;
-    }),
-    remove: (id) => serial(async () => { const all = await load(); delete all[id]; await save(all); }),
-    mode: async () => 'file',
-  };
-}
+const col = (orgId: string) => `organizations/${assertId(orgId)}/business_profiles`;
+const doc = (orgId: string, id: string) => `${col(orgId)}/${assertId(id)}`;
 
-export function createProfileStore(mode: 'auto' | 'firestore' | 'file', dataDir: string): ProfileStore {
-  let resolved: Promise<ProfileStore> | null = null;
-  const resolve = () => (resolved ??= (async () => {
-    if (mode === 'file') return fileStore(dataDir);
-    try {
-      const { adminApp, adminDb } = await import('../../../lib/firebaseAdmin');
-      const c: any = (adminApp as any).options?.credential;
-      if (c?.getAccessToken) {
-        await c.getAccessToken();
-        const col = (adminDb as any).collection('business_profiles');
-        await col.limit(1).get();
-        const clean = (v: any) => JSON.parse(JSON.stringify(v));
-        const fsStore: ProfileStore = {
-          async get(id) { const s = await col.doc(id).get(); return s.exists ? (s.data() as BusinessProfile) : null; },
-          async listForMember(uid) { const q = await col.where('memberIds', 'array-contains', uid).limit(500).get(); return q.docs.map((x: any) => x.data() as BusinessProfile); },
-          async create(p) { prune(p); await col.doc(p.id).create(clean(p)); },
-          update(id, fn) {
-            return (adminDb as any).runTransaction(async (t: any) => {
-              const ref = col.doc(id); const s = await t.get(ref);
-              if (!s.exists) throw new NotFound();
-              const p = s.data() as BusinessProfile; const r = fn(p); prune(p); t.set(ref, clean(p)); return r;
-            });
-          },
-          async remove(id) { await col.doc(id).delete(); },
-          mode: async () => 'firestore',
-        };
-        return fsStore;
-      }
-    } catch (err: any) {
-      if (mode === 'firestore') throw new Error(`SOCIAL_ACCOUNTS_STORE=firestore but Firestore is unavailable for business_profiles: ${err?.code ?? 'error'}`);
-      console.warn('[business-profiles] Firestore unavailable; using the local file store');
-      return fileStore(dataDir);
-    }
-    if (mode === 'firestore') throw new Error('SOCIAL_ACCOUNTS_STORE=firestore but Firestore credentials are unavailable.');
-    return fileStore(dataDir);
-  })());
+export function createProfileStore(storeFor: () => Promise<DocStore> = getDocStore): ProfileStore {
   return {
-    get: async (id) => (await resolve()).get(id),
-    listForMember: async (u) => (await resolve()).listForMember(u),
-    create: async (p) => (await resolve()).create(p),
-    update: async (id, fn) => (await resolve()).update(id, fn),
-    remove: async (id) => (await resolve()).remove(id),
-    mode: async () => (await resolve()).mode(),
+    async get(orgId, id) { return (await (await storeFor()).get(doc(orgId, id))) as BusinessProfile | null; },
+    async list(orgId) { return (await (await storeFor()).list(col(orgId), { limit: MAX_PROFILES_PER_ORG })) as BusinessProfile[]; },
+    async create(p) { prune(p); await (await storeFor()).set(doc(p.orgId, p.id), clean(p) as any); },
+    async update(orgId, id, fn) {
+      const st = await storeFor();
+      return st.transaction(async (tx) => {
+        const path = doc(orgId, id);
+        const p = (await tx.get(path)) as BusinessProfile | null;
+        if (!p) throw new NotFound();
+        const r = fn(p);
+        prune(p);
+        tx.set(path, clean(p) as any);
+        return r;
+      });
+    },
+    async remove(orgId, id) { await (await storeFor()).deleteRecursive(doc(orgId, id)); },
   };
 }

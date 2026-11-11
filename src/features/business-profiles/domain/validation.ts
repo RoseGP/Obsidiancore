@@ -5,7 +5,7 @@
  * (750-character description, up to 9 additional categories).
  */
 import { z } from 'zod';
-import { DAYS, ROLES, type BusinessProfileData } from './types';
+import { DAYS, type BusinessProfileData } from './types';
 
 export const LIMITS = {
   name: 120, description: 750, category: 100, additionalCategories: 9, phones: 2, serviceAreas: 20,
@@ -104,5 +104,3 @@ export function parseProfileData(input: unknown, now = new Date().toISOString())
 }
 
 export const profileIdSchema = z.string().regex(/^bp_[A-Za-z0-9_-]{10,40}$/, 'Invalid profile id.');
-export const userIdSchema = z.string().trim().regex(/^[A-Za-z0-9_.@-]{1,128}$/, 'Enter a valid user id.');
-export const roleSchema = z.enum(ROLES);

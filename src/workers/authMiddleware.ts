@@ -1,175 +1,112 @@
 /**
- * Authentication Middleware for Cloudflare Worker REST API (TypeScript)
+ * Master API key authentication for Cloudflare Workers (no dependencies).
  *
- * Validates inbound requests to protected API endpoints:
- * 1. Checks for 'Bearer <token>' in the Authorization header
- * 2. Checks for custom 'X-API-Key' header as an alternative
- * 3. Validates the extracted token against the environment variable (env.API_KEY)
- *    using a constant-time comparison to prevent timing attacks.
- * 4. Bypasses CORS preflight OPTIONS requests.
- * 5. Returns a structured 401 Unauthorized JSON response if credentials are missing or invalid.
+ *   export default { fetch: withApiKey(async (request, env, ctx) => new Response('ok')) };
+ *
+ * - Key from `x-api-key: <key>` or `Authorization: Bearer <key>`.
+ * - Compared in constant time on SHA-256 digests (no length or prefix leaks), using Cloudflare's
+ *   crypto.subtle.timingSafeEqual when available.
+ * - Secrets: MASTER_API_KEY (wrangler secret), plus MASTER_API_KEY_PREVIOUS during a rotation.
+ *   API_KEY is still read for older deployments.
+ * - Fails closed: if no key is configured, every request gets 503 (and the reason is logged, never the key).
+ * - 401 body: { error: { code: "missing_api_key" | "invalid_api_key", message } } with WWW-Authenticate.
+ * - CORS: none by default (server-to-server). Set ALLOWED_ORIGINS="https://a.com,https://b.com" to allow browsers,
+ *   but remember a key used from a browser is visible to anyone who opens dev tools.
  */
 
 export interface AuthEnv {
+  MASTER_API_KEY?: string;
+  MASTER_API_KEY_PREVIOUS?: string;
+  /** Legacy name, still accepted. */
   API_KEY?: string;
+  ALLOWED_ORIGINS?: string;
 }
 
-export const CORS_HEADERS: Record<string, string> = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS, HEAD',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, Range, X-Requested-With, Accept',
-  'Access-Control-Expose-Headers': 'Content-Length, Content-Range, Content-Disposition, ETag',
-  'Access-Control-Max-Age': '86400',
-};
+export type ApiErrorCode = 'missing_api_key' | 'invalid_api_key' | 'server_misconfigured';
 
-/**
- * Constant-time string equality check to prevent timing analysis attacks
- */
-export function timingSafeEqualStrings(a: string, b: string): boolean {
+const encoder = new TextEncoder();
+
+async function sha256(s: string): Promise<Uint8Array> {
+  return new Uint8Array(await crypto.subtle.digest('SHA-256', encoder.encode(s)));
+}
+
+/** Constant-time equality of two strings (compares fixed-length digests). */
+export async function timingSafeEqualStrings(a: string, b: string): Promise<boolean> {
   if (typeof a !== 'string' || typeof b !== 'string') return false;
-  
-  const encoder = new TextEncoder();
-  const aBytes = encoder.encode(a);
-  const bBytes = encoder.encode(b);
-
-  if (aBytes.byteLength !== bBytes.byteLength) {
-    return false;
-  }
-
-  let mismatch = 0;
-  for (let i = 0; i < aBytes.byteLength; i++) {
-    mismatch |= aBytes[i] ^ bBytes[i];
-  }
-
-  return mismatch === 0;
+  const [x, y] = await Promise.all([sha256(a), sha256(b)]);
+  const subtle = crypto.subtle as SubtleCrypto & { timingSafeEqual?: (a: ArrayBufferView, b: ArrayBufferView) => boolean };
+  if (typeof subtle.timingSafeEqual === 'function') return subtle.timingSafeEqual(x, y);
+  let diff = 0;
+  for (let i = 0; i < x.length; i++) diff |= x[i] ^ y[i];
+  return diff === 0;
 }
 
-/**
- * Extracts authentication token from either Authorization header (Bearer scheme)
- * or custom X-API-Key header.
- */
+/** `x-api-key` first, then `Authorization: Bearer`. Returns null when neither is present. */
 export function extractAuthToken(request: Request): string | null {
-  // 1. Check Authorization: Bearer <token>
-  const authHeader = request.headers.get('Authorization') || request.headers.get('authorization');
-  if (authHeader) {
-    const bearerMatch = authHeader.match(/^Bearer\s+(.+)$/i);
-    if (bearerMatch && bearerMatch[1]) {
-      const token = bearerMatch[1].trim();
-      if (token.length > 0) return token;
-    }
-  }
+  const header = request.headers.get('x-api-key');
+  if (header && header.trim()) return header.trim();
+  const m = /^Bearer\s+(\S+)\s*$/i.exec(request.headers.get('authorization') || '');
+  return m ? m[1] : null;
+}
 
-  // 2. Check X-API-Key: <token>
-  const apiKeyHeader = request.headers.get('X-API-Key') || request.headers.get('x-api-key');
-  if (apiKeyHeader) {
-    const token = apiKeyHeader.trim();
-    if (token.length > 0) return token;
-  }
+function corsHeaders(request: Request, env: AuthEnv): Record<string, string> {
+  const origin = request.headers.get('origin');
+  const allowed = (env.ALLOWED_ORIGINS || '').split(',').map((o) => o.trim()).filter(Boolean);
+  if (!origin || !allowed.includes(origin)) return {};
+  return {
+    'Access-Control-Allow-Origin': origin,
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key',
+    'Access-Control-Max-Age': '600',
+    Vary: 'Origin',
+  };
+}
 
-  return null;
+export function jsonError(status: number, code: ApiErrorCode, message: string, extra: Record<string, string> = {}): Response {
+  return new Response(JSON.stringify({ error: { code, message } }), {
+    status,
+    headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...extra },
+  });
 }
 
 /**
- * Creates a standard 401 Unauthorized JSON Response
+ * Returns null when the request is authorized, otherwise the error Response to send.
+ * OPTIONS preflights pass only for allowed origins (they carry no credentials by design).
  */
-export function createUnauthorizedResponse(
-  message = 'Unauthorized: Missing or invalid API credentials.',
-  customHeaders: Record<string, string> = {}
-): Response {
-  return new Response(
-    JSON.stringify(
-      {
-        success: false,
-        error: 'Unauthorized',
-        message,
-        status: 401,
-        help: 'Provide a valid Bearer token in the Authorization header (Authorization: Bearer <API_KEY>) or an X-API-Key header (X-API-Key: <API_KEY>).'
-      },
-      null,
-      2
-    ),
-    {
-      status: 401,
-      headers: {
-        'Content-Type': 'application/json; charset=utf-8',
-        'WWW-Authenticate': 'Bearer error="invalid_token", error_description="The access token is missing or invalid"',
-        ...CORS_HEADERS,
-        ...customHeaders
-      }
-    }
-  );
+export async function validateApiAuth(request: Request, env: AuthEnv): Promise<Response | null> {
+  const cors = corsHeaders(request, env);
+  if (request.method === 'OPTIONS') return new Response(null, { status: cors['Access-Control-Allow-Origin'] ? 204 : 403, headers: cors });
+
+  const keys = [env.MASTER_API_KEY, env.MASTER_API_KEY_PREVIOUS, env.API_KEY].map((k) => (k || '').trim()).filter(Boolean);
+  if (!keys.length) {
+    console.error('[auth] MASTER_API_KEY is not set: run `wrangler secret put MASTER_API_KEY`. Refusing all requests.');
+    return jsonError(503, 'server_misconfigured', 'The API is not configured yet.', cors);
+  }
+  const provided = extractAuthToken(request);
+  const challenge = { 'WWW-Authenticate': 'Bearer realm="api"', ...cors };
+  if (!provided) return jsonError(401, 'missing_api_key', 'Send your API key in the x-api-key header or as Authorization: Bearer <key>.', challenge);
+  if (provided.length > 512) return jsonError(401, 'invalid_api_key', 'The API key is invalid.', challenge);
+
+  // Check every configured key (no early exit), so timing doesn't reveal which one matched.
+  let ok = false;
+  for (const k of keys) ok = (await timingSafeEqualStrings(provided, k)) || ok;
+  return ok ? null : jsonError(401, 'invalid_api_key', 'The API key is invalid.', challenge);
 }
 
-/**
- * Validates request authorization against env.API_KEY.
- *
- * - Allows CORS preflight OPTIONS requests automatically.
- * - If request is valid, returns `null` (allowing request to proceed).
- * - If request is invalid or unauthorized, returns a 401 JSON Response.
- */
-export function validateApiAuth(request: Request, env: AuthEnv): Response | null {
-  // Always allow CORS preflight requests
-  if (request.method.toUpperCase() === 'OPTIONS') {
-    return null;
-  }
+/** Minimal shape of the Workers ExecutionContext (avoids requiring @cloudflare/workers-types). */
+export interface WorkerContext { waitUntil(p: Promise<unknown>): void; passThroughOnException(): void }
+type Handler<E> = (request: Request, env: E, ctx: WorkerContext) => Response | Promise<Response>;
 
-  const expectedKey = env.API_KEY?.trim();
-
-  // If env.API_KEY is not configured on the Worker environment, block access with 401
-  if (!expectedKey) {
-    console.error('[Auth Middleware] env.API_KEY is missing or unconfigured on the server.');
-    return createUnauthorizedResponse('Unauthorized: Server API Key is not configured.');
-  }
-
-  const providedToken = extractAuthToken(request);
-
-  if (!providedToken) {
-    return createUnauthorizedResponse('Unauthorized: No authentication credentials provided.');
-  }
-
-  // Validate token against expected key using constant-time string comparison
-  const isValid = timingSafeEqualStrings(providedToken, expectedKey);
-
-  if (!isValid) {
-    return createUnauthorizedResponse('Unauthorized: Invalid API Key or token provided.');
-  }
-
-  // Authorized
-  return null;
-}
-
-/**
- * Higher-order middleware handler to wrap worker fetch endpoints
- */
-export function withAuth<E extends AuthEnv = AuthEnv>(
-  handler: (request: Request, env: E, ctx: any) => Promise<Response> | Response,
-  options?: { protectedPrefixes?: string[] }
-): (request: Request, env: E, ctx: any) => Promise<Response> {
-  const protectedPrefixes = options?.protectedPrefixes || ['/api/'];
-
-  return async (request: Request, env: E, ctx: any): Promise<Response> => {
-    // 1. Pass through CORS preflight OPTIONS requests immediately
-    if (request.method.toUpperCase() === 'OPTIONS') {
-      return new Response(null, {
-        status: 204,
-        headers: CORS_HEADERS
-      });
-    }
-
-    const url = new URL(request.url);
-    const pathname = url.pathname;
-
-    // 2. Check if route is protected (matches any protected prefix)
-    const isProtected = protectedPrefixes.some((prefix) => pathname.startsWith(prefix));
-
-    if (isProtected) {
-      const authErrorResponse = validateApiAuth(request, env);
-      if (authErrorResponse) {
-        return authErrorResponse;
-      }
-    }
-
-    // 3. Delegate to downstream route handler
-    return handler(request, env, ctx);
+/** Wraps a Worker fetch handler: rejects unauthorized requests, adds CORS headers for allowed origins. */
+export function withApiKey<E extends AuthEnv>(handler: Handler<E>): Handler<E> {
+  return async (request, env, ctx) => {
+    const denied = await validateApiAuth(request, env);
+    if (denied) return denied;
+    const res = await handler(request, env, ctx);
+    const cors = corsHeaders(request, env);
+    if (!Object.keys(cors).length) return res;
+    const out = new Response(res.body, res);
+    for (const [k, v] of Object.entries(cors)) out.headers.set(k, v);
+    return out;
   };
 }

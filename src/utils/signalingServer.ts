@@ -1,7 +1,6 @@
 import { Server as SocketIOServer, Socket } from 'socket.io';
 import { Server as HttpServer } from 'http';
 import jwt from 'jsonwebtoken';
-import { db } from './db';
 import { JWT_SECRET } from '../middleware/apiGatewayMiddleware';
 import { identifyToken } from '../features/social-accounts/server/auth';
 
@@ -193,7 +192,7 @@ export function initializeSignalingServer(server: HttpServer): SocketIOServer {
     socket.on('rtc:offer', (data: { targetSocketId?: string; roomId?: string; offer: any; senderUserId?: string }) => {
       const senderConn = socketToUserMap.get(socket.id);
       const roomId = data.roomId || senderConn?.roomId;
-      const senderUserId = senderConn?.userId || data.senderUserId || user?.id || socket.id;
+      const senderUserId = String(user?.id || socket.id);
 
       console.log(`[WebRTC Module] rtc:offer relayed from ${senderUserId} (${socket.id}) -> Target: ${data.targetSocketId || roomId || 'room'}`);
 
@@ -224,7 +223,7 @@ export function initializeSignalingServer(server: HttpServer): SocketIOServer {
     socket.on('rtc:answer', (data: { targetSocketId?: string; roomId?: string; answer: any; senderUserId?: string }) => {
       const senderConn = socketToUserMap.get(socket.id);
       const roomId = data.roomId || senderConn?.roomId;
-      const senderUserId = senderConn?.userId || data.senderUserId || user?.id || socket.id;
+      const senderUserId = String(user?.id || socket.id);
 
       console.log(`[WebRTC Module] rtc:answer relayed from ${senderUserId} (${socket.id}) -> Target: ${data.targetSocketId || roomId || 'room'}`);
 
@@ -255,7 +254,7 @@ export function initializeSignalingServer(server: HttpServer): SocketIOServer {
     socket.on('rtc:ice-candidate', (data: { targetSocketId?: string; roomId?: string; candidate: any; senderUserId?: string }) => {
       const senderConn = socketToUserMap.get(socket.id);
       const roomId = data.roomId || senderConn?.roomId;
-      const senderUserId = senderConn?.userId || data.senderUserId || user?.id || socket.id;
+      const senderUserId = String(user?.id || socket.id);
 
       console.log(`[WebRTC Module] rtc:ice-candidate relayed from ${senderUserId} (${socket.id}) -> Target: ${data.targetSocketId || roomId || 'room'}`);
 
@@ -294,8 +293,10 @@ export function initializeSignalingServer(server: HttpServer): SocketIOServer {
     });
 
     // 1. join-room: Takes a roomId and userId. Adds the socket to the room and broadcasts user-connected.
-    socket.on('join-room', async (data: { roomId: string; userId: string; email?: string }) => {
-      const { roomId, userId } = data;
+    socket.on('join-room', async (data: { roomId: string; userId?: string; email?: string }) => {
+      // The member is always the verified socket user; a userId sent by the client is ignored.
+      const roomId = data?.roomId;
+      const userId = String(socket.data.user?.id || '');
 
       if (!roomId || !userId) {
         console.error(`[Signaling Server] Join rejected: missing roomId or userId. Socket: ${socket.id}`);
@@ -304,23 +305,8 @@ export function initializeSignalingServer(server: HttpServer): SocketIOServer {
       }
 
       try {
-        // Authenticate joining member or allow guest participant
-        let user: any = null;
-        try {
-          user = await db.user.findFirst({
-            where: {
-              OR: [
-                { id: userId },
-                { email: userId },
-                ...(data.email ? [{ email: data.email }] : [])
-              ]
-            }
-          });
-        } catch (e) {
-          // Allow guest join if db lookup fails
-        }
-
-        const memberName = user?.name || data.email || userId;
+        const user = socket.data.user as { id: string; name?: string } | undefined;
+        const memberName = user?.name || userId;
         console.log(`[Signaling Server] Member ${memberName} (${userId}) joining room: ${roomId}`);
 
         // Add socket to the room
@@ -440,7 +426,7 @@ export function initializeSignalingServer(server: HttpServer): SocketIOServer {
     }) => {
       const sender = socketToUserMap.get(socket.id);
       const roomId = data.roomId || sender?.roomId;
-      const senderUserId = sender?.userId || data.userId || socket.id;
+      const senderUserId = String(user?.id || socket.id);
 
       console.log(`[Signaling Server] Track replaced event from user ${senderUserId} (${socket.id}) -> trackType: ${data.trackType || 'video'}, streamType: ${data.streamType || 'screen'}`);
 
@@ -496,7 +482,7 @@ export function initializeSignalingServer(server: HttpServer): SocketIOServer {
     socket.on('toggle-mute-status', async (data: { roomId: string; targetUserId: string; newState: boolean; userId?: string }) => {
       const { roomId, targetUserId, newState } = data;
       const senderConn = socketToUserMap.get(socket.id);
-      const senderUserId = senderConn?.userId || data.userId;
+      const senderUserId = String(socket.data.user?.id || '');
 
       if (!senderUserId) {
         console.error(`[Signaling Server] Toggle Mute rejected: unknown sender identity. Socket: ${socket.id}`);
@@ -505,19 +491,10 @@ export function initializeSignalingServer(server: HttpServer): SocketIOServer {
       }
 
       try {
-        // Authenticate the actor (Requirement 3)
-        const user = await db.user.findFirst({
-          where: {
-            OR: [
-              { id: senderUserId },
-              { email: senderUserId }
-            ]
-          }
-        });
-
-        if (!user) {
-          console.warn(`[Signaling Server] Unauthorized toggle-mute-status from ${senderUserId}. Actor not in CRM database.`);
-          socket.emit('error', { message: 'Authentication failed: Not a verified CRM member' });
+        // The actor is the verified socket user and must be connected to this room.
+        const user = socket.data.user as { id: string; name?: string };
+        if (!senderConn || senderConn.roomId !== roomId) {
+          socket.emit('error', { message: 'Join the room before changing its state.' });
           return;
         }
 
@@ -554,7 +531,7 @@ export function initializeSignalingServer(server: HttpServer): SocketIOServer {
     socket.on('toggle-camera-status', async (data: { roomId: string; targetUserId: string; newState: boolean; userId?: string }) => {
       const { roomId, targetUserId, newState } = data;
       const senderConn = socketToUserMap.get(socket.id);
-      const senderUserId = senderConn?.userId || data.userId;
+      const senderUserId = String(socket.data.user?.id || '');
 
       if (!senderUserId) {
         console.error(`[Signaling Server] Toggle Camera rejected: unknown sender identity. Socket: ${socket.id}`);
@@ -563,19 +540,10 @@ export function initializeSignalingServer(server: HttpServer): SocketIOServer {
       }
 
       try {
-        // Authenticate the actor (Requirement 3)
-        const user = await db.user.findFirst({
-          where: {
-            OR: [
-              { id: senderUserId },
-              { email: senderUserId }
-            ]
-          }
-        });
-
-        if (!user) {
-          console.warn(`[Signaling Server] Unauthorized toggle-camera-status from ${senderUserId}. Actor not in CRM database.`);
-          socket.emit('error', { message: 'Authentication failed: Not a verified CRM member' });
+        // The actor is the verified socket user and must be connected to this room.
+        const user = socket.data.user as { id: string; name?: string };
+        if (!senderConn || senderConn.roomId !== roomId) {
+          socket.emit('error', { message: 'Join the room before changing its state.' });
           return;
         }
 

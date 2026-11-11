@@ -1,6 +1,9 @@
 import { Router, Request, Response } from 'express';
-import { db } from '../utils/db';
+import { assertId, getDocStore } from '../server/data/docStore';
+import { requirePermission, requireReadOrWrite, requireTenant, sendError, tenantOf } from '../server/tenancy/middleware';
 import { ChatMessageItem } from '../types';
+import { AIProviderError, generateAIResponse } from '../services/ai/aiService';
+import { buildAssistantPrompt } from '../services/assistantPrompt';
 import { processCRMBrainChat, CRMBrainChatParams as CRMBrainChatInput, CRMBrainChatResult as CRMBrainChatOutput } from '../services/crmBrain';
 import {
   handleChatCompletions,
@@ -9,6 +12,11 @@ import {
 } from '../controllers/omniRouteChatController';
 
 const router = Router();
+
+// Every chat route acts for a signed-in member of an organization.
+// Asking the assistant is a read: read-only members can use it (its tools enforce write permission
+// themselves). Other chat routes need write access for anything that changes data.
+router.use(requireTenant, (req, res, next) => (/\/completions$/.test(req.path) ? requirePermission('read')(req, res, next) : requireReadOrWrite(req, res, next)));
 
 // ============================================================================
 // OMNIROUTE AI GATEWAY ENDPOINTS (SSE STREAMING & RESILIENCE)
@@ -35,39 +43,79 @@ const DEFAULT_LEAD_CONTEXT = {
   notes: 'Looking for multi-channel CRM automation with low-latency failovers. Prefers direct, concise communication.',
 };
 
-// Ensure or retrieve active userId
-async function getOrProvisionUserId(req: Request, fallbackId?: string): Promise<string> {
-  const targetId =
-    fallbackId ||
-    (req as any).session?.userId ||
-    (req as any).user?.id ||
-    (req as any).userId ||
-    req.body?.userId ||
-    (req.query?.userId as string) ||
-    'demo-user-123';
+/** The verified caller. Client-supplied ids are ignored. */
+async function getOrProvisionUserId(req: Request, _ignored?: string): Promise<string> {
+  return tenantOf(req).userId;
+}
 
-  if (db.user) {
-    try {
-      const existing = await db.user.findFirst({ where: { id: targetId } });
-      if (!existing) {
-        await db.user.create({
-          data: {
-            id: targetId,
-            email: `${targetId}@flowforge.studio`,
-            name: 'Executive Director',
-            role: 'ADMIN',
-          },
-        });
-      }
-    } catch (e) {}
-  }
-  return targetId;
+/** organizations/{orgId}/chat_sessions/{sessionId}: sessions are private to their user. */
+function sessionPath(req: Request, sessionId: string) {
+  return `organizations/${tenantOf(req).orgId}/chat_sessions/${assertId(sessionId)}`;
+}
+
+/**
+ * Loads a chat session only if it belongs to `userId`. A session owned by someone else is reported
+ * exactly like a missing one, so session ids can't be probed.
+ */
+async function loadOwnedSession(req: Request, sessionId: string, userId: string): Promise<any | null> {
+  if (!sessionId) return null;
+  const st = await getDocStore();
+  const s = await st.get(sessionPath(req, sessionId));
+  return s && s.userId === userId ? s : null;
+}
+
+async function sessionIdTakenByOther(req: Request, sessionId: string, userId: string): Promise<boolean> {
+  if (!sessionId) return false;
+  const s = await (await getDocStore()).get(sessionPath(req, sessionId));
+  return !!(s && s.userId !== userId);
 }
 
 /**
  * POST /api/chat
  * Main CRM AI assistant endpoint
  */
+/**
+ * POST /api/chat  { message, history?, provider?: 'gemini' | 'claude', preferences? }
+ * Unified, non-streaming answer from the chosen provider (the other one backs it up). Responds
+ * { success, provider, model, reply, finish, notice }. For streaming, use POST /api/chat/completions.
+ * Requests without `provider`/`history` keep the command palette's original behavior below.
+ */
+async function handleUnifiedChat(req: Request, res: Response) {
+  const t = tenantOf(req);
+  const b = req.body || {};
+  const message = typeof b.message === 'string' ? b.message.slice(0, 200_000) : '';
+  if (!message.trim()) return res.status(400).json({ success: false, code: 'bad_request', error: 'Send a message.' });
+  if (b.provider !== undefined && !['gemini', 'claude'].includes(b.provider)) return res.status(400).json({ success: false, code: 'bad_request', error: 'provider must be "gemini" or "claude".' });
+  const history = Array.isArray(b.history) ? b.history.slice(-60) : [];
+  const prefs = b.preferences || {};
+  const ctrl = new AbortController();
+  req.on('close', () => { if (!res.writableEnded) ctrl.abort(); });
+  try {
+    const { getOrg } = await import('../server/tenancy/orgs');
+    const orgName = (await getOrg(t.orgId).catch(() => null))?.name || '';
+    const systemPrompt = buildAssistantPrompt({
+      userName: t.name || t.email, role: t.role, orgName, crmToolsEnabled: prefs.includeCrm !== false,
+      length: ['concise', 'standard', 'detailed'].includes(prefs.length) ? prefs.length : 'standard',
+      tone: ['executive', 'technical', 'action'].includes(prefs.tone) ? prefs.tone : 'executive',
+    });
+    const r = await generateAIResponse(b.provider === 'claude' ? 'claude' : 'gemini', message, history, {
+      systemPrompt, context: { userId: t.userId, orgId: t.orgId, role: t.role, name: t.name || t.email }, useTools: prefs.includeCrm !== false, signal: ctrl.signal,
+    });
+    res.json({ success: true, provider: r.provider, model: r.model, reply: r.reply, finish: r.finish, toolCalls: r.toolCalls, notice: r.notice });
+  } catch (err: any) {
+    if (err instanceof AIProviderError) {
+      const status = err.code === 'ai_not_configured' || err.code === 'model_unavailable' ? 503 : err.code === 'rate_limited' ? 429 : err.code === 'bad_request' ? 400 : 502;
+      return res.status(status).json({ success: false, code: err.code, provider: err.provider, error: err.code === 'bad_request' ? err.message : status === 503 ? err.message : 'The AI provider couldn’t answer right now. Nothing was changed; try again.' });
+    }
+    return sendError(res, err, 'chat.unified');
+  }
+}
+
+router.post('/', async (req: Request, res: Response, next) => {
+  if (req.body && (req.body.provider !== undefined || Array.isArray(req.body.history))) return handleUnifiedChat(req, res);
+  next();
+});
+
 router.post('/', async (req: Request, res: Response) => {
   try {
     const {
@@ -92,16 +140,10 @@ router.post('/', async (req: Request, res: Response) => {
     const timestamp = new Date().toISOString();
 
     // 1. Fetch or initialize ChatSession from database
-    let session = null;
-    if (db.chatSession) {
-      try {
-        session = await db.chatSession.findFirst({
-          where: { sessionId },
-        });
-      } catch (err) {
-        console.warn('[Chat DB Fetch Note]:', (err as any).message);
-      }
+    if (await sessionIdTakenByOther(req, sessionId, userId)) {
+      return res.status(404).json({ success: false, error: 'Chat session not found.' });
     }
+    const session: any = await loadOwnedSession(req, sessionId, userId);
 
     let existingMessages: ChatMessageItem[] = [];
     if (session && session.messages) {
@@ -160,25 +202,11 @@ router.post('/', async (req: Request, res: Response) => {
     const finalMessages: ChatMessageItem[] = [...updatedMessages, newAssistantMessage];
 
     // 6. Save updated ChatSession record
-    let savedSession: any = null;
-    if (db.chatSession) {
-      try {
-        savedSession = await db.chatSession.upsert({
-          where: { sessionId },
-          update: {
-            messages: finalMessages,
-            updatedAt: new Date(),
-          },
-          create: {
-            sessionId,
-            userId,
-            messages: finalMessages,
-          },
-        });
-      } catch (saveErr: any) {
-        console.warn('[ChatSession DB Save Note]:', saveErr.message);
-      }
-    }
+    const savedSession = {
+      sessionId, userId, orgId: tenantOf(req).orgId, messages: finalMessages,
+      createdAt: session?.createdAt || timestamp, updatedAt: new Date().toISOString(),
+    };
+    await (await getDocStore()).set(sessionPath(req, sessionId), savedSession);
 
     // 7. Parse CRM command metadata for dashboard integration
     const lower = userMessageText.toLowerCase();
@@ -221,18 +249,10 @@ router.post('/', async (req: Request, res: Response) => {
       type,
       action,
       params,
-      session: savedSession || {
-        sessionId,
-        userId,
-        messages: finalMessages,
-      },
+      session: savedSession,
     });
   } catch (error: any) {
-    console.error('[POST /api/chat Error]', error);
-    return res.status(500).json({
-      success: false,
-      error: error.message || 'Internal server error processing chat request.',
-    });
+    return sendError(res, error, 'POST /api/chat Error');
   }
 });
 
@@ -261,11 +281,7 @@ router.post('/brain', async (req: Request, res: Response) => {
       ...result,
     });
   } catch (error: any) {
-    console.error('[POST /api/chat/brain Error]', error);
-    return res.status(500).json({
-      success: false,
-      error: error.message || 'Error processing CRM Brain Chat.',
-    });
+    return sendError(res, error, 'POST /api/chat/brain Error');
   }
 });
 
@@ -275,13 +291,7 @@ router.post('/brain', async (req: Request, res: Response) => {
 router.get('/sessions', async (req: Request, res: Response) => {
   try {
     const userId = await getOrProvisionUserId(req);
-    let sessions: any[] = [];
-
-    if (db.chatSession) {
-      sessions = await db.chatSession.findMany({
-        where: { userId },
-      });
-    }
+    const sessions = await (await getDocStore()).list(`organizations/${tenantOf(req).orgId}/chat_sessions`, { where: [['userId', '==', userId]] });
 
     return res.status(200).json({
       success: true,
@@ -289,11 +299,7 @@ router.get('/sessions', async (req: Request, res: Response) => {
       sessions,
     });
   } catch (error: any) {
-    console.error('[GET /api/chat/sessions Error]', error);
-    return res.status(500).json({
-      success: false,
-      error: error.message || 'Failed to list chat sessions.',
-    });
+    return sendError(res, error, 'GET /api/chat/sessions Error');
   }
 });
 
@@ -303,19 +309,11 @@ router.get('/sessions', async (req: Request, res: Response) => {
 router.get('/session/:sessionId', async (req: Request, res: Response) => {
   try {
     const { sessionId } = req.params;
-    let session = null;
-
-    if (db.chatSession) {
-      session = await db.chatSession.findFirst({
-        where: { sessionId },
-      });
-    }
+    const userId = await getOrProvisionUserId(req);
+    const session = await loadOwnedSession(req, sessionId, userId);
 
     if (!session) {
-      return res.status(404).json({
-        success: false,
-        error: `Chat session '${sessionId}' not found.`,
-      });
+      return res.status(404).json({ success: false, error: 'Chat session not found.' });
     }
 
     return res.status(200).json({
@@ -324,11 +322,7 @@ router.get('/session/:sessionId', async (req: Request, res: Response) => {
       messages: session.messages || [],
     });
   } catch (error: any) {
-    console.error('[GET /api/chat/session/:sessionId Error]', error);
-    return res.status(500).json({
-      success: false,
-      error: error.message || 'Failed to fetch chat session.',
-    });
+    return sendError(res, error, 'GET /api/chat/session/:sessionId Error');
   }
 });
 
@@ -338,25 +332,20 @@ router.get('/session/:sessionId', async (req: Request, res: Response) => {
 router.delete('/session/:sessionId', async (req: Request, res: Response) => {
   try {
     const { sessionId } = req.params;
-
-    if (db.chatSession) {
-      try {
-        await db.chatSession.delete({
-          where: { sessionId },
-        });
-      } catch (e) {}
+    const userId = await getOrProvisionUserId(req);
+    const session = await loadOwnedSession(req, sessionId, userId);
+    if (!session) {
+      return res.status(404).json({ success: false, error: 'Chat session not found.' });
     }
+
+    await (await getDocStore()).deleteRecursive(sessionPath(req, sessionId));
 
     return res.status(200).json({
       success: true,
       message: `Chat session '${sessionId}' cleared.`,
     });
   } catch (error: any) {
-    console.error('[DELETE /api/chat/session/:sessionId Error]', error);
-    return res.status(500).json({
-      success: false,
-      error: error.message || 'Failed to delete chat session.',
-    });
+    return sendError(res, error, 'DELETE /api/chat/session/:sessionId Error');
   }
 });
 

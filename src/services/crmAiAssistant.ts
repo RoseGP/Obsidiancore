@@ -1,9 +1,13 @@
 import { GoogleGenAI, Type } from '@google/genai';
-import { adminDb } from '../lib/firebaseAdmin';
-import { logCrmActivity, calculateLeadScore, INITIAL_DEALS, INITIAL_LEADS } from '../routes/dashboardApi';
+import { calculateLeadScore } from '../routes/dashboardApi';
+import { CrmRepository } from '../server/crm/crmRepository';
+import { getDocStore, newId } from '../server/data/docStore';
+import { can, isRole } from '../server/tenancy/orgs';
 
 // Lazy initialize Gemini client
 let geminiClient: GoogleGenAI | null = null;
+/** Tests only: inject a stand-in client (null restores the real one). */
+export function setGeminiClientForTests(client: any | null) { geminiClient = client; resolvedModel = null; }
 function getGemini(): GoogleGenAI | null {
   if (!geminiClient && process.env.GEMINI_API_KEY) {
     try {
@@ -160,291 +164,204 @@ export const CRM_TOOL_DECLARATIONS = [
       },
       required: ['caption', 'platforms']
     }
+  },
+  {
+    name: 'qualify_lead',
+    description: 'Mark an existing lead as qualified or unqualified (with an optional reason). Identify the lead by its id, or by its exact name or email address. Ask the user if several leads share the name.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        leadId: { type: Type.STRING, description: 'The lead id (from search_leads), if known.' },
+        nameOrEmail: { type: Type.STRING, description: 'Exact name or email address of the lead, if the id is not known.' },
+        status: { type: Type.STRING, description: '"qualified" or "unqualified".' },
+        reason: { type: Type.STRING, description: 'Optional short reason, e.g. budget confirmed.' }
+      },
+      required: ['status']
+    }
+  },
+  {
+    name: 'summarize_recent_conversations',
+    description: 'Fetch the organization\'s recent customer messages (inbox conversations plus inbound WhatsApp and SMS) so you can summarize them. Read-only.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        hours: { type: Type.NUMBER, description: 'How far back to look, in hours (default 24, maximum 72).' }
+      }
+    }
   }
 ];
 
+const WRITE_TOOLS = new Set(['create_lead', 'create_deal', 'create_followup_task', 'create_social_draft', 'qualify_lead']);
+const s = (v: unknown, max = 200) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
+
 /**
- * Executes a tool called by the model against live CRM database tables.
+ * Executes a tool the model asked for, ONLY inside the caller's organization and ONLY if the caller's
+ * role allows it. The model's arguments are untrusted input: they are validated and length-limited,
+ * and the model can't choose the organization, the user, or the role.
  */
 export async function executeCrmTool(
   toolName: string,
   args: Record<string, any>,
   context: { userId: string; orgId: string; role: string }
 ): Promise<any> {
-  console.log(`[CRM AI Tool Invoked] Tool: ${toolName} | User: ${context.userId} | Org: ${context.orgId}`);
+  console.log(`[CRM AI Tool] ${toolName} | user ${context.userId} | org ${context.orgId}`);
+  if (WRITE_TOOLS.has(toolName) && !(isRole(context.role) && can(context.role, 'write'))) {
+    return { error: 'Your role is read-only, so I can’t create or change records for you.' };
+  }
 
   try {
+    const repo = await CrmRepository.forOrg(context.orgId);
     switch (toolName) {
       case 'search_contacts': {
-        const q = String(args.query || '').toLowerCase();
-        const limit = Number(args.limit) || 10;
-        
-        let contacts: any[] = [];
-        try {
-          const snap = await adminDb.collection('crm_contacts').limit(50).get();
-          contacts = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        } catch {
-          contacts = [];
-        }
-
-        const matches = contacts.filter((c: any) =>
-          (c.name && c.name.toLowerCase().includes(q)) ||
-          (c.email && c.email.toLowerCase().includes(q)) ||
-          (c.company && c.company.toLowerCase().includes(q))
-        ).slice(0, limit);
-
-        return {
-          count: matches.length,
-          contacts: matches.length > 0 ? matches : 'No contacts matched your search query in CRM.'
-        };
+        const q = s(args.query, 200).toLowerCase();
+        const limit = Math.min(Math.max(Number(args.limit) || 10, 1), 50);
+        const { ContactService } = await import('../server/crm/contacts');
+        const matches = (await (await ContactService.forOrg(context.orgId)).list({ q })).slice(0, limit)
+          .map((c: any) => ({ id: c.id, name: c.name, email: c.email, phone: c.phone, company: c.company, title: c.title, tags: c.tags, owner: c.owner }));
+        return { count: matches.length, contacts: matches.length ? matches : 'No contacts matched your search query in CRM.' };
       }
 
       case 'search_leads': {
-        const q = String(args.query || '').toLowerCase();
-        const status = args.status;
-        const minScore = args.minScore !== undefined ? Number(args.minScore) : 0;
-        const limit = Number(args.limit) || 10;
-
-        let leads: any[] = [];
-        try {
-          const snap = await adminDb.collection('crm_leads').get();
-          leads = !snap.empty ? snap.docs.map(d => ({ id: d.id, ...d.data() })) : INITIAL_LEADS;
-        } catch {
-          leads = INITIAL_LEADS;
-        }
-
-        let filtered = leads;
-        if (status && status !== 'all') {
-          filtered = filtered.filter(l => l.status === status);
-        }
-        if (minScore > 0) {
-          filtered = filtered.filter(l => (l.score || 0) >= minScore);
-        }
-        if (q) {
-          filtered = filtered.filter(l =>
-            (l.name && l.name.toLowerCase().includes(q)) ||
-            (l.company && l.company.toLowerCase().includes(q)) ||
-            (l.email && l.email.toLowerCase().includes(q)) ||
-            (l.notes && l.notes.toLowerCase().includes(q))
-          );
-        }
-
+        const q = s(args.query, 200).toLowerCase();
+        const minScore = Number(args.minScore) || 0;
+        const limit = Math.min(Math.max(Number(args.limit) || 10, 1), 50);
+        let leads = await repo.listLeads();
+        if (args.status && args.status !== 'all') leads = leads.filter((l) => l.status === args.status);
+        if (minScore > 0) leads = leads.filter((l) => (Number(l.score) || 0) >= minScore);
+        if (q) leads = leads.filter((l) => ['name', 'company', 'email', 'notes'].some((f) => typeof l[f] === 'string' && l[f].toLowerCase().includes(q)));
         return {
-          count: filtered.length,
-          leads: filtered.slice(0, limit).map(l => ({
-            id: l.id,
-            name: l.name,
-            company: l.company,
-            email: l.email,
-            status: l.status,
-            score: l.score,
-            source: l.source,
-            budget: l.qualification?.budget,
-            need: l.qualification?.need || l.notes
-          }))
+          count: leads.length,
+          leads: leads.slice(0, limit).map((l) => ({ id: l.id, name: l.name, company: l.company, email: l.email, status: l.status, score: l.score, source: l.source, budget: l.qualification?.budget, need: l.qualification?.need || l.notes })),
         };
       }
 
       case 'get_pipeline_summary': {
-        let deals: any[] = [];
-        let leads: any[] = [];
-        try {
-          const dealsSnap = await adminDb.collection('crm_deals').get();
-          deals = !dealsSnap.empty ? dealsSnap.docs.map(d => ({ id: d.id, ...d.data() })) : INITIAL_DEALS;
-          const leadsSnap = await adminDb.collection('crm_leads').get();
-          leads = !leadsSnap.empty ? leadsSnap.docs.map(l => ({ id: l.id, ...l.data() })) : INITIAL_LEADS;
-        } catch {
-          deals = INITIAL_DEALS;
-          leads = INITIAL_LEADS;
-        }
-
-        const totalArr = deals.reduce((sum, d) => sum + (Number(d.value) || 0), 0);
+        const [deals, leads] = await Promise.all([repo.listDeals(), repo.listLeads()]);
         const stageBreakdown: Record<string, { count: number; value: number }> = {};
-        deals.forEach(d => {
-          const s = d.stage || 'discovery';
-          if (!stageBreakdown[s]) stageBreakdown[s] = { count: 0, value: 0 };
-          stageBreakdown[s].count += 1;
-          stageBreakdown[s].value += Number(d.value) || 0;
-        });
-
-        const convertedLeads = leads.filter(l => l.isConverted || l.status === 'converted').length;
-        const conversionRate = leads.length > 0 ? Number(((convertedLeads / leads.length) * 100).toFixed(1)) : 0;
-
+        for (const d of deals) {
+          const k = d.stage || 'discovery';
+          stageBreakdown[k] ??= { count: 0, value: 0 };
+          stageBreakdown[k].count++; stageBreakdown[k].value += Number(d.value) || 0;
+        }
+        const converted = leads.filter((l) => l.isConverted || l.status === 'converted').length;
         return {
-          totalPipelineArr: totalArr,
+          totalPipelineValue: deals.reduce((sum, d) => sum + (Number(d.value) || 0), 0),
           activeDealsCount: deals.length,
-          leadConversionRate: `${conversionRate}%`,
+          leadConversionRate: `${leads.length ? Number(((converted / leads.length) * 100).toFixed(1)) : 0}%`,
           totalLeads: leads.length,
           stageBreakdown,
-          deals: args.includeDeals ? deals.slice(0, 5).map(d => ({ name: d.name, client: d.client, value: d.value, stage: d.stage })) : undefined
+          deals: args.includeDeals ? deals.slice(0, 5).map((d) => ({ name: d.name, client: d.client, value: d.value, stage: d.stage })) : undefined,
+          note: deals.length === 0 && leads.length === 0 ? 'This organization has no deals or leads yet.' : undefined,
         };
       }
 
       case 'create_lead': {
-        const { name, email, company, phone, channel, budget, need, timeline } = args;
-
-        const docRef = adminDb.collection('crm_leads').doc();
-        const newLead: any = {
-          id: docRef.id,
-          orgId: context.orgId,
-          name: name.trim(),
-          email: email.trim().toLowerCase(),
-          phone: phone || '',
-          company: company.trim(),
-          title: 'Prospective Buyer',
-          source: channel || 'ai_assistant',
-          status: 'new',
-          owner: 'Rene Pierrette',
-          ownerId: context.userId,
-          notes: need ? `Created via AI Assistant. Requirement: ${need}` : 'Inbound lead registered via AI assistant.',
-          channel: channel || 'ai_assistant',
+        const name = s(args.name, 120), email = s(args.email, 254).toLowerCase(), company = s(args.company, 160);
+        if (!name || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { error: 'A lead needs a name and a valid email address.' };
+        const lead: any = {
+          id: newId('lead'), name, email, phone: s(args.phone, 40), company, title: '',
+          source: s(args.channel, 40) || 'ai_assistant', channel: s(args.channel, 40) || 'ai_assistant', status: 'new',
+          owner: '', ownerId: context.userId,
+          notes: args.need ? `Created via AI Assistant. Requirement: ${s(args.need, 2000)}` : 'Lead registered via AI assistant.',
           isConverted: false,
-          qualification: {
-            budget: Number(budget) || 25000,
-            authority: 'decision_maker',
-            need: need || '',
-            timeline: timeline || '1-3 months'
-          },
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
+          qualification: { budget: Number(args.budget) > 0 ? Number(args.budget) : 0, authority: 'unknown', need: s(args.need, 2000), timeline: s(args.timeline, 60) || 'unknown' },
+          createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
         };
-
-        newLead.score = calculateLeadScore(newLead);
-        await docRef.set(newLead).catch(() => {});
-
-        await logCrmActivity({
-          type: 'lead_created',
-          title: `Lead Registered: ${newLead.name}`,
-          description: `AI Assistant registered $${(newLead.qualification?.budget || 0).toLocaleString()} lead for ${company}.`,
-          actor: 'AI Assistant',
-          targetId: docRef.id,
-          targetType: 'lead'
-        });
-
-        return {
-          success: true,
-          leadId: docRef.id,
-          name: newLead.name,
-          company: newLead.company,
-          score: newLead.score,
-          message: `Successfully created CRM lead for "${name}" (${company}) with initial score of ${newLead.score}/100.`
-        };
+        lead.score = calculateLeadScore(lead);
+        await repo.saveLead(lead); // awaited: if it fails, the tool reports failure instead of claiming success
+        await repo.logActivity({ type: 'lead_created', title: `Lead Registered: ${name}`, description: `AI Assistant registered a lead for ${company || name}.`, actor: 'AI Assistant', targetId: lead.id, targetType: 'lead' });
+        return { success: true, leadId: lead.id, name, company, score: lead.score, message: `Created CRM lead for "${name}"${company ? ` (${company})` : ''} with an initial score of ${lead.score}/100.` };
       }
 
       case 'create_deal': {
-        const { name, client, value, stage, expectedClose } = args;
-        const docRef = adminDb.collection('crm_deals').doc();
-        
-        const newDeal = {
-          id: docRef.id,
-          orgId: context.orgId,
-          name: name.trim(),
-          client: client.trim(),
-          value: Number(value) || 50000,
-          stage: stage || 'discovery',
-          probability: stage === 'won' ? 100 : stage === 'negotiation' ? 85 : stage === 'proposal' ? 70 : 50,
-          expectedClose: expectedClose || 'This Month',
-          momentum: 'hot',
-          channelOrigin: 'ai_assistant',
-          owner: 'Rene Pierrette',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        };
-
-        await docRef.set(newDeal).catch(() => {});
-
-        await logCrmActivity({
-          type: 'deal_created',
-          title: `New Deal: ${newDeal.name}`,
-          description: `Created $${newDeal.value.toLocaleString()} ARR deal for ${client} via AI Assistant.`,
-          actor: 'AI Assistant',
-          targetId: docRef.id,
-          targetType: 'deal'
-        });
-
-        return {
-          success: true,
-          dealId: docRef.id,
-          dealTitle: newDeal.name,
-          value: newDeal.value,
-          stage: newDeal.stage,
-          message: `Registered $${newDeal.value.toLocaleString()} ARR deal for ${client} in ${newDeal.stage} stage.`
-        };
+        const name = s(args.name, 200), client = s(args.client, 160), value = Number(args.value);
+        if (!name || !client || !Number.isFinite(value) || value < 0) return { error: 'A deal needs a name, a client and a non-negative value.' };
+        const probs: Record<string, number> = { discovery: 30, qualified: 50, proposal: 70, negotiation: 85, won: 100 };
+        const stage = probs[args.stage] !== undefined ? args.stage : 'discovery';
+        const deal = await repo.createDeal({ name, client, value, stage, probability: probs[stage], expectedClose: s(args.expectedClose, 60) || 'This Month', momentum: 'hot', channelOrigin: 'ai_assistant', owner: '', ownerId: context.userId });
+        await repo.logActivity({ type: 'deal_created', title: `New Deal: ${name}`, description: `Created a $${value.toLocaleString()} deal for ${client} via AI Assistant.`, actor: 'AI Assistant', targetId: deal.id, targetType: 'deal' });
+        return { success: true, dealId: deal.id, dealTitle: name, value, stage, message: `Registered a $${value.toLocaleString()} deal for ${client} in the ${stage} stage.` };
       }
 
       case 'create_followup_task': {
-        const { title, leadId, dueDate, priority } = args;
-        const docRef = adminDb.collection('crm_tasks').doc();
-
-        const task = {
-          id: docRef.id,
-          orgId: context.orgId,
-          leadId: leadId || null,
-          title: title.trim(),
-          dueDate: dueDate || 'Tomorrow',
-          priority: priority || 'high',
-          completed: false,
-          createdById: context.userId,
-          createdAt: new Date().toISOString()
-        };
-
-        await docRef.set(task).catch(() => {});
-
-        return {
-          success: true,
-          taskId: docRef.id,
-          title: task.title,
-          dueDate: task.dueDate,
-          message: `Scheduled task: "${task.title}" (Due: ${task.dueDate}, Priority: ${task.priority.toUpperCase()}).`
-        };
+        const title = s(args.title, 300);
+        if (!title) return { error: 'A task needs a title.' };
+        const leadId = typeof args.leadId === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(args.leadId) ? args.leadId : null;
+        const priority = ['low', 'normal', 'high', 'urgent'].includes(args.priority) ? args.priority : 'high';
+        const dueRaw = s(args.dueDate, 40);
+        const dueDate = dueRaw && Number.isFinite(Date.parse(dueRaw)) ? new Date(dueRaw).toISOString() : new Date(Date.now() + 86_400_000).toISOString();
+        // A lead id from the model is only used if that lead exists in THIS organization.
+        const linkLead = leadId && (await repo.getLead(leadId)) ? leadId : null;
+        const { TaskService } = await import('../server/crm/tasks');
+        const saved = await (await TaskService.forOrg(context.orgId)).create({ title, type: 'follow_up', priority, dueDate, leadId: linkLead },
+          { userId: context.userId, name: 'AI Assistant' }, { source: 'assistant' });
+        const when = new Date(dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        return { success: true, taskId: saved.id, title, dueDate, message: `Scheduled task: "${title}" (Due: ${when}, Priority: ${priority.toUpperCase()}). It's in Tasks.` };
       }
 
       case 'search_knowledge_base': {
-        const q = String(args.query || '').toLowerCase();
-        const matches = APPROVED_KNOWLEDGE_DOCS.filter(doc =>
-          doc.topic.toLowerCase().includes(q) || doc.content.toLowerCase().includes(q)
-        );
-
-        return {
-          results: matches.length > 0 ? matches : APPROVED_KNOWLEDGE_DOCS
-        };
+        const q = s(args.query, 200).toLowerCase();
+        const matches = APPROVED_KNOWLEDGE_DOCS.filter((d) => d.topic.toLowerCase().includes(q) || d.content.toLowerCase().includes(q));
+        return { results: matches.length ? matches : APPROVED_KNOWLEDGE_DOCS };
       }
 
       case 'draft_sales_outreach': {
-        const { recipientName, company, channel, keyPoints } = args;
+        const recipientName = s(args.recipientName, 120), company = s(args.company, 160);
         return {
-          recipient: recipientName,
-          company,
-          channel,
-          draftSubject: `Accelerating ${company} Communications with Obsidian SLA Infrastructure`,
-          draftBody: `Hi ${recipientName.split(' ')[0]},\n\nFollowing up on our discussions regarding ${company}'s operational requirements: ${keyPoints}.\n\nObsidian provides high-availability sovereign routing with 99.99% uptime, real-time WebRTC Call Canvas consultations, and automated BANT pipeline sync.\n\nWould tomorrow at 2:00 PM work for a brief 15-minute executive walkthrough?\n\nBest regards,\nExecutive Director\nObsidian Enterprise Solutions`
+          recipient: recipientName, company, channel: s(args.channel, 40),
+          draftSubject: `Following up with ${company}`,
+          draftBody: `Hi ${recipientName.split(' ')[0] || 'there'},\n\nFollowing up on our discussion about ${company}'s requirements: ${s(args.keyPoints, 2000)}.\n\nWould you have 15 minutes this week to go through next steps?\n\nBest regards,`,
+          note: 'Draft only: nothing was sent.',
         };
       }
 
       case 'create_social_draft': {
-        const { caption, platforms, scheduledDate } = args;
-        const docRef = adminDb.collection('crm_social_posts').doc();
+        const caption = s(args.caption, 5000);
+        if (!caption) return { error: 'A post needs a caption.' };
+        const platforms = Array.isArray(args.platforms) ? args.platforms.filter((p: unknown) => typeof p === 'string').slice(0, 10) : ['LINKEDIN'];
+        const post = await repo.createSocialDraft({ caption, mediaUrls: [], platforms, scheduledAt: s(args.scheduledDate, 40) || null, status: 'DRAFT', createdById: context.userId, createdAt: new Date().toISOString() });
+        return { success: true, postId: post.id, caption, platforms, message: `Saved a social media draft for [${platforms.join(', ')}]. It has not been published or scheduled.` };
+      }
 
-        const postDraft = {
-          id: docRef.id,
-          orgId: context.orgId,
-          caption: caption.trim(),
-          mediaUrls: [],
-          platforms: platforms || ['LINKEDIN'],
-          scheduledAt: scheduledDate || new Date(Date.now() + 86400000).toISOString(),
-          status: 'DRAFT',
-          createdById: context.userId,
-          createdAt: new Date().toISOString()
-        };
+      case 'qualify_lead': {
+        const status = args.status === 'qualified' || args.status === 'unqualified' ? args.status : null;
+        if (!status) return { error: 'Status must be "qualified" or "unqualified".' };
+        const reason = s(args.reason, 500);
+        let lead: any = null;
+        if (typeof args.leadId === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(args.leadId)) lead = await repo.getLead(args.leadId);
+        if (!lead) {
+          const key = s(args.nameOrEmail, 254).toLowerCase();
+          if (!key) return { error: 'Tell me which lead: its id, exact name or email address.' };
+          const matches = (await repo.listLeads()).filter((l) => (typeof l.email === 'string' && l.email.toLowerCase() === key) || (typeof l.name === 'string' && l.name.toLowerCase() === key));
+          if (!matches.length) return { error: `No lead named or with the email "${s(args.nameOrEmail, 120)}" was found.` };
+          if (matches.length > 1) return { error: 'Several leads match. Which one did you mean?', candidates: matches.slice(0, 5).map((l) => ({ id: l.id, name: l.name, email: l.email, company: l.company })) };
+          lead = matches[0];
+        }
+        if (lead.isConverted || lead.status === 'converted') return { error: `${lead.name} is already converted to a deal; their status can't change.` };
+        if (lead.status === status) return { success: true, unchanged: true, leadId: lead.id, message: `${lead.name} is already ${status}.` };
+        const now = new Date().toISOString();
+        await repo.updateLead(lead.id, { status, statusReason: reason || null, updatedAt: now });
+        await repo.addLeadActivity(lead.id, { type: 'status_changed', title: `Status Changed: ${lead.status} → ${status}`, description: reason ? `Reason: ${reason}` : `Marked ${status} by the AI assistant.`, actor: 'AI Assistant' });
+        await repo.logActivity({ type: 'status_changed', title: `Lead ${status === 'qualified' ? 'Qualified' : 'Unqualified'}: ${lead.name}`, description: reason || `Marked ${status} by the AI assistant.`, actor: 'AI Assistant', targetId: lead.id, targetType: 'lead' });
+        return { success: true, leadId: lead.id, name: lead.name, from: lead.status, to: status, reason: reason || null, message: `Marked ${lead.name} as ${status}${reason ? ` (${reason})` : ''}.` };
+      }
 
-        await docRef.set(postDraft).catch(() => {});
-
+      case 'summarize_recent_conversations': {
+        const hours = Math.min(Math.max(Math.round(Number(args.hours) || 24), 1), 72);
+        const sinceMs = Date.now() - hours * 3_600_000;
+        const { recentInboxMessages } = await import('../routes/messagingPlatform');
+        const st = await getDocStore();
+        const [inbox, inbound] = await Promise.all([
+          recentInboxMessages(context.orgId, sinceMs, 150),
+          st.list(`organizations/${context.orgId}/inbound_messages`, { orderBy: 'at', direction: 'desc', limit: 150 }),
+        ]);
+        const inboundRecent = inbound.filter((m) => Date.parse(m.at) >= sinceMs)
+          .map((m) => ({ channel: m.channel, from: m.contactName || m.from, text: String(m.body || '').slice(0, 500), at: m.at }));
         return {
-          success: true,
-          postId: docRef.id,
-          caption: postDraft.caption,
-          platforms: postDraft.platforms,
-          message: `Created social media draft in Social Planner for platforms [${postDraft.platforms.join(', ')}].`
+          windowHours: hours,
+          inboxMessages: inbox,
+          inboundMessages: inboundRecent,
+          note: inbox.length || inboundRecent.length ? 'Summarize these messages; nothing was changed.' : `No customer messages in the last ${hours} hours.`,
         };
       }
 
@@ -453,200 +370,132 @@ export async function executeCrmTool(
     }
   } catch (err: any) {
     console.error(`[CRM AI Tool Error: ${toolName}]`, err);
-    return { error: `Failed to execute ${toolName}: ${err.message}` };
+    return { error: `The ${toolName.replace(/_/g, ' ')} action failed. Nothing was changed.` };
   }
 }
 
+// ---------------------------------------------------------------------------
+// Model selection and output limits
+// ---------------------------------------------------------------------------
+let resolvedModel: { model: string; maxOutputTokens: number; note?: string } | null = null;
+const DEFAULT_MAX_OUTPUT = 8192;
+
 /**
- * Runs the Multi-Turn AI Dashboard Assistant reasoning and tool calling loop.
+ * Picks the model and the output-token limit from the provider itself (models.get → outputTokenLimit),
+ * capped by GEMINI_MAX_OUTPUT_TOKENS (default 32768). GEMINI_MODEL picks the model; if the provider
+ * doesn't know it, gemini-2.5-flash is tried next and the reason is reported.
+ */
+export async function resolveGeminiModel(gemini: any): Promise<{ model: string; maxOutputTokens: number; note?: string }> {
+  if (resolvedModel) return resolvedModel;
+  const cap = Math.max(1024, Number(process.env.GEMINI_MAX_OUTPUT_TOKENS) || 32768);
+  const wanted = (process.env.GEMINI_MODEL || 'gemini-3.8-flash').trim();
+  const candidates = [...new Set([wanted, 'gemini-2.5-flash'])];
+  let note: string | undefined;
+  for (const model of candidates) {
+    try {
+      const info = await gemini.models.get({ model });
+      const limit = Number(info?.outputTokenLimit) || DEFAULT_MAX_OUTPUT;
+      resolvedModel = { model, maxOutputTokens: Math.min(limit, cap), note };
+      return resolvedModel;
+    } catch (err: any) {
+      const status = err?.status ?? err?.code;
+      if (status === 404 || /not found|is not supported|NOT_FOUND/i.test(String(err?.message))) {
+        console.warn(`[ai] model ${model} is not available to this API key`);
+        note = `The configured model (${wanted}) isn’t available to this API key.`;
+        continue;
+      }
+      // Network or permission trouble: don't cache, use the requested model with a safe default limit.
+      return { model, maxOutputTokens: Math.min(DEFAULT_MAX_OUTPUT, cap) };
+    }
+  }
+  throw Object.assign(new Error('None of the configured Gemini models are available to this API key. Set GEMINI_MODEL.'), { code: 'model_unavailable' });
+}
+
+/** Keeps the newest messages within a character budget (oldest dropped first). */
+export function trimHistory<T extends { content: string }>(history: T[], budgetChars = Number(process.env.AI_HISTORY_CHAR_BUDGET) || 120_000): { kept: T[]; dropped: number } {
+  const kept: T[] = []; let used = 0;
+  for (let i = history.length - 1; i >= 0; i--) {
+    const len = history[i].content.length;
+    if (used + len > budgetChars && kept.length) break;
+    kept.unshift(history[i]); used += len;
+  }
+  return { kept, dropped: history.length - kept.length };
+}
+
+export type AssistantFinish = 'stop' | 'length' | 'safety' | 'other' | 'aborted';
+const FINISH: Record<string, AssistantFinish> = { STOP: 'stop', MAX_TOKENS: 'length', SAFETY: 'safety', RECITATION: 'safety', PROHIBITED_CONTENT: 'safety', BLOCKLIST: 'safety', SPII: 'safety' };
+
+/**
+ * One assistant turn with real streaming: text is passed to onChunk as the provider produces it.
+ * Tool calls (CRM data) run between rounds, scoped to the caller's organization and role.
+ * Never invents a reply or performs an action the user didn't ask for: provider errors are thrown.
  */
 export async function runCrmAssistantTurn(params: {
   incomingMessage: string;
   conversationHistory: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>;
   context: { userId: string; orgId: string; role: string; name: string };
+  systemInstruction: string;
+  useTools?: boolean;
+  signal?: AbortSignal;
   onChunk?: (delta: string) => void;
   onToolCall?: (toolName: string, args: any) => void;
   onToolResult?: (toolName: string, result: any) => void;
-}): Promise<{ reply: string; toolCallsExecuted: string[] }> {
-  const { incomingMessage, conversationHistory, context, onChunk, onToolCall, onToolResult } = params;
-
+}): Promise<{ reply: string; toolCallsExecuted: string[]; finish: AssistantFinish; model: string; historyDropped: number; note?: string }> {
+  const { incomingMessage, context, onChunk, onToolCall, onToolResult, signal, systemInstruction } = params;
+  const useTools = params.useTools !== false;
   const gemini = getGemini();
+  if (!gemini) throw Object.assign(new Error('AI isn’t configured on the server. Set GEMINI_API_KEY.'), { code: 'ai_not_configured' });
+
+  const { model, maxOutputTokens, note } = await resolveGeminiModel(gemini);
+  const { kept, dropped } = trimHistory(params.conversationHistory.filter((m) => m.role !== 'system'));
+  const contents: any[] = [
+    ...kept.map((m) => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })),
+    { role: 'user', parts: [{ text: incomingMessage }] },
+  ];
+
   const toolCallsExecuted: string[] = [];
-
-  const systemInstruction = `You are the executive AI Intelligence Assistant embedded in the Obsidian Enterprise CRM.
-Your role is to assist the executive team with customer relations, pipeline intelligence, lead qualification, task scheduling, and marketing workflows.
-Current Authenticated User: ${context.name} (${context.role}) in Organization: ${context.orgId}.
-
-CRITICAL BEHAVIORAL DIRECTIVES:
-1. Always use available tools (search_contacts, search_leads, get_pipeline_summary, create_lead, create_deal, create_followup_task, search_knowledge_base, create_social_draft) whenever the user asks for CRM data, metrics, or record operations.
-2. NEVER invent mock contacts, deals, or numbers. If data is not found in the database, explicitly inform the user.
-3. If an action will modify CRM records (like creating a lead, deal, task, or social draft), execute the appropriate tool and provide clean, formatted confirmation.
-4. Keep responses crisp, professional, and formatted in clean GitHub-flavored markdown.`;
-
-  if (!gemini) {
-    const fallbackText = `I am ready to assist with your CRM operations, but the Google Gemini API key is not currently configured on the server. Please verify GEMINI_API_KEY.`;
-    if (onChunk) onChunk(fallbackText);
-    return { reply: fallbackText, toolCallsExecuted: [] };
-  }
-
-  try {
-    // Format contents for Gemini
-    let currentContents: any[] = [
-      ...conversationHistory
-        .filter(m => m.role !== 'system')
-        .map(m => ({
-          role: m.role === 'assistant' ? 'model' : 'user',
-          parts: [{ text: m.content }]
-        })),
-      { role: 'user', parts: [{ text: incomingMessage }] }
-    ];
-
-    let loopCount = 0;
-    const MAX_TOOL_LOOPS = 5;
-
-    while (loopCount < MAX_TOOL_LOOPS) {
-      loopCount++;
-
-      const response = await gemini.models.generateContent({
-        model: 'gemini-3.8-flash',
-        contents: currentContents,
-        config: {
-          systemInstruction,
-          tools: [{ functionDeclarations: CRM_TOOL_DECLARATIONS as any }],
-          temperature: 0.2
-        }
-      });
-
-      // Check for function calls
-      const functionCalls = response.functionCalls;
-
-      if (functionCalls && functionCalls.length > 0) {
-        // Append model response with function calls
-        currentContents.push({
-          role: 'model',
-          parts: functionCalls.map(fc => ({
-            functionCall: {
-              name: fc.name,
-              args: fc.args
-            }
-          }))
-        });
-
-        const toolResponseParts: any[] = [];
-
-        for (const call of functionCalls) {
-          toolCallsExecuted.push(call.name);
-          if (onToolCall) onToolCall(call.name, call.args);
-
-          const result = await executeCrmTool(call.name, call.args || {}, context);
-          if (onToolResult) onToolResult(call.name, result);
-
-          toolResponseParts.push({
-            functionResponse: {
-              name: call.name,
-              response: { result }
-            }
-          });
-        }
-
-        // Append tool responses
-        currentContents.push({
-          role: 'tool',
-          parts: toolResponseParts
-        });
-
-        // Continue loop to let Gemini generate answer with tool results
-        continue;
+  let reply = '';
+  const MAX_TOOL_ROUNDS = 5;
+  for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
+    const stream = await gemini.models.generateContentStream({
+      model,
+      contents,
+      config: {
+        systemInstruction,
+        ...(useTools && round < MAX_TOOL_ROUNDS ? { tools: [{ functionDeclarations: CRM_TOOL_DECLARATIONS as any }] } : {}),
+        temperature: 0.4,
+        maxOutputTokens,
+        ...(signal ? { abortSignal: signal } : {}),
+      },
+    });
+    const modelParts: any[] = [];
+    const calls: Array<{ name: string; args: any }> = [];
+    let finishRaw = '';
+    for await (const chunk of stream as AsyncIterable<any>) {
+      if (signal?.aborted) return { reply, toolCallsExecuted, finish: 'aborted', model, historyDropped: dropped, note };
+      const cand = chunk?.candidates?.[0];
+      for (const part of cand?.content?.parts ?? []) {
+        modelParts.push(part); // kept verbatim (incl. thought signatures) for the next round
+        if (part.functionCall) calls.push({ name: part.functionCall.name, args: part.functionCall.args || {} });
+        else if (typeof part.text === 'string' && part.text && !part.thought) { reply += part.text; onChunk?.(part.text); }
       }
-
-      // No more function calls: return final text answer
-      const replyText = response.text || 'I processed your request across our CRM database.';
-      if (onChunk) onChunk(replyText);
-      return { reply: replyText, toolCallsExecuted };
+      if (cand?.finishReason) finishRaw = String(cand.finishReason);
     }
-
-    return { reply: 'Completed multi-step CRM operations.', toolCallsExecuted };
-  } catch (err: any) {
-    console.warn('[runCrmAssistantTurn upstream error]:', err?.message || err);
-
-    // Resilient CRM data fallback: directly execute corresponding tool so user gets real CRM data
-    const q = incomingMessage.toLowerCase();
-    try {
-      if (q.includes('pipeline') || q.includes('arr') || q.includes('revenue') || q.includes('summary') || q.includes('deal')) {
-        const summary = await executeCrmTool('get_pipeline_summary', { includeDeals: true }, context);
-        toolCallsExecuted.push('get_pipeline_summary');
-        
-        let reply = `### 📊 Live CRM Pipeline Summary\n\n` +
-          `- **Total Pipeline ARR:** $${(summary.totalPipelineArr || 0).toLocaleString()}\n` +
-          `- **Active Deals Count:** ${summary.activeDealsCount || 0}\n` +
-          `- **Lead Conversion Rate:** ${summary.leadConversionRate || '0%'}\n` +
-          `- **Total Leads Monitored:** ${summary.totalLeads || 0}\n\n` +
-          `#### Active Pipeline Deals:\n`;
-        
-        if (summary.deals && summary.deals.length > 0) {
-          summary.deals.forEach((d: any) => {
-            reply += `- **${d.name}** (${d.client}): $${(d.value || 0).toLocaleString()} ARR · *Stage: ${d.stage}*\n`;
-          });
-        }
-        if (onChunk) onChunk(reply);
-        return { reply, toolCallsExecuted };
+    if (signal?.aborted) return { reply, toolCallsExecuted, finish: 'aborted', model, historyDropped: dropped, note };
+    if (calls.length) {
+      contents.push({ role: 'model', parts: modelParts });
+      const responses: any[] = [];
+      for (const call of calls) {
+        toolCallsExecuted.push(call.name);
+        onToolCall?.(call.name, call.args);
+        const result = await executeCrmTool(call.name, call.args, context);
+        onToolResult?.(call.name, result);
+        responses.push({ functionResponse: { name: call.name, response: { result } } });
       }
-
-      if (q.includes('lead') || q.includes('prospect') || q.includes('top')) {
-        const leadsData = await executeCrmTool('search_leads', { minScore: 60, limit: 5 }, context);
-        toolCallsExecuted.push('search_leads');
-        
-        let reply = `### 🎯 Qualified CRM Inbound Leads\n\n`;
-        if (leadsData.leads && leadsData.leads.length > 0) {
-          leadsData.leads.forEach((l: any) => {
-            reply += `- **${l.name}** (${l.company}) · BANT Score: **${l.score}/100** · Status: *${l.status}* · Channel: *${l.source}*\n  *Need:* ${l.need || 'Enterprise solution'}\n`;
-          });
-        } else {
-          reply += `No qualified leads currently above threshold in CRM database.\n`;
-        }
-        if (onChunk) onChunk(reply);
-        return { reply, toolCallsExecuted };
-      }
-
-      if (q.includes('social') || q.includes('post') || q.includes('tweet') || q.includes('linkedin')) {
-        const draft = await executeCrmTool('create_social_draft', {
-          caption: `🚀 Elevating enterprise communication with Obsidian CRM: sovereign WebRTC Call Canvas consultations, automated BANT pipeline qualification, and multi-channel routing. #CRM #EnterpriseSaaS #Obsidian`,
-          platforms: ['LINKEDIN', 'INSTAGRAM']
-        }, context);
-        toolCallsExecuted.push('create_social_draft');
-        
-        const reply = `### 📱 Social Content Draft Created\n\n` +
-          `I generated and saved a new social draft in the **Social Planner**:\n\n` +
-          `> "${draft.caption}"\n\n` +
-          `- **Target Platforms:** ${draft.platforms.join(', ')}\n` +
-          `- **Status:** Saved as Draft (Draft ID: \`${draft.postId}\`)\n` +
-          `You can schedule or publish it directly from the Social Planner tab.`;
-        if (onChunk) onChunk(reply);
-        return { reply, toolCallsExecuted };
-      }
-
-      if (q.includes('email') || q.includes('outreach') || q.includes('draft') || q.includes('marcus')) {
-        const outreach = await executeCrmTool('draft_sales_outreach', {
-          recipientName: 'Marcus Chen',
-          company: 'AlphaTech Global',
-          channel: 'email',
-          keyPoints: '99.99% SLA uptime guarantee and WebRTC failover architecture'
-        }, context);
-        toolCallsExecuted.push('draft_sales_outreach');
-
-        const reply = `### ✉️ Personalized Sales Outreach Draft\n\n` +
-          `**Subject:** ${outreach.draftSubject}\n\n` +
-          `\`\`\`text\n${outreach.draftBody}\n\`\`\`\n\n` +
-          `*Recipient:* ${outreach.recipient} (${outreach.company}) via ${outreach.channel}.`;
-        if (onChunk) onChunk(reply);
-        return { reply, toolCallsExecuted };
-      }
-    } catch (fallbackErr: any) {
-      console.error('[Resilience Fallback Error]:', fallbackErr);
+      contents.push({ role: 'user', parts: responses });
+      continue;
     }
-
-    const errText = `I am ready to assist with your CRM workflows. You can ask for a **pipeline summary**, **top qualified leads**, **sales email drafts**, or **social media scheduling**.`;
-    if (onChunk) onChunk(errText);
-    return { reply: errText, toolCallsExecuted };
+    return { reply, toolCallsExecuted, finish: FINISH[finishRaw] ?? (finishRaw ? 'other' : 'stop'), model, historyDropped: dropped, note };
   }
+  return { reply, toolCallsExecuted, finish: 'other', model, historyDropped: dropped, note };
 }

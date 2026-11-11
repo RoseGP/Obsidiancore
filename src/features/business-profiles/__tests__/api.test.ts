@@ -1,5 +1,6 @@
 /**
- * End-to-end test of /api/business-profiles: auth, roles, validation, history, AI review flow and
+ * End-to-end test of /api/business-profiles: auth, organization RBAC (module `listings`), cross-tenant
+ * isolation, audit log, validation, history, AI review flow and
  * the Google Business Profile integration (against the Google stand-in used by the Local SEO tests).
  * Run: npx tsx src/features/business-profiles/__tests__/api.test.ts
  */
@@ -16,7 +17,7 @@ const APP_URL = 'https://crm.test';
 const g = await startMockGoogle({ clientId: 'cid.apps.googleusercontent.com', clientSecret: 'gsecret' });
 const dataDir = mkdtempSync(path.join(tmpdir(), 'bp-'));
 Object.assign(process.env, {
-  NODE_ENV: 'test', SOCIAL_ACCOUNTS_DEV_AUTH: 'true', SOCIAL_ACCOUNTS_STORE: 'file', SOCIAL_ACCOUNTS_DATA_DIR: dataDir, SOCIAL_ACCOUNTS_ENCRYPTION_KEY: 'k'.repeat(40),
+  NODE_ENV: 'test', SOCIAL_ACCOUNTS_DEV_AUTH: 'true', CRM_STORE: 'memory', SOCIAL_ACCOUNTS_STORE: 'file', SOCIAL_ACCOUNTS_DATA_DIR: dataDir, SOCIAL_ACCOUNTS_ENCRYPTION_KEY: 'k'.repeat(40),
   APP_URL, GOOGLE_CLIENT_ID: 'cid.apps.googleusercontent.com', GOOGLE_CLIENT_SECRET: 'gsecret', GOOGLE_GBP_REDIRECT_URI: `${APP_URL}/api/local-seo/callback`,
   GBP_TEST_BASES: JSON.stringify({ auth: g.base, oauth: g.base, accounts: g.base, info: g.base, perf: g.base, v4: g.base }),
 });
@@ -29,21 +30,29 @@ const { googleBusinessProfileProvider } = await import('../server/integrations')
 const { createBusinessProfilesService } = await import('../server/service');
 const { createProfileStore } = await import('../server/store');
 const { createBusinessProfilesRouter } = await import('../server/router');
+const { guard, PUBLIC } = await import('../../../server/routeGuards');
+const { makeOrg, addMember, as } = await import('../../../server/__tests__/fixtures');
+const { listAudit } = await import('../../../server/audit/auditLog');
 
 // Controllable LLM stand-in.
 let llm: (prompt: string, signal: AbortSignal) => Promise<string> = async () => '{}';
 const prompts: string[] = [];
 const svc = createBusinessProfilesService({
-  store: createProfileStore('file', dataDir),
+  store: createProfileStore(),
   assistant: createAssistant(async ({ prompt, signal }) => { prompts.push(prompt); return llm(prompt, signal); }, { model: 'test-model', timeoutMs: 300, retryDelayMs: 10 }),
   providers: [googleBusinessProfileProvider(gbp)],
   signingKey: config.stateKey,
 });
 const app = express(); app.use(express.json());
 app.use('/api/local-seo', (await import('../../../routes/localSeoApi')).default);
-app.use('/api/business-profiles', createBusinessProfilesRouter(svc, { appUrl: APP_URL, limits: { all: 1000, write: 1000, ai: 1000, external: 1000 } }));
+app.use('/api/business-profiles', guard(PUBLIC.none), createBusinessProfilesRouter(svc, { appUrl: APP_URL, limits: { all: 1000, write: 1000, ai: 1000, external: 1000 } }));
 
-const A = { 'X-Dev-User-Id': 'alice', Origin: APP_URL }; const B = { 'X-Dev-User-Id': 'bob', Origin: APP_URL };
+// Organization ACME: alice OWNER, mgr MANAGER, mkt MARKETER, rep SALES_REP. Organization OTHER: eve OWNER.
+const org = await makeOrg('alice', 'ACME');
+for (const [u, role] of [['mgr', 'MANAGER'], ['mkt', 'MARKETER'], ['rep', 'SALES_REP']] as const) await addMember(org.id, u, role);
+const other = await makeOrg('eve', 'OTHER');
+const A = as('alice', org.id, { Origin: APP_URL }); const MGR = as('mgr', org.id, { Origin: APP_URL });
+const MKT = as('mkt', org.id, { Origin: APP_URL }); const REP = as('rep', org.id, { Origin: APP_URL }); const EVE = as('eve', other.id, { Origin: APP_URL });
 const api = (method: 'get' | 'post' | 'put' | 'patch' | 'delete', p: string, user = A) => (request(app) as any)[method](`/api/business-profiles${p}`).set(user);
 
 const base = {
@@ -56,7 +65,7 @@ const base = {
 
 // ---- Auth, CSRF, validation ----
 assert.equal((await request(app).get('/api/business-profiles')).status, 401);
-assert.equal((await request(app).post('/api/business-profiles').set('X-Dev-User-Id', 'alice').send({ data: base })).status, 403); ok('requires sign-in; writes require the app’s Origin (CSRF)');
+assert.equal((await request(app).post('/api/business-profiles').set(as('alice', org.id)).send({ data: base })).status, 403); ok('requires sign-in; writes require the app’s Origin (CSRF)');
 let r = await api('post', '/').send({ data: { ...base, website: 'javascript:alert(1)' } });
 assert.equal(r.status, 400); assert.equal(r.body.field, 'website');
 r = await api('post', '/').send({ data: { ...base, additionalCategories: Array(10).fill('X') } });
@@ -66,25 +75,24 @@ assert.equal(r.status, 400); ok('invalid input rejected with field-level message
 
 r = await api('post', '/').send({ data: base });
 assert.equal(r.status, 201); const id = r.body.id; let v = r.body.version;
-assert.match(id, /^bp_/); assert.equal(r.body.role, 'owner'); assert.equal(r.body.data.address.country, 'US');
+assert.match(id, /^bp_/); assert.equal(r.body.role, 'OWNER'); assert.equal(r.body.orgId, org.id); assert.deepEqual(r.body.permissions, { create: true, edit: true, publish: true, delete: true }); assert.equal(r.body.data.address.country, 'US');
 assert.ok(!r.body.data.description.includes('<script>')); assert.equal(r.body.changes[0].action, 'create'); assert.equal(r.body.audits.length, 1);
-assert.ok(r.body.liveAudit.score > 0); assert.equal(r.body.liveAudit.findings.find((f: any) => f.checkId === 'listing-consistency').status, 'unknown'); ok('create: sanitised, caller is owner, initial audit recorded, consistency marked “not checked”');
+assert.ok(r.body.liveAudit.score > 0); assert.equal(r.body.liveAudit.findings.find((f: any) => f.checkId === 'listing-consistency').status, 'unknown'); ok('create: sanitised, scoped to the organization, initial audit recorded, consistency marked “not checked”');
 
 r = await api('get', '/');
 assert.equal(r.body.profiles.length, 1); assert.equal(r.body.profiles[0].name, 'Acme Dental'); assert.ok(Array.isArray(r.body.profiles[0].stale)); assert.equal(r.body.aiConfigured, true); ok('dashboard list with live score, stale flags and top issue');
 
 // ---- Authorization ----
-assert.equal((await api('get', `/${id}`, B)).status, 404);
-assert.equal((await api('put', `/${id}`, B).send({ version: v, data: base })).status, 404);
-assert.equal((await api('get', '/', B)).body.profiles.length, 0); ok('non-members can’t see or edit (404, no existence leak)');
-r = await api('put', `/${id}/members`).send({ userId: 'bob', role: 'viewer' });
-assert.equal(r.status, 200); assert.equal(r.body.members.bob, 'viewer');
-assert.equal((await api('get', `/${id}`, B)).status, 200);
-r = await api('put', `/${id}`, B).send({ version: v, data: base }); assert.equal(r.status, 403); assert.equal(r.body.code, 'forbidden');
-assert.equal((await api('post', `/${id}/suggestions`, B).send({ kind: 'description' })).status, 403);
-assert.equal((await api('post', `/${id}/audits`, B).send({})).status, 403);
-assert.equal((await api('put', `/${id}/members`, B).send({ userId: 'bob', role: 'owner' })).status, 403); ok('viewer: read-only; can’t edit, audit, use AI or escalate own role');
-r = await api('put', `/${id}/members`).send({ userId: 'alice', role: 'editor' }); assert.equal(r.status, 409); assert.equal(r.body.code, 'last_owner'); ok('last owner can’t be demoted');
+assert.equal((await api('get', `/${id}`, EVE)).status, 404);
+assert.equal((await api('put', `/${id}`, EVE).send({ version: v, data: base })).status, 404);
+assert.equal((await api('get', '/', EVE)).body.profiles.length, 0);
+assert.equal((await api('get', `/${id}`, as('eve', org.id, { Origin: APP_URL }))).status, 403); ok('other organizations can’t see or edit it (404); can’t switch into an org they don’t belong to (403)');
+r = await api('get', `/${id}`, REP); assert.equal(r.status, 200); assert.deepEqual(r.body.permissions, { create: false, edit: false, publish: false, delete: false });
+r = await api('put', `/${id}`, REP).send({ version: v, data: base }); assert.equal(r.status, 403); assert.equal(r.body.code, 'forbidden'); assert.equal(r.body.required.module, 'listings');
+assert.equal((await api('post', '/', REP).send({ data: base })).status, 403);
+assert.equal((await api('post', `/${id}/suggestions`, REP).send({ kind: 'description' })).status, 403);
+assert.equal((await api('post', `/${id}/audits`, REP).send({})).status, 403); ok('SALES_REP (listings: view): read-only; can’t create, edit, audit or use AI');
+r = await api('get', `/${id}`, MKT); assert.deepEqual(r.body.permissions, { create: true, edit: true, publish: false, delete: false }); ok('MARKETER can create and edit but not publish or delete');
 
 // ---- Edits, versioning, history ----
 v = (await api('get', `/${id}`)).body.version;
@@ -139,20 +147,19 @@ r = await api('post', `/${id}/listings`).send({ version: v, provider: 'google_bu
 assert.equal(r.status, 409); assert.equal(r.body.code, 'listing_not_selected');
 await request(app).put('/api/local-seo/locations/selection').set(A).send({ locationNames: ['locations/1001'] }); ok('connects through the existing Local SEO OAuth; unselected locations can’t be linked');
 
-await api('put', `/${id}/members`).send({ userId: 'bob', role: 'editor' });
-assert.equal((await api('post', `/${id}/listings`, B).send({ version: v, provider: 'google_business_profile', externalId: 'locations/1001' })).status, 403);
+assert.equal((await api('post', `/${id}/listings`, MKT).send({ version: v, provider: 'google_business_profile', externalId: 'locations/1001' })).status, 403);
 assert.equal((await api('post', `/${id}/listings`).send({ version: v, provider: 'google_business_profile', externalId: 'locations/9999' })).status, 404);
 r = await api('post', `/${id}/listings`).send({ version: v, provider: 'google_business_profile', externalId: 'locations/1001' });
 assert.equal(r.status, 200); v = r.body.version; assert.equal(r.body.listings[0].snapshot.phone, '+1 512 555 0100'); assert.ok(r.body.listings[0].snapshotAt);
 const fx = (id2: string) => r.body.liveAudit.findings.find((f: any) => f.checkId === id2);
-assert.equal(fx('nap-phone').status, 'fail'); assert.equal(fx('nap-phone').source, 'verified'); assert.equal(fx('nap-name').status, 'warn'); // "Acme Dental" vs "Acme Dental Downtown": partial match assert.equal(fx('hours-match').status, 'pass'); ok('manager links listing; snapshot from Google API drives verified consistency findings (phone mismatch found)');
+assert.equal(fx('nap-phone').status, 'fail'); assert.equal(fx('nap-phone').source, 'verified'); assert.equal(fx('nap-name').status, 'warn') /* "Acme Dental" vs "Acme Dental Downtown": partial match */; assert.equal(fx('hours-match').status, 'pass'); ok('manager links listing; snapshot from Google API drives verified consistency findings (phone mismatch found)');
 assert.ok(!JSON.stringify(r.body).match(/ya29\.|1\/\/|refreshToken/), 'no tokens in API responses'); ok('no Google tokens in profile responses');
 
 r = await api('post', '/integrations/google_business_profile/import').send({ externalId: 'locations/1001' });
 assert.equal(r.body.name, 'Acme Dental Downtown'); assert.equal(r.body.hours.MONDAY.periods[0].open, '09:00'); assert.equal(r.body.hours.TUESDAY.closed, true); assert.match(r.body._source.note, /Review every field/); ok('import from listing returns a draft for review (nothing saved)');
 
 // ---- Publish: preview → signed confirmation → publish ----
-assert.equal((await api('post', `/${id}/publish/preview`, B).send({ provider: 'google_business_profile' })).status, 403);
+assert.equal((await api('post', `/${id}/publish/preview`, MKT).send({ provider: 'google_business_profile' })).status, 403);
 r = await api('post', `/${id}/publish/preview`).send({ provider: 'google_business_profile' });
 assert.equal(r.status, 200); const pv = r.body;
 assert.deepEqual(pv.changes.map((c: any) => c.field).sort(), ['description', 'phone']); assert.equal(pv.changes.find((c: any) => c.field === 'phone').current, '+1 512 555 0100');
@@ -161,7 +168,7 @@ r = await api('post', `/${id}/publish`).send({ provider: 'google_business_profil
 assert.equal(r.status, 400); assert.match(r.body.error, /Confirm/);
 const [body, mac] = pv.confirmToken.split('.'); const forged = Buffer.from(JSON.stringify({ ...JSON.parse(Buffer.from(body, 'base64url').toString()), f: ['website'] })).toString('base64url');
 r = await api('post', `/${id}/publish`).send({ provider: 'google_business_profile', confirmToken: `${forged}.${mac}`, confirm: true }); assert.equal(r.body.code, 'invalid_confirmation');
-r = await api('post', `/${id}/publish`, B).send({ provider: 'google_business_profile', confirmToken: pv.confirmToken, confirm: true }); assert.equal(r.body.code, 'invalid_confirmation'); ok('publish needs explicit confirm; tampered or someone else’s confirmation rejected');
+r = await api('post', `/${id}/publish`, MGR).send({ provider: 'google_business_profile', confirmToken: pv.confirmToken, confirm: true }); assert.equal(r.body.code, 'invalid_confirmation'); ok('publish needs explicit confirm; tampered or someone else’s confirmation rejected');
 const cur = (await api('get', `/${id}`)).body;
 await api('put', `/${id}`).send({ version: cur.version, data: { ...base, phone: '+1 512 555 0177', description: edited } });
 r = await api('post', `/${id}/publish`).send({ provider: 'google_business_profile', confirmToken: pv.confirmToken, confirm: true });
@@ -175,15 +182,18 @@ assert.equal(r.body.publishLog[0].outcome, 'success'); assert.equal(r.body.chang
 
 // ---- Status & deletion ----
 const now2 = (await api('get', `/${id}`)).body;
-assert.equal((await api('patch', `/${id}/status`, B).send({ version: now2.version, status: 'archived' })).status, 403);
+assert.equal((await api('patch', `/${id}/status`, MKT).send({ version: now2.version, status: 'archived' })).status, 403);
 r = await api('patch', `/${id}/status`).send({ version: now2.version, status: 'archived' }); assert.equal(r.body.status, 'archived');
-assert.equal((await api('delete', `/${id}`, B).send({ confirmName: 'Acme Dental' })).status, 403);
+assert.equal((await api('delete', `/${id}`, MKT).send({ confirmName: 'Acme Dental' })).status, 403);
 r = await api('delete', `/${id}`).send({ confirmName: 'acme' }); assert.equal(r.status, 400); assert.equal(r.body.code, 'confirmation_required');
 r = await api('delete', `/${id}`).send({ confirmName: 'Acme Dental' }); assert.equal(r.status, 200);
-assert.equal((await api('get', `/${id}`)).status, 404); ok('archive needs manager; delete needs owner and the typed business name');
+assert.equal((await api('get', `/${id}`)).status, 404); const log = (await listAudit(org.id, { limit: 100 })).entries.map((e: any) => e.action);
+for (const a of ['business_profile.create', 'business_profile.link', 'business_profile.publish', 'business_profile.archive', 'business_profile.delete']) assert.ok(log.includes(a), a);
+assert.equal((await listAudit(other.id, { limit: 100 })).entries.filter((e: any) => e.action.startsWith('business_profile.')).length, 0);
+ok('archive needs share (manager+); delete needs delete + typed name; actions recorded in the org audit log');
 
 // Rate limits are real (default router: 8 AI requests per minute per user).
-const strict = express(); strict.use(express.json()); strict.use('/bp', createBusinessProfilesRouter(svc, { appUrl: APP_URL }));
+const strict = express(); strict.use(express.json()); strict.use('/bp', guard(PUBLIC.none), createBusinessProfilesRouter(svc, { appUrl: APP_URL }));
 const codes: number[] = [];
 let last: request.Response | undefined;
 for (let i = 0; i < 9; i++) { last = await request(strict).post('/bp/bp_0000000000/suggestions').set(A).send({ kind: 'description' }); codes.push(last.status); }

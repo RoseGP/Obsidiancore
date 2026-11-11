@@ -37,8 +37,8 @@ export interface WorkspacePost {
 export interface WorkspaceMedia { id: string; path: string }
 
 export interface SavePostInput {
-  /** 'draft' keeps it unscheduled; 'schedule' publishes at `publishAt`. */
-  mode: 'draft' | 'schedule';
+  /** 'draft' keeps it unscheduled; 'schedule' publishes at `publishAt`; 'now' publishes immediately. */
+  mode: 'draft' | 'schedule' | 'now';
   publishAt: string;
   items: {
     channelId: string;

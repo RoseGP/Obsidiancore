@@ -89,13 +89,13 @@ export function ListingsPanel({ p, onUpdated, onOpenGbp }: { p: ProfileView; onU
               <Button variant="primary" icon={<Send className="h-4 w-4" />} loading={busy === 'preview'} onClick={doPreview} disabled={status ? !status.connected : true}>Review changes to publish…</Button>
               <span className="text-[12px] text-[var(--text-subtle)]">Phone, website and description can be published. Name, address, categories and hours are edited in Google Business Profile.</span>
             </div>
-          ) : <Notice tone="info">Publishing to Google needs the manager or owner role on this profile.</Notice>}
+          ) : <Notice tone="info">Publishing to Google needs a manager, admin or owner role in your organization.</Notice>}
         </Card>
       ) : (
         <Card className="p-5 space-y-3">
           <h3 className="text-[15px] font-semibold text-[var(--text)]">Link a listing</h3>
           {!status?.connected ? <p className="text-[13px] text-[var(--text-muted)]">Connect Google Business Profile first; until then, consistency checks show as “not checked”.</p>
-            : !p.permissions.publish ? <Notice tone="info">Linking a listing needs the manager or owner role.</Notice>
+            : !p.permissions.publish ? <Notice tone="info">Linking a listing needs a manager, admin or owner role in your organization.</Notice>
               : usable.length === 0 ? <p className="text-[13px] text-[var(--text-muted)]">No selected locations. Choose the locations you manage in the Local GBP tab.</p>
                 : (
                   <div className="flex flex-wrap items-end gap-3">

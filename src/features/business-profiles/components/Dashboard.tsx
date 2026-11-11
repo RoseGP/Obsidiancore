@@ -6,7 +6,7 @@ import { emptyProfileData } from '../domain/types';
 import { bpApi, type LinkableListing } from '../client/api';
 import { Badge, Button, Card, EmptyState, Field, Meter, Modal, Notice, inputCls, scoreTone, timeAgo, useToast, cx } from './ui';
 
-export function Dashboard({ profiles, loading, error, onOpen, onCreated, onReload }: { profiles: ProfileSummaryView[]; loading: boolean; error: string | null; onOpen: (id: string) => void; onCreated: (id: string) => void; onReload: () => void }) {
+export function Dashboard({ profiles, loading, error, canCreate, onOpen, onCreated, onReload }: { profiles: ProfileSummaryView[]; loading: boolean; error: string | null; canCreate: boolean; onOpen: (id: string) => void; onCreated: (id: string) => void; onReload: () => void }) {
   const toast = useToast();
   const [q, setQ] = useState('');
   const [filter, setFilter] = useState<'all' | 'attention' | 'draft' | 'active' | 'archived'>('all');
@@ -54,8 +54,8 @@ export function Dashboard({ profiles, loading, error, onOpen, onCreated, onReloa
           <h1 className="text-2xl font-semibold tracking-tight text-[var(--text)]">Business profiles</h1>
           <p className="text-[13px] text-[var(--text-muted)] mt-1">Keep business listings complete, consistent and current. Scores are this app’s own quality checks; they don’t guarantee search rankings.</p>
         </div>
-        <Button icon={<Download className="h-4 w-4" />} onClick={openImport}>Import from Google</Button>
-        <Button variant="primary" icon={<Plus className="h-4 w-4" />} onClick={() => setCreating(true)}>New profile</Button>
+        {canCreate && <Button icon={<Download className="h-4 w-4" />} onClick={openImport}>Import from Google</Button>}
+        {canCreate && <Button variant="primary" icon={<Plus className="h-4 w-4" />} onClick={() => setCreating(true)}>New profile</Button>}
       </div>
 
       <div className="grid gap-3 grid-cols-2 lg:grid-cols-6">
@@ -82,7 +82,7 @@ export function Dashboard({ profiles, loading, error, onOpen, onCreated, onReloa
       {error && <Notice tone="danger" title="Couldn’t load profiles" action={<Button size="sm" onClick={onReload}>Retry</Button>}>{error}</Notice>}
       {loading && !profiles.length ? <div className="space-y-2" aria-busy="true">{[1, 2, 3].map((i) => <div key={i} className="h-16 rounded-[var(--radius-card)] bg-[var(--surface-sunken)] animate-pulse" />)}</div>
         : !profiles.length && !error ? (
-          <Card><EmptyState icon={<Building2 className="h-5 w-5" />} title="No business profiles yet" action={<div className="flex gap-2 justify-center"><Button variant="primary" icon={<Plus className="h-4 w-4" />} onClick={() => setCreating(true)}>Create a profile</Button><Button icon={<Download className="h-4 w-4" />} onClick={openImport}>Import from Google</Button></div>}>
+          <Card><EmptyState icon={<Building2 className="h-5 w-5" />} title="No business profiles yet" action={canCreate && <div className="flex gap-2 justify-center"><Button variant="primary" icon={<Plus className="h-4 w-4" />} onClick={() => setCreating(true)}>Create a profile</Button><Button icon={<Download className="h-4 w-4" />} onClick={openImport}>Import from Google</Button></div>}>
             Create a profile for each business or location you manage. You’ll get an instant audit with prioritized fixes.
           </EmptyState></Card>
         ) : (
@@ -97,7 +97,7 @@ export function Dashboard({ profiles, loading, error, onOpen, onCreated, onReloa
                     <tr key={p.id} className="border-t border-[var(--border)] hover:bg-[var(--surface-sunken)] cursor-pointer" onClick={() => onOpen(p.id)} onKeyDown={(e) => { if (e.key === 'Enter') onOpen(p.id); }} tabIndex={0}>
                       <td className="px-4 py-3">
                         <div className="font-medium text-[var(--text)] flex items-center gap-1.5">{p.name}{p.linked && <Link2 className="h-3.5 w-3.5 text-[var(--success)]" aria-label="Linked to Google" />}</div>
-                        <div className="text-[12px] text-[var(--text-subtle)]">{[p.primaryCategory || 'No category', p.city].filter(Boolean).join(' · ')} · {p.role}</div>
+                        <div className="text-[12px] text-[var(--text-subtle)]">{[p.primaryCategory || 'No category', p.city].filter(Boolean).join(' · ')}</div>
                       </td>
                       <td className="px-4 py-3"><Badge tone={p.status === 'active' ? 'success' : p.status === 'archived' ? 'warning' : 'neutral'}>{p.status}</Badge></td>
                       <td className="px-4 py-3"><div className="flex items-center gap-2"><span className={`tabular-nums font-semibold w-7 text-[var(--${scoreTone(p.score)})]`}>{p.score}</span><Meter value={p.score} /></div></td>

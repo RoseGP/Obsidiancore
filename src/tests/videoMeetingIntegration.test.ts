@@ -118,8 +118,8 @@ async function runVideoMeetingTests() {
   // TEST 5: Screen Sharing Lifecycle & Native Track Ending
   console.log('\n🖥️ 5. Screen Sharing Lifecycle & Track Listeners:');
   try {
-    let isSharing = true;
-    let endedFired = false;
+    let isSharing: boolean = true;
+    let endedFired: boolean = false;
 
     // Simulate browser MediaStreamTrack 'ended' event
     const mockTrack = {
@@ -137,8 +137,8 @@ async function runVideoMeetingTests() {
     mockTrack.onended();
 
     assert(mockTrack.readyState === 'ended', 'Media track enters ended state on stop');
-    assert(isSharing === false, 'Screen sharing flags updated to false upon stop');
-    assert(endedFired === true, 'Native track ended listener properly triggered cleanup');
+    assert((isSharing as boolean) === false, 'Screen sharing flags updated to false upon stop');
+    assert((endedFired as boolean) === true, 'Native track ended listener properly triggered cleanup');
   } catch (err: any) {
     assert(false, 'Screen Sharing Lifecycle', err.message);
   }
@@ -318,7 +318,7 @@ async function runVideoMeetingTests() {
   // TEST 12: In-Meeting Device Settings & Hardware Hot-Swap
   console.log('\n⚙️ 12. Meeting Hardware Settings & Hot-Swap:');
   try {
-    let settings = {
+    let settings: { [k: string]: unknown; selectedCameraId: string; videoQuality: '720p' | '1080p' | string } = {
       selectedCameraId: 'cam-builtin',
       selectedMicrophoneId: 'mic-builtin',
       selectedSpeakerId: 'spk-builtin',

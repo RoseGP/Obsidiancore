@@ -48,12 +48,15 @@ interface ReceptionistTrainingCenterProps {
   onClose?: () => void;
   onLaunchCallTest?: (promptText: string) => void;
   onNavigate?: (view: any) => void;
+  /** Render inside a page (Voice Calls → AI Receptionist tab) instead of as a full-screen dialog. */
+  inline?: boolean;
 }
 
 export default function ReceptionistTrainingCenter({
   onClose,
   onLaunchCallTest,
-  onNavigate
+  onNavigate,
+  inline = false
 }: ReceptionistTrainingCenterProps) {
   // Navigation tabs inside Training Center
   const [activeTab, setActiveTab] = useState<'qas' | 'documents' | 'profile' | 'departments' | 'simulator'>('qas');
@@ -497,7 +500,7 @@ export default function ReceptionistTrainingCenter({
   });
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-neutral-950/85 backdrop-blur-md animate-fade-in text-left">
+    <div className={inline ? 'w-full text-left' : 'fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-neutral-950/85 backdrop-blur-md animate-fade-in text-left'}>
       
       {/* Toast Notification */}
       <AnimatePresence>
@@ -514,7 +517,7 @@ export default function ReceptionistTrainingCenter({
         )}
       </AnimatePresence>
 
-      <div className="obsidian w-full max-w-6xl h-[92vh] bg-[var(--obsidian-1)] border border-white/15 rounded-3xl shadow-2xl flex flex-col overflow-hidden relative">
+      <div className={`obsidian w-full ${inline ? 'h-[80vh] min-h-[560px]' : 'max-w-6xl h-[92vh] shadow-2xl'} bg-[var(--obsidian-1)] border border-white/15 rounded-3xl flex flex-col overflow-hidden relative`}>
         
         {/* ========================================================================= */}
         {/* HEADER BAR                                                               */}
@@ -527,10 +530,6 @@ export default function ReceptionistTrainingCenter({
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-base font-extrabold text-white tracking-tight">AI Receptionist Training Studio</h2>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-ping" />
-                  Gemini 3.7 Flash Trained
-                </span>
               </div>
               <p className="text-xs text-neutral-400 mt-0.5">
                 Train your front-desk AI receptionist to answer any custom business questions via chat or live voice
@@ -541,12 +540,6 @@ export default function ReceptionistTrainingCenter({
           {/* Quick Metrics & Close Button */}
           <div className="flex items-center gap-2.5">
             <div className="obsidian hidden sm:flex items-center gap-3 px-3 py-1.5 rounded-2xl bg-[var(--obsidian-2)] border border-white/5 text-xs">
-              <div className="flex items-center gap-1.5">
-                <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
-                <span className="text-neutral-400">Ready:</span>
-                <span className="font-bold text-white">98%</span>
-              </div>
-              <div className="h-3 w-px bg-white/10" />
               <div className="flex items-center gap-1.5">
                 <BookOpen className="h-3.5 w-3.5 text-blue-400" />
                 <span className="text-neutral-400">Memory:</span>
@@ -1192,8 +1185,8 @@ export default function ReceptionistTrainingCenter({
                             {/* Video Call Details */}
                             {msg.executedAction.type === 'video_call' && (
                               <div className="space-y-1.5 text-[11px]">
-                                <div className="text-neutral-300 font-semibold">{msg.executedAction.data?.roomName || 'My Meet & Greet Video Consultation'}</div>
-                                <div className="text-[10px] text-neutral-400">Encrypted Room ID: <span className="font-mono text-emerald-400">{msg.executedAction.data?.roomId || 'meet-and-greet'}</span> • Destination: <span className="text-blue-300 font-semibold">My Meet & Greet</span></div>
+                                <div className="text-neutral-300 font-semibold">{msg.executedAction.data?.roomName || 'GREET meeting'}</div>
+                                <div className="text-[10px] text-neutral-400">Encrypted Room ID: <span className="font-mono text-emerald-400">{msg.executedAction.data?.roomId || 'meet-and-greet'}</span> • Destination: <span className="text-blue-300 font-semibold">GREET</span></div>
                                 <div className="pt-1">
                                   <button
                                     type="button"
@@ -1208,7 +1201,7 @@ export default function ReceptionistTrainingCenter({
                                     className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold transition-all shadow-sm cursor-pointer"
                                   >
                                     <Video className="h-3 w-3" />
-                                    <span>Open My Meet & Greet</span>
+                                    <span>Open GREET</span>
                                     <ArrowRight className="h-3 w-3 ml-0.5 opacity-90" />
                                   </button>
                                 </div>

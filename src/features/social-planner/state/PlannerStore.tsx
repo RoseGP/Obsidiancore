@@ -95,7 +95,8 @@ export function PlannerStoreProvider({ api, children }: { api: PlannerApi; child
     isBusy: (id) => busy.has(id),
     lastSyncedAt,
     async create(input) {
-      const lockKey = `create:${input.content.slice(0, 40)}:${input.scheduledAt}`;
+      // "Now" gets a fresh timestamp per click, so lock on the content instead: a double click can't publish twice.
+      const lockKey = input.intent === 'now' ? `create:now:${input.content.slice(0, 80)}` : `create:${input.content.slice(0, 40)}:${input.scheduledAt}`;
       return guarded(lockKey, async () => {
         const created = await api.createPost(input);
         const list = Array.isArray(created) ? created : [created];

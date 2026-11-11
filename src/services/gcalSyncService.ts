@@ -1,268 +1,148 @@
+/**
+ * Google Calendar sync, per user and organization.
+ *
+ *   Tokens   organizations/{orgId}/users/{userId}/integrations/google      (encrypted, server/integrations/googleTokens.ts)
+ *   Events   organizations/{orgId}/users/{userId}/gcal_events/{eventId}     (busy blocks used by availability)
+ *   Sync     organizations/{orgId}/users/{userId}/integrations/google_sync  ({ syncToken, channelId, resourceId, expiration })
+ *   Channels crm_gcal_channels/{channelId} → { orgId, userId }             (push notifications → owner)
+ *
+ * Requires GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and APP_URL. Nothing is simulated: without them the
+ * routes report "not configured", and failures are returned as errors.
+ */
+import { randomUUID } from 'node:crypto';
 import { google } from 'googleapis';
-import { randomUUID } from 'crypto';
-import { 
-  encryptToken, 
-  decryptToken, 
-  gcalDataStore, 
-  StoredTokens, 
-  WatchChannelInfo, 
-  LocalGCalEvent 
-} from './gcalTokenService';
-import { optionalSecret } from '../utils/secrets';
-
-// OAuth2 Environment Configuration
-const CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '197100590994-crm-oauth-mock-client-id.apps.googleusercontent.com';
-const CLIENT_SECRET = optionalSecret('GOOGLE_CLIENT_SECRET');
-const REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI || 'https://ais-dev-qhp7tuty4664rrdqkv3om3-197100590994.us-east1.run.app/api/gcal/oauth2callback';
+import { assertId, getDocStore } from '../server/data/docStore';
+import { channelToken, getGoogleTokens, saveGoogleTokens } from '../server/integrations/googleTokens';
 
 export const OAUTH_SCOPES = [
-  'https://www.googleapis.com/auth/calendar',
   'https://www.googleapis.com/auth/calendar.events',
+  'https://www.googleapis.com/auth/calendar.readonly',
   'https://www.googleapis.com/auth/userinfo.email',
 ];
 
-/**
- * Creates a raw Google OAuth2 Client instance
- */
-export function createOAuth2Client(customRedirectUri?: string) {
-  return new google.auth.OAuth2(
-    CLIENT_ID,
-    CLIENT_SECRET,
-    customRedirectUri || REDIRECT_URI
-  );
+export interface LocalGCalEvent { id: string; summary: string; startISO: string; endISO: string; status: 'confirmed' | 'cancelled'; updatedAt: string }
+
+export class GoogleNotConfiguredError extends Error {
+  status = 503; code = 'google_not_configured';
+  constructor() { super('Google Calendar isn’t configured on the server (GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, APP_URL).'); }
+}
+export class GoogleNotConnectedError extends Error {
+  status = 409; code = 'google_not_connected';
+  constructor() { super('Connect your Google Calendar first.'); }
 }
 
-/**
- * Generate Google OAuth2 authorization URL
- */
-export function generateAuthUrl(userId: string = 'host_primary', redirectUriUrl?: string): string {
-  const oauth2Client = createOAuth2Client(redirectUriUrl);
-  
-  return oauth2Client.generateAuthUrl({
-    access_type: 'offline',
-    scope: OAUTH_SCOPES,
-    prompt: 'consent', // Forces refresh token issuance
-    state: Buffer.from(JSON.stringify({ userId, timestamp: Date.now() })).toString('base64'),
-  });
+export function googleConfig() {
+  const clientId = process.env.GOOGLE_CLIENT_ID || '';
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET || '';
+  const appUrl = (process.env.APP_URL || '').replace(/\/+$/, '');
+  return { configured: !!(clientId && clientSecret && appUrl), clientId, clientSecret, appUrl, redirectUri: `${appUrl}/api/gcal/oauth2callback` };
 }
 
-/**
- * Get authenticated OAuth2 client with decrypted tokens & refresh handler
- */
-export async function getAuthenticatedClient(userId: string = 'host_primary') {
-  const stored = gcalDataStore.getTokens(userId);
-  if (!stored) {
-    throw new Error(`No OAuth tokens found for user '${userId}'. Please authenticate first.`);
-  }
+export function createOAuth2Client() {
+  const c = googleConfig();
+  if (!c.configured) throw new GoogleNotConfiguredError();
+  return new google.auth.OAuth2(c.clientId, c.clientSecret, c.redirectUri);
+}
 
-  const accessToken = decryptToken(stored.accessTokenEncrypted);
-  const refreshToken = decryptToken(stored.refreshTokenEncrypted);
+export function generateAuthUrl(state: string): string {
+  return createOAuth2Client().generateAuthUrl({ access_type: 'offline', scope: OAUTH_SCOPES, prompt: 'consent', include_granted_scopes: true, state });
+}
 
-  const oauth2Client = createOAuth2Client();
-  oauth2Client.setCredentials({
-    access_token: accessToken,
-    refresh_token: refreshToken,
-    expiry_date: stored.expiryDate,
-  });
+const userBase = (orgId: string, userId: string) => `organizations/${assertId(orgId)}/users/${assertId(userId)}`;
 
-  // Listen for refresh token updates and re-encrypt
-  oauth2Client.on('tokens', (tokens) => {
-    if (tokens.access_token) {
-      const updatedStored: StoredTokens = {
-        userId,
-        accessTokenEncrypted: encryptToken(tokens.access_token),
-        refreshTokenEncrypted: tokens.refresh_token 
-          ? encryptToken(tokens.refresh_token) 
-          : stored.refreshTokenEncrypted,
-        expiryDate: tokens.expiry_date || Date.now() + 3600 * 1000,
-        scope: tokens.scope || stored.scope,
-        updatedAt: new Date().toISOString(),
-      };
-      gcalDataStore.saveTokens(userId, updatedStored);
+/** OAuth2 client for this user; refreshed tokens are written back (encrypted). */
+export async function getAuthenticatedClient(orgId: string, userId: string) {
+  const t = await getGoogleTokens(orgId, userId);
+  if (!t) throw new GoogleNotConnectedError();
+  const client = createOAuth2Client();
+  client.setCredentials({ access_token: t.accessToken, refresh_token: t.refreshToken, expiry_date: t.expiryDate });
+  client.on('tokens', (nt) => {
+    if (nt.access_token) {
+      saveGoogleTokens(orgId, userId, { accessToken: nt.access_token, refreshToken: nt.refresh_token ?? undefined, expiryDate: nt.expiry_date ?? undefined, scope: nt.scope ?? undefined })
+        .catch((e) => console.error('[gcal] could not store refreshed token:', e?.message));
     }
   });
-
-  return oauth2Client;
+  return client;
 }
 
-/**
- * Exchange Authorization Code for Tokens and encrypt them safely
- */
-export async function handleOAuthCallback(code: string, userId: string = 'host_primary') {
-  const oauth2Client = createOAuth2Client();
-  const { tokens } = await oauth2Client.getToken(code);
-
-  if (!tokens.access_token) {
-    throw new Error('Failed to retrieve access token from Google OAuth provider.');
-  }
-
-  const storedTokens: StoredTokens = {
-    userId,
-    accessTokenEncrypted: encryptToken(tokens.access_token),
-    refreshTokenEncrypted: encryptToken(tokens.refresh_token || tokens.access_token),
-    expiryDate: tokens.expiry_date || Date.now() + 3600 * 1000,
-    scope: tokens.scope || OAUTH_SCOPES.join(' '),
-    updatedAt: new Date().toISOString(),
-  };
-
-  gcalDataStore.saveTokens(userId, storedTokens);
-  return { userId, expiryDate: storedTokens.expiryDate };
+export async function handleOAuthCallback(orgId: string, userId: string, code: string) {
+  const client = createOAuth2Client();
+  const { tokens } = await client.getToken(code);
+  if (!tokens.access_token) throw new Error('Google didn’t return an access token.');
+  client.setCredentials(tokens);
+  let email: string | undefined;
+  try { email = (await google.oauth2({ version: 'v2', auth: client }).userinfo.get()).data.email ?? undefined; } catch { /* optional */ }
+  await saveGoogleTokens(orgId, userId, { accessToken: tokens.access_token, refreshToken: tokens.refresh_token ?? undefined, expiryDate: tokens.expiry_date ?? undefined, scope: tokens.scope ?? undefined, email });
+  return { email };
 }
 
-/**
- * Attach a Push Notification Watch Channel (`gcal.events.watch`) to host primary calendar
- */
-export async function registerWatchChannel(
-  userId: string = 'host_primary', 
-  webhookBaseUrl?: string
-): Promise<WatchChannelInfo> {
-  const oauth2Client = await getAuthenticatedClient(userId);
-  const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
-
-  const channelId = `crm_channel_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-  const webhookUrl = `${webhookBaseUrl || 'https://ais-dev-qhp7tuty4664rrdqkv3om3-197100590994.us-east1.run.app'}/api/webhooks/gcal`;
-
-  try {
-    const watchResponse = await calendar.events.watch({
-      calendarId: 'primary',
-      requestBody: {
-        id: channelId,
-        type: 'web_hook',
-        address: webhookUrl,
-        token: `secret_user_token_${userId}`,
-        // 7 days expiration in milliseconds
-        expiration: (Date.now() + 7 * 24 * 3600 * 1000).toString(),
-      },
-    });
-
-    const channelInfo: WatchChannelInfo = {
-      channelId,
-      resourceId: watchResponse.data.resourceId || '',
-      expiration: parseInt(watchResponse.data.expiration || `${Date.now() + 7 * 24 * 3600 * 1000}`),
-      createdAt: new Date().toISOString(),
-    };
-
-    gcalDataStore.saveWatchChannel(channelId, channelInfo);
-    return channelInfo;
-  } catch (err: any) {
-    console.warn('[GCal Watch Registration Notice]:', err.message || err);
-    // Fallback simulation for dev/sandbox environments where webhook endpoint is internal
-    const fallbackChannelInfo: WatchChannelInfo = {
-      channelId,
-      resourceId: `res_mock_${Date.now()}`,
-      expiration: Date.now() + 7 * 24 * 3600 * 1000,
-      createdAt: new Date().toISOString(),
-    };
-    gcalDataStore.saveWatchChannel(channelId, fallbackChannelInfo);
-    return fallbackChannelInfo;
-  }
+/** Push notifications for this user's primary calendar. Google requires a public HTTPS address (APP_URL). */
+export async function registerWatchChannel(orgId: string, userId: string) {
+  const { appUrl } = googleConfig();
+  if (!appUrl.startsWith('https://')) throw Object.assign(new Error('Push notifications need a public https APP_URL.'), { status: 400, code: 'https_required' });
+  const client = await getAuthenticatedClient(orgId, userId);
+  const channelId = `crm_${randomUUID()}`;
+  const res = await google.calendar({ version: 'v3', auth: client }).events.watch({
+    calendarId: 'primary',
+    requestBody: { id: channelId, type: 'web_hook', address: `${appUrl}/api/gcal/webhook`, token: channelToken(channelId), expiration: String(Date.now() + 7 * 86_400_000) },
+  });
+  const st = await getDocStore();
+  const info = { channelId, resourceId: res.data.resourceId || '', expiration: Number(res.data.expiration) || Date.now() + 7 * 86_400_000, createdAt: new Date().toISOString() };
+  await st.set(`crm_gcal_channels/${channelId}`, { orgId, userId, ...info });
+  const syncPath = `${userBase(orgId, userId)}/integrations/google_sync`;
+  await st.set(syncPath, { ...((await st.get(syncPath)) || {}), ...info });
+  return info;
 }
 
-/**
- * Synchronize Google Calendar Events (Handles Incremental Sync via syncToken or full sync)
- */
-export async function syncGoogleCalendarEvents(
-  userId: string = 'host_primary', 
-  channelId?: string
-): Promise<{ syncedCount: number; events: LocalGCalEvent[] }> {
-  try {
-    const oauth2Client = await getAuthenticatedClient(userId);
-    const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
+/** Full sync (30 days back, 60 ahead) on first run or when Google expires the sync token (410); incremental after. */
+export async function syncGoogleCalendarEvents(orgId: string, userId: string): Promise<{ syncedCount: number }> {
+  const client = await getAuthenticatedClient(orgId, userId);
+  const calendar = google.calendar({ version: 'v3', auth: client });
+  const st = await getDocStore();
+  const syncPath = `${userBase(orgId, userId)}/integrations/google_sync`;
+  const sync = (await st.get(syncPath)) || {};
+  const full = () => calendar.events.list({ calendarId: 'primary', singleEvents: true, maxResults: 2500, timeMin: new Date(Date.now() - 30 * 86_400_000).toISOString(), timeMax: new Date(Date.now() + 60 * 86_400_000).toISOString() });
 
-    const activeChannel = channelId ? gcalDataStore.getWatchChannel(channelId) : gcalDataStore.getAllWatchChannels()[0];
-    const syncToken = activeChannel?.nextSyncToken;
-
-    let response;
-    if (syncToken) {
-      // Incremental Sync using syncToken
-      try {
-        response = await calendar.events.list({
-          calendarId: 'primary',
-          syncToken: syncToken,
-        });
-      } catch (err: any) {
-        // If syncToken is invalid or expired (410 Gone), perform full sync
-        if (err.code === 410) {
-          response = await calendar.events.list({
-            calendarId: 'primary',
-            timeMin: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString(),
-            timeMax: new Date(Date.now() + 60 * 24 * 3600 * 1000).toISOString(),
-            singleEvents: true,
-          });
-        } else {
-          throw err;
-        }
-      }
-    } else {
-      // Initial Full Sync
-      response = await calendar.events.list({
-        calendarId: 'primary',
-        timeMin: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString(), // 30 days past
-        timeMax: new Date(Date.now() + 60 * 24 * 3600 * 1000).toISOString(), // 60 days future
-        singleEvents: true,
-      });
+  let synced = 0, pageToken: string | undefined, nextSyncToken: string | undefined;
+  let incremental = !!sync.syncToken;
+  do {
+    let res;
+    try {
+      res = incremental ? await calendar.events.list({ calendarId: 'primary', syncToken: sync.syncToken, pageToken }) : pageToken ? await calendar.events.list({ calendarId: 'primary', singleEvents: true, pageToken }) : await full();
+    } catch (err: any) {
+      if (err?.code === 410 && incremental) { incremental = false; pageToken = undefined; continue; }
+      throw err;
     }
-
-    const items = response.data.items || [];
-    const updatedEvents: LocalGCalEvent[] = [];
-
-    for (const item of items) {
-      if (!item.id) continue;
-
-      const isCancelled = item.status === 'cancelled';
-      const startISO = item.start?.dateTime || item.start?.date || '';
-      const endISO = item.end?.dateTime || item.end?.date || '';
-
-      const localEvent: LocalGCalEvent = {
-        id: item.id,
-        summary: item.summary || 'Busy (Google Calendar Event)',
-        startISO,
-        endISO,
-        status: isCancelled ? 'cancelled' : 'confirmed',
-        updatedAt: item.updated || new Date().toISOString(),
-      };
-
-      gcalDataStore.upsertEvent(localEvent);
-      updatedEvents.push(localEvent);
+    for (const item of res.data.items || []) {
+      if (!item.id || !/^[A-Za-z0-9_-]{1,128}$/.test(item.id)) continue;
+      const path = `${userBase(orgId, userId)}/gcal_events/${item.id}`;
+      if (item.status === 'cancelled') { await st.deleteRecursive(path); continue; }
+      await st.set(path, {
+        id: item.id, summary: 'Busy', // titles stay in Google: availability only needs busy blocks
+        startISO: item.start?.dateTime || item.start?.date || '', endISO: item.end?.dateTime || item.end?.date || '',
+        status: 'confirmed', updatedAt: item.updated || new Date().toISOString(),
+      } satisfies LocalGCalEvent);
+      synced++;
     }
+    pageToken = res.data.nextPageToken ?? undefined;
+    nextSyncToken = res.data.nextSyncToken ?? nextSyncToken;
+  } while (pageToken);
+  await st.set(syncPath, { ...sync, syncToken: nextSyncToken ?? sync.syncToken ?? null, lastSyncedAt: new Date().toISOString() });
+  return { syncedCount: synced };
+}
 
-    // Update new sync token for future incremental syncs
-    if (response.data.nextSyncToken && activeChannel) {
-      gcalDataStore.setSyncToken(activeChannel.channelId, response.data.nextSyncToken);
-    }
+export async function getSyncedEvents(orgId: string, userId: string): Promise<LocalGCalEvent[]> {
+  return (await getDocStore()).list(`${userBase(orgId, userId)}/gcal_events`);
+}
 
-    return {
-      syncedCount: updatedEvents.length,
-      events: gcalDataStore.getSyncedEvents(),
-    };
-  } catch (error: any) {
-    console.warn('[GCal Delta Sync Notice]: Using mock synchronization block array for dev environment.', error.message || error);
-    
-    // Developer sandbox fallback: provide simulated synced busy blocks to verify pipeline
-    const mockSyncedEvents: LocalGCalEvent[] = [
-      {
-        id: 'gcal_event_1',
-        summary: 'Google Calendar: Quarterly Product Review',
-        startISO: new Date(Date.now() + 2 * 3600 * 1000).toISOString(),
-        endISO: new Date(Date.now() + 3.5 * 3600 * 1000).toISOString(),
-        status: 'confirmed',
-        updatedAt: new Date().toISOString(),
-      },
-      {
-        id: 'gcal_event_2',
-        summary: 'Google Calendar: Investor Briefing',
-        startISO: new Date(Date.now() + 26 * 3600 * 1000).toISOString(),
-        endISO: new Date(Date.now() + 27 * 3600 * 1000).toISOString(),
-        status: 'confirmed',
-        updatedAt: new Date().toISOString(),
-      },
-    ];
-
-    mockSyncedEvents.forEach(evt => gcalDataStore.upsertEvent(evt));
-
-    return {
-      syncedCount: mockSyncedEvents.length,
-      events: gcalDataStore.getSyncedEvents(),
-    };
+/** Stops push notifications and forgets synced data (tokens are deleted by the caller). */
+export async function stopSync(orgId: string, userId: string) {
+  const st = await getDocStore();
+  const sync = await st.get(`${userBase(orgId, userId)}/integrations/google_sync`);
+  if (sync?.channelId) {
+    try { await google.calendar({ version: 'v3', auth: await getAuthenticatedClient(orgId, userId) }).channels.stop({ requestBody: { id: sync.channelId, resourceId: sync.resourceId } }); } catch { /* channel may already be gone */ }
+    await st.deleteRecursive(`crm_gcal_channels/${sync.channelId}`);
   }
+  await st.deleteRecursive(`${userBase(orgId, userId)}/integrations/google_sync`);
+  for (const e of await getSyncedEvents(orgId, userId)) await st.deleteRecursive(`${userBase(orgId, userId)}/gcal_events/${e.id}`);
 }

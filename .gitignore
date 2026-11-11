@@ -10,5 +10,10 @@ coverage/
 # Billing data (per-business JSON store)
 data/billing/
 
-# Business Profile Manager local file store (dev)
-data/social-accounts/business-profiles.json
+# Local secrets for wrangler dev / Firebase emulator
+.dev.vars
+functions/.secret.local
+
+# Local token/vault dumps must never be committed (removed from the repository)
+src/utils/social_tokens_db.json
+src/utils/postiz_vault_store.json

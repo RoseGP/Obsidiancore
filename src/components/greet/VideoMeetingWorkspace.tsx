@@ -7,8 +7,11 @@ import {
   Radio, Volume2, VolumeX, UserCheck, Edit3, ArrowRight, Home, Share2,
   Trash2, UserPlus, Info, CheckSquare, Square, Download, ExternalLink,
   Laptop, ShieldAlert, Award, Pause, Play, Disc, Settings, FileText,
-  SlidersHorizontal, CheckCircle, RotateCw, Printer
+  SlidersHorizontal, CheckCircle, RotateCw, Printer,
+  // Used by the transcript tab and summary modal but previously never imported (ReferenceError at render).
+  Save, Activity, UserX
 } from 'lucide-react';
+import { NotebookPen, Signal, SignalLow, SignalZero, Circle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { jsPDF } from 'jspdf';
 import { 
@@ -21,6 +24,13 @@ import {
   MeetingDeviceSettings
 } from '../../context/MeetingSessionContext';
 import { CRMContact } from '../../types';
+import MeetingControlBar, { EndMeetingConfirmDialog } from './MeetingControlBar';
+import MeetingNotesPanel from './MeetingNotesPanel';
+import { meetingPermissions, type OrgRole } from './meetingControls';
+import { FEATURE_KEYS, MEETING_PLAN_TIERS, formatMinutes, gridColumns, pageOfTiles, prioritizeTiles, tilesPerPage } from '../../lib/meetingPlans';
+import { PlanUpgradeDialog } from '../meetings/PlanComparison';
+import type { PlanNotice } from '../../context/MeetingSessionContext';
+import type { FeatureHints } from './meetingControls';
 
 interface VideoMeetingWorkspaceProps {
   contacts?: CRMContact[];
@@ -39,11 +49,27 @@ export default function VideoMeetingWorkspace({
 }: VideoMeetingWorkspaceProps) {
   const {
     activeMeeting,
-    currentPlanTier,
-    setPlanTier,
-    planConfig,
+    meetingLimits,
+    meetingFeatures,
+    meetingPlanLabel,
+    capacityState,
+    canManageMeeting,
+    offlinePreview,
+    awaitingAdmission,
+    isMeetingLocked,
+    setMeetingLocked,
+    setCoHost,
+    planNotice,
+    clearPlanNotice,
+    subscription,
+    serverSession,
+    mediaStatus,
+    mediaMessage,
+    remoteMedia,
+    localUserName,
     isDurationWarning,
     isDurationLimitReached,
+    durationSecondsLeft,
     localStream,
     screenStream,
     isMicMuted,
@@ -69,9 +95,23 @@ export default function VideoMeetingWorkspace({
     toggleTaskCompleted,
     addParticipantToCrm,
     inviteParticipantByEmail,
+    inviteParticipantsByEmail,
     exchangeContactConsent,
     broadcastReaction,
     activeReactions,
+    isHandRaised,
+    toggleRaiseHand,
+    isWaitingRoomEnabled,
+    setWaitingRoomEnabled,
+    waitingRoom,
+    admitParticipant,
+    admitAllWaiting,
+    denyParticipant,
+    muteParticipant,
+    muteAllParticipants,
+    removeParticipant,
+    lowerParticipantHand,
+    lowerAllHands,
     // Recording
     isRecording,
     isRecordingPaused,
@@ -93,12 +133,22 @@ export default function VideoMeetingWorkspace({
     updateMeetingSettings,
     availableDevices,
     refreshDevices,
-    testSpeakerSound
+    testSpeakerSound,
+    meetingNotes,
+    notesOutcome,
+    networkQuality,
+    recordingConsentRequested,
+    answerRecordingConsent,
+    meetingIsBeingRecorded,
+    recordingMode,
+    recordingNotice,
   } = useMeetingSession();
+  const [consentBusy, setConsentBusy] = React.useState(false);
+  const [consentDeclined, setConsentDeclined] = React.useState(false);
 
   // Sidebar Tab state ('chat' | 'greet' | 'participants' | 'crm' | 'transcript')
-  const [activeSidebarTab, setActiveSidebarTab] = useState<'chat' | 'greet' | 'participants' | 'crm' | 'transcript'>('greet');
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [activeSidebarTab, setActiveSidebarTab] = useState<'chat' | 'greet' | 'participants' | 'crm' | 'transcript' | 'notes'>('greet');
+  const [isSidebarOpen, setIsSidebarOpen] = useState(() => typeof window === 'undefined' || window.innerWidth >= 1024);
   const [transcriptSaveNotice, setTranscriptSaveNotice] = useState<string | null>(null);
 
   // Fullscreen browser state
@@ -111,7 +161,6 @@ export default function VideoMeetingWorkspace({
   // Chat state
   const [chatInput, setChatInput] = useState('');
   const [chatRecipient, setChatRecipient] = useState<string>('everyone');
-  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showFileAttachedNotice, setShowFileAttachedNotice] = useState<string | null>(null);
 
   // CRM tab contact state
@@ -143,12 +192,20 @@ export default function VideoMeetingWorkspace({
 
   const [showLeaveConfirmModal, setShowLeaveConfirmModal] = useState(false);
   const [showEndMeetingSummaryModal, setShowEndMeetingSummaryModal] = useState(false);
+  // "End for everyone" asks first; only after confirming is the recording stopped and the meeting closed.
+  const [showEndConfirm, setShowEndConfirm] = useState(false);
+  // Organization role (OWNER/ADMIN may end meetings and control recording like the host).
+  const [orgRole, setOrgRole] = useState<OrgRole>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/orgs/me').then((r) => (r.ok ? r.json() : null)).then((d) => { if (!cancelled && d?.current?.role) setOrgRole(d.current.role); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
   const [copiedLinkNotice, setCopiedLinkNotice] = useState(false);
   const [copiedMeetingIdNotice, setCopiedMeetingIdNotice] = useState(false);
 
   // Recording Modal & Controls
   const [showRecordingConsentModal, setShowRecordingConsentModal] = useState(false);
-  const [showRecordingActionsMenu, setShowRecordingActionsMenu] = useState(false);
   const [recordingConsentCheckbox, setRecordingConsentCheckbox] = useState(true);
 
   // In-Meeting Settings Modal
@@ -176,7 +233,7 @@ export default function VideoMeetingWorkspace({
   const [scheduleFollowupTitle, setScheduleFollowupTitle] = useState('Executive Follow-Up Session');
   const [hostBio, setHostBio] = useState('Specializes in high-trust CRM automation, low-latency audio tunnels, and multi-channel pipeline security.');
   const [isEditingHostBio, setIsEditingHostBio] = useState(false);
-  const [hostTitle, setHostTitle] = useState('Lead Enterprise Partner');
+  const [hostTitle, setHostTitle] = useState('');
 
   // Post-Meeting Summary state
   const [summaryActiveTab, setSummaryActiveTab] = useState<'watch' | 'transcript' | 'details'>('watch');
@@ -206,6 +263,12 @@ export default function VideoMeetingWorkspace({
       setToastNotice(prev => prev?.message === message ? null : prev);
     }, 3800);
   };
+
+  // Meeting notes were saved to the CRM (or couldn't be): say so here, where the person is.
+  useEffect(() => {
+    if (notesOutcome && Date.now() - notesOutcome.at < 5_000) showToast(notesOutcome.message, notesOutcome.result === 'final' ? 'success' : 'warning');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [notesOutcome?.at]);
 
   // Client-Side PDF Transcript Generator via jsPDF
   const handleDownloadTranscriptPdf = (transcript: TranscriptItem[], roomTitle: string = 'Meeting Transcript') => {
@@ -427,20 +490,24 @@ export default function VideoMeetingWorkspace({
     setIsInviting(true);
     setInviteFeedback(null);
 
-    const res = await inviteParticipantByEmail(inviteEmailInput.trim());
-    setIsInviting(false);
-    setInviteFeedback({
-      text: res.message,
-      isError: !res.success
-    });
-
-    if (res.success) {
-      setInviteEmailInput('');
-      setTimeout(() => {
-        setShowInviteModal(false);
-        setInviteFeedback(null);
-      }, 2000);
+    // One or many addresses (commas, semicolons, spaces or new lines). The dialog stays open for more.
+    const emails = Array.from(new Set(inviteEmailInput.split(/[\s,;]+/).map(x => x.trim()).filter(Boolean)));
+    if (emails.length === 1) {
+      const res = await inviteParticipantByEmail(emails[0]);
+      setInviteFeedback({ text: res.message, isError: !res.success });
+      if (res.success) setInviteEmailInput('');
+    } else {
+      const r = await inviteParticipantsByEmail(emails);
+      const notAdded = r.refused.map(x => x.email);
+      setInviteFeedback({
+        text: notAdded.length
+          ? `${r.message} Not added (${notAdded.length}): ${notAdded.slice(0, 5).join(', ')}${notAdded.length > 5 ? ` and ${notAdded.length - 5} more` : ''}.`
+          : r.message,
+        isError: notAdded.length > 0,
+      });
+      setInviteEmailInput(notAdded.join(', '));
     }
+    setIsInviting(false);
   };
 
   // Return to CRM Dashboard while preserving active call
@@ -452,10 +519,160 @@ export default function VideoMeetingWorkspace({
   };
 
   const participantsList = activeMeeting?.participants || [];
+  // Host or org OWNER/ADMIN: same rule as the control bar (see meetingControls.ts).
+  const localInitials = localUserName.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]!.toUpperCase()).join('') || 'ME';
+  const meetingPerms = meetingPermissions({ isHost: canManageMeeting || !!activeMeeting?.isHost, orgRole });
+  /** Advanced host controls (mute one person, remove, lower hands) depend on the plan. */
+  const canUseHostControls = meetingPerms.canManageParticipants && meetingFeatures.hostControls;
+
+  // ---- Plan limits: upgrade dialog, notifications ----
+  const [showPlans, setShowPlans] = useState(false);
+  const [dialogNotice, setDialogNotice] = useState<PlanNotice | null>(null);
+  const openPlans = (notice?: PlanNotice | null) => { setDialogNotice(notice ?? null); setShowPlans(true); };
+  useEffect(() => {
+    if (!planNotice) return;
+    showToast(planNotice.message, 'warning');
+    openPlans(planNotice);
+    clearPlanNotice();
+  }, [planNotice]);
+  const featureHints: FeatureHints = {};
+  for (const k of FEATURE_KEYS) {
+    if (meetingFeatures[k]) continue;
+    const plans = subscription?.plans;
+    const tier = plans ? MEETING_PLAN_TIERS.find(t => plans[t].features[k]) : undefined;
+    featureHints[k] = tier && plans ? `Included in ${plans[tier].label}` : 'Not included in this meeting\'s plan';
+  }
+  // Tell the host once per meeting as limits get close.
+  const notifiedRef = useRef<Record<string, boolean>>({});
+  useEffect(() => { notifiedRef.current = {}; }, [activeMeeting?.id]);
+  const notifyOnce = (key: string, message: string, type: 'info' | 'warning' = 'warning') => {
+    if (notifiedRef.current[key]) return;
+    notifiedRef.current[key] = true;
+    showToast(message, type);
+  };
+  useEffect(() => {
+    if (!activeMeeting || activeMeeting.status !== 'active') return;
+    if (isDurationWarning && durationSecondsLeft > 60) notifyOnce('time-warn', `${Math.ceil(durationSecondsLeft / 60)} minutes left: the ${meetingPlanLabel} plan ends meetings at ${formatMinutes(meetingLimits.maxDurationMinutes)}.`);
+    if (isDurationWarning && durationSecondsLeft <= 60) notifyOnce('time-last', 'Less than a minute left. The meeting will end for everyone and the recording will be saved.');
+  }, [isDurationWarning, durationSecondsLeft > 60, activeMeeting?.status]);
+  useEffect(() => {
+    if (!meetingPerms.canManageParticipants || !activeMeeting || activeMeeting.status !== 'active') return;
+    if (capacityState === 'near') notifyOnce('cap-near', `The room is almost full: ${participantsList.length + 1} of ${meetingLimits.maxParticipants} seats taken.`);
+    if (capacityState === 'full') notifyOnce('cap-full', `The room is full (${meetingLimits.maxParticipants}). New people can't join until someone leaves.`);
+  }, [capacityState, meetingPerms.canManageParticipants]);
+
+  // Custom branding (Enterprise)
+  const [branding, setBranding] = useState<{ displayName: string; accentColor: string } | null>(null);
+  useEffect(() => {
+    if (!meetingFeatures.customBranding || !serverSession) { setBranding(null); return; }
+    let cancelled = false;
+    fetch('/api/meetings/branding').then(r => (r.ok ? r.json() : null)).then(d => { if (!cancelled && d?.branding) setBranding(d.branding); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [meetingFeatures.customBranding, serverSession?.id]);
+  const raisedHandsCount = participantsList.filter(p => p.isHandRaised).length + (isHandRaised ? 1 : 0);
+  // Raised hands first (in the order they were raised), then everyone else as they joined.
+  const rosterOrder = [...participantsList].sort((a, b) =>
+    (a.isHandRaised ? 0 : 1) - (b.isHandRaised ? 0 : 1) || (a.handRaisedAt ?? 0) - (b.handRaisedAt ?? 0));
+  const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
+  const [rosterQuery, setRosterQuery] = useState('');
+  // The plan's time limit ended the meeting (MeetingSessionContext): show the summary.
+  const endedByTimeLimit = activeMeeting?.endedReason === 'time_limit';
+  const endedRemotely = !!activeMeeting?.endedReason;
+  useEffect(() => {
+    if (endedRemotely) { setShowEndConfirm(false); setShowEndMeetingSummaryModal(true); }
+  }, [endedRemotely]);
+  const rosterQ = rosterQuery.trim().toLowerCase();
+  const rosterShown = rosterQ
+    ? rosterOrder.filter(p => [p.name, p.email, p.company, p.role].some(v => (v || '').toLowerCase().includes(rosterQ)))
+    : rosterOrder;
+
+  // Large rooms: page the video grid. Screen sharers, speakers and raised hands come first.
+  const [viewportWidth, setViewportWidth] = useState(() => (typeof window === 'undefined' ? 1280 : window.innerWidth));
+  useEffect(() => {
+    const onResize = () => setViewportWidth(window.innerWidth);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+  const [gridPage, setGridPage] = useState(0);
+  const orderedTiles = prioritizeTiles(participantsList);
+  const tilesPage = pageOfTiles(orderedTiles, gridPage, tilesPerPage(viewportWidth));
+  const tilesOnPage = tilesPage.items.length + (tilesPage.page === 0 ? 1 : 0);
+  const gridCols = Math.min(gridColumns(tilesOnPage), viewportWidth < 640 ? 2 : 5);
+  const compactTiles = tilesOnPage > 9;
+  /** Thumbnail strips (screen share and spotlight) show the most relevant people, then "+N". */
+  const STRIP_MAX = 30;
+  const stripPeople = orderedTiles.slice(0, STRIP_MAX);
+  const stripMore = Math.max(0, orderedTiles.length - STRIP_MAX);
+
+  // AI recap (POST /api/meetings/ai-summary: Gemini or Claude, CRM tools off)
+  type AiRecap = {
+    summary: string; keyPoints: string[]; decisions: string[];
+    actionItems: Array<{ title: string; owner: string; dueInDays: number | null; priority: 'high' | 'medium' | 'low' }>;
+    followUpEmail: { subject: string; body: string }; provider: string; notice?: string;
+  };
+  const [aiRecap, setAiRecap] = useState<AiRecap | null>(null);
+  const [aiRecapLoading, setAiRecapLoading] = useState(false);
+  const [aiRecapError, setAiRecapError] = useState<string | null>(null);
+  const [aiRecapAdded, setAiRecapAdded] = useState<Set<number>>(() => new Set());
+  const generateAiRecap = async () => {
+    if (!activeMeeting || aiRecapLoading) return;
+    setAiRecapLoading(true); setAiRecapError(null);
+    try {
+      const res = await fetch('/api/meetings/ai-summary', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: activeMeeting.title,
+          durationSeconds: currentDuration,
+          participants: [`${localUserName} (Host)`, ...participantsList.map(p => p.name)],
+          notes: activeMeeting.notes || '',
+          transcript: liveTranscript.map(t => ({ speakerName: t.speakerName, text: t.text })),
+          tasks: activeMeeting.tasks.map(t => ({ title: t.title, contactName: t.contactName })),
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) throw new Error(data.error || `The recap couldn't be generated (${res.status}).`);
+      setAiRecap(data); setAiRecapAdded(new Set());
+    } catch (e: any) {
+      setAiRecapError(e?.message || "The recap couldn't be generated.");
+    } finally {
+      setAiRecapLoading(false);
+    }
+  };
+  const addRecapActionItem = (idx: number) => {
+    const a = aiRecap?.actionItems[idx];
+    if (!a || aiRecapAdded.has(idx)) return;
+    const due = new Date(Date.now() + (a.dueInDays ?? 7) * 86400000).toISOString().slice(0, 10);
+    addFollowupTask({ title: a.title, dueDate: due, priority: a.priority, contactName: a.owner });
+    setAiRecapAdded(prev => new Set(prev).add(idx));
+  };
   const currentDuration = activeMeeting?.durationSeconds || 0;
 
   return (
     <div className="obsidian w-full h-screen bg-[var(--obsidian-0)] text-neutral-100 flex flex-col overflow-hidden select-none font-sans">
+      {/* Recording consent: nothing is recorded until everyone in the meeting agrees. */}
+      {recordingConsentRequested && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/60" role="dialog" aria-modal="true" aria-labelledby="greet-consent-title">
+          <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[var(--obsidian-1)] p-5 shadow-2xl">
+            <h2 id="greet-consent-title" className="text-base font-semibold text-white">The host would like to record this meeting</h2>
+            <p className="mt-2 text-sm text-neutral-300">
+              Recording starts only if everyone agrees. It captures audio, video and shared screens. You'll see a red "Recording" label while it runs.
+            </p>
+            {consentDeclined && <p className="mt-3 text-sm text-amber-200">You declined. The host has been told and can't start recording without you. You can stay in the meeting.</p>}
+            <div className="mt-4 flex flex-wrap justify-end gap-2">
+              <button type="button" disabled={consentBusy} onClick={async () => { setConsentBusy(true); const r = await answerRecordingConsent(false); setConsentBusy(false); if (r.success) setConsentDeclined(true); }}
+                className="px-4 py-2 rounded-lg border border-white/15 text-sm text-neutral-200 hover:bg-white/5 disabled:opacity-50">Decline</button>
+              <button type="button" disabled={consentBusy} onClick={async () => { setConsentBusy(true); await answerRecordingConsent(true); setConsentBusy(false); setConsentDeclined(false); }}
+                className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm font-semibold text-white disabled:opacity-50">I agree to be recorded</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {recordingNotice && (
+        <div role="status" className="fixed top-16 sm:top-20 left-1/2 -translate-x-1/2 z-[70] max-w-[92vw] px-4 py-2 rounded-xl border border-amber-500/30 bg-amber-950/80 text-amber-100 text-xs shadow-lg">
+          {recordingNotice}
+        </div>
+      )}
       
       {/* =========================================================================
           1. TOP NAVIGATION & HUD BAR
@@ -464,12 +681,12 @@ export default function VideoMeetingWorkspace({
         
         {/* Left: Brand + Meeting Room Title */}
         <div className="flex items-center gap-3 min-w-0">
-          <div className="flex items-center gap-2 px-2.5 py-1 rounded-xl bg-gradient-to-r from-indigo-900/60 to-purple-900/60 border border-indigo-500/30 shrink-0">
+          <div className="flex items-center gap-2 px-2.5 py-1 rounded-xl bg-gradient-to-r from-indigo-900/60 to-purple-900/60 border border-indigo-500/30 shrink-0" style={branding?.accentColor ? { borderColor: branding.accentColor } : undefined}>
             <span className="relative flex h-2.5 w-2.5">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
               <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
             </span>
-            <span className="text-xs font-bold text-white tracking-wide">GREET LIVE</span>
+            <span className="text-xs font-bold text-white tracking-wide">{branding?.displayName || 'GREET LIVE'}</span>
           </div>
 
           {/* Title and Room ID */}
@@ -528,6 +745,16 @@ export default function VideoMeetingWorkspace({
           </div>
         </div>
 
+        {/* Small screens: countdown and participant counter */}
+        <div className="flex lg:hidden items-center gap-1.5 shrink-0 text-[11px] font-mono" aria-label="Meeting status">
+          <span className={`px-2 py-0.5 rounded-full border ${isDurationWarning || isDurationLimitReached ? 'bg-amber-950/60 border-amber-500/50 text-amber-200' : 'bg-neutral-900 border-white/10 text-neutral-200'}`} title="Time left">
+            {formatDuration(durationSecondsLeft)} left
+          </span>
+          <span className={`px-2 py-0.5 rounded-full border ${capacityState === 'full' ? 'bg-rose-950/60 border-rose-500/50 text-rose-200' : capacityState === 'near' ? 'bg-amber-950/60 border-amber-500/50 text-amber-200' : 'bg-indigo-950/40 border-indigo-500/20 text-indigo-200'}`} title="Participants">
+            {participantsList.length + 1}/{meetingLimits.maxParticipants}
+          </span>
+        </div>
+
         {/* Center: Live Timer, Plan Tier & Group Capacity */}
         <div className="hidden lg:flex items-center gap-2.5 shrink-0">
           <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-mono font-medium transition-colors ${
@@ -537,78 +764,63 @@ export default function VideoMeetingWorkspace({
           }`}>
             <Clock className="h-3.5 w-3.5 text-indigo-400" />
             <span>{formatDuration(currentDuration)}</span>
-            {planConfig.maxDurationMinutes > 0 && (
-              <span className="text-neutral-400 font-mono text-[11px]">/ {planConfig.maxDurationMinutes}:00</span>
-            )}
+            <span className="text-neutral-400 font-mono text-[11px]">· {formatDuration(durationSecondsLeft)} left</span>
           </div>
 
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-950/40 border border-emerald-500/20 text-[11px] text-emerald-300 font-medium">
-            <Shield className="h-3 w-3 text-emerald-400" />
-            <span>Encrypted WebRTC</span>
+          {/* Real audio/video status (LiveKit): never claims a connection that isn't there */}
+          <div
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-medium ${
+              mediaStatus === 'connected' ? 'bg-emerald-950/40 border-emerald-500/20 text-emerald-300'
+                : mediaStatus === 'connecting' || mediaStatus === 'reconnecting' ? 'bg-amber-950/40 border-amber-500/30 text-amber-200'
+                : 'bg-neutral-900 border-white/10 text-neutral-400'
+            }`}
+            title={mediaStatus === 'connected' ? 'Audio and video are connected (encrypted in transit).' : mediaMessage || 'Audio and video between people are not connected.'}
+          >
+            <Shield className="h-3 w-3" />
+            <span>{mediaStatus === 'connected' ? 'Video connected' : mediaStatus === 'connecting' ? 'Connecting video…' : mediaStatus === 'reconnecting' ? 'Reconnecting…' : 'Video not connected'}</span>
           </div>
+
+          {/* Your network quality as LiveKit measures it */}
+          {(mediaStatus === 'connected' || mediaStatus === 'reconnecting') && networkQuality !== 'unknown' && (
+            <div
+              data-testid="greet-network-quality"
+              className={`hidden sm:flex items-center gap-1 px-2.5 py-1 rounded-full border text-[11px] font-medium ${
+                networkQuality === 'excellent' || networkQuality === 'good' ? 'bg-emerald-950/30 border-emerald-500/20 text-emerald-300'
+                  : networkQuality === 'poor' ? 'bg-amber-950/40 border-amber-500/30 text-amber-200' : 'bg-rose-950/40 border-rose-500/30 text-rose-200'
+              }`}
+              title="Your connection quality, measured by the video service"
+            >
+              {networkQuality === 'excellent' || networkQuality === 'good' ? <Signal className="h-3 w-3" /> : networkQuality === 'poor' ? <SignalLow className="h-3 w-3" /> : <SignalZero className="h-3 w-3" />}
+              <span>{networkQuality === 'excellent' ? 'Network: excellent' : networkQuality === 'good' ? 'Network: good' : networkQuality === 'poor' ? 'Network: poor' : 'Network: lost'}</span>
+            </div>
+          )}
+
+          {/* Everyone sees when the meeting is being recorded */}
+          {meetingIsBeingRecorded && (
+            <div data-testid="greet-recording-indicator" className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-rose-500/40 bg-rose-950/50 text-rose-200 text-[11px] font-semibold" title={recordingMode === 'cloud' ? 'Recorded to your organization\'s GREET recordings' : 'Recorded on the host\'s device'}>
+              <Circle className="h-2.5 w-2.5 fill-rose-500 text-rose-500 animate-pulse" />
+              <span>Recording{recordingMode === 'cloud' ? ' · cloud' : ''}</span>
+            </div>
+          )}
 
           {/* Group Capacity Counter */}
-          <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-indigo-950/40 border border-indigo-500/20 text-[11px] text-indigo-300 font-medium">
-            <Users className="h-3 w-3 text-indigo-400" />
-            <span>{participantsList.length + 1} / {planConfig.maxParticipants} Attendees</span>
+          <div className={`flex items-center gap-1 px-2.5 py-1 rounded-full border text-[11px] font-medium ${
+            capacityState === 'full' ? 'bg-rose-950/60 border-rose-500/50 text-rose-200' : capacityState === 'near' ? 'bg-amber-950/60 border-amber-500/50 text-amber-200' : 'bg-indigo-950/40 border-indigo-500/20 text-indigo-300'
+          }`} title={`${participantsList.length + 1} of ${meetingLimits.maxParticipants} seats on the ${meetingPlanLabel} plan`}>
+            <Users className="h-3 w-3" />
+            <span className="tabular-nums">{participantsList.length + 1} / {meetingLimits.maxParticipants}</span>
           </div>
 
-          {/* Plan Tier Selector Pill */}
-          <div className="relative group">
-            <button
-              type="button"
-              className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-neutral-900 hover:bg-neutral-800 border border-white/15 text-[11px] text-neutral-200 font-medium cursor-pointer transition-colors"
-              title={`Active Tier: ${planConfig.label}. Up to ${planConfig.maxParticipants} participants${planConfig.maxDurationMinutes > 0 ? `, ${planConfig.maxDurationMinutes}m limit` : ', unlimited duration'}. Click to toggle plan.`}
-            >
-              <Award className="h-3 w-3 text-amber-400" />
-              <span className="capitalize">{currentPlanTier}</span>
-              <span className="text-[10px] text-neutral-400">({planConfig.maxParticipants})</span>
-            </button>
-            <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1.5 hidden group-hover:flex flex-col bg-neutral-950 border border-white/15 rounded-2xl p-2 shadow-2xl z-50 min-w-[220px] animate-in fade-in">
-              <div className="px-2 py-1 text-[10px] uppercase tracking-wider text-neutral-400 font-bold border-b border-white/10 mb-1">
-                Meeting Plan Capacity
-              </div>
-              <button
-                type="button"
-                onClick={() => setPlanTier('standard')}
-                className={`flex items-center justify-between px-2.5 py-2 rounded-xl text-xs text-left cursor-pointer transition-colors ${
-                  currentPlanTier === 'standard' ? 'bg-indigo-600 text-white font-semibold' : 'text-neutral-300 hover:bg-neutral-900'
-                }`}
-              >
-                <div>
-                  <div className="font-semibold">Standard Plan</div>
-                  <div className="text-[10px] opacity-75">100 participants • 60 min limit</div>
-                </div>
-                {currentPlanTier === 'standard' && <Check className="h-3.5 w-3.5" />}
-              </button>
-              <button
-                type="button"
-                onClick={() => setPlanTier('premium')}
-                className={`flex items-center justify-between px-2.5 py-2 rounded-xl text-xs text-left cursor-pointer transition-colors ${
-                  currentPlanTier === 'premium' ? 'bg-indigo-600 text-white font-semibold' : 'text-neutral-300 hover:bg-neutral-900'
-                }`}
-              >
-                <div>
-                  <div className="font-semibold">Premium Plan</div>
-                  <div className="text-[10px] opacity-75">250 participants • Unlimited</div>
-                </div>
-                {currentPlanTier === 'premium' && <Check className="h-3.5 w-3.5" />}
-              </button>
-              <button
-                type="button"
-                onClick={() => setPlanTier('enterprise')}
-                className={`flex items-center justify-between px-2.5 py-2 rounded-xl text-xs text-left cursor-pointer transition-colors ${
-                  currentPlanTier === 'enterprise' ? 'bg-indigo-600 text-white font-semibold' : 'text-neutral-300 hover:bg-neutral-900'
-                }`}
-              >
-                <div>
-                  <div className="font-semibold">Enterprise Plan</div>
-                  <div className="text-[10px] opacity-75">500 participants • Unlimited</div>
-                </div>
-                {currentPlanTier === 'enterprise' && <Check className="h-3.5 w-3.5" />}
-              </button>
-            </div>
-          </div>
+          {/* Meeting plan (the organizer's plan; opens the plan comparison) */}
+          <button
+            type="button"
+            onClick={() => openPlans()}
+            className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-neutral-900 hover:bg-neutral-800 border border-white/15 text-[11px] text-neutral-200 font-medium cursor-pointer"
+            title={`${meetingPlanLabel} plan: up to ${meetingLimits.maxParticipants} people, ${formatMinutes(meetingLimits.maxDurationMinutes)}. See plans.`}
+          >
+            <Award className="h-3 w-3 text-amber-400" />
+            <span>{meetingPlanLabel}</span>
+          </button>
         </div>
 
         {/* Right: Primary Navigation Controls */}
@@ -628,6 +840,7 @@ export default function VideoMeetingWorkspace({
             onClick={handleCopyMeetingLink}
             className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 border border-white/10 text-neutral-300 text-xs font-semibold transition-all cursor-pointer"
             title="Copy meeting invitation link"
+            aria-label="Copy meeting invitation link"
           >
             {copiedLinkNotice ? (
               <>
@@ -637,7 +850,7 @@ export default function VideoMeetingWorkspace({
             ) : (
               <>
                 <Share2 className="h-3.5 w-3.5 text-neutral-400" />
-                <span className="hidden md:inline">Share</span>
+                <span className="hidden md:inline">Copy link</span>
               </>
             )}
           </button>
@@ -661,14 +874,7 @@ export default function VideoMeetingWorkspace({
             {isFullscreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
           </button>
 
-          {/* Leave / End Call Button */}
-          <button
-            onClick={() => setShowLeaveConfirmModal(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 active:scale-95 text-white text-xs font-bold transition-all shadow-md shadow-rose-950/40 cursor-pointer"
-          >
-            <PhoneOff className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Leave</span>
-          </button>
+          {/* Leave lives in the bottom control bar (always visible), so it isn't repeated here. */}
         </div>
       </header>
 
@@ -736,48 +942,54 @@ export default function VideoMeetingWorkspace({
             </div>
           )}
 
-          {/* 60-Minute Duration Warning & Limit Banners on Standard Tier */}
-          {isDurationWarning && !isDurationLimitReached && (
-            <div className="flex items-center justify-between px-3.5 py-2 rounded-xl bg-amber-950/80 border border-amber-500/40 text-xs text-amber-200 shadow-md">
-              <div className="flex items-center gap-2">
-                <AlertCircle className="h-4 w-4 text-amber-400 animate-pulse shrink-0" />
-                <span>
-                  <strong>Standard Plan Notice:</strong> Approaching 60-minute duration limit ({Math.max(1, 60 - Math.floor(currentDuration / 60))} minutes remaining).
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setPlanTier('premium')}
-                className="px-3 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold text-xs transition-all cursor-pointer shrink-0"
-              >
-                Upgrade to Premium (Unlimited)
-              </button>
+          {offlinePreview && (
+            <div role="status" className="px-3.5 py-2 rounded-xl bg-neutral-900/90 border border-white/10 text-xs text-neutral-300">
+              Preview without a server: {meetingPlanLabel} limits are applied in this browser only. In the app, the server applies your organization's plan.
             </div>
           )}
-          {isDurationLimitReached && (
-            <div className="flex items-center justify-between px-3.5 py-2 rounded-xl bg-rose-950/90 border border-rose-500/50 text-xs text-rose-200 shadow-md animate-pulse">
-              <div className="flex items-center gap-2">
-                <AlertCircle className="h-4 w-4 text-rose-400 shrink-0" />
+
+          {(mediaStatus === 'not_configured' || mediaStatus === 'failed') && (
+            <div role="status" className="px-3.5 py-2 rounded-xl bg-neutral-900/90 border border-amber-500/30 text-xs text-amber-100">
+              {mediaStatus === 'not_configured'
+                ? 'Audio and video between people aren\'t connected on this server yet. You can run the meeting (roster, chat on this screen, recording, notes), but others won\'t see or hear you until an administrator sets up LiveKit.'
+                : (mediaMessage || 'Audio and video couldn\'t connect.') + ' Check your connection; the meeting itself is still running.'}
+            </div>
+          )}
+
+          {/* Time limit: warning before the end (the server ends the meeting at the limit) */}
+          {isDurationWarning && (
+            <div role="status" className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2 rounded-xl bg-amber-950/80 border border-amber-500/40 text-xs text-amber-200 shadow-md">
+              <span className="flex items-center gap-2 min-w-0">
+                <AlertCircle className="h-4 w-4 text-amber-400 shrink-0" />
                 <span>
-                  <strong>60-minute meeting limit reached on Standard Plan.</strong> Switch to Premium (250 attendees) or Enterprise (500 attendees) for unlimited group calls.
+                  <strong className="font-mono">{formatDuration(durationSecondsLeft)}</strong> left. The {meetingPlanLabel} plan ends meetings at {formatMinutes(meetingLimits.maxDurationMinutes)}; the recording is saved automatically.
                 </span>
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setPlanTier('premium')}
-                  className="px-3 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs transition-all cursor-pointer"
-                >
-                  Switch to Premium
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowLeaveConfirmModal(true)}
-                  className="px-2.5 py-1 rounded-lg bg-neutral-900 hover:bg-neutral-800 text-neutral-300 text-xs cursor-pointer border border-white/10"
-                >
-                  End Meeting
-                </button>
-              </div>
+              </span>
+              {meetingPerms.canManageParticipants && (
+                <span className="flex items-center gap-1.5 shrink-0">
+                  <button type="button" onClick={() => openPlans({ kind: 'duration', message: `Meetings on the ${meetingPlanLabel} plan end at ${formatMinutes(meetingLimits.maxDurationMinutes)}.` })} className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold cursor-pointer">See plans</button>
+                  <button type="button" onClick={() => setShowEndConfirm(true)} className="px-2.5 py-1 rounded-lg bg-neutral-900 hover:bg-neutral-800 text-neutral-200 border border-white/10 cursor-pointer">End meeting now</button>
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* Capacity (hosts) */}
+          {meetingPerms.canManageParticipants && capacityState !== 'ok' && (
+            <div role="status" className={`flex flex-wrap items-center justify-between gap-2 px-3.5 py-2 rounded-xl border text-xs shadow-md ${capacityState === 'full' ? 'bg-rose-950/80 border-rose-500/40 text-rose-200' : 'bg-amber-950/70 border-amber-500/40 text-amber-200'}`}>
+              <span className="flex items-center gap-2">
+                <Users className="h-4 w-4 shrink-0" />
+                {capacityState === 'full'
+                  ? `The room is full: ${meetingLimits.maxParticipants} of ${meetingLimits.maxParticipants} seats on the ${meetingPlanLabel} plan. New people can't join until someone leaves.`
+                  : `The room is almost full: ${participantsList.length + 1} of ${meetingLimits.maxParticipants} seats taken.`}
+              </span>
+              <button type="button" onClick={() => openPlans({ kind: 'capacity', message: `The ${meetingPlanLabel} plan allows ${meetingLimits.maxParticipants} people per meeting.` })} className="px-2.5 py-1 rounded-lg bg-neutral-900/80 hover:bg-neutral-800 border border-white/10 font-semibold cursor-pointer shrink-0">See plans</button>
+            </div>
+          )}
+
+          {awaitingAdmission && (
+            <div role="status" className="px-3.5 py-3 rounded-xl bg-indigo-950/80 border border-indigo-500/40 text-sm text-indigo-100">
+              You're in the waiting room. The host will let you in shortly.
             </div>
           )}
 
@@ -818,7 +1030,7 @@ export default function VideoMeetingWorkspace({
                     ) : (
                       <div className="w-full h-full flex items-center justify-center bg-gradient-to-tr from-neutral-900 to-indigo-950">
                         <div className="h-10 w-10 rounded-full bg-indigo-600 flex items-center justify-center font-bold text-white text-sm">
-                          CR
+                          {localInitials}
                         </div>
                       </div>
                     )}
@@ -844,8 +1056,8 @@ export default function VideoMeetingWorkspace({
                     </div>
                   </div>
 
-                  {/* Remote Participants Thumbnails */}
-                  {participantsList.map(p => (
+                  {/* Remote Participants Thumbnails (most relevant first; the rest via "+N more") */}
+                  {stripPeople.map(p => (
                     <div
                       key={p.id}
                       className="obsidian w-48 lg:w-full h-full lg:h-36 rounded-xl bg-[var(--obsidian-1)] border border-white/10 relative overflow-hidden shrink-0 flex items-center justify-center"
@@ -869,6 +1081,16 @@ export default function VideoMeetingWorkspace({
                       </div>
                     </div>
                   ))}
+                  {stripMore > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => { setActiveSidebarTab('participants'); setIsSidebarOpen(true); }}
+                      className="w-48 lg:w-full h-full lg:h-16 rounded-xl bg-neutral-900 border border-white/10 shrink-0 flex items-center justify-center text-xs font-semibold text-neutral-200 hover:border-indigo-500/50 cursor-pointer"
+                      title="Show everyone in Participants"
+                    >
+                      +{stripMore} more
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -890,7 +1112,7 @@ export default function VideoMeetingWorkspace({
                         />
                       ) : (
                         <div className="h-24 w-24 rounded-full bg-indigo-600 flex items-center justify-center font-bold text-white text-3xl">
-                          CR
+                          {localInitials}
                         </div>
                       )}
                       {/* Small Muted Icon Overlay in spotlight */}
@@ -946,7 +1168,7 @@ export default function VideoMeetingWorkspace({
                       You (Host)
                     </div>
                   </div>
-                  {participantsList.map(p => (
+                  {stripPeople.map(p => (
                     <div
                       key={p.id}
                       onClick={() => setPinnedParticipantId(p.id)}
@@ -955,14 +1177,26 @@ export default function VideoMeetingWorkspace({
                       <span className="text-xs font-semibold text-white truncate px-2">{p.name}</span>
                     </div>
                   ))}
+                  {stripMore > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => { setActiveSidebarTab('participants'); setIsSidebarOpen(true); }}
+                      className="w-36 h-full rounded-xl bg-neutral-900 border border-white/10 shrink-0 flex items-center justify-center text-xs font-semibold text-neutral-200 hover:border-indigo-500/50 cursor-pointer"
+                      title="Show everyone in Participants"
+                    >
+                      +{stripMore} more
+                    </button>
+                  )}
                 </div>
               </div>
 
             ) : (
               /* SCENARIO 3: HIGH-DEFINITION MULTI-PARTICIPANT GRID VIEW (Default) */
-              <div className="w-full h-full grid grid-cols-1 sm:grid-cols-2 gap-3 auto-rows-fr">
+              <div className="w-full h-full flex flex-col gap-2 min-h-0">
+              <div className={`w-full flex-1 min-h-0 grid ${compactTiles ? 'gap-1.5' : 'gap-3'} auto-rows-fr`} style={{ gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))` }}>
                 
-                {/* 1. LOCAL USER TILE (You / Host) */}
+                {/* 1. LOCAL USER TILE (You / Host): first page only */}
+                {tilesPage.page === 0 && (
                 <div className={`rounded-xl bg-[var(--obsidian-1)] border relative overflow-hidden flex items-center justify-center transition-all ${
                   !isMicMuted && micAudioLevel > 30 ? 'border-emerald-500/60 shadow-[0_0_20px_rgba(16,185,129,0.15)]' : 'border-white/10'
                 }`}>
@@ -978,7 +1212,7 @@ export default function VideoMeetingWorkspace({
                   ) : (
                     <div className="flex flex-col items-center gap-3">
                       <div className="h-20 w-20 rounded-full bg-gradient-to-tr from-indigo-600 via-indigo-700 to-purple-800 flex items-center justify-center font-bold text-white text-2xl shadow-xl shadow-indigo-950/50">
-                        CR
+                        {localInitials}
                       </div>
                       <span className="text-xs font-bold text-neutral-300">Camera Off</span>
                     </div>
@@ -1017,7 +1251,8 @@ export default function VideoMeetingWorkspace({
 
                   {/* Local User Badge */}
                   <div className="absolute bottom-3 left-3 flex items-center gap-2 px-2.5 py-1 rounded-xl bg-black/75 backdrop-blur-md border border-white/10">
-                    <span className="text-xs font-bold text-white">Camelia Rose (You)</span>
+                    <span className="text-xs font-bold text-white">{localUserName} (You)</span>
+                    {isHandRaised && <span role="img" aria-label="Hand raised" title="Hand raised" className="text-sm leading-none">✋</span>}
                     <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-indigo-600 text-white">Host</span>
                   </div>
 
@@ -1035,18 +1270,23 @@ export default function VideoMeetingWorkspace({
                   </div>
                 </div>
 
-                {/* 2. REMOTE PARTICIPANTS TILES */}
-                {participantsList.map(p => (
+                )}
+
+                {/* 2. REMOTE PARTICIPANTS TILES (this page) */}
+                {tilesPage.items.map(p => (
                   <div
                     key={p.id}
                     className={`rounded-xl bg-[var(--obsidian-1)] border relative overflow-hidden flex items-center justify-center transition-all ${
                       p.isSpeaking ? 'border-emerald-500/60 shadow-[0_0_20px_rgba(16,185,129,0.15)]' : 'border-white/10'
                     }`}
                   >
-                    {/* Simulated High-Resolution Participant Feed / Canvas */}
-                    <div className="flex flex-col items-center gap-2.5 text-center p-4">
+                    {/* Live video (or shared screen) when connected; otherwise the avatar and connection state */}
+                    {(remoteMedia[p.id]?.screen || remoteMedia[p.id]?.video) && (
+                      <RemoteVideo track={(remoteMedia[p.id]!.screen || remoteMedia[p.id]!.video)!} fit={remoteMedia[p.id]!.screen ? 'contain' : 'cover'} />
+                    )}
+                    <div className={`flex flex-col items-center text-center ${compactTiles ? 'gap-1 p-1' : 'gap-2.5 p-4'} ${remoteMedia[p.id]?.video || remoteMedia[p.id]?.screen ? 'hidden' : ''}`}>
                       <div className="relative">
-                        <div className={`h-20 w-20 rounded-full bg-gradient-to-tr ${p.avatarColor || 'from-indigo-600 to-purple-800'} flex items-center justify-center font-bold text-white text-2xl shadow-xl shadow-black/50`}>
+                        <div className={`${compactTiles ? 'h-10 w-10 text-sm' : 'h-20 w-20 text-2xl'} rounded-full bg-gradient-to-tr ${p.avatarColor || 'from-indigo-600 to-purple-800'} flex items-center justify-center font-bold text-white shadow-xl shadow-black/50`}>
                           {p.avatar}
                         </div>
                         {p.isSpeaking && (
@@ -1054,11 +1294,14 @@ export default function VideoMeetingWorkspace({
                         )}
                       </div>
 
+                      {!compactTiles && (
                       <div>
                         <h4 className="text-sm font-bold text-white">{p.name}</h4>
-                        <p className="text-xs text-neutral-400">{p.title}</p>
-                        <p className="text-[11px] text-indigo-400 font-medium">{p.company}</p>
+                        <p className="text-xs text-neutral-400">
+                          {remoteMedia[p.id] ? 'Camera off' : mediaStatus === 'connected' ? 'Not connected yet' : 'Invited'}
+                        </p>
                       </div>
+                      )}
 
                       {p.isSpeaking && (
                         <div className="flex items-center gap-1 text-[10px] text-emerald-400 font-mono">
@@ -1071,6 +1314,7 @@ export default function VideoMeetingWorkspace({
                     {/* Participant Badge */}
                     <div className="absolute bottom-3 left-3 flex items-center gap-2 px-2.5 py-1 rounded-xl bg-black/75 backdrop-blur-md border border-white/10">
                       <span className="text-xs font-bold text-white truncate max-w-[120px]">{p.name}</span>
+                      {p.isHandRaised && <span role="img" aria-label="Hand raised" title="Hand raised" className="text-sm leading-none">✋</span>}
                       <span className="text-[10px] font-semibold text-neutral-400">{p.role}</span>
                     </div>
 
@@ -1114,339 +1358,97 @@ export default function VideoMeetingWorkspace({
                   </div>
                 ))}
               </div>
+
+              {/* Page controls for large meetings */}
+              {tilesPage.pages > 1 && (
+                <div className="flex items-center justify-center gap-2 shrink-0" role="group" aria-label="Video pages">
+                  <button
+                    type="button"
+                    onClick={() => setGridPage(tilesPage.page - 1)}
+                    disabled={tilesPage.page === 0}
+                    className="h-8 w-8 rounded-lg bg-neutral-900 hover:bg-neutral-800 disabled:opacity-40 text-neutral-200 border border-white/10 cursor-pointer disabled:cursor-default flex items-center justify-center"
+                    aria-label="Previous page of participants"
+                  >
+                    <ChevronRight className="h-4 w-4 rotate-180" />
+                  </button>
+                  <span className="text-[11px] font-mono text-neutral-300 tabular-nums" aria-live="polite">
+                    Page {tilesPage.page + 1} of {tilesPage.pages} · {participantsList.length + 1} in meeting
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setGridPage(tilesPage.page + 1)}
+                    disabled={tilesPage.page >= tilesPage.pages - 1}
+                    className="h-8 w-8 rounded-lg bg-neutral-900 hover:bg-neutral-800 disabled:opacity-40 text-neutral-200 border border-white/10 cursor-pointer disabled:cursor-default flex items-center justify-center"
+                    aria-label="Next page of participants"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+              )}
+              </div>
             )}
           </div>
 
           {/* =========================================================================
-              3. BOTTOM MEETING CONTROLS TOOLBAR
+              3. BOTTOM MEETING CONTROLS (primary controls + More menu; see MeetingControlBar)
               ========================================================================= */}
-          <footer className="h-16 px-4 rounded-2xl bg-slate-900/95 border border-white/10 backdrop-blur-xl flex items-center justify-between shrink-0 z-30 shadow-2xl">
-            
-            {/* Left Controls: Audio, Video, Screen Share, Recording, Settings */}
-            <div className="flex items-center gap-1.5 sm:gap-2">
-              
-              {/* Mic Toggle */}
-              <button
-                id="btn-toggle-mic"
-                onClick={toggleMic}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer active:scale-95 shadow-md ${
-                  isMicMuted
-                    ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-rose-950/40'
-                    : 'bg-neutral-800 hover:bg-neutral-700 text-white'
-                }`}
-                title={isMicMuted ? "Unmute Microphone" : "Mute Microphone"}
-              >
-                {isMicMuted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4 text-emerald-400" />}
-                <span className="hidden sm:inline">{isMicMuted ? "Unmute" : "Mute"}</span>
-              </button>
-
-              {/* Camera Toggle */}
-              <button
-                id="btn-toggle-cam"
-                onClick={toggleCam}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer active:scale-95 shadow-md ${
-                  isCamOff
-                    ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-rose-950/40'
-                    : 'bg-neutral-800 hover:bg-neutral-700 text-white'
-                }`}
-                title={isCamOff ? "Turn On Camera" : "Turn Off Camera"}
-              >
-                {isCamOff ? <VideoOff className="h-4 w-4" /> : <Video className="h-4 w-4 text-indigo-400" />}
-                <span className="hidden sm:inline">{isCamOff ? "Start Video" : "Stop Video"}</span>
-              </button>
-
-              {/* Pause Video Toggle */}
-              <button
-                id="btn-pause-video"
-                onClick={togglePauseVideo}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer active:scale-95 shadow-md ${
-                  isVideoPaused
-                    ? 'bg-amber-600 hover:bg-amber-500 text-white shadow-amber-950/40 ring-2 ring-amber-400'
-                    : 'bg-neutral-800 hover:bg-neutral-700 text-neutral-300'
-                }`}
-                title={isVideoPaused ? "Resume Video Stream" : "Pause Video Stream"}
-              >
-                {isVideoPaused ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
-                <span className="hidden md:inline">{isVideoPaused ? "Resume Video" : "Pause Video"}</span>
-              </button>
-
-              {/* Share Screen Toggle */}
-              <button
-                id="btn-share-screen"
-                onClick={isScreenSharing ? stopScreenShare : startScreenShare}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer active:scale-95 shadow-md ${
-                  isScreenSharing
-                    ? 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-950/40 ring-2 ring-indigo-400'
-                    : 'bg-neutral-800 hover:bg-neutral-700 text-neutral-200'
-                }`}
-                title="Share your window, tab, or entire screen"
-              >
-                {isScreenSharing ? <MonitorOff className="h-4 w-4" /> : <MonitorUp className="h-4 w-4 text-indigo-400" />}
-                <span className="hidden md:inline">{isScreenSharing ? "Stop Share" : "Share Screen"}</span>
-              </button>
-
-              {/* Record Meeting Button */}
-              {isRecording ? (
-                <div className="relative flex items-center">
-                  <button
-                    id="btn-record-active"
-                    onClick={() => setShowRecordingActionsMenu(!showRecordingActionsMenu)}
-                    className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white shadow-lg shadow-rose-950/50 transition-all cursor-pointer active:scale-95"
-                    title="Meeting Recording is Active"
-                  >
-                    <span className="relative flex h-2.5 w-2.5">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-white"></span>
-                    </span>
-                    <span className="font-mono">{formatDuration(recordingDurationSeconds)}</span>
-                    <span className="text-[10px] hidden sm:inline bg-black/30 px-1.5 py-0.5 rounded">
-                      {isRecordingPaused ? 'PAUSED' : 'REC'}
-                    </span>
-                  </button>
-
-                  {/* Recording dropdown actions */}
-                  {showRecordingActionsMenu && (
-                    <div className="obsidian absolute bottom-12 left-0 w-48 p-2 rounded-2xl bg-[var(--obsidian-1)] border border-white/15 shadow-2xl space-y-1.5 z-50 animate-in fade-in zoom-in-95">
-                      <button
-                        onClick={() => {
-                          if (isRecordingPaused) resumeRecording();
-                          else pauseRecording();
-                          setShowRecordingActionsMenu(false);
-                        }}
-                        className="w-full flex items-center gap-2 px-3 py-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-xs text-neutral-200 transition-colors cursor-pointer"
-                      >
-                        {isRecordingPaused ? <Play className="h-3.5 w-3.5 text-emerald-400" /> : <Pause className="h-3.5 w-3.5 text-amber-400" />}
-                        <span>{isRecordingPaused ? 'Resume Recording' : 'Pause Recording'}</span>
-                      </button>
-
-                      <button
-                        onClick={async () => {
-                          setShowRecordingActionsMenu(false);
-                          const saved = await stopRecording();
-                          if (saved) {
-                            showToast(`✓ Meeting recording stopped and saved to Greet Hub Vault (${saved.fileSizeFormatted}).`, 'success');
-                          }
-                        }}
-                        className="w-full flex items-center gap-2 px-3 py-2 rounded-xl bg-rose-600/30 hover:bg-rose-600 text-xs text-rose-200 hover:text-white transition-colors cursor-pointer"
-                      >
-                        <Disc className="h-3.5 w-3.5 text-rose-400" />
-                        <span>Stop & Save to Vault</span>
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <button
-                  id="btn-record-start"
-                  onClick={() => setShowRecordingConsentModal(true)}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-neutral-800 hover:bg-neutral-700 text-neutral-200 transition-all cursor-pointer active:scale-95 shadow-md"
-                  title="Record Meeting"
-                >
-                  <Disc className="h-4 w-4 text-rose-500" />
-                  <span className="hidden md:inline">Record Meeting</span>
-                </button>
-              )}
-
-              {/* In-Meeting Settings Button */}
-              <button
-                id="btn-meeting-settings"
-                onClick={() => setShowSettingsModal(true)}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-neutral-800 hover:bg-neutral-700 text-neutral-300 transition-all cursor-pointer active:scale-95 shadow-md"
-                title="Configure microphone, camera, speaker, and video quality"
-              >
-                <Settings className="h-4 w-4" />
-                <span className="hidden lg:inline">Settings</span>
-              </button>
-            </div>
-
-            {/* Center Controls: Interactive Sidebar Tabs (Chat, Meet & Greet, People, Transcript, CRM) */}
-            <div className="flex items-center gap-1.5 sm:gap-2">
-              
-              {/* Chat Button */}
-              <button
-                id="btn-tab-chat"
-                onClick={() => {
-                  if (activeSidebarTab === 'chat' && isSidebarOpen) {
-                    setIsSidebarOpen(false);
-                  } else {
-                    setActiveSidebarTab('chat');
-                    setIsSidebarOpen(true);
-                  }
-                }}
-                className={`relative flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                  isSidebarOpen && activeSidebarTab === 'chat'
-                    ? 'bg-indigo-600 text-white shadow-md'
-                    : 'bg-neutral-800 hover:bg-neutral-700 text-neutral-300'
-                }`}
-                title="Open Meeting Chat"
-              >
-                <MessageSquare className="h-4 w-4" />
-                <span className="hidden sm:inline">Chat</span>
-                {activeMeeting && activeMeeting.messages.length > 0 && (
-                  <span className="text-[10px] font-bold px-1 rounded-full bg-indigo-400 text-neutral-950 font-mono">
-                    {activeMeeting.messages.length}
-                  </span>
-                )}
-              </button>
-
-              {/* Meet & Greet Button */}
-              <button
-                id="btn-tab-greet"
-                onClick={() => {
-                  if (activeSidebarTab === 'greet' && isSidebarOpen) {
-                    setIsSidebarOpen(false);
-                  } else {
-                    setActiveSidebarTab('greet');
-                    setIsSidebarOpen(true);
-                  }
-                }}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                  isSidebarOpen && activeSidebarTab === 'greet'
-                    ? 'bg-indigo-600 text-white shadow-md'
-                    : 'bg-neutral-800 hover:bg-neutral-700 text-neutral-300'
-                }`}
-                title="Meet & Greet Introductions"
-              >
-                <Sparkles className="h-4 w-4 text-amber-300" />
-                <span className="hidden sm:inline">Meet & Greet</span>
-              </button>
-
-              {/* Participants Button */}
-              <button
-                id="btn-tab-people"
-                onClick={() => {
-                  if (activeSidebarTab === 'participants' && isSidebarOpen) {
-                    setIsSidebarOpen(false);
-                  } else {
-                    setActiveSidebarTab('participants');
-                    setIsSidebarOpen(true);
-                  }
-                }}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                  isSidebarOpen && activeSidebarTab === 'participants'
-                    ? 'bg-indigo-600 text-white shadow-md'
-                    : 'bg-neutral-800 hover:bg-neutral-700 text-neutral-300'
-                }`}
-                title="View Participants"
-              >
-                <Users className="h-4 w-4" />
-                <span className="hidden sm:inline">People</span>
-                <span className="text-[10px] font-bold px-1 rounded bg-neutral-700 text-neutral-300 font-mono">
-                  {participantsList.length + 1}
-                </span>
-              </button>
-
-              {/* Transcript Button */}
-              <button
-                id="btn-tab-transcript"
-                onClick={() => {
-                  if (activeSidebarTab === 'transcript' && isSidebarOpen) {
-                    setIsSidebarOpen(false);
-                  } else {
-                    setActiveSidebarTab('transcript');
-                    setIsSidebarOpen(true);
-                  }
-                }}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                  isSidebarOpen && activeSidebarTab === 'transcript'
-                    ? 'bg-indigo-600 text-white shadow-md'
-                    : 'bg-neutral-800 hover:bg-neutral-700 text-neutral-300'
-                }`}
-                title="View Meeting Transcripts & Save to Greet Hub Tabs"
-              >
-                <FileText className="h-4 w-4 text-emerald-400" />
-                <span className="hidden sm:inline">Transcript</span>
-              </button>
-
-              {/* CRM Dossier Button */}
-              <button
-                id="btn-tab-crm"
-                onClick={() => {
-                  if (activeSidebarTab === 'crm' && isSidebarOpen) {
-                    setIsSidebarOpen(false);
-                  } else {
-                    setActiveSidebarTab('crm');
-                    setIsSidebarOpen(true);
-                  }
-                }}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                  isSidebarOpen && activeSidebarTab === 'crm'
-                    ? 'bg-indigo-600 text-white shadow-md'
-                    : 'bg-neutral-800 hover:bg-neutral-700 text-neutral-300'
-                }`}
-                title="Access CRM records during meeting"
-              >
-                <Briefcase className="h-4 w-4 text-blue-400" />
-                <span className="hidden sm:inline">CRM</span>
-              </button>
-            </div>
-
-            {/* Right Controls: Reactions, Layout & End Meeting */}
-            <div className="flex items-center gap-2">
-              
-              {/* Quick Reactions Bar */}
-              <div className="relative">
-                <button
-                  onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                  className="p-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-200 transition-colors cursor-pointer"
-                  title="Send Live Reaction"
-                >
-                  <Smile className="h-4 w-4 text-amber-300" />
-                </button>
-
-                {showEmojiPicker && (
-                  <div className="absolute bottom-12 right-0 p-2 rounded-2xl bg-neutral-900 border border-white/10 shadow-2xl flex items-center gap-2 z-50">
-                    {['👏', '👍', '❤️', '🎉', '💡', '🚀', '🔥'].map(emoji => (
-                      <button
-                        key={emoji}
-                        onClick={() => {
-                          broadcastReaction(emoji);
-                          setShowEmojiPicker(false);
-                        }}
-                        className="text-xl p-1.5 hover:scale-125 transition-transform cursor-pointer"
-                      >
-                        {emoji}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Layout Switcher */}
-              <button
-                onClick={() => setLayoutMode(layoutMode === 'grid' ? 'speaker' : 'grid')}
-                className="hidden lg:flex p-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-200 transition-colors cursor-pointer"
-                title={`Switch to ${layoutMode === 'grid' ? 'Speaker Spotlight' : 'Grid'} view`}
-              >
-                <LayoutGrid className="h-4 w-4" />
-              </button>
-
-              {/* Leave Meeting Button */}
-              <button
-                id="btn-leave-meeting"
-                onClick={() => setShowLeaveConfirmModal(true)}
-                className="px-3 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-200 font-bold text-xs transition-all cursor-pointer shadow-md"
-                title="Leave Meeting"
-              >
-                Leave
-              </button>
-
-              {/* End Meeting Button (Host Terminate & Summary) */}
-              <button
-                id="btn-end-meeting"
-                onClick={async () => {
-                  if (isRecording) {
-                    await stopRecording();
-                  }
-                  setShowEndMeetingSummaryModal(true);
-                }}
-                className="px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 active:scale-95 text-white font-bold text-xs transition-all shadow-md shadow-rose-950/40 cursor-pointer"
-                title="End Meeting for Everyone"
-              >
-                End
-              </button>
-            </div>
-          </footer>
+          <MeetingControlBar
+            isHost={canManageMeeting || !!activeMeeting?.isHost}
+            features={meetingFeatures}
+            featureHints={featureHints}
+            isLocked={isMeetingLocked}
+            onToggleLock={async () => { const r = await setMeetingLocked(!isMeetingLocked); showToast(r.message, r.success ? 'info' : 'warning'); }}
+            onOpenUpgrade={() => openPlans()}
+            orgRole={orgRole}
+            isMicMuted={isMicMuted}
+            isCamOff={isCamOff}
+            isVideoPaused={isVideoPaused}
+            isScreenSharing={isScreenSharing}
+            participantsCount={participantsList.length + 1}
+            chatCount={activeMeeting?.messages.length || 0}
+            isSidebarOpen={isSidebarOpen}
+            activeSidebarTab={activeSidebarTab}
+            layoutMode={layoutMode}
+            isRecording={isRecording}
+            isRecordingPaused={isRecordingPaused}
+            recordingDurationSeconds={recordingDurationSeconds}
+            isHandRaised={isHandRaised}
+            raisedHandsCount={raisedHandsCount}
+            isWaitingRoomEnabled={isWaitingRoomEnabled}
+            waitingCount={waitingRoom.length}
+            onToggleRaiseHand={toggleRaiseHand}
+            onToggleWaitingRoom={async () => {
+              const r = await setWaitingRoomEnabled(!isWaitingRoomEnabled);
+              showToast(r.message, r.success ? 'info' : 'warning');
+            }}
+            onMuteAll={() => { muteAllParticipants(); showToast('Everyone else is muted. They can unmute themselves.', 'info'); }}
+            onLowerAllHands={() => { lowerAllHands(); showToast('All hands lowered.', 'info'); }}
+            onToggleMic={toggleMic}
+            onToggleCam={toggleCam}
+            onToggleScreenShare={isScreenSharing ? stopScreenShare : startScreenShare}
+            onTogglePanel={(tab) => {
+              if (activeSidebarTab === tab && isSidebarOpen) {
+                setIsSidebarOpen(false);
+              } else {
+                setActiveSidebarTab(tab);
+                setIsSidebarOpen(true);
+              }
+            }}
+            onTogglePauseVideo={togglePauseVideo}
+            onToggleLayout={() => setLayoutMode(layoutMode === 'grid' ? 'speaker' : 'grid')}
+            onReaction={(emoji) => broadcastReaction(emoji)}
+            onStartRecording={() => setShowRecordingConsentModal(true)}
+            onPauseResumeRecording={() => (isRecordingPaused ? resumeRecording() : pauseRecording())}
+            onStopRecording={async () => {
+              const saved = await stopRecording();
+              if (saved) {
+                showToast(`✓ Recording stopped and saved on this device (${saved.fileSizeFormatted}).`, 'success');
+              }
+            }}
+            onOpenSettings={() => setShowSettingsModal(true)}
+            onLeave={() => setShowLeaveConfirmModal(true)}
+            onEndForEveryone={() => setShowEndConfirm(true)}
+          />
         </main>
 
         {/* =========================================================================
@@ -1455,11 +1457,13 @@ export default function VideoMeetingWorkspace({
         <AnimatePresence>
           {isSidebarOpen && (
             <motion.aside
-              initial={{ width: 0, opacity: 0 }}
-              animate={{ width: 380, opacity: 1 }}
-              exit={{ width: 0, opacity: 0 }}
+              aria-label="Meeting side panel"
+              initial={{ x: 40, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              exit={{ x: 40, opacity: 0 }}
               transition={{ duration: 0.22 }}
-              className="obsidian w-[380px] h-full bg-[var(--obsidian-1)] border-l border-white/10 flex flex-col shrink-0 overflow-hidden z-20"
+              onKeyDown={(e) => { if (e.key === 'Escape' && window.innerWidth < 1024) setIsSidebarOpen(false); }}
+              className="obsidian fixed inset-x-0 top-0 bottom-[calc(5.5rem+env(safe-area-inset-bottom,0px))] z-40 rounded-b-2xl sm:left-auto sm:w-[380px] sm:border-l sm:rounded-bl-2xl sm:rounded-br-none lg:static lg:inset-auto lg:bottom-auto lg:rounded-none lg:z-20 lg:w-[380px] lg:h-full bg-[var(--obsidian-1)] border-white/10 flex flex-col shrink-0 overflow-hidden shadow-2xl lg:shadow-none"
             >
               
               {/* Tab Selector Header */}
@@ -1511,6 +1515,20 @@ export default function VideoMeetingWorkspace({
                   </button>
 
                   <button
+                    onClick={() => setActiveSidebarTab('notes')}
+                    aria-pressed={activeSidebarTab === 'notes'}
+                    className={`py-1.5 px-2 rounded-lg text-[11px] font-semibold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1 ${
+                      activeSidebarTab === 'notes'
+                        ? 'bg-indigo-600 text-white shadow-xs'
+                        : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
+                    }`}
+                  >
+                    <NotebookPen className="h-3 w-3 text-indigo-300" />
+                    <span>Notes</span>
+                    {meetingNotes.status === 'error' && <span className="h-1.5 w-1.5 rounded-full bg-rose-400" aria-label="(not saved)" />}
+                  </button>
+
+                  <button
                     onClick={() => setActiveSidebarTab('crm')}
                     className={`py-1.5 px-2 rounded-lg text-[11px] font-semibold transition-all cursor-pointer whitespace-nowrap ${
                       activeSidebarTab === 'crm'
@@ -1524,7 +1542,8 @@ export default function VideoMeetingWorkspace({
 
                 <button
                   onClick={() => setIsSidebarOpen(false)}
-                  className="p-1.5 rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors cursor-pointer ml-1"
+                  aria-label="Close side panel"
+                  className="p-1.5 min-h-10 min-w-10 lg:min-h-0 lg:min-w-0 flex items-center justify-center rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors cursor-pointer ml-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
                   title="Close side panel"
                 >
                   <X className="h-4 w-4" />
@@ -1536,6 +1555,11 @@ export default function VideoMeetingWorkspace({
                   ------------------------------------------------------------- */}
               {activeSidebarTab === 'chat' && (
                 <div className="flex-1 flex flex-col h-full overflow-hidden">
+                  {mediaStatus !== 'connected' && (
+                    <p className="px-3 py-2 text-[11px] text-amber-200 bg-amber-950/40 border-b border-amber-500/20">
+                      Messages reach other people once audio and video are connected. Until then they stay on this screen.
+                    </p>
+                  )}
                   
                   {/* Destination Filter (Everyone vs 1:1 Private) */}
                   <div className="p-3 border-b border-white/10 bg-neutral-900/60 flex items-center justify-between gap-2">
@@ -1645,7 +1669,7 @@ export default function VideoMeetingWorkspace({
                   <div className="p-3.5 rounded-2xl bg-gradient-to-r from-indigo-950/80 to-purple-950/80 border border-indigo-500/30 space-y-2.5">
                     <div className="flex items-center gap-2">
                       <Sparkles className="h-4 w-4 text-amber-300" />
-                      <h4 className="text-xs font-bold text-white">Meet & Greet Concierge</h4>
+                      <h4 className="text-xs font-bold text-white">Welcome your guests</h4>
                     </div>
                     <p className="text-[11px] text-neutral-300 leading-relaxed">
                       Welcome attendees, exchange verified credentials, and create immediate CRM contact records.
@@ -1668,17 +1692,14 @@ export default function VideoMeetingWorkspace({
                     </div>
                     <div className="flex items-center gap-3">
                       <div className="h-11 w-11 rounded-full bg-gradient-to-tr from-indigo-600 to-purple-700 flex items-center justify-center font-bold text-white text-base">
-                        CR
+                        {localInitials}
                       </div>
                       <div>
-                        <h4 className="text-xs font-bold text-white">Camelia Rose</h4>
-                        <p className="text-[11px] text-neutral-400">Lead Enterprise Partner</p>
-                        <p className="text-[10px] text-indigo-400">Obsidian Sovereign Cloud CRM</p>
+                        <h4 className="text-xs font-bold text-white">{localUserName}</h4>
+                        {hostTitle && <p className="text-[11px] text-neutral-400">{hostTitle}</p>}
                       </div>
                     </div>
-                    <p className="text-[11px] text-neutral-300 pt-1 leading-relaxed">
-                      Specializes in high-trust CRM automation, low-latency audio tunnels, and multi-channel pipeline security.
-                    </p>
+
                   </div>
 
                   {/* Participant Introduction Cards */}
@@ -1784,15 +1805,94 @@ export default function VideoMeetingWorkspace({
                   <div className="p-3 border-b border-white/10 bg-neutral-900/60 flex items-center justify-between gap-2">
                     <span className="text-xs font-bold text-white">
                       {participantsList.length + 1} In Call
+                      {raisedHandsCount > 0 && <span className="ml-1.5 text-amber-300 font-semibold">· ✋ {raisedHandsCount}</span>}
                     </span>
-                    <button
-                      onClick={() => setShowInviteModal(true)}
-                      className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-1 cursor-pointer"
-                    >
-                      <UserPlus className="h-3.5 w-3.5" />
-                      <span>Invite</span>
-                    </button>
+                    <div className="flex items-center gap-1.5">
+                      {meetingPerms.canManageParticipants && participantsList.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => { muteAllParticipants(); showToast('Everyone else is muted. They can unmute themselves.', 'info'); }}
+                          className="px-2.5 py-1 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-200 font-bold text-xs flex items-center gap-1 cursor-pointer"
+                          title="Mute everyone except you"
+                        >
+                          <MicOff className="h-3.5 w-3.5" />
+                          <span>Mute all</span>
+                        </button>
+                      )}
+                      <button
+                        onClick={() => setShowInviteModal(true)}
+                        className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-1 cursor-pointer"
+                      >
+                        <UserPlus className="h-3.5 w-3.5" />
+                        <span>Invite</span>
+                      </button>
+                    </div>
                   </div>
+
+                  {/* Waiting room (host / admin only) */}
+                  {meetingPerms.canManageParticipants && (isWaitingRoomEnabled || waitingRoom.length > 0) && (
+                    <div className="p-3 border-b border-white/10 bg-amber-950/20 space-y-2" aria-label="Waiting room">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[11px] font-bold text-amber-200 uppercase tracking-wider">
+                          Waiting room ({waitingRoom.length})
+                        </span>
+                        {waitingRoom.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={async () => { const r = await admitAllWaiting(); showToast(r.message, r.success ? 'success' : 'warning'); }}
+                            className="px-2 py-0.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold cursor-pointer"
+                          >
+                            Admit all
+                          </button>
+                        )}
+                      </div>
+                      {waitingRoom.length === 0 ? (
+                        <p className="text-[11px] text-neutral-400">On. Invited guests wait here until you admit them.</p>
+                      ) : waitingRoom.map(w => (
+                        <div key={w.id} className="flex items-center justify-between gap-2 p-2 rounded-lg bg-neutral-900/70 border border-white/5">
+                          <div className="min-w-0">
+                            <p className="text-xs font-bold text-white truncate">{w.name}</p>
+                            <p className="text-[10px] text-neutral-400 truncate">{w.email}</p>
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              type="button"
+                              onClick={async () => { const r = await admitParticipant(w.id); showToast(r.message, r.success ? 'success' : 'warning'); }}
+                              className="px-2 py-1 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold cursor-pointer"
+                            >
+                              Admit
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => denyParticipant(w.id)}
+                              className="px-2 py-1 rounded-md bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-[11px] font-semibold cursor-pointer"
+                            >
+                              Deny
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Search (large meetings) */}
+                  {participantsList.length > 8 && (
+                    <div className="px-3 pt-3">
+                      <label htmlFor="roster-search" className="sr-only">Search participants</label>
+                      <div className="relative">
+                        <Search className="h-3.5 w-3.5 text-neutral-500 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                        <input
+                          id="roster-search"
+                          type="search"
+                          value={rosterQuery}
+                          onChange={(e) => setRosterQuery(e.target.value)}
+                          placeholder={`Search ${participantsList.length + 1} participants`}
+                          className="w-full pl-8 pr-2 py-1.5 rounded-lg bg-neutral-950 border border-white/10 text-xs text-white placeholder:text-neutral-500 focus:outline-none focus:border-indigo-500"
+                        />
+                      </div>
+                      {rosterQ && <p className="mt-1 text-[10px] text-neutral-400">{rosterShown.length} match{rosterShown.length === 1 ? '' : 'es'}</p>}
+                    </div>
+                  )}
 
                   {/* Participants List */}
                   <div className="flex-1 overflow-y-auto p-3 space-y-2">
@@ -1800,21 +1900,24 @@ export default function VideoMeetingWorkspace({
                     <div className="obsidian p-3 rounded-xl bg-[var(--obsidian-1)] border border-white/10 flex items-center justify-between">
                       <div className="flex items-center gap-2.5">
                         <div className="h-9 w-9 rounded-full bg-indigo-600 flex items-center justify-center font-bold text-white text-xs">
-                          CR
+                          {localInitials}
                         </div>
                         <div>
-                          <p className="text-xs font-bold text-white">Camelia Rose (You)</p>
+                          <p className="text-xs font-bold text-white">{localUserName} (You)</p>
                           <p className="text-[10px] text-indigo-400">Meeting Host</p>
                         </div>
                       </div>
                       <div className="flex items-center gap-1.5 text-neutral-400">
+                        {isHandRaised && (
+                          <button type="button" onClick={toggleRaiseHand} title="Lower your hand" aria-label="Lower your hand" className="text-sm leading-none cursor-pointer">✋</button>
+                        )}
                         {isMicMuted ? <MicOff className="h-3.5 w-3.5 text-rose-400" /> : <Mic className="h-3.5 w-3.5 text-emerald-400" />}
                         {isCamOff ? <VideoOff className="h-3.5 w-3.5 text-rose-400" /> : <Video className="h-3.5 w-3.5 text-indigo-400" />}
                       </div>
                     </div>
 
-                    {/* Remote Participants */}
-                    {participantsList.map(p => (
+                    {/* Remote Participants (raised hands first) */}
+                    {rosterShown.map(p => (
                       <div
                         key={p.id}
                         className="obsidian p-3 rounded-xl bg-[var(--obsidian-1)] border border-white/10 flex items-center justify-between"
@@ -1830,14 +1933,71 @@ export default function VideoMeetingWorkspace({
                         </div>
 
                         <div className="flex items-center gap-1.5">
+                          {p.isHandRaised && (
+                            canUseHostControls ? (
+                              <button type="button" onClick={() => lowerParticipantHand(p.id)} title={`Lower ${p.name}'s hand`} aria-label={`Lower ${p.name}'s hand`} className="text-sm leading-none cursor-pointer">✋</button>
+                            ) : (
+                              <span role="img" aria-label="Hand raised" title="Hand raised" className="text-sm leading-none">✋</span>
+                            )
+                          )}
                           {p.isMuted ? (
-                            <span className="p-1 rounded bg-rose-950/80 text-rose-400">
+                            <span className="p-1 rounded bg-rose-950/80 text-rose-400" title="Muted">
                               <MicOff className="h-3 w-3" />
                             </span>
+                          ) : canUseHostControls ? (
+                            <button
+                              type="button"
+                              onClick={() => muteParticipant(p.id)}
+                              className="p-1 rounded bg-emerald-950/80 text-emerald-400 hover:bg-rose-950/80 hover:text-rose-400 cursor-pointer transition-colors"
+                              title={`Mute ${p.name}`}
+                              aria-label={`Mute ${p.name}`}
+                            >
+                              <Mic className="h-3 w-3" />
+                            </button>
                           ) : (
                             <span className="p-1 rounded bg-emerald-950/80 text-emerald-400">
                               <Mic className="h-3 w-3" />
                             </span>
+                          )}
+                          {meetingPerms.canManageParticipants && meetingFeatures.coHosts && serverSession && p.serverRole && (
+                            <button
+                              type="button"
+                              onClick={async () => { const r = await setCoHost(p.id, p.serverRole !== 'cohost'); showToast(r.message, r.success ? 'info' : 'warning'); }}
+                              className={`px-1.5 py-0.5 rounded text-[10px] font-semibold cursor-pointer border ${p.serverRole === 'cohost' ? 'bg-indigo-600/30 border-indigo-500/50 text-indigo-200' : 'bg-neutral-900 border-white/10 text-neutral-300 hover:text-white'}`}
+                              title={p.serverRole === 'cohost' ? `Remove ${p.name} as co-host` : `Make ${p.name} a co-host`}
+                            >
+                              {p.serverRole === 'cohost' ? 'Co-host' : 'Make co-host'}
+                            </button>
+                          )}
+                          {canUseHostControls && (
+                            confirmRemoveId === p.id ? (
+                              <span className="flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={async () => { setConfirmRemoveId(null); const r = await removeParticipant(p.id); showToast(r.message, r.success ? 'info' : 'warning'); }}
+                                  className="px-1.5 py-0.5 rounded bg-rose-600 hover:bg-rose-500 text-white text-[10px] font-bold cursor-pointer"
+                                >
+                                  Remove
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setConfirmRemoveId(null)}
+                                  className="px-1.5 py-0.5 rounded bg-neutral-800 text-neutral-300 text-[10px] cursor-pointer"
+                                >
+                                  Cancel
+                                </button>
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => setConfirmRemoveId(p.id)}
+                                className="p-1 rounded hover:bg-rose-950/80 text-neutral-400 hover:text-rose-400 transition-colors cursor-pointer"
+                                title={`Remove ${p.name} from the meeting`}
+                                aria-label={`Remove ${p.name} from the meeting`}
+                              >
+                                <UserX className="h-3.5 w-3.5" />
+                              </button>
+                            )
                           )}
                           <button
                             onClick={() => {
@@ -1859,6 +2019,8 @@ export default function VideoMeetingWorkspace({
               {/* -------------------------------------------------------------
                   TAB 4: CRM DOSSIER & REAL-TIME MEETING NOTES
                   ------------------------------------------------------------- */}
+              {activeSidebarTab === 'notes' && <MeetingNotesPanel />}
+
               {activeSidebarTab === 'crm' && (
                 <div className="flex-1 overflow-y-auto p-4 space-y-4">
                   
@@ -1912,36 +2074,15 @@ export default function VideoMeetingWorkspace({
                     </div>
                   </div>
 
-                  {/* Real-time Meeting Notes */}
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <label className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">
-                        Live Meeting Notes
-                      </label>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const timeTag = `\n[${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}] `;
-                          updateMeetingNotes((activeMeeting?.notes || '') + timeTag);
-                        }}
-                        className="text-[10px] font-semibold text-indigo-400 hover:text-indigo-300 cursor-pointer"
-                      >
-                        + Timestamp
-                      </button>
-                    </div>
-
-                    <textarea
-                      value={activeMeeting?.notes || ''}
-                      onChange={(e) => updateMeetingNotes(e.target.value)}
-                      rows={6}
-                      className="w-full p-3 rounded-xl bg-neutral-900 border border-white/10 text-xs text-neutral-200 placeholder:text-neutral-500 focus:outline-none focus:border-indigo-500 font-mono leading-relaxed"
-                      placeholder="Capture meeting minutes, client feedback, and technical agreements..."
-                    />
-                    <div className="flex items-center justify-between text-[10px] text-neutral-500">
-                      <span>Auto-persisting to CRM record</span>
-                      <span className="text-emerald-400 font-semibold">✓ Synchronized</span>
-                    </div>
-                  </div>
+                  {/* Meeting notes live in their own panel and are saved to the CRM */}
+                  <button
+                    type="button"
+                    onClick={() => setActiveSidebarTab('notes')}
+                    className="w-full flex items-center justify-between gap-2 rounded-xl border border-white/10 bg-neutral-900 px-3 py-2.5 text-left text-xs text-neutral-200 hover:border-indigo-500/50 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+                  >
+                    <span className="flex items-center gap-2"><NotebookPen className="h-3.5 w-3.5 text-indigo-300" aria-hidden="true" />Meeting notes</span>
+                    <span className="text-[11px] text-neutral-400">{(activeMeeting?.notes || '').trim() ? `${(activeMeeting?.notes || '').length.toLocaleString()} characters` : 'Open'}</span>
+                  </button>
 
                   {/* Tasks & Action Items */}
                   <div className="space-y-2">
@@ -2037,10 +2178,10 @@ export default function VideoMeetingWorkspace({
                         setTimeout(() => setTranscriptSaveNotice(null), 3500);
                       }}
                       className="w-full py-2 px-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md shadow-emerald-950/40 transition-all cursor-pointer active:scale-98"
-                      title="Save the complete meeting transcript into Greet Meeting tabs"
+                      title="Save the complete meeting transcript to GREET history"
                     >
                       <Save className="h-3.5 w-3.5" />
-                      <span>Save Transcript to Greet Hub Tabs</span>
+                      <span>Save transcript to GREET</span>
                     </button>
 
                     {transcriptSaveNotice && (
@@ -2190,57 +2331,30 @@ export default function VideoMeetingWorkspace({
               </button>
             </div>
 
-            {/* Plan Tier & Capacity Overview */}
+            {/* Room capacity (the meeting's plan; read-only here) */}
             <div className="p-3.5 rounded-2xl bg-neutral-900/90 border border-white/10 space-y-2.5">
               <div className="flex items-center justify-between text-xs">
                 <span className="text-neutral-300 font-medium flex items-center gap-1.5">
                   <Users className="h-3.5 w-3.5 text-indigo-400" />
-                  <span>Room Capacity ({planConfig.label})</span>
+                  <span>Room capacity ({meetingPlanLabel})</span>
                 </span>
                 <span className="font-mono font-bold text-white text-[11px]">
-                  {participantsList.length + 1} / {planConfig.maxParticipants} max attendees
+                  {participantsList.length + 1} / {meetingLimits.maxParticipants}
+                  {waitingRoom.length > 0 && <span className="text-amber-300 font-normal"> · {waitingRoom.length} waiting</span>}
                 </span>
               </div>
-              <div className="w-full h-1.5 rounded-full bg-neutral-800 overflow-hidden">
-                <div 
+              <div className="w-full h-1.5 rounded-full bg-neutral-800 overflow-hidden" role="progressbar" aria-label="Room capacity" aria-valuemin={0} aria-valuemax={meetingLimits.maxParticipants} aria-valuenow={participantsList.length + 1}>
+                <div
                   className={`h-full rounded-full transition-all duration-300 ${
-                    (participantsList.length + 1) >= planConfig.maxParticipants ? 'bg-rose-500' : 'bg-indigo-500'
+                    capacityState === 'full' ? 'bg-rose-500' : capacityState === 'near' ? 'bg-amber-500' : 'bg-indigo-500'
                   }`}
-                  style={{ width: `${Math.min(100, ((participantsList.length + 1) / planConfig.maxParticipants) * 100)}%` }}
+                  style={{ width: `${Math.min(100, ((participantsList.length + 1) / meetingLimits.maxParticipants) * 100)}%` }}
                 />
               </div>
-              <div className="grid grid-cols-3 gap-1.5 pt-1">
-                <button
-                  type="button"
-                  onClick={() => setPlanTier('standard')}
-                  className={`p-2 rounded-xl text-left border cursor-pointer transition-all ${
-                    currentPlanTier === 'standard' ? 'bg-indigo-600/30 border-indigo-500 text-white' : 'bg-neutral-950/60 border-white/5 text-neutral-400 hover:text-white'
-                  }`}
-                >
-                  <div className="text-[10px] font-bold">Standard</div>
-                  <div className="text-[9px] text-neutral-400">100 • 60 min</div>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPlanTier('premium')}
-                  className={`p-2 rounded-xl text-left border cursor-pointer transition-all ${
-                    currentPlanTier === 'premium' ? 'bg-indigo-600/30 border-indigo-500 text-white' : 'bg-neutral-950/60 border-white/5 text-neutral-400 hover:text-white'
-                  }`}
-                >
-                  <div className="text-[10px] font-bold">Premium</div>
-                  <div className="text-[9px] text-neutral-400">250 • Unlim.</div>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPlanTier('enterprise')}
-                  className={`p-2 rounded-xl text-left border cursor-pointer transition-all ${
-                    currentPlanTier === 'enterprise' ? 'bg-indigo-600/30 border-indigo-500 text-white' : 'bg-neutral-950/60 border-white/5 text-neutral-400 hover:text-white'
-                  }`}
-                >
-                  <div className="text-[10px] font-bold">Enterprise</div>
-                  <div className="text-[9px] text-neutral-400">500 • Unlim.</div>
-                </button>
-              </div>
+              <p className="text-[11px] text-neutral-400">
+                The {meetingPlanLabel} plan allows {meetingLimits.maxParticipants} people and meetings up to {formatMinutes(meetingLimits.maxDurationMinutes)}.{' '}
+                <button type="button" onClick={() => openPlans()} className="underline underline-offset-2 text-indigo-300 hover:text-white cursor-pointer">See plans</button>
+              </p>
             </div>
 
             {/* Method A: Copy Link */}
@@ -2266,13 +2380,16 @@ export default function VideoMeetingWorkspace({
 
             {/* Method B: Email Invite */}
             <form onSubmit={handleSendInviteEmail} className="space-y-3">
-              <label className="text-xs font-semibold text-neutral-400">Invite by Email Address</label>
+              <label htmlFor="invite-email-input" className="text-xs font-semibold text-neutral-400">Invite by email (separate several with commas)</label>
               <div className="flex gap-2">
                 <input
-                  type="email"
+                  id="invite-email-input"
+                  type="text"
+                  inputMode="email"
+                  autoComplete="off"
                   value={inviteEmailInput}
                   onChange={(e) => setInviteEmailInput(e.target.value)}
-                  placeholder="e.g. client.executive@alpha-tech.cloud"
+                  placeholder="ana@acme.com, li@acme.com"
                   className="flex-1 px-3 py-2.5 rounded-xl bg-neutral-900 border border-white/10 text-xs text-white placeholder:text-neutral-500 focus:outline-none focus:border-indigo-500"
                 />
                 <button
@@ -2373,7 +2490,7 @@ export default function VideoMeetingWorkspace({
             </div>
 
             <p className="text-xs text-neutral-300 leading-relaxed">
-              Recording this consultation will archive the media file into your <span className="font-semibold text-white">Greet Hub Recordings Vault</span>. All participants will receive an on-screen visual notification.
+              Recording this consultation will archive the media file on this device, or to your organization's <span className="font-semibold text-white">GREET recordings</span> when cloud recording is on. Everyone is asked to agree first and sees a red "Recording" label while it runs.
             </p>
 
             <label className="flex items-start gap-2.5 p-3 rounded-xl bg-neutral-900 border border-white/10 cursor-pointer">
@@ -2405,7 +2522,7 @@ export default function VideoMeetingWorkspace({
                   setRecordingConsentGranted(true);
                   const started = await startRecording();
                   if (started) {
-                    sendChatMessage('🔴 Meeting recording started. Session will be archived into Greet Hub Vault upon conclusion.');
+                    sendChatMessage('🔴 Recording started.');
                   }
                 }}
                 className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 disabled:opacity-40 text-white font-bold text-xs transition-all cursor-pointer shadow-md shadow-rose-950/50 flex items-center justify-center gap-1.5"
@@ -2711,7 +2828,7 @@ export default function VideoMeetingWorkspace({
                   <CheckCircle2 className="h-6 w-6 text-emerald-400" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-white">Meeting Concluded & Archived</h3>
+                  <h3 className="text-base font-bold text-white">{endedByTimeLimit ? `Meeting ended at the ${formatMinutes(meetingLimits.maxDurationMinutes)} limit of the ${meetingPlanLabel} plan` : activeMeeting?.endedReason === 'admin' ? 'An administrator ended this meeting' : activeMeeting?.endedReason === 'host' ? 'The host ended the meeting' : 'Meeting Concluded & Archived'}</h3>
                   <p className="text-xs text-neutral-400">Duration: {formatDuration(currentDuration)} • Room ID: {activeMeeting?.roomId}</p>
                 </div>
               </div>
@@ -3034,7 +3151,7 @@ export default function VideoMeetingWorkspace({
                       className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-bold text-white flex items-center gap-1 cursor-pointer"
                     >
                       <Save className="h-3 w-3" />
-                      <span>Save in Greet Tabs</span>
+                      <span>Save to GREET</span>
                     </button>
                   </div>
                 </div>
@@ -3060,10 +3177,86 @@ export default function VideoMeetingWorkspace({
             {/* TAB: Meeting Details */}
             {summaryActiveTab === 'details' && (
               <div className="space-y-3">
+                {/* AI recap: summary, decisions, action items and a follow-up email draft */}
+                <div className="p-3 rounded-xl bg-indigo-950/40 border border-indigo-500/30 space-y-2.5" aria-live="polite">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[10px] font-bold text-indigo-300 uppercase tracking-wider flex items-center gap-1.5">
+                      <Sparkles className="h-3.5 w-3.5" /> AI recap
+                    </span>
+                    <button
+                      type="button"
+                      onClick={generateAiRecap}
+                      disabled={aiRecapLoading}
+                      className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white text-[11px] font-bold flex items-center gap-1.5 cursor-pointer"
+                    >
+                      {aiRecapLoading ? <RotateCw className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+                      {aiRecapLoading ? 'Generating…' : aiRecap ? 'Regenerate' : 'Generate recap'}
+                    </button>
+                  </div>
+                  {!aiRecap && !aiRecapError && !aiRecapLoading && (
+                    <p className="text-[11px] text-neutral-400">Summarizes the transcript and your notes into decisions, action items and a follow-up email you can edit before sending.</p>
+                  )}
+                  {aiRecapError && <p role="alert" className="text-[11px] text-rose-300">{aiRecapError}</p>}
+                  {aiRecap && (
+                    <div className="space-y-2.5">
+                      {aiRecap.notice && <p className="text-[10px] text-amber-300">{aiRecap.notice}</p>}
+                      <p className="text-xs text-neutral-200 leading-relaxed">{aiRecap.summary}</p>
+                      {aiRecap.decisions.length > 0 && (
+                        <div>
+                          <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Decisions</span>
+                          <ul className="mt-1 space-y-0.5">{aiRecap.decisions.map((d, i) => <li key={i} className="text-xs text-neutral-300">• {d}</li>)}</ul>
+                        </div>
+                      )}
+                      {aiRecap.actionItems.length > 0 && (
+                        <div>
+                          <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Action items</span>
+                          <ul className="mt-1 space-y-1">
+                            {aiRecap.actionItems.map((a, i) => (
+                              <li key={i} className="flex items-center justify-between gap-2 text-xs text-neutral-200">
+                                <span className="min-w-0">• {a.title} <span className="text-[10px] text-neutral-400">({a.owner}{a.dueInDays != null ? `, ${a.dueInDays}d` : ''})</span></span>
+                                <button
+                                  type="button"
+                                  onClick={() => addRecapActionItem(i)}
+                                  disabled={aiRecapAdded.has(i)}
+                                  className="shrink-0 px-2 py-0.5 rounded-md bg-neutral-800 hover:bg-neutral-700 disabled:bg-emerald-950 disabled:text-emerald-300 text-[10px] font-semibold text-neutral-200 cursor-pointer"
+                                >
+                                  {aiRecapAdded.has(i) ? 'Added' : 'Add to follow-ups'}
+                                </button>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {aiRecap.followUpEmail.body && (
+                        <div className="space-y-1">
+                          <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Follow-up email draft</span>
+                          <p className="text-xs font-semibold text-white">{aiRecap.followUpEmail.subject}</p>
+                          <p className="text-xs text-neutral-300 whitespace-pre-wrap max-h-32 overflow-y-auto">{aiRecap.followUpEmail.body}</p>
+                          <div className="flex gap-1.5 pt-1">
+                            <button
+                              type="button"
+                              onClick={() => { navigator.clipboard?.writeText(`${aiRecap.followUpEmail.subject}\n\n${aiRecap.followUpEmail.body}`).then(() => showToast('Follow-up email copied.', 'success'), () => showToast('Copy failed: select the text instead.', 'warning')); }}
+                              className="px-2 py-1 rounded-md bg-neutral-800 hover:bg-neutral-700 text-[11px] font-semibold text-neutral-200 flex items-center gap-1 cursor-pointer"
+                            >
+                              <Copy className="h-3 w-3" /> Copy
+                            </button>
+                            <a
+                              href={`mailto:${participantsList.map(p => p.email).filter(Boolean).join(',')}?subject=${encodeURIComponent(aiRecap.followUpEmail.subject)}&body=${encodeURIComponent(aiRecap.followUpEmail.body)}`}
+                              className="px-2 py-1 rounded-md bg-neutral-800 hover:bg-neutral-700 text-[11px] font-semibold text-neutral-200 flex items-center gap-1"
+                            >
+                              <Send className="h-3 w-3" /> Open in email
+                            </a>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
                 <div className="p-3 rounded-xl bg-neutral-900 border border-white/5 space-y-1">
                   <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Attendance Roster</span>
                   <p className="text-xs text-neutral-200">
-                    Camelia Rose (Host), {participantsList.map(p => p.name).join(', ')}
+                    {[`${localUserName} (Host)`, ...participantsList.map(p => p.name)].join(', ')}
                   </p>
                 </div>
 
@@ -3106,7 +3299,7 @@ export default function VideoMeetingWorkspace({
                 className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-all cursor-pointer shadow-md flex items-center justify-center gap-1.5"
               >
                 <Disc className="h-3.5 w-3.5" />
-                <span>View in Greet Hub Recordings Tab</span>
+                <span>View in GREET recordings</span>
               </button>
 
               <button
@@ -3123,6 +3316,22 @@ export default function VideoMeetingWorkspace({
           </div>
         </div>
       )}
+
+      <PlanUpgradeDialog open={showPlans} notice={dialogNotice} onClose={() => { setShowPlans(false); setDialogNotice(null); }} />
+
+      <EndMeetingConfirmDialog
+        open={showEndConfirm}
+        isRecording={isRecording}
+        participantsCount={participantsList.length + 1}
+        onCancel={() => setShowEndConfirm(false)}
+        onConfirm={async () => {
+          setShowEndConfirm(false);
+          if (isRecording) {
+            await stopRecording();
+          }
+          setShowEndMeetingSummaryModal(true);
+        }}
+      />
 
       {/* Toast Notification Banner */}
       <AnimatePresence>
@@ -3159,4 +3368,17 @@ export default function VideoMeetingWorkspace({
 
     </div>
   );
+}
+
+/** Plays one remote video track (LiveKit) in a tile. */
+function RemoteVideo({ track, fit }: { track: MediaStreamTrack; fit: 'cover' | 'contain' }) {
+  const ref = useRef<HTMLVideoElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.srcObject = new MediaStream([track]);
+    el.play?.().catch(() => {});
+    return () => { el.srcObject = null; };
+  }, [track]);
+  return <video ref={ref} autoPlay playsInline muted className={`absolute inset-0 w-full h-full ${fit === 'cover' ? 'object-cover' : 'object-contain bg-black'}`} />;
 }

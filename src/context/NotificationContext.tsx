@@ -41,7 +41,8 @@ export interface SimulatedEmailDispatch {
   preview: string;
   timestamp: string;
   type: string;
-  status: 'sent' | 'queued';
+  /** 'not_sent': email alerts aren't connected to a mail service yet. */
+  status: 'sent' | 'queued' | 'not_sent';
 }
 
 export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
@@ -65,7 +66,7 @@ export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
     end: '07:00',
   },
   deliveryFrequency: 'instant',
-  emailRecipient: 'rpierrette45@gmail.com',
+  emailRecipient: '',
 };
 
 interface NotificationContextType {
@@ -194,30 +195,12 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const [emailDispatches, setEmailDispatches] = useState<SimulatedEmailDispatch[]>(() => {
     try {
       const saved = localStorage.getItem('obsidian_email_dispatches');
-      if (saved) return JSON.parse(saved);
+      // Earlier builds seeded two invented "sent" emails; never show them.
+      if (saved) return (JSON.parse(saved) as SimulatedEmailDispatch[]).filter((d) => !String(d.id).startsWith('dispatch-init-'));
     } catch {
       // fallback
     }
-    return [
-      {
-        id: 'dispatch-init-1',
-        recipient: 'rpierrette45@gmail.com',
-        subject: '[SLA ALERT] Vanguard Health Systems SLA response required',
-        preview: 'Ticket #4811 approaching 2-hour response threshold for SLA guarantee.',
-        timestamp: '10:15 AM',
-        type: 'sla',
-        status: 'sent',
-      },
-      {
-        id: 'dispatch-init-2',
-        recipient: 'rpierrette45@gmail.com',
-        subject: '[NEW LEAD] Sophia Vance from Cognitive Horizon AI ($65k ARR)',
-        preview: 'New inbound enterprise lead qualified via WhatsApp CRM connector.',
-        timestamp: '09:40 AM',
-        type: 'lead',
-        status: 'sent',
-      },
-    ];
+    return [];
   });
 
   const [pushPermission, setPushPermission] = useState<'granted' | 'denied' | 'default' | 'unsupported'>('default');
@@ -453,12 +436,13 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     if (allowEmail) {
       const newEmail: SimulatedEmailDispatch = {
         id: `email-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        recipient: preferences.emailRecipient || 'rpierrette45@gmail.com',
+        recipient: preferences.emailRecipient || '(no address set)',
         subject: `[${priority.toUpperCase()} CRM ALERT] ${title}`,
         preview: message,
         timestamp,
         type: String(type),
-        status: 'sent',
+        // Not connected to a mail service yet: record it honestly instead of claiming it was sent.
+        status: 'not_sent',
       };
       setEmailDispatches(prev => [newEmail, ...prev.slice(0, 24)]);
     }
@@ -581,7 +565,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       case 'interaction': {
         const interactions = [
           { title: 'Client Viewed Proposal', message: 'Strata Global Agency opened "Enterprise Omnichannel Expansion" (View count: 4).' },
-          { title: 'Customer Joined Waiting Room', message: 'Elena Rostova is in the Greet Video Room ready for consultation.' },
+          { title: 'Customer Joined Waiting Room', message: 'Elena Rostova is in the GREET waiting room.' },
           { title: 'Social Mention Spike', message: 'LinkedIn post "AI Workflow Velocity" reached 1,400+ executive impressions.' }
         ];
         const idx = Math.floor(Math.random() * interactions.length);
@@ -681,6 +665,9 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     </NotificationContext.Provider>
   );
 };
+
+/** Like useNotifications, but returns null outside a NotificationProvider (e.g. in tests). */
+export const useOptionalNotifications = () => useContext(NotificationContext) ?? null;
 
 export const useNotifications = () => {
   const context = useContext(NotificationContext);

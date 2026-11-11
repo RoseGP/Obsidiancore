@@ -70,7 +70,7 @@ function generateContextualCrmReply(incoming: string, leadContext?: any): { repl
       intent: 'video_consultation',
       sentiment: 'positive',
       action: 'launch_video',
-      reply: `I have pre-configured a secure WebRTC video consultation room for **${leadName}**. You can launch the Greet Hub directly or send an instant invite link to initiate the live session.`
+      reply: `I have pre-configured a GREET video meeting for **${leadName}**. You can open GREET directly or send an instant invite link to initiate the live session.`
     };
   }
 

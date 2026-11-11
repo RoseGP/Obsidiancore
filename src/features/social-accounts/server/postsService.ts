@@ -31,7 +31,7 @@ export interface AppPost {
 export interface CreatePostInput {
   content: string;
   scheduledAt: string;
-  mode: 'draft' | 'schedule';
+  mode: 'draft' | 'schedule' | 'now';
   accountIds?: string[];
   platforms?: AccountPlatform[];
   mediaUrls: string[];
@@ -93,18 +93,30 @@ export function createPostsService(cfg: SocialAccountsConfig, store: AccountsSto
     return mine.map((p) => toApp(p, owned.get(p.channelId)!, updated)).sort((a, b) => a.scheduledAt.localeCompare(b.scheduledAt));
   }
 
-  async function uploadAll(credential: string, urls: string[]): Promise<WorkspaceMedia[]> {
+  /**
+   * Turns media URLs into workspace media. Files this user already uploaded (their Postiz path is in
+   * u.uploads) are reused as-is; any other https link is imported once with upload-from-url.
+   */
+  async function uploadAll(credential: string, urls: string[], u?: UserDoc): Promise<WorkspaceMedia[]> {
     const out: WorkspaceMedia[] = [];
-    for (const url of urls) out.push(await call(() => gateway.uploadMediaFromUrl(credential, url)));
+    for (const url of urls) {
+      const known = u?.uploads?.[url];
+      out.push(known ? { id: known.id, path: known.path } : await call(() => gateway.uploadMediaFromUrl(credential, url)));
+    }
     return out;
   }
 
   async function uploadFile(userId: string, buffer: Buffer, fileName: string, mimeType: string): Promise<WorkspaceMedia> {
     const { credential } = await context(userId);
-    if (gateway.uploadMediaFile) {
-      return await call(() => gateway.uploadMediaFile!(credential, buffer, fileName, mimeType));
-    }
-    throw new AccountsError('Direct file upload is not supported by the configured gateway.', 501, 'not_implemented');
+    if (!gateway.uploadMediaFile) throw new AccountsError('Direct file upload is not supported by the configured gateway.', 501, 'not_implemented');
+    const media = await call(() => gateway.uploadMediaFile!(credential, buffer, fileName, mimeType));
+    // Remember it so creating the post reuses this upload (keeps the newest 200).
+    await store.updateUser(userId, [], (d) => {
+      const all = { ...(d.uploads ?? {}), [media.path]: { id: media.id, path: media.path, at: nowIso() } };
+      d.uploads = Object.fromEntries(Object.entries(all).sort((a, b) => b[1].at.localeCompare(a[1].at)).slice(0, 200));
+      return d;
+    });
+    return media;
   }
 
   async function create(userId: string, input: CreatePostInput): Promise<AppPost[]> {
@@ -135,16 +147,18 @@ export function createPostsService(cfg: SocialAccountsConfig, store: AccountsSto
     for (const t of targets) {
       const ch = channels.find((c) => c.id === t.externalId);
       if (!ch) throw new AccountsError(`${t.name} was removed from the workspace. Reconnect it in Accounts.`, 409, 'account_unavailable');
-      if (ch.disabled && input.mode === 'schedule') throw new AccountsError(`${t.name} is disabled in Postiz. Reconnect it in Accounts.`, 409, 'account_unavailable');
+      if (ch.disabled && input.mode !== 'draft') throw new AccountsError(`${t.name} is disabled in Postiz. Reconnect it in Accounts.`, 409, 'account_unavailable');
     }
 
-    const media = await uploadAll(credential, input.mediaUrls);
+    const media = await uploadAll(credential, input.mediaUrls, u);
+    // "Now" publishes immediately: the time is the server's, never the browser's.
+    const publishAt = input.mode === 'now' ? nowIso() : input.scheduledAt;
     const saved = await call(() => gateway.savePosts(credential, {
-      mode: input.mode, publishAt: input.scheduledAt,
+      mode: input.mode, publishAt,
       items: targets.map((t) => ({ channelId: t.externalId, channelIdentifier: channels.find((c) => c.id === t.externalId)!.identifier, content: input.content, media })),
     }));
     // Read back for ids, groups and states (the create response isn't a stable contract).
-    const around = { from: new Date(new Date(input.scheduledAt).getTime() - 60_000).toISOString(), to: new Date(new Date(input.scheduledAt).getTime() + 60_000).toISOString() };
+    const around = { from: new Date(new Date(publishAt).getTime() - 60_000).toISOString(), to: new Date(new Date(publishAt).getTime() + 60_000).toISOString() };
     const fresh = (await call(() => gateway.listPosts(credential, around))).filter((p) => targets.some((t) => t.externalId === p.channelId));
     const savedIds = new Set((saved ?? []).map((p) => p.id));
     const created = savedIds.size ? fresh.filter((p) => savedIds.has(p.id)) : fresh.filter((p) => p.content === input.content);
@@ -174,13 +188,13 @@ export function createPostsService(cfg: SocialAccountsConfig, store: AccountsSto
   }
 
   async function update(userId: string, postId: string, patch: UpdatePostInput): Promise<AppPost> {
-    const { credential, entry, conn, current } = await ownedPost(userId, postId);
+    const { u, credential, entry, conn, current } = await ownedPost(userId, postId);
     if (current.state === 'published') throw new AccountsError('Published posts can’t be edited.', 409, 'published');
     if (!entry.createdByApp && patch.mediaUrls === undefined) {
       // Postiz's post list omits media, so re-saving an outside post could drop its images.
       throw new AccountsError('This post was created outside the app. Edit it in Postiz so its media isn’t lost.', 409, 'external_post');
     }
-    const media = patch.mediaUrls !== undefined ? await uploadAll(credential, patch.mediaUrls) : entry.media ?? [];
+    const media = patch.mediaUrls !== undefined ? await uploadAll(credential, patch.mediaUrls, u) : entry.media ?? [];
     const mode = patch.mode ?? (current.state === 'draft' ? 'draft' : 'schedule');
     const publishAt = patch.scheduledAt ?? current.publishAt;
     await call(() => gateway.savePosts(credential, {

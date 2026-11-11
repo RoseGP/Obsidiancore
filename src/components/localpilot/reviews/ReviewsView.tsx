@@ -14,12 +14,16 @@ import { ReviewItem } from '../types';
 export interface ReviewsViewProps {
   reviews: ReviewItem[];
   onApproveAndPublish: (reviewId: string, replyText: string) => void;
+  /** Re-syncs reviews from Google. */
+  onSync?: () => Promise<unknown> | void;
 }
 
 export const ReviewsView: React.FC<ReviewsViewProps> = ({
   reviews,
-  onApproveAndPublish
+  onApproveAndPublish,
+  onSync
 }) => {
+  const [syncing, setSyncing] = useState(false);
   const [activeFilter, setActiveFilter] = useState<
     'All' | 'Unanswered' | '5 Stars' | '4 Stars' | '3 Stars' | '2 Stars' | '1 Star' | 'Needs attention'
   >('All');
@@ -48,6 +52,11 @@ export const ReviewsView: React.FC<ReviewsViewProps> = ({
   });
 
   const unansweredCount = reviews.filter((r) => r.status === 'unanswered').length;
+  // All figures below come from the reviews synced from Google.
+  const avgRating = reviews.length ? Math.round((reviews.reduce((a, r) => a + r.rating, 0) / reviews.length) * 10) / 10 : null;
+  const responseRate = reviews.length ? Math.round(((reviews.length - unansweredCount) / reviews.length) * 1000) / 10 : null;
+  const countStars = (n: number) => reviews.filter((r) => r.rating === n).length;
+  const needsAttentionCount = reviews.filter((r) => r.rating <= 3 || r.sentiment === 'Negative').length;
 
   const handleOpenDrawer = (review: ReviewItem) => {
     setSelectedReview(review);
@@ -70,7 +79,7 @@ export const ReviewsView: React.FC<ReviewsViewProps> = ({
             Reviews & Customer Feedback
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Monitor, analyze with AI, and publish approved responses to Google customer reviews.
+            Read your Google reviews, draft replies with AI, and publish the ones you approve.
           </p>
         </div>
 
@@ -78,9 +87,11 @@ export const ReviewsView: React.FC<ReviewsViewProps> = ({
           <Button
             variant="outline"
             size="sm"
-            leftIcon={<RefreshCw className="h-3.5 w-3.5 text-slate-500" />}
+            disabled={!onSync || syncing}
+            onClick={async () => { if (!onSync) return; setSyncing(true); try { await onSync(); } finally { setSyncing(false); } }}
+            leftIcon={<RefreshCw className={`h-3.5 w-3.5 text-slate-500 ${syncing ? 'animate-spin' : ''}`} />}
           >
-            Sync Google Reviews
+            {syncing ? 'Syncing…' : 'Sync Google reviews'}
           </Button>
         </div>
       </div>
@@ -90,19 +101,21 @@ export const ReviewsView: React.FC<ReviewsViewProps> = ({
         <div className="p-3.5 rounded-xl border border-slate-200 bg-white">
           <span className="text-[11px] font-medium text-slate-500 block">Average Rating</span>
           <div className="text-xl font-bold text-slate-900 mt-0.5 flex items-center gap-1.5">
-            <span>4.8</span>
-            <div className="flex">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <Star key={i} className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
-              ))}
-            </div>
+            <span>{avgRating ?? '—'}</span>
+            {avgRating !== null && (
+              <div className="flex">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <Star key={i} className={`h-3.5 w-3.5 ${i < Math.round(avgRating) ? 'fill-amber-400 text-amber-400' : 'text-slate-300'}`} />
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
         <div className="p-3.5 rounded-xl border border-slate-200 bg-white">
           <span className="text-[11px] font-medium text-slate-500 block">Total Reviews</span>
           <div className="text-xl font-bold text-slate-900 mt-0.5">
-            1,284
+            {reviews.length.toLocaleString()}
           </div>
         </div>
 
@@ -116,7 +129,7 @@ export const ReviewsView: React.FC<ReviewsViewProps> = ({
         <div className="p-3.5 rounded-xl border border-emerald-200 bg-emerald-50/40">
           <span className="text-[11px] font-medium text-emerald-800 block">Response Rate</span>
           <div className="text-xl font-bold text-emerald-900 mt-0.5">
-            91.4%
+            {responseRate === null ? '—' : `${responseRate}%`}
           </div>
         </div>
       </div>
@@ -135,12 +148,12 @@ export const ReviewsView: React.FC<ReviewsViewProps> = ({
               {[
                 { id: 'All', label: 'All Reviews', count: reviews.length },
                 { id: 'Unanswered', label: 'Unanswered', count: unansweredCount, badgeVariant: 'warning' },
-                { id: 'Needs attention', label: 'Needs Attention (≤3★)', count: 2, badgeVariant: 'danger' },
-                { id: '5 Stars', label: '5 Stars ★★★★★', count: 1102 },
-                { id: '4 Stars', label: '4 Stars ★★★★', count: 120 },
-                { id: '3 Stars', label: '3 Stars ★★★', count: 32 },
-                { id: '2 Stars', label: '2 Stars ★★', count: 18 },
-                { id: '1 Star', label: '1 Star ★', count: 12 },
+                { id: 'Needs attention', label: 'Needs Attention (≤3★)', count: needsAttentionCount, badgeVariant: 'danger' },
+                { id: '5 Stars', label: '5 Stars ★★★★★', count: countStars(5) },
+                { id: '4 Stars', label: '4 Stars ★★★★', count: countStars(4) },
+                { id: '3 Stars', label: '3 Stars ★★★', count: countStars(3) },
+                { id: '2 Stars', label: '2 Stars ★★', count: countStars(2) },
+                { id: '1 Star', label: '1 Star ★', count: countStars(1) },
               ].map((f) => {
                 const isSelected = activeFilter === f.id;
                 return (
@@ -173,7 +186,7 @@ export const ReviewsView: React.FC<ReviewsViewProps> = ({
               <span>Smart Moderation</span>
             </div>
             <p className="text-[11px] text-slate-500 leading-relaxed">
-              AI drafts responses tailored to specific menu items, staff mentions, and sentiment. All replies require manager approval before posting.
+              AI can draft a reply for each review. Nothing is posted to Google until you approve it.
             </p>
           </div>
         </div>
@@ -197,7 +210,7 @@ export const ReviewsView: React.FC<ReviewsViewProps> = ({
             <EmptyState
               icon={<MessageSquare className="h-6 w-6 text-slate-400" />}
               title="No reviews found"
-              description="There aren't any customer reviews matching your active filter criteria."
+              description={reviews.length ? "No reviews match this filter." : "No reviews synced from Google yet."}
               actionLabel="Clear filters"
               onAction={() => {
                 setActiveFilter('All');

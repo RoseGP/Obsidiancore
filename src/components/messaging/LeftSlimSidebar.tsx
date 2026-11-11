@@ -1,4 +1,5 @@
 import React from 'react';
+import { initialsAvatar } from './avatar';
 import {
   MessageSquare,
   Users,
@@ -115,7 +116,7 @@ export const LeftSlimSidebar: React.FC<LeftSlimSidebarProps> = ({
         <div className="relative group">
           <div className="relative cursor-pointer">
             <img
-              src={currentUser.avatar}
+              src={currentUser.avatar || initialsAvatar(currentUser.name)}
               alt={currentUser.name}
               className="w-10 h-10 rounded-xl object-cover ring-2 ring-white/10 hover:ring-blue-500/40 transition-all"
             />

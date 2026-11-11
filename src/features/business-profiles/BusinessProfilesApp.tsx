@@ -9,6 +9,7 @@ import { ToastProvider } from './components/ui';
 export default function BusinessProfilesApp({ onOpenGbp }: { onOpenGbp?: () => void }) {
   const [profiles, setProfiles] = useState<ProfileSummaryView[]>([]);
   const [aiConfigured, setAiConfigured] = useState(false);
+  const [canCreate, setCanCreate] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [openId, setOpenId] = useState<string | null>(() => { try { return new URLSearchParams(window.location.search).get('bp') || null; } catch { return null; } });
@@ -16,7 +17,7 @@ export default function BusinessProfilesApp({ onOpenGbp }: { onOpenGbp?: () => v
 
   const reload = useCallback(async () => {
     setLoading(true);
-    try { const r = await bpApi.list(); setProfiles(r.profiles); setAiConfigured(r.aiConfigured); setError(null); }
+    try { const r = await bpApi.list(); setProfiles(r.profiles); setAiConfigured(r.aiConfigured); setCanCreate(!!r.permissions?.create); setError(null); }
     catch (e: any) { setError(e.message); } finally { setLoading(false); }
   }, []);
   useEffect(() => { reload(); }, [reload]);
@@ -31,7 +32,7 @@ export default function BusinessProfilesApp({ onOpenGbp }: { onOpenGbp?: () => v
           <ProfileDetail key={openId} id={openId} aiConfigured={aiConfigured} onBack={back} onDeleted={() => { dirty.current = false; setOpenId(null); reload(); }}
             onOpenGbp={() => leave(() => onOpenGbp?.())} onDirtyChange={(d) => { dirty.current = d; }} />
         ) : (
-          <Dashboard profiles={profiles} loading={loading} error={error} onOpen={setOpenId} onCreated={(id) => { setOpenId(id); reload(); }} onReload={reload} />
+          <Dashboard profiles={profiles} loading={loading} error={error} canCreate={canCreate} onOpen={setOpenId} onCreated={(id) => { setOpenId(id); reload(); }} onReload={reload} />
         )}
       </div>
     </ToastProvider>

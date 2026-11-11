@@ -35,7 +35,7 @@ app.use(express.json());
 app.use('/api/accounts', (await import('../../../routes/accountsApi')).default);
 app.use('/api/analytics', (await import('../../../routes/analyticsApi')).default);
 app.use('/api/posts', (await import('../../../routes/postsApi')).default);
-app.use('/api/posts', requireUser, (await import('../../../routes/posts')).default);
+app.use('/api/media', (await import('../../../routes/postsApi')).default);
 
 const H = (u: string) => ({ 'X-Dev-User-Id': u, Origin: APP_URL });
 const A = H('alice'); const B = H('bob');
@@ -43,12 +43,20 @@ const cookieOf = (r: request.Response) => String(([] as string[]).concat(r.heade
 const card = (o: any, p: string) => o.platforms.find((c: any) => c.platform === p);
 const future = (h: number) => new Date(Date.now() + h * 3_600_000).toISOString();
 console.log(`mode: ${MODE}`);
+{
+  const { resolvePostizUrls: urls } = await import('../server/config');
+  assert.deepEqual(urls({ baseUrl: 'https://postiz.example.com' }), { api: 'https://postiz.example.com/api', frontend: 'https://postiz.example.com' });
+  assert.deepEqual(urls({ baseUrl: 'https://postiz.example.com/api/' }), { api: 'https://postiz.example.com/api', frontend: 'https://postiz.example.com' });
+  assert.deepEqual(urls({}), { api: 'https://api.postiz.com', frontend: 'https://platform.postiz.com' });
+  assert.deepEqual(urls({ apiUrl: 'https://api.postiz.com/public/v1' }).api, 'https://api.postiz.com');
+  ok('Postiz URLs: self-hosted <url>/api + <url>, Cloud defaults, /public/v1 suffix removed');
+}
 
 // ---------- Authentication, CSRF, validation ----------
 assert.equal((await request(app).get('/api/accounts')).status, 401);
 assert.equal((await request(app).get('/api/posts').query({ from: future(-1), to: future(1) })).status, 401);
 assert.equal((await request(app).get('/api/analytics')).status, 401);
-assert.equal((await request(app).get('/api/posts/queue')).status, 401); ok('every endpoint (incl. legacy /api/posts/queue) rejects unauthenticated calls');
+assert.notEqual((await request(app).get('/api/posts/queue').set('X-Dev-User-Id', 'alice')).status, 200); ok('every endpoint rejects unauthenticated calls; the legacy /api/posts/queue route is gone');
 assert.equal((await request(app).get('/api/accounts').set('Authorization', 'Bearer admin-jwt-token-2026')).status, 401); ok('hardcoded dev bearer token rejected');
 assert.equal((await request(app).post('/api/accounts/connect').set('X-Dev-User-Id', 'alice').send({ platform: 'x' })).status, 403);
 assert.equal((await request(app).post('/api/accounts/connect').set({ 'X-Dev-User-Id': 'alice', Origin: 'https://evil.example' }).send({ platform: 'x' })).status, 403); ok('CSRF: writes without the app’s Origin are refused');
@@ -137,6 +145,41 @@ const bPost = r.body.posts[0];
 r = await request(app).get('/api/posts').set(A).query({ from: future(-1), to: future(24) });
 assert.equal(r.body.posts.length, 2); assert.ok(!r.body.posts.some((p: any) => p.id === bPost.id)); ok('GET /api/posts returns only the user’s posts');
 
+// ---------- Planner: post now, media upload, channel list ----------
+{
+  r = await request(app).post('/api/posts').set(A).send({ content: 'Live now', mode: 'now', scheduledAt: future(-24), platforms: ['instagram'], mediaUrls: ['https://cdn.example/now.jpg'] });
+  assert.equal(r.status, 201, JSON.stringify(r.body)); assert.equal(mock.state.lastPostBody.type, 'now');
+  assert.ok(Math.abs(Date.parse(mock.state.lastPostBody.date) - Date.now()) < 10_000, 'now uses the server time, not the client value');
+  ok('Post now → Postiz type "now" at the server’s time (client date ignored)');
+  r = await request(app).post('/api/posts').set(A).send({ content: 'x', mode: 'schedule', scheduledAt: future(-1), platforms: ['instagram'] });
+  assert.equal(r.status, 400); ok('schedule still requires a future time');
+
+  const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(64)]);
+  r = await request(app).post('/api/posts/upload').set(A).attach('file', Buffer.from('<?php echo 1; ?> not really an image'), { filename: 'evil.png', contentType: 'image/png' });
+  assert.equal(r.status, 400); assert.equal(r.body.code, 'invalid_type'); ok('upload: type checked from file bytes (a fake .png is rejected)');
+  r = await request(app).post('/api/posts/upload').set(B).attach('file', png, { filename: 'x.png', contentType: 'image/png' }).set('Origin', 'https://evil.example');
+  assert.equal(r.status, 403); ok('upload: cross-site requests rejected (CSRF)');
+  assert.equal((await request(app).post('/api/posts/upload').attach('file', png, 'x.png')).status, 401); ok('upload: sign-in required');
+  r = await request(app).post('/api/posts/upload').set(A).attach('file', Buffer.alloc(26 * 1024 * 1024, 0), { filename: 'big.mp4', contentType: 'video/mp4' });
+  assert.equal(r.status, 413); ok('upload: files over 25 MB rejected with a clear message');
+  const beforeUploads = mock.state.uploadCalls;
+  r = await request(app).post('/api/posts/upload').set(A).attach('file', png, { filename: 'photo.png', contentType: 'application/octet-stream' });
+  assert.equal(r.status, 201, JSON.stringify(r.body)); assert.equal(mock.state.uploadCalls, beforeUploads + 1);
+  const uploaded = r.body.media; assert.match(uploaded.path, /^https:\/\//); ok('upload: real PNG accepted, forwarded to Postiz /public/v1/upload, path returned');
+  const fromUrlBefore = mock.state.uploadFromUrlCalls;
+  r = await request(app).post('/api/posts').set(A).send({ content: 'With uploaded photo', scheduledAt: future(30), platforms: ['instagram'], mediaUrls: [uploaded.path] });
+  assert.equal(r.status, 201, JSON.stringify(r.body)); assert.equal(mock.state.uploadFromUrlCalls, fromUrlBefore);
+  assert.equal(mock.state.lastPostBody.posts[0].value[0].image[0].id, uploaded.id); ok('post reuses the uploaded file (no second upload to Postiz)');
+  r = await request(app).post('/api/media/upload').set(A).attach('file', png, 'p.png');
+  assert.notEqual(r.status, 404); ok('/api/media/upload is the same upload endpoint');
+
+  r = await request(app).get('/api/accounts/integrations').set(A);
+  assert.equal(r.status, 200); const names = r.body.integrations.map((i: any) => i.platform).sort();
+  assert.ok(names.includes('instagram') && names.includes('linkedin')); assert.ok(!r.body.integrations.some((i: any) => i.id === bLinked));
+  assert.ok(!JSON.stringify(r.body).match(/pos_|pca_|pcs_|key_team/)); ok('channel list: only the user’s channels, no tokens or secrets');
+}
+
+
 r = await request(app).patch(`/api/posts/${aPost.id}`).set(B).send({ content: 'hijack' });
 assert.equal(r.status, 404); r = await request(app).delete(`/api/posts/${aPost.id}`).set(B);
 assert.equal(r.status, 404); ok('another user can’t edit or delete the post');
@@ -170,9 +213,9 @@ let limited = 0;
 for (let i = 0; i < 32; i++) if ((await request(app).get('/api/analytics').set(H('rate'))).status === 429) limited++;
 assert.ok(limited > 0); ok('rate limiting returns 429');
 
-// ---------- Legacy router now bound to the verified user ----------
+// ---------- Legacy router removed ----------
 r = await request(app).get('/api/posts/queue').set(A).query({ userId: 'bob' });
-assert.equal(r.status, 200); ok('legacy /api/posts/queue ignores a client userId and uses the verified user');
+assert.equal(r.status, 404); ok('the legacy /api/posts/queue router no longer exists');
 
 // ---------- Direct adapter, disconnect, revocation, redaction ----------
 r = await request(app).post('/api/accounts/connect').set(A).send({ platform: 'bluesky', credentials: { identifier: 'acme.bsky.social', appPassword: 'abcd-efgh-ijkl-mnop' } });

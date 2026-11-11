@@ -7,3 +7,186 @@
 }
 
 /* Scrollbars: see styles/obsidian-theme.css */
+
+
+/* Assistant replies (Markdown): readable documents without the Tailwind typography plugin. */
+.assistant-md { font-size: 14px; line-height: 1.65; text-align: left; }
+.assistant-md > div > :first-child { margin-top: 0; }
+.assistant-md h1 { font-size: 1.35rem; font-weight: 700; line-height: 1.3; margin: 1.1rem 0 0.6rem; color: #111827; }
+.assistant-md h2 { font-size: 1.12rem; font-weight: 700; line-height: 1.35; margin: 1.2rem 0 0.5rem; padding-bottom: 0.25rem; border-bottom: 1px solid #e5e7eb; color: #111827; }
+.assistant-md h3 { font-size: 1rem; font-weight: 650; margin: 1rem 0 0.4rem; color: #1f2937; }
+.assistant-md h4 { font-size: 0.95rem; font-weight: 650; margin: 0.8rem 0 0.3rem; }
+.assistant-md p { margin: 0.5rem 0; }
+.assistant-md ul, .assistant-md ol { margin: 0.5rem 0; padding-left: 1.4rem; }
+.assistant-md ul { list-style: disc; }
+.assistant-md ol { list-style: decimal; }
+.assistant-md li { margin: 0.2rem 0; }
+.assistant-md li > ul, .assistant-md li > ol { margin: 0.2rem 0; }
+.assistant-md strong { font-weight: 650; color: #111827; }
+.assistant-md a { color: #4f46e5; text-decoration: underline; text-underline-offset: 2px; }
+.assistant-md blockquote { margin: 0.6rem 0; padding: 0.3rem 0.8rem; border-left: 3px solid #c7d2fe; color: #4b5563; background: #f8fafc; }
+.assistant-md hr { margin: 1rem 0; border: 0; border-top: 1px solid #e5e7eb; }
+.assistant-md code { font-size: 0.85em; background: #f3f4f6; padding: 0.1rem 0.3rem; border-radius: 4px; }
+.assistant-md pre { margin: 0.6rem 0; padding: 0.7rem 0.9rem; background: #0f172a; color: #e2e8f0; border-radius: 8px; overflow-x: auto; }
+.assistant-md pre code { background: none; padding: 0; color: inherit; }
+.assistant-md table { border-collapse: collapse; width: 100%; margin: 0.7rem 0; font-size: 13px; }
+.assistant-md th, .assistant-md td { border: 1px solid #e5e7eb; padding: 0.4rem 0.6rem; text-align: left; vertical-align: top; }
+.assistant-md th { background: #f9fafb; font-weight: 650; }
+.assistant-md tr:nth-child(even) td { background: #fcfcfd; }
+
+/* Print / "Save as PDF" from the dashboard: content only, full length, no app chrome. */
+@media print {
+  html, body, #root { height: auto !important; overflow: visible !important; background: #fff !important; }
+  .h-screen { height: auto !important; }
+  main, .overflow-hidden, .overflow-y-auto { overflow: visible !important; }
+  #dashboard-root [data-section="assistant"], #dashboard-root [data-section="quick_actions"], #dashboard-root [data-section="work_queues"] { display: none !important; }
+  #dashboard-root section, #dashboard-root li { break-inside: avoid; }
+}
+
+/* ---------------------------------------------------------------------------
+ * AI Command Center surface (dashboard + Lead Intelligence). Follows the app theme:
+ *   light: pastel canvas, frosted white glass, the aurora orb (design from the homepage redesign session)
+ *   dark:  deep-midnight canvas, frosted navy glass, electric blue / cyan / violet accents
+ * It redefines the theme tokens on its root, so every component inside adopts it. This is the one
+ * surface that opts out of the "no glassmorphism" rule (see docs/DESIGN_SYSTEM.md).
+ * ------------------------------------------------------------------------- */
+.cc {
+  --app-bg: #f3f5fa;
+  --surface: rgb(255 255 255 / 0.66);
+  --surface-raised: #ffffff;
+  --surface-sunken: rgb(40 52 96 / 0.045);
+  --border: rgb(40 52 96 / 0.10);
+  --border-strong: rgb(40 52 96 / 0.18);
+  --text: #1a1f2e;
+  --text-muted: #586078;
+  --text-subtle: #8a91a6;
+  --accent: #5468f2;
+  --accent-hover: #4558e6;
+  --accent-text: #4351d6;
+  --accent-soft: rgb(84 104 242 / 0.10);
+  --accent-contrast: #ffffff;
+  --focus-ring: #6d7cff;
+  --cc-violet: #8b5cf6;
+  --cc-cyan: #0891b2;
+  --cc-glass-border: rgb(255 255 255 / 0.95);
+  --cc-shadow: 0 1px 2px rgb(30 40 90 / 0.04), 0 14px 36px -16px rgb(60 80 160 / 0.22);
+  --cc-shadow-hover: 0 2px 4px rgb(30 40 90 / 0.05), 0 20px 44px -16px rgb(60 80 160 / 0.30);
+  --cc-composer-fill: rgb(255 255 255 / 0.92);
+  --cc-glow: rgb(120 150 255 / 0.35);
+  background-color: var(--app-bg);
+  background-image:
+    radial-gradient(900px 520px at 4% -6%, rgb(147 197 253 / 0.42), transparent 62%),
+    radial-gradient(760px 520px at 100% 0%, rgb(196 181 253 / 0.36), transparent 60%),
+    radial-gradient(820px 560px at 62% 46%, rgb(167 243 208 / 0.30), transparent 64%);
+  background-repeat: no-repeat;
+  color: var(--text);
+}
+[data-theme=dark] .cc, .cc[data-theme=dark] {
+  color-scheme: dark;
+  --app-bg: #060a14;
+  --surface: rgb(15 21 38 / 0.66);
+  --surface-raised: #111a30;
+  --surface-sunken: rgb(148 163 255 / 0.06);
+  --border: rgb(148 163 255 / 0.13);
+  --border-strong: rgb(148 163 255 / 0.26);
+  --text: #e8ecf7;
+  --text-muted: #9ba5c1;
+  --text-subtle: #6c7593;
+  --accent: #5b6cff;
+  --accent-hover: #7180ff;
+  --accent-text: #aab4ff;
+  --accent-soft: rgb(91 108 255 / 0.16);
+  --focus-ring: #5ee7ff;
+  --success: #34d399; --success-soft: rgb(52 211 153 / 0.13);
+  --warning: #fbbf24; --warning-soft: rgb(251 191 36 / 0.13);
+  --danger:  #fb7185; --danger-soft:  rgb(251 113 133 / 0.13);
+  --info:    #22d3ee; --info-soft:    rgb(34 211 238 / 0.12);
+  --cc-violet: #a78bfa;
+  --cc-cyan: #22d3ee;
+  --cc-glass-border: rgb(148 163 255 / 0.13);
+  --cc-shadow: inset 0 1px 0 rgb(255 255 255 / 0.05), 0 18px 40px -24px rgb(0 0 0 / 0.75);
+  --cc-shadow-hover: inset 0 1px 0 rgb(255 255 255 / 0.06), 0 22px 48px -20px rgb(0 0 0 / 0.85);
+  --cc-composer-fill: #0f1628;
+  --cc-glow: rgb(91 108 255 / 0.35);
+  background-image:
+    radial-gradient(1100px 520px at 8% -8%, rgb(91 108 255 / 0.20), transparent 62%),
+    radial-gradient(900px 480px at 100% 0%, rgb(34 211 238 / 0.10), transparent 60%),
+    radial-gradient(800px 600px at 50% 110%, rgb(167 139 250 / 0.10), transparent 60%);
+}
+.cc .cc-card {
+  border-color: var(--cc-glass-border);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  box-shadow: var(--cc-shadow);
+}
+/* Page titles: ink-to-indigo in light, white-to-cyan in dark. */
+.cc .cc-title { background-image: linear-gradient(90deg, #141a2e, #3b4bd8 70%, #6d5df6); -webkit-background-clip: text; background-clip: text; color: transparent; }
+[data-theme=dark] .cc .cc-title { background-image: linear-gradient(90deg, #fff, #cfd6ff 55%, #8fe9ff); }
+/* The copilot card: a soft aurora edge. */
+.cc .cc-holo { position: relative; isolation: isolate; }
+.cc .cc-holo::before {
+  content: ""; position: absolute; inset: -1px; z-index: -1; border-radius: inherit; padding: 1px;
+  background: conic-gradient(from var(--cc-angle, 0deg), rgb(125 211 252 / 0.8), rgb(165 180 252 / 0.85), rgb(216 180 254 / 0.8), rgb(153 246 228 / 0.75), rgb(125 211 252 / 0.8));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude;
+  animation: cc-spin 14s linear infinite; opacity: 0.85;
+}
+@property --cc-angle { syntax: "<angle>"; initial-value: 0deg; inherits: false; }
+@keyframes cc-spin { to { --cc-angle: 360deg; } }
+/* Copilot composer: gradient hairline border and a soft glow. */
+.cc .cc-composer {
+  position: relative; border-radius: 22px; border: 1px solid transparent;
+  background-image: linear-gradient(var(--cc-composer-fill), var(--cc-composer-fill)),
+    linear-gradient(120deg, rgb(125 211 252 / 0.9), rgb(165 180 252 / 0.9), rgb(216 180 254 / 0.9), rgb(153 246 228 / 0.9));
+  background-origin: border-box; background-clip: padding-box, border-box;
+  box-shadow: 0 0 0 4px rgb(147 197 253 / 0.12), 0 18px 44px -18px var(--cc-glow);
+  transition: box-shadow 0.25s ease;
+}
+.cc .cc-composer:focus-within { box-shadow: 0 0 0 4px rgb(129 140 248 / 0.22), 0 22px 50px -16px var(--cc-glow); }
+.cc .cc-composer[data-listening="true"] { box-shadow: 0 0 0 4px rgb(34 211 238 / 0.25), 0 22px 50px -16px rgb(34 211 238 / 0.45); }
+/* The aurora orb (copilot). Small variant via --orb-size. */
+.cc-orb {
+  position: relative; width: var(--orb-size, 28px); height: var(--orb-size, 28px); border-radius: 9999px; flex: none;
+  background:
+    radial-gradient(circle at 30% 26%, rgb(255 255 255 / 0.95) 0%, rgb(255 255 255 / 0) 34%),
+    radial-gradient(circle at 72% 30%, #7dd3fc 0%, rgb(125 211 252 / 0) 52%),
+    radial-gradient(circle at 26% 72%, #f0abfc 0%, rgb(240 171 252 / 0) 56%),
+    radial-gradient(circle at 74% 78%, #a5b4fc 0%, rgb(165 180 252 / 0) 60%),
+    linear-gradient(140deg, #bae6fd, #c4b5fd 55%, #fbcfe8);
+  background-size: 100% 100%, 160% 160%, 160% 160%, 160% 160%, 100% 100%;
+  box-shadow: inset -6px -10px 18px rgb(99 102 241 / 0.28), inset 6px 8px 14px rgb(255 255 255 / 0.7), 0 0 0 5px rgb(255 255 255 / 0.35), 0 14px 34px -6px rgb(129 140 248 / 0.55);
+  animation: cc-orb-drift 9s ease-in-out infinite alternate;
+}
+.cc-orb::after { content: ""; position: absolute; inset: -30%; z-index: -1; border-radius: inherit; background: radial-gradient(closest-side, rgb(165 180 252 / 0.45), rgb(125 211 252 / 0.18) 55%, transparent); filter: blur(10px); }
+.cc-orb[data-busy="true"] { animation: cc-orb-drift 1.6s ease-in-out infinite alternate, cc-pulse 1.4s ease-in-out infinite; }
+[data-theme=dark] .cc-orb { box-shadow: inset -6px -10px 18px rgb(49 46 129 / 0.5), inset 6px 8px 14px rgb(255 255 255 / 0.45), 0 0 0 5px rgb(255 255 255 / 0.06), 0 14px 34px -6px rgb(99 102 241 / 0.6); }
+@keyframes cc-orb-drift { 0% { background-position: 0 0, 0% 0%, 100% 100%, 100% 0%, 0 0; } 100% { background-position: 0 0, 100% 60%, 0% 20%, 20% 100%, 0 0; } }
+@keyframes cc-pulse { 50% { transform: scale(0.94); } }
+/* Setup step cards: a soft tinted glow in the corner. */
+.cc .cc-step { position: relative; overflow: hidden; }
+.cc .cc-step::after { content: ""; position: absolute; top: -40%; right: -25%; width: 70%; height: 130%; pointer-events: none; background: radial-gradient(closest-side, var(--step-tint, rgb(147 197 253 / 0.55)), transparent); opacity: 0.8; }
+.cc .cc-step > * { position: relative; z-index: 1; }
+[data-theme=dark] .cc .cc-step::after { opacity: 0.28; }
+/* "Ask copilot" button aura */
+.cc .cc-aurora { position: relative; isolation: isolate; }
+.cc .cc-aurora::before { content: ""; position: absolute; inset: -1px; z-index: -1; border-radius: inherit; opacity: 0.55; background: linear-gradient(120deg, rgb(125 211 252 / 0.7), rgb(196 181 253 / 0.75), rgb(249 168 212 / 0.6)); filter: blur(8px); }
+/* Microphone level bars while listening */
+.cc-mic-bars span { display: inline-block; width: 3px; margin: 0 1px; border-radius: 2px; background: var(--cc-cyan); animation: cc-bar 0.9s ease-in-out infinite; }
+.cc-mic-bars span:nth-child(2) { animation-delay: 0.15s; } .cc-mic-bars span:nth-child(3) { animation-delay: 0.3s; }
+@keyframes cc-bar { 0%, 100% { height: 4px; } 50% { height: 14px; } }
+/* Mission complete */
+@keyframes cc-pop { 0% { transform: scale(0.6); opacity: 0; } 60% { transform: scale(1.15); opacity: 1; } 100% { transform: scale(1); } }
+.cc-pop { animation: cc-pop 0.45s cubic-bezier(.2,.8,.2,1) both; }
+@media (prefers-reduced-motion: reduce) {
+  .cc .cc-holo::before, .cc-orb, .cc-orb[data-busy="true"], .cc-mic-bars span, .cc-pop { animation: none !important; }
+}
+/* Assistant replies on the Command Center glass (colours from the surface tokens; dark gets lighter headings). */
+.cc .assistant-md { color: var(--text); }
+.cc .assistant-md h1, .cc .assistant-md h2, .cc .assistant-md h3, .cc .assistant-md strong { color: var(--text); }
+.cc .assistant-md h2, .cc .assistant-md hr { border-color: var(--border); }
+.cc .assistant-md a { color: var(--accent-text); }
+.cc .assistant-md blockquote { border-left-color: var(--accent); color: var(--text-muted); background: var(--surface-sunken); }
+.cc .assistant-md code { background: var(--surface-sunken); color: var(--text); }
+.cc .assistant-md pre { background: #0b1020; color: #e2e8f0; border: 1px solid var(--border); }
+.cc .assistant-md th, .cc .assistant-md td { border-color: var(--border); }
+.cc .assistant-md th { background: rgb(148 163 255 / 0.08); }
+.cc .assistant-md tr:nth-child(even) td { background: rgb(148 163 255 / 0.03); }

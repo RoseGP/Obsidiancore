@@ -45,31 +45,20 @@ export const PostsView: React.FC<PostsViewProps> = ({
     setIsEditorOpen(true);
   };
 
-  // Calendar dates for September 2026
-  const calendarDays = [
-    { date: 'Aug 31', currentMonth: false, posts: [] },
-    { date: 'Sep 01', currentMonth: true, isToday: true, posts: [] },
-    { date: 'Sep 02', currentMonth: true, posts: [] },
-    { date: 'Sep 03', currentMonth: true, posts: [] },
-    { 
-      date: 'Sep 04', 
-      currentMonth: true, 
-      posts: [{ id: 'p2', title: 'Labor Day Extended Brunch', type: 'Announcement', status: 'Scheduled' }] 
-    },
-    { date: 'Sep 05', currentMonth: true, posts: [] },
-    { date: 'Sep 06', currentMonth: true, posts: [] },
-    { date: 'Sep 07', currentMonth: true, posts: [] },
-    { date: 'Sep 08', currentMonth: true, posts: [] },
-    { 
-      date: 'Sep 09', 
-      currentMonth: true, 
-      posts: [{ id: 'p1', title: 'Wed Tasting Menu Special', type: 'Offer', status: 'Scheduled' }] 
-    },
-    { date: 'Sep 10', currentMonth: true, posts: [] },
-    { date: 'Sep 11', currentMonth: true, posts: [] },
-    { date: 'Sep 12', currentMonth: true, posts: [] },
-    { date: 'Sep 13', currentMonth: true, posts: [] },
-  ];
+  // Calendar: this week and last week (Mon–Sun), with the posts Google reports for each day.
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const monday = new Date(today); monday.setDate(today.getDate() - ((today.getDay() + 6) % 7) - 7);
+  const dayKey = (d: Date) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+  const calendarDays = Array.from({ length: 14 }, (_, n) => {
+    const d = new Date(monday); d.setDate(monday.getDate() + n);
+    return {
+      date: d.toLocaleDateString(undefined, { month: 'short', day: '2-digit' }),
+      isToday: dayKey(d) === dayKey(today),
+      posts: posts.filter((p) => p.createdAt && dayKey(new Date(p.createdAt)) === dayKey(d))
+        .map((p) => ({ id: p.id, title: p.title || p.content.slice(0, 40) || p.type })),
+    };
+  });
+  const calendarCount = calendarDays.reduce((a, d) => a + d.posts.length, 0);
 
   return (
     <div className="space-y-6 animate-in fade-in duration-200" id="localpilot-posts-view">
@@ -78,22 +67,14 @@ export const PostsView: React.FC<PostsViewProps> = ({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-1">
         <div>
           <h1 className="text-xl font-bold text-slate-900 tracking-tight">
-            Posts & Content Studio
+            Posts
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Create, schedule, and automate Google Business Profile updates, events, and seasonal offers.
+            Publish updates, offers and events to your Google Business Profile.
           </p>
         </div>
 
         <div className="flex items-center gap-2.5">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onOpenAiAssistant}
-            leftIcon={<Sparkles className="h-3.5 w-3.5 text-blue-600" />}
-          >
-            Generate with AI
-          </Button>
           <Button
             variant="primary"
             size="sm"
@@ -142,7 +123,7 @@ export const PostsView: React.FC<PostsViewProps> = ({
             }`}
           >
             <CalendarIcon className="h-3.5 w-3.5" />
-            Calendar (Sep 2026)
+            Calendar
           </button>
         </div>
       </div>
@@ -152,9 +133,9 @@ export const PostsView: React.FC<PostsViewProps> = ({
         <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-2xs space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-bold text-slate-900">
-              September 2026 Content Schedule
+              Last two weeks
             </h3>
-            <span className="text-xs text-slate-500">2 scheduled posts queued</span>
+            <span className="text-xs text-slate-500">{calendarCount} post{calendarCount === 1 ? '' : 's'} published</span>
           </div>
 
           <div className="grid grid-cols-7 gap-2 text-xs">
@@ -222,7 +203,7 @@ export const PostsView: React.FC<PostsViewProps> = ({
                       </Badge>
                       {post.isAiGenerated && (
                         <Badge variant="info" size="sm" className="bg-blue-600 text-white border-0">
-                          ✨ AI Draft
+                          AI draft
                         </Badge>
                       )}
                     </div>

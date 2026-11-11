@@ -189,6 +189,8 @@ export interface ThreadableEmail {
   to?: string;
   body?: string;
   threadId?: string | null;
+  /** Set by the JWZ threader when it groups messages into a conversation. */
+  derivedThreadId?: string;
 }
 
 export interface ChatMessage {

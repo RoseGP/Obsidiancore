@@ -4,10 +4,8 @@ import {
   Layers, ArrowUpRight, ArrowDownRight, 
   Activity, Star, Clock, AlertTriangle, ShieldCheck
 } from 'lucide-react';
-import ConcurrentSessionsManager from './ConcurrentSessionsManager';
 import ActiveSpeakerGalleryGrid from './ActiveSpeakerGalleryGrid';
 import FreeTimeFinderDashboard from './FreeTimeFinderDashboard';
-import LocationInsightsCacheDashboard from './LocationInsightsCacheDashboard';
 
 export default function AnalyticsView() {
   const [selectedTimeframe, setSelectedTimeframe] = useState<'daily' | 'weekly' | 'monthly'>('weekly');
@@ -222,8 +220,7 @@ export default function AnalyticsView() {
         </div>
       </div>
 
-      {/* In-Memory Location Insights & Google Reviews LRU Cache (Doubly Linked List + Hash Map) */}
-      <LocationInsightsCacheDashboard />
+      {/* Google Business Profile performance (views, calls, clicks) is in Local SEO → Performance, from Google's API. */}
 
       {/* Multi-User Meeting Room Search & Free Time Finder (Sweepline Algorithm) */}
       <FreeTimeFinderDashboard />
@@ -231,8 +228,6 @@ export default function AnalyticsView() {
       {/* Real-Time Active Speaker Gallery Engine (Bounded Size-K Min-Heap) */}
       <ActiveSpeakerGalleryGrid />
 
-      {/* Concurrent Sessions & Media Server Load Balancer (Min-Heap Priority Queue) */}
-      <ConcurrentSessionsManager />
 
     </div>
   );

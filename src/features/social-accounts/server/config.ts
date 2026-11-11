@@ -2,12 +2,14 @@
  * Social accounts server configuration. Everything comes from environment
  * variables; there are no credential fallbacks in code.
  *
- *   POSTIZ_API_URL            Postiz backend, e.g. https://api.postiz.com (no /public/v1)
- *   POSTIZ_FRONTEND_URL       Postiz web app hosting /oauth/authorize, e.g. https://platform.postiz.com
+ *   POSTIZ_URL (or POSTIZ_BASE_URL)  Self-hosted Postiz address, e.g. https://postiz.example.com.
+ *                             The backend is then <url>/api and the web app <url> (Postiz's docker-compose layout).
+ *   POSTIZ_API_URL            Override the backend, e.g. https://api.postiz.com (a trailing /public/v1 is removed)
+ *   POSTIZ_FRONTEND_URL       Override the web app hosting /oauth/authorize, e.g. https://platform.postiz.com
  *   POSTIZ_CLIENT_ID          Postiz OAuth app client id (pca_…)   ┐ OAuth mode: each user
  *   POSTIZ_CLIENT_SECRET      Postiz OAuth app client secret (pcs_…)┘ authorizes their workspace
  *   POSTIZ_REDIRECT_URI       Must equal the redirect URL saved on the Postiz OAuth app,
- *                             and point to  <APP_URL>/api/social-accounts/postiz/callback
+ *                             and point to  <APP_URL>/api/accounts/callback
  *   POSTIZ_API_KEY            API-key mode: one shared workspace (used if no client id)
  *   POSTIZ_ENTERPRISE_JWT_SECRET  Self-hosted only: your Postiz JWT_SECRET. Enables the
  *                             /enterprise/url flow that returns users to this app.
@@ -62,11 +64,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): SocialAccounts
 
   const baseUrl = trimSlash(env.POSTIZ_URL || env.POSTIZ_BASE_URL || '');
   const appUrl = trimSlash(env.APP_URL || '');
+  const urls = resolvePostizUrls({ baseUrl, apiUrl: env.POSTIZ_API_URL, frontendUrl: env.POSTIZ_FRONTEND_URL });
 
   return {
     postizMode,
-    postizApiUrl: trimSlash(env.POSTIZ_API_URL || baseUrl || 'https://api.postiz.com'),
-    postizFrontendUrl: trimSlash(env.POSTIZ_FRONTEND_URL || baseUrl || 'https://platform.postiz.com'),
+    postizApiUrl: urls.api,
+    postizFrontendUrl: urls.frontend,
     clientId,
     clientSecret,
     redirectUri: env.POSTIZ_REDIRECT_URI?.trim() || (appUrl ? `${appUrl}/api/accounts/callback` : ''),
@@ -128,3 +131,26 @@ export function verifyState(state: string, key: Buffer, now = Date.now()): State
 }
 
 export const randomId = (prefix: string) => `${prefix}_${crypto.randomBytes(12).toString('base64url')}`;
+
+
+const isPostizCloud = (u: string) => { try { return /(^|\.)postiz\.com$/i.test(new URL(u).hostname); } catch { return false; } };
+const stripPublicApi = (u: string) => trimSlash(u).replace(/\/public\/v1$/i, '');
+
+/**
+ * Where the Postiz backend (OAuth token + public API) and web app (consent page) live.
+ *   Postiz Cloud:   api https://api.postiz.com          web https://platform.postiz.com
+ *   Self-hosted:    api https://postiz.example.com/api  web https://postiz.example.com
+ * Explicit POSTIZ_API_URL / POSTIZ_FRONTEND_URL always win.
+ */
+export function resolvePostizUrls(i: { baseUrl?: string; apiUrl?: string; frontendUrl?: string }): { api: string; frontend: string } {
+  const base = trimSlash(i.baseUrl || '');
+  let api = '', frontend = '';
+  if (base && !isPostizCloud(base)) {
+    const root = base.replace(/\/api$/i, '');
+    api = `${root}/api`; frontend = root;
+  }
+  return {
+    api: stripPublicApi(i.apiUrl || '') || api || 'https://api.postiz.com',
+    frontend: trimSlash(i.frontendUrl || '') || frontend || 'https://platform.postiz.com',
+  };
+}

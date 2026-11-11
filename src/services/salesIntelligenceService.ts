@@ -1,4 +1,5 @@
 import { GoogleGenAI } from '@google/genai';
+import type { BoardColumn } from '../lib/pipelineStages';
 
 export type DealHealth = 'HEALTHY' | 'AT_RISK' | 'STALE' | 'BLOCKED';
 
@@ -38,7 +39,7 @@ export interface OpportunityData {
   company: string;
   businessType: string;
   value: number; // in USD ARR
-  stage: 'new_leads' | 'qualified' | 'proposal_sent' | 'negotiation' | 'closed_won';
+  stage: BoardColumn;
   probability: number;
   priority: 'high' | 'medium' | 'low';
   createdDate?: string;
@@ -169,7 +170,12 @@ export function generateDeterministicSalesIntel(opportunity: OpportunityData): S
   let priorityReason = '';
   let actionDetail = '';
 
-  if (health === 'BLOCKED') {
+  if (opportunity.stage === 'closed_lost' || opportunity.stage === 'unqualified') {
+    primaryAction = 'NURTURE';
+    actionPriority = 'LOW';
+    priorityReason = opportunity.stage === 'closed_lost' ? 'The deal was lost; keep the relationship warm for a future need.' : 'Not a fit right now; check back if their situation changes.';
+    actionDetail = 'Add to a long-term nurture list and revisit later.';
+  } else if (health === 'BLOCKED') {
     primaryAction = 'REQUEST_INFORMATION';
     actionPriority = 'HIGH';
     priorityReason = 'A blocker is actively halting pipeline velocity; requesting required information is needed to clear the obstacle.';

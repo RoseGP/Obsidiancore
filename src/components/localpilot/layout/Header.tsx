@@ -2,8 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useOptionalLocalSeo } from '../live/localSeoClient';
 import { 
   Bell, Search, Sparkles, Check, 
-  ExternalLink, CheckCircle2, AlertTriangle, ShieldCheck
-} from 'lucide-react';
+  ExternalLink, CheckCircle2, AlertTriangle, ShieldCheck, User as UserIcon } from 'lucide-react';
 import { Breadcrumbs } from './Breadcrumbs';
 import { LocationSelector } from './LocationSelector';
 import { DateRangePicker } from './DateRangePicker';
@@ -107,7 +106,7 @@ export const Header: React.FC<HeaderProps> = ({
           className="h-8 px-2.5 rounded-lg bg-blue-50 hover:bg-blue-100 border border-blue-200/80 text-xs font-semibold text-blue-600 flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
         >
           <Sparkles className="h-3.5 w-3.5 text-blue-600" />
-          <span className="hidden md:inline">AI Assistant</span>
+          <span className="hidden md:inline">Ask</span>
         </button>
 
         {/* Notifications Popover */}
@@ -118,7 +117,7 @@ export const Header: React.FC<HeaderProps> = ({
             className="h-8 w-8 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-500 hover:text-slate-900 flex items-center justify-center relative transition-colors cursor-pointer"
           >
             <Bell className="h-3.5 w-3.5" />
-            <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-blue-600" />
+            {notifications.some((n) => n.unread) && <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-blue-600" />}
           </button>
 
           {isNotifOpen && (
@@ -127,12 +126,10 @@ export const Header: React.FC<HeaderProps> = ({
                 <span className="text-xs font-semibold text-slate-900">
                   Notifications
                 </span>
-                <span className="text-[10px] text-blue-600 font-medium cursor-pointer hover:underline">
-                  Mark all as read
-                </span>
               </div>
 
               <div className="max-h-72 overflow-y-auto divide-y divide-slate-50">
+                {notifications.length === 0 && <p className="p-3 text-[11px] text-slate-500">Nothing needs your attention.</p>}
                 {notifications.map((n) => (
                   <div
                     key={n.id}
@@ -164,12 +161,15 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* User avatar */}
         <div className="pl-1">
-          <img
-            src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80"
-            alt="Account"
-            className="h-8 w-8 rounded-full object-cover border border-slate-200 cursor-pointer"
+          <button
+            type="button"
+            aria-label="Settings"
+            title="Settings"
+            className="h-8 w-8 rounded-full border border-slate-200 bg-slate-100 text-slate-600 flex items-center justify-center cursor-pointer hover:bg-slate-200"
             onClick={() => onRouteChange('settings')}
-          />
+          >
+            <UserIcon className="h-4 w-4" />
+          </button>
         </div>
 
       </div>

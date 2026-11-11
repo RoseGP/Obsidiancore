@@ -32,6 +32,11 @@ Example: `className="bg-[var(--surface)] border border-[var(--border)] text-[var
   Inside it the grey scale keeps dark-panel values in both themes.
 - **Dark islands** (a `bg-slate-900` badge inside a light card) keep their own greys automatically.
 - No glassmorphism (backdrop blur is disabled globally), no decorative glow, gradients only where they carry meaning.
+  - **Exception: the AI Command Center surface** (dashboard homepage and Lead Intelligence). Its root has the
+    `cc` class (styles at the end of `src/index.css`): pastel canvas, frosted-glass cards (`cc-card`), the aurora
+    orb (`cc-orb`), the gradient-edged copilot composer (`cc-composer`), tinted setup cards (`cc-step`) and
+    gradient titles (`cc-title`). It follows the app theme (pastel light, navy dark) by redefining the tokens
+    above on its root, so components inside need no special colours. Don't use these classes on other screens.
 - Theme: `useTheme()` from `src/context/ThemeContext.tsx` (`pref`, `resolved`, `setPref`, `toggle`);
   the top bar has the System / Light / Dark switch. `index.html` applies the saved theme before first paint.
 

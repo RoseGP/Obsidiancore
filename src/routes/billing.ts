@@ -25,6 +25,9 @@ import { invoicePdfFilename, renderInvoicePdf } from '../features/invoicing/serv
 import { isEmailConfigured, sendInvoiceEmail } from '../features/invoicing/server/emailTransport';
 import { loadSnapshot, withSnapshot } from '../features/invoicing/server/store';
 import { identify } from '../features/social-accounts/server/auth';
+import { resolveTenant, sendError, tenantAccessViolation } from '../server/tenancy/middleware';
+import { validateImageDataUrl } from '../server/security/uploads';
+import { getDocStore } from '../server/data/docStore';
 
 const router = Router();
 
@@ -36,20 +39,45 @@ const ROLE_MAP: Record<string, CurrentUser['role']> = {
   owner: 'owner', admin: 'admin', accountant: 'accountant', finance: 'accountant', billing: 'accountant',
 };
 
+/** Organization roles → billing roles. */
+const ORG_ROLE_MAP: Record<string, CurrentUser['role']> = {
+  OWNER: 'owner', ADMIN: 'admin', MANAGER: 'accountant', SALES_REP: 'accountant', MARKETER: 'viewer', SUPPORT_AGENT: 'viewer', READ_ONLY: 'viewer',
+};
+
+/**
+ * Earlier builds gave every signed-in user a personal billing workspace (user_<uid>). The first time their
+ * organization's workspace is opened and it's empty, copy their personal one in (once).
+ */
+async function importPersonalWorkspace(orgId: string, uid: string) {
+  const st = await getDocStore();
+  if (await st.get(`billing/${orgId}`)) return;
+  const personal = await loadSnapshot(`user_${uid}`);
+  if (!personal.invoices.length && !personal.clients.length && !personal.payments.length) return;
+  await withSnapshot(orgId, () => ({ snapshot: personal, result: null }));
+}
+
 async function requireAuth(req: AuthedRequest, res: Response, next: NextFunction) {
   const secret = process.env.BILLING_JWT_SECRET || process.env.JWT_SECRET;
   const header = req.headers.authorization ?? '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : '';
   const payload = token && secret ? await verifyJwt(token, secret) : null;
   if (!payload) {
-    // CRM users sign in with Firebase: accept the same verified identity as the rest of the app.
-    // Each user gets their own billing workspace as owner.
-    // TO COMPLETE for teams: look up the user's organization membership here and use its id as
-    // businessId and the member's role ('owner' | 'admin' | 'accountant' | 'viewer').
+    // CRM users sign in with Firebase: billing belongs to their organization (shared by the team), with a
+    // role from their membership. Their earlier personal workspace (user_<uid>) is imported on first use.
     const who = await identify(req);
     if (!who || who.via === 'dev') return res.status(401).json({ code: 'unauthorized', error: 'Sign in to use billing.' });
-    req.billing = { businessId: `user_${who.id}`, user: { id: who.id, email: '', name: 'Owner', role: 'owner' } };
-    return next();
+    try {
+      (req as any).accountUser = who;
+      const t = await resolveTenant(req);
+      // Two-step sign-in / session policy, and guests (outside collaborators) have no billing access.
+      const v = await tenantAccessViolation(req, t);
+      if (v) return res.status(v.status).json({ success: false, code: v.code, error: v.error });
+      await importPersonalWorkspace(t.orgId, who.id);
+      req.billing = { businessId: t.orgId, user: { id: t.userId, email: t.email, name: t.name || t.email || 'Member', role: ORG_ROLE_MAP[t.role] ?? 'viewer' } };
+      return next();
+    } catch (e) {
+      return sendError(res, e, 'billing.auth');
+    }
   }
   const userId = String(payload.userId ?? payload.sub ?? payload.id ?? '');
   const businessId = String(payload.businessId ?? payload.orgId ?? '');
@@ -106,7 +134,8 @@ const str = (max = 500) => z.string().max(max);
 const dec = z.string().max(24);
 const date = z.string().regex(/^(\d{4}-\d{2}-\d{2})?$/);
 const addr = z.object({ line1: str(200), line2: str(200), city: str(120), state: str(120), postalCode: str(32), country: str(120) });
-const image = z.string().max(1_000_000).refine((v) => v === '' || /^data:image\/(png|jpeg);base64,/.test(v), 'Images must be PNG or JPEG data URLs');
+// Logo and signature images: real PNG/JPEG bytes (checked, not just the prefix), at most 750 KB.
+const image = z.string().max(1_100_000).superRefine((v, ctx) => { const r = validateImageDataUrl(v); if (r.ok === false) ctx.addIssue({ code: z.ZodIssueCode.custom, message: r.reason }); });
 
 const invoiceSchema = z.object({
   id: str(64), number: str(32), kind: z.enum(['standard', 'split', 'recurring']), lifecycle: z.enum(['draft', 'sent', 'viewed', 'void']),

@@ -13,7 +13,7 @@
  * App endpoints:
  *   POST /otp/verify         verify an SMS login code   (rate limited, origin-checked)
  *   GET  /ivr/config         console: configuration status (signed-in user)
- *   POST /ivr/simulate       console: run a flow step without Twilio (no SMS sent)
+ *   POST /ivr/preview        console: render the TwiML for a flow step without Twilio (nothing dialed or sent)
  *   GET  /ivr/calls          console: recent call events (masked)
  */
 import { Router, type Request, type Response } from 'express';
@@ -180,7 +180,8 @@ const simBody = z.object({
   callerName: z.string().max(80).optional(),
 }).strict();
 
-app.post('/simulate', (req, res) => {
+// TwiML preview for admins: renders what the IVR would say at each step. Nothing is dialed or sent.
+app.post('/preview', (req, res) => {
   try {
     const b = simBody.parse(req.body ?? {});
     const raw = cleanDigits(b.digits ?? ''); const d = raw === 'invalid' ? 'x' : raw;
@@ -192,7 +193,7 @@ app.post('/simulate', (req, res) => {
       : b.step === 'queue-wait' ? queueWaitTwiml(cfg, b.queuePosition ?? null)
       : dialStatusTwiml(cfg, b.dest ?? 'sales', b.dialStatus ?? 'no-answer');
     res.json({ twiml, note: smsStep ? 'Simulator: no SMS was sent. On a real call the code goes to the caller’s number on file.' : undefined });
-  } catch (err) { sendError(res, err, 'ivr simulate'); }
+  } catch (err) { sendError(res, err, 'ivr preview'); }
 });
 
 app.get('/calls', (_req, res) => { res.setHeader('Cache-Control', 'no-store'); res.json({ events: recentEvents() }); });

@@ -46,7 +46,7 @@ export default function QuickActionButton({
   return (
     <div className={`relative inline-flex items-center ${className}`} ref={dropdownRef}>
       {/* Primary Action Button */}
-      <div className="inline-flex items-stretch rounded-lg shadow-sm border border-neutral-900/10 dark:border-white/10 bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 transition-all hover:bg-neutral-800 dark:hover:bg-neutral-100 active:scale-[0.99]">
+      <div className="inline-flex items-stretch rounded-lg shadow-sm bg-[var(--accent)] text-[var(--accent-contrast)] transition-all hover:bg-[var(--accent-hover)] active:scale-[0.99]">
         <button
           type="button"
           onClick={() => onTriggerAction('lead')}
@@ -56,7 +56,7 @@ export default function QuickActionButton({
         >
           <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
           <span className="font-semibold tracking-tight">Quick Action</span>
-          <kbd className="hidden lg:inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-mono font-normal opacity-75 bg-white/20 dark:bg-neutral-900/15 ml-1">
+          <kbd className="hidden lg:inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-mono font-normal opacity-75 bg-white/20 ml-1">
             Alt+N
           </kbd>
         </button>
@@ -68,7 +68,7 @@ export default function QuickActionButton({
             e.stopPropagation();
             setIsDropdownOpen((prev) => !prev);
           }}
-          className="px-1.5 py-1.5 border-l border-white/20 dark:border-neutral-900/20 hover:bg-white/10 dark:hover:bg-neutral-900/10 rounded-r-lg cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+          className="px-1.5 py-1.5 border-l border-white/20 hover:bg-white/10 rounded-r-lg cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
           aria-label="Open quick action menu"
           aria-expanded={isDropdownOpen}
         >
@@ -84,7 +84,7 @@ export default function QuickActionButton({
       {isDropdownOpen && (
         <div
           role="menu"
-          className="absolute right-0 top-full mt-1.5 w-56 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 shadow-xl shadow-black/10 dark:shadow-black/40 py-1.5 z-50 animate-in fade-in zoom-in-95 duration-100"
+          className="absolute right-0 top-full mt-1.5 w-56 rounded-xl border border-[var(--border)] bg-[var(--surface-raised)] shadow-xl py-1.5 z-50 animate-in fade-in zoom-in-95 duration-100"
         >
           <div className="px-3 py-1 text-[11px] font-medium text-neutral-400 dark:text-neutral-500 uppercase tracking-wider">
             Create Instantly
@@ -97,7 +97,7 @@ export default function QuickActionButton({
               setIsDropdownOpen(false);
               onTriggerAction('lead');
             }}
-            className="w-full flex items-center justify-between px-3 py-2 text-xs text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800/80 transition-colors text-left group"
+            className="w-full flex items-center justify-between px-3 py-2 text-xs text-[var(--text)] hover:bg-[var(--surface-sunken)] transition-colors text-left group"
           >
             <div className="flex items-center gap-2.5">
               <div className="w-6 h-6 rounded-md bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center">
@@ -124,7 +124,7 @@ export default function QuickActionButton({
               setIsDropdownOpen(false);
               onTriggerAction('deal');
             }}
-            className="w-full flex items-center justify-between px-3 py-2 text-xs text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800/80 transition-colors text-left group"
+            className="w-full flex items-center justify-between px-3 py-2 text-xs text-[var(--text)] hover:bg-[var(--surface-sunken)] transition-colors text-left group"
           >
             <div className="flex items-center gap-2.5">
               <div className="w-6 h-6 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
@@ -151,7 +151,7 @@ export default function QuickActionButton({
               setIsDropdownOpen(false);
               onTriggerAction('event');
             }}
-            className="w-full flex items-center justify-between px-3 py-2 text-xs text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800/80 transition-colors text-left group"
+            className="w-full flex items-center justify-between px-3 py-2 text-xs text-[var(--text)] hover:bg-[var(--surface-sunken)] transition-colors text-left group"
           >
             <div className="flex items-center gap-2.5">
               <div className="w-6 h-6 rounded-md bg-purple-500/10 text-purple-600 dark:text-purple-400 flex items-center justify-center">

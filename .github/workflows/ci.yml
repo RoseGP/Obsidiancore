@@ -1,0 +1,55 @@
+# Type check, lint and tests on every push and pull request.
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  app:
+    name: App — typecheck, lint, tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NODE_ENV: test
+      CRM_STORE: memory            # tests never touch Firestore or other real services
+      NODE_OPTIONS: --max-old-space-size=4096
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Type check (tsc --noEmit)
+        run: npm run typecheck
+      - name: Lint (project guards)
+        run: node scripts/lint-guards.mjs
+      - name: Tests
+        run: npm run test:ci
+      - name: Build (frontend + server bundle)
+        run: npm run build
+
+  functions:
+    name: Firebase Functions — build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: functions
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - name: Type check + compile
+        run: npx tsc -p tsconfig.json

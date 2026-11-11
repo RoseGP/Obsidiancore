@@ -1,5 +1,11 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
+import { DEFAULT_PLAN_CONFIGS, MEETING_PLAN_TIERS, capacityStatus, durationStatus, roomCapacity, type CapacityState, type MeetingPlanConfigs, type MeetingPlanTier, type PlanFeatures, type PlanLimits } from '../lib/meetingPlans';
 import { CRMContact, CalendarEvent } from '../types';
+import { useOptionalAuth } from './AuthContext';
+import { useOptionalNotifications } from './NotificationContext';
+import { useMeetingNotesSync, type MeetingNotesSync } from './useMeetingNotesSync';
+import { MeetingMedia, type ChatPacket, type MediaStatus, type RemoteMedia, type NetworkQuality } from '../lib/meetingMedia';
+export type { MediaStatus, RemoteMedia, NetworkQuality } from '../lib/meetingMedia';
 
 export interface MeetingParticipant {
   id: string;
@@ -15,11 +21,16 @@ export interface MeetingParticipant {
   isVideoOff: boolean;
   isSpeaking: boolean;
   isScreenSharing?: boolean;
+  /** Raised hand (cleared when the host lowers it or the participant lowers their own). */
+  isHandRaised?: boolean;
+  handRaisedAt?: number;
   joinedAt: string;
   bio?: string;
   interests?: string[];
   isCrmContact?: boolean;
   crmContactId?: string;
+  /** Role on the server (host / co-host / guest). */
+  serverRole?: 'host' | 'cohost' | 'guest';
 }
 
 export interface MeetingChatMessage {
@@ -104,35 +115,40 @@ export interface MeetingDeviceSettings {
   notifyOnParticipantJoin: boolean;
 }
 
-export type MeetingPlanTier = 'standard' | 'premium' | 'enterprise';
+// Plans live in src/lib/meetingPlans.ts (shared with the server); re-exported for existing imports.
+export type { MeetingPlanTier, MeetingPlanConfig, PlanLimits, PlanFeatures } from '../lib/meetingPlans';
 
-export interface MeetingPlanConfig {
+/** GET /api/meetings/subscription */
+export interface MeetingSubscription {
   tier: MeetingPlanTier;
-  maxParticipants: number;
-  maxDurationMinutes: number; // 60 for standard, 0 for unlimited
-  label: string;
+  plan: { tier: MeetingPlanTier; label: string; limits: PlanLimits; features: PlanFeatures; warnMinutesBefore: number; capacityWarnPercent: number; custom: boolean };
+  plans: MeetingPlanConfigs;
+  canRequestChange: boolean;
+  pendingRequest: { id: string; requestedTier: MeetingPlanTier; direction: 'upgrade' | 'downgrade'; createdAt: string; note?: string } | null;
+  billing: { connected: boolean; message: string };
 }
 
-export const MEETING_PLANS: Record<MeetingPlanTier, MeetingPlanConfig> = {
-  standard: {
-    tier: 'standard',
-    maxParticipants: 100,
-    maxDurationMinutes: 60,
-    label: 'Standard Plan',
-  },
-  premium: {
-    tier: 'premium',
-    maxParticipants: 250,
-    maxDurationMinutes: 0,
-    label: 'Premium Plan',
-  },
-  enterprise: {
-    tier: 'enterprise',
-    maxParticipants: 500,
-    maxDurationMinutes: 0,
-    label: 'Enterprise Plan',
-  },
-};
+/** The meeting as the server sees it (src/server/meetings/sessions.ts sessionView). */
+export interface ServerSessionView {
+  id: string; roomCode: string; title: string; tier: MeetingPlanTier; planLabel: string;
+  limits: PlanLimits; features: PlanFeatures; warnMinutesBefore: number; capacityWarnPercent: number;
+  startedAt: number; endsAt: number; serverNow: number; status: 'active' | 'ended'; endedReason: 'host' | 'time_limit' | 'admin' | null;
+  remainingSeconds: number; participantCount: number; waitingCount: number; capacityState: CapacityState;
+  waitingRoomEnabled: boolean; locked: boolean;
+  recording: { active: boolean; startedAt: number | null; mode?: 'cloud' | 'device' | null; requested?: boolean; yourConsent?: 'agreed' | 'declined' | null; waitingFor?: Array<{ id: string; name: string }>; declinedIds?: string[] };
+  scheduledMeetingId?: string | null;
+  host: { userId: string; name: string };
+  you: { participantId: string | null; role: 'host' | 'cohost' | 'guest' | null; status: string | null; canManage: boolean };
+  participants: Array<{ id: string; name: string; role: 'host' | 'cohost' | 'guest'; status: 'in' | 'waiting'; joinedAt: number | null; email?: string; userId?: string | null; external?: boolean }>;
+}
+
+/** A plan limit or missing feature the person ran into (shown with an upgrade option). */
+export interface PlanNotice { message: string; feature?: string; upgradeTo?: MeetingPlanTier; upgradeLabel?: string; kind: 'feature' | 'capacity' | 'duration' | 'error' }
+
+/** Sandbox/dev builds may run meetings without a server (limits applied in this browser only). Production never does. */
+let previewAllowed: boolean = !!((import.meta as any).env?.DEV || (import.meta as any).env?.VITE_ENABLE_SANDBOX_LOGIN === 'true');
+/** Tests only. */
+export function setMeetingPreviewAllowedForTests(v: boolean) { previewAllowed = v; }
 
 export interface ActiveMeetingSession {
   id: string;
@@ -149,9 +165,13 @@ export interface ActiveMeetingSession {
   tasks: MeetingFollowupTask[];
   linkedContactId?: string;
   recordingData?: MeetingRecordingData;
+  /** Plan limits locked in when the meeting started. */
   planTier?: MeetingPlanTier;
   maxParticipants?: number;
   maxDurationMinutes?: number;
+  /** Set when the meeting ended because the plan's time limit was reached. */
+  /** Set when the server (or the time limit) ended the meeting, not the local user. */
+  endedReason?: 'time_limit' | 'host' | 'admin';
 }
 
 interface MeetingSessionContextType {
@@ -160,12 +180,52 @@ interface MeetingSessionContextType {
   meetingViewMode: 'fullscreen' | 'workspace' | 'minimized';
   setMeetingViewMode: (mode: 'fullscreen' | 'workspace' | 'minimized') => void;
 
-  // Plan limits & capacity
-  currentPlanTier: MeetingPlanTier;
-  setPlanTier: (tier: MeetingPlanTier) => void;
-  planConfig: MeetingPlanConfig;
+  // Subscription & plan limits. The organizer's plan comes from the server and every limit is enforced there.
+  subscription: MeetingSubscription | null;
+  refreshSubscription: () => Promise<void>;
+  requestPlanChange: (tier: MeetingPlanTier, note?: string) => Promise<{ success: boolean; message: string }>;
+  cancelPlanRequest: () => Promise<{ success: boolean; message: string }>;
+  /** The running meeting as the server reports it (null in offline preview). */
+  serverSession: ServerSessionView | null;
+  /** Limits and features that apply now: the running meeting's, otherwise the organization's plan. */
+  meetingLimits: PlanLimits;
+  meetingFeatures: PlanFeatures;
+  meetingPlanLabel: string;
+  meetingTier: MeetingPlanTier;
+  warnMinutesBefore: number;
+  capacityWarnPercent: number;
+  capacityState: CapacityState;
+  /** Everyone in the meeting, host included. */
+  roomCount: number;
   isDurationWarning: boolean;
   isDurationLimitReached: boolean;
+  /** Seconds until the meeting's time limit. */
+  durationSecondsLeft: number;
+  /** You can manage this meeting (host, co-host or organization admin). */
+  canManageMeeting: boolean;
+  /** No server: sandbox preview with Free limits applied in this browser only. */
+  offlinePreview: boolean;
+  /** Joined by code and waiting for the host to admit you. */
+  awaitingAdmission: boolean;
+  isMeetingLocked: boolean;
+  setMeetingLocked: (locked: boolean) => Promise<{ success: boolean; message: string }>;
+  setCoHost: (participantId: string, on: boolean) => Promise<{ success: boolean; message: string }>;
+  /** Why the last meeting couldn't start or join. */
+  meetingError: string | null;
+  clearMeetingError: () => void;
+  /** A plan limit or missing feature the person just ran into. */
+  planNotice: PlanNotice | null;
+  clearPlanNotice: () => void;
+
+  // Real audio/video (LiveKit). 'not_configured' = the server has no media service: nobody is simulated.
+  mediaStatus: MediaStatus;
+  mediaMessage: string | null;
+  /** Your connection quality as LiveKit measures it ('unknown' until connected). */
+  networkQuality: NetworkQuality;
+  /** Remote people's live media by roster id. */
+  remoteMedia: Record<string, RemoteMedia>;
+  /** The signed-in person's name (shown on your own tile and in chat). */
+  localUserName: string;
   
   // Media streams & hardware controls
   localStream: MediaStream | null;
@@ -188,13 +248,19 @@ interface MeetingSessionContextType {
       autoTranscribe?: boolean;
       startMuted?: boolean;
       startCamOff?: boolean;
+      /** Start a scheduled GREET meeting (its room code, invitations and CRM links). */
+      scheduledMeetingId?: string;
     }
-  ) => Promise<void>;
-  joinMeeting: (codeOrLink: string, linkedContact?: CRMContact) => Promise<void>;
+  ) => Promise<{ success: boolean; message?: string }>;
+  joinMeeting: (codeOrLink: string, linkedContact?: CRMContact) => Promise<{ success: boolean; message?: string }>;
   returnToMeeting: () => void;
   minimizeToDashboard: () => void;
   leaveMeeting: () => void;
   endMeetingForEveryone: () => void;
+  /** Notes typed during the call, saved to the CRM (drafts autosave; final when the meeting ends). */
+  meetingNotes: MeetingNotesSync;
+  /** Result of the last "save notes to the CRM" (shown as a toast where the meeting view is). */
+  notesOutcome: { result: 'final' | 'failed'; message: string; at: number } | null;
   
   // Hardware toggles
   toggleMic: () => void;
@@ -211,6 +277,8 @@ interface MeetingSessionContextType {
   toggleTaskCompleted: (taskId: string) => void;
   addParticipantToCrm: (participant: MeetingParticipant) => void;
   inviteParticipantByEmail: (email: string) => Promise<{ success: boolean; message: string }>;
+  /** Invite several people at once; seats are counted once for the whole batch. */
+  inviteParticipantsByEmail: (emails: string[]) => Promise<{ added: string[]; waiting: string[]; refused: Array<{ email: string; reason: 'invalid' | 'duplicate' | 'full' }>; message: string }>;
   exchangeContactConsent: (participantId: string) => Promise<{ success: boolean; message: string }>;
   
   // Recording capabilities
@@ -219,6 +287,16 @@ interface MeetingSessionContextType {
   recordingDurationSeconds: number;
   recordingConsentGranted: boolean;
   setRecordingConsentGranted: (granted: boolean) => void;
+  /** The host asked to record and you haven't answered yet (show the consent prompt). */
+  recordingConsentRequested: boolean;
+  /** Your answer to the host's request to record (sent to the server). */
+  answerRecordingConsent: (agree: boolean) => Promise<{ success: boolean; message: string }>;
+  /** Someone in this meeting is recording it (shown to everyone). */
+  meetingIsBeingRecorded: boolean;
+  /** 'cloud' = saved to the organization's storage through LiveKit; 'device' = on the host's computer. */
+  recordingMode: 'cloud' | 'device' | null;
+  /** Status of the host's recording request (who still has to agree, who declined). */
+  recordingNotice: string | null;
   startRecording: () => Promise<boolean>;
   pauseRecording: () => void;
   resumeRecording: () => void;
@@ -250,6 +328,23 @@ interface MeetingSessionContextType {
   // Live reactions
   broadcastReaction: (emoji: string) => void;
   activeReactions: Array<{ id: string; emoji: string; sender: string; timestamp: number }>;
+
+  // Raise hand (everyone)
+  isHandRaised: boolean;
+  toggleRaiseHand: () => void;
+
+  // Waiting room & participant management (host / org admin; the UI enforces who sees these)
+  isWaitingRoomEnabled: boolean;
+  setWaitingRoomEnabled: (enabled: boolean) => Promise<{ success: boolean; message: string }>;
+  waitingRoom: MeetingParticipant[];
+  admitParticipant: (participantId: string) => Promise<{ success: boolean; message: string }>;
+  admitAllWaiting: () => Promise<{ success: boolean; message: string }>;
+  denyParticipant: (participantId: string) => Promise<void>;
+  muteParticipant: (participantId: string) => void;
+  muteAllParticipants: () => void;
+  removeParticipant: (participantId: string) => Promise<{ success: boolean; message: string }>;
+  lowerParticipantHand: (participantId: string) => void;
+  lowerAllHands: () => void;
 }
 
 const MeetingSessionContext = createContext<MeetingSessionContextType | null>(null);
@@ -264,29 +359,218 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
   const [activeMeeting, setActiveMeeting] = useState<ActiveMeetingSession | null>(null);
   const [meetingViewMode, setMeetingViewMode] = useState<'fullscreen' | 'workspace' | 'minimized'>('workspace');
   
-  // Plan limits & capacity (Standard 100 max & 60m limit, Premium 250 max, Enterprise 500 max)
-  const [currentPlanTier, setCurrentPlanTier] = useState<MeetingPlanTier>(() => {
-    try {
-      const saved = localStorage.getItem('obsidian_meeting_plan_tier');
-      if (saved === 'standard' || saved === 'premium' || saved === 'enterprise') return saved;
-    } catch (e) {}
-    return 'standard';
-  });
+  // ---------------------------------------------------------------------------
+  // SUBSCRIPTION & SERVER SESSION (limits are enforced by /api/meetings; this mirrors them)
+  // ---------------------------------------------------------------------------
+  const [subscription, setSubscription] = useState<MeetingSubscription | null>(null);
+  const [serverSession, setServerSession] = useState<ServerSessionView | null>(null);
+  const serverSessionRef = useRef<ServerSessionView | null>(null);
+  /** serverNow - Date.now(): keeps the countdown on the server's clock. */
+  const clockOffsetRef = useRef(0);
+  /** True when we follow the meeting by room code (joined from outside the organizer's organization). */
+  const viaRoomRef = useRef(false);
+  const [offlinePreview, setOfflinePreview] = useState(false);
+  const [awaitingAdmission, setAwaitingAdmission] = useState(false);
+  const [isMeetingLocked, setIsMeetingLocked] = useState(false);
+  const [meetingError, setMeetingError] = useState<string | null>(null);
+  const [planNotice, setPlanNotice] = useState<PlanNotice | null>(null);
+  const clearMeetingError = useCallback(() => setMeetingError(null), []);
 
-  const setPlanTier = useCallback((tier: MeetingPlanTier) => {
-    setCurrentPlanTier(tier);
+  // ---- Who you are, and real audio/video ----
+  const auth = useOptionalAuth();
+  const notifications = useOptionalNotifications();
+  const [notesOutcome, setNotesOutcome] = useState<{ result: 'final' | 'failed'; message: string; at: number } | null>(null);
+  const meetingNotes = useMeetingNotesSync({
+    meetingId: activeMeeting?.id ?? null,
+    title: activeMeeting?.title || '',
+    body: activeMeeting?.notes || '',
+    setBody: (body) => setActiveMeeting(prev => prev ? { ...prev, notes: body } : prev),
+    onFinalized: (result, message) => {
+      setNotesOutcome({ result, message, at: Date.now() });
+      notifications?.pushNotification({
+      title: result === 'final' ? 'Meeting notes saved' : 'Meeting notes not saved', message, type: 'meeting',
+      priority: result === 'final' ? 'low' : 'high', showToast: true, forceDelivery: true, duration: result === 'final' ? 5000 : 12000,
+      });
+    },
+  });
+  const meetingNotesRef = useRef(meetingNotes);
+  meetingNotesRef.current = meetingNotes;
+  /** Save the notes to the CRM before the meeting is torn down (bounded so leaving never hangs). */
+  const finalizeNotesBeforeEnd = useCallback(async () => {
     try {
-      localStorage.setItem('obsidian_meeting_plan_tier', tier);
-    } catch (e) {}
+      await Promise.race([meetingNotesRef.current.finalize(), new Promise((r) => setTimeout(r, 8000))]);
+    } catch { /* the hook reports failures itself */ }
+  }, []);
+  const localUserName = auth?.userProfile?.displayName?.trim() || auth?.userProfile?.email || 'You';
+  const [mediaStatus, setMediaStatus] = useState<MediaStatus>('idle');
+  const [mediaMessage, setMediaMessage] = useState<string | null>(null);
+  const [networkQuality, setNetworkQuality] = useState<NetworkQuality>('unknown');
+  const [remoteMedia, setRemoteMedia] = useState<Record<string, RemoteMedia>>({});
+  const mediaRef = useRef<MeetingMedia | null>(null);
+  const mediaConnectingRef = useRef(false);
+  const getMedia = () => {
+    if (!mediaRef.current) {
+      mediaRef.current = new MeetingMedia({
+        onStatus: (status, message) => { setMediaStatus(status); setMediaMessage(message ?? null); if (status !== 'connected' && status !== 'reconnecting') setNetworkQuality('unknown'); },
+        onLocalQuality: (q) => setNetworkQuality(q),
+        onRemote: (remote) => {
+          setRemoteMedia(remote);
+          // Speaking / muted / camera state on the roster comes from the real media.
+          setActiveMeeting(prev => prev ? {
+            ...prev,
+            participants: prev.participants.map(p => remote[p.id]
+              ? { ...p, isSpeaking: remote[p.id].isSpeaking, isMuted: remote[p.id].micMuted, isVideoOff: remote[p.id].camOff, isScreenSharing: !!remote[p.id].screen }
+              : p),
+          } : prev);
+        },
+        onChat: (packet: ChatPacket, from: string) => {
+          setActiveMeeting(prev => {
+            if (!prev) return prev;
+            const sender = prev.participants.find(p => p.id === from);
+            const name = sender?.name || packet.senderName || 'Participant';
+            const msg: MeetingChatMessage = {
+              id: packet.id, senderId: from, senderName: name, senderAvatar: name.slice(0, 2).toUpperCase(), isYou: false,
+              recipientId: packet.to ? packet.to : 'everyone', text: packet.text.slice(0, 4000),
+              timestamp: new Date(packet.sentAt || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            };
+            return { ...prev, messages: [...prev.messages, msg] };
+          });
+          playChime('chat');
+        },
+      });
+    }
+    return mediaRef.current;
+  };
+  const clearPlanNotice = useCallback(() => setPlanNotice(null), []);
+
+  /** /api/meetings call. `network` = no usable server answer (offline, or a host without the API). */
+  const meetingsApi = useCallback(async (path: string, init?: RequestInit): Promise<{ ok: boolean; status: number; data: any; network: boolean }> => {
+    try {
+      const res = await fetch(`/api/meetings${path}`, { ...init, headers: { 'Content-Type': 'application/json', ...(init?.headers || {}) } });
+      const type = res.headers?.get?.('content-type') || '';
+      const data = type.includes('json') ? await res.json().catch(() => null) : null;
+      if (data == null) return { ok: false, status: res.status, data: {}, network: true };
+      return { ok: res.ok && data.success !== false, status: res.status, data, network: false };
+    } catch {
+      return { ok: false, status: 0, data: {}, network: true };
+    }
   }, []);
 
-  const planConfig = MEETING_PLANS[currentPlanTier];
-  const isDurationWarning = Boolean(
-    planConfig.maxDurationMinutes === 60 && (activeMeeting?.durationSeconds || 0) >= 55 * 60
-  );
-  const isDurationLimitReached = Boolean(
-    planConfig.maxDurationMinutes === 60 && (activeMeeting?.durationSeconds || 0) >= 60 * 60
-  );
+  const refreshSubscription = useCallback(async () => {
+    const r = await meetingsApi('/subscription');
+    if (r.ok) setSubscription(r.data as MeetingSubscription);
+  }, [meetingsApi]);
+  useEffect(() => { refreshSubscription(); }, [refreshSubscription]);
+
+  const requestPlanChange = useCallback(async (tier: MeetingPlanTier, note?: string) => {
+    const r = await meetingsApi('/subscription/requests', { method: 'POST', body: JSON.stringify({ tier, note }) });
+    await refreshSubscription();
+    if (!r.ok) return { success: false, message: r.data.error || (r.network ? "Couldn't reach the server." : `The request couldn't be sent (${r.status}).`) };
+    const label = subscription?.plans?.[tier]?.label ?? tier;
+    return { success: true, message: `Request sent: your account manager will move you to ${label}. You'll see the new limits as soon as it's applied, including in a meeting that's running.` };
+  }, [meetingsApi, refreshSubscription, subscription]);
+
+  const cancelPlanRequest = useCallback(async () => {
+    const id = subscription?.pendingRequest?.id;
+    if (!id) return { success: false, message: 'There is no pending request.' };
+    const r = await meetingsApi(`/subscription/requests/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    await refreshSubscription();
+    return r.ok ? { success: true, message: 'Request cancelled.' } : { success: false, message: r.data.error || "The request couldn't be cancelled." };
+  }, [meetingsApi, refreshSubscription, subscription]);
+
+  const previewPlan = DEFAULT_PLAN_CONFIGS.free;
+  const meetingLimits: PlanLimits = serverSession?.limits ?? subscription?.plan.limits ?? previewPlan.limits;
+  const meetingFeatures: PlanFeatures = serverSession?.features ?? subscription?.plan.features ?? previewPlan.features;
+  const meetingPlanLabel = serverSession?.planLabel ?? subscription?.plan.label ?? previewPlan.label;
+  const meetingTier: MeetingPlanTier = serverSession?.tier ?? subscription?.plan.tier ?? 'free';
+  const warnMinutesBefore = serverSession?.warnMinutesBefore ?? subscription?.plan.warnMinutesBefore ?? previewPlan.warnMinutesBefore;
+  const capacityWarnPercent = serverSession?.capacityWarnPercent ?? subscription?.plan.capacityWarnPercent ?? previewPlan.capacityWarnPercent;
+  const durationInfo = durationStatus(meetingLimits, activeMeeting?.durationSeconds || 0, warnMinutesBefore);
+  const isDurationWarning = durationInfo.state === 'warning';
+  const isDurationLimitReached = durationInfo.state === 'reached';
+  const durationSecondsLeft = durationInfo.secondsLeft;
+  /** Everyone in the room right now, host included. */
+  const roomCount = (activeMeeting?.participants.length || 0) + 1;
+  const capacityState = capacityStatus(meetingLimits, roomCount, capacityWarnPercent);
+  const canManageMeeting = offlinePreview ? !!activeMeeting?.isHost : !!serverSession?.you.canManage;
+  /** Never let a participant list exceed the meeting's limit (host takes one seat). */
+  const capToPlan = (m: ActiveMeetingSession, list: MeetingParticipant[]) =>
+    list.slice(0, Math.max(0, (m.maxParticipants ?? meetingLimits.maxParticipants) - 1));
+  const nextPlanFor = (needs: { participants?: number; feature?: keyof PlanFeatures }) => {
+    const plans = subscription?.plans ?? DEFAULT_PLAN_CONFIGS;
+    const t = MEETING_PLAN_TIERS.find((x) => (needs.participants == null || plans[x].limits.maxParticipants >= needs.participants) && (needs.feature == null || plans[x].features[needs.feature]));
+    return t ? { upgradeTo: t, upgradeLabel: plans[t].label, limit: plans[t].limits.maxParticipants } : null;
+  };
+  const fullRoomMessage = () => {
+    const next = nextPlanFor({ participants: meetingLimits.maxParticipants + 1 });
+    return `This meeting is full: the ${meetingPlanLabel} plan allows ${meetingLimits.maxParticipants} participants.` + (next ? ` ${next.upgradeLabel} allows ${next.limit}.` : '');
+  };
+  /** Turns a refused API call into a plan notice (feature or capacity) or a plain message. */
+  const noticeFrom = (data: any, fallback: string): string => {
+    const message = data?.error || fallback;
+    if (data?.code === 'feature_not_in_plan') setPlanNotice({ kind: 'feature', message, feature: data.feature, upgradeTo: data.upgradeTo, upgradeLabel: data.upgradeLabel });
+    else if (data?.code === 'meeting_full') setPlanNotice({ kind: 'capacity', message, upgradeTo: data.upgradeTo, upgradeLabel: data.upgradeLabel });
+    return message;
+  };
+
+  const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join('') || '?';
+  const fromServer = (local: MeetingParticipant | undefined, p: ServerSessionView['participants'][number], joinedLabel: string): MeetingParticipant => {
+    const role = p.role === 'cohost' ? 'Co-Host' : p.role === 'host' ? 'Host' : 'Guest';
+    if (local) return { ...local, name: p.name, role, email: p.email ?? local.email, serverRole: p.role };
+    return {
+      id: p.id, name: p.name, role, title: '', company: (p.email || '').split('@')[1] || '', email: p.email || '',
+      avatar: initials(p.name), avatarColor: 'from-purple-600 to-indigo-700', isMuted: false, isVideoOff: false, isSpeaking: false,
+      joinedAt: joinedLabel, isCrmContact: false, serverRole: p.role,
+    };
+  };
+
+  /** Mirror the server's view of the meeting: clock, limits, roster, waiting room, status. */
+  const applyServerSession = useCallback((view: ServerSessionView) => {
+    clockOffsetRef.current = view.serverNow - Date.now();
+    serverSessionRef.current = view;
+    setServerSession(view);
+    setIsWaitingRoomEnabledState(view.waitingRoomEnabled);
+    setIsMeetingLocked(view.locked);
+    setAwaitingAdmission(view.you.status === 'waiting');
+    const localStart = view.startedAt - clockOffsetRef.current;
+    setActiveMeeting(prev => {
+      if (!prev || prev.id !== view.id) return prev;
+      const byId = new Map(prev.participants.map(p => [p.id, p]));
+      const others = view.participants
+        .filter(p => p.status === 'in' && p.id !== view.you.participantId && p.role !== 'host')
+        .map(p => fromServer(byId.get(p.id), p, 'Just now'));
+      const ended = view.status === 'ended' && prev.status === 'active';
+      return {
+        ...prev, startedAt: localStart, durationSeconds: Math.max(0, Math.floor((Date.now() - localStart) / 1000)),
+        planTier: view.tier, maxParticipants: view.limits.maxParticipants, maxDurationMinutes: view.limits.maxDurationMinutes,
+        participants: others, roomId: view.roomCode,
+        ...(ended ? { status: 'ended' as const, endedReason: view.endedReason ?? 'host' } : {}),
+      };
+    });
+    setWaitingRoom(prev => {
+      const byId = new Map(prev.map(p => [p.id, p]));
+      return view.participants.filter(p => p.status === 'waiting').map(p => fromServer(byId.get(p.id), p, 'Waiting'));
+    });
+  }, []);
+
+  // Heartbeat: re-sync with the server (faster while waiting to be admitted).
+  useEffect(() => {
+    const id = serverSession?.id;
+    if (!id || !activeMeeting || activeMeeting.status !== 'active') return;
+    let cancelled = false;
+    const tick = async () => {
+      const cur = serverSessionRef.current;
+      if (!cur) return;
+      const r = await meetingsApi(viaRoomRef.current ? `/rooms/${encodeURIComponent(cur.roomCode)}` : `/sessions/${encodeURIComponent(cur.id)}`);
+      if (cancelled) return;
+      if (r.ok) applyServerSession(r.data.session);
+      else if (r.status === 404 || r.status === 409) {
+        setActiveMeeting(prev => prev && prev.status === 'active' ? { ...prev, status: 'ended', endedReason: prev.endedReason ?? 'host' } : prev);
+      }
+    };
+    const t = setInterval(tick, awaitingAdmission ? 3_000 : 10_000);
+    return () => { cancelled = true; clearInterval(t); };
+  }, [serverSession?.id, activeMeeting?.status, awaitingAdmission, meetingsApi, applyServerSession]);
 
   // Media streams
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
@@ -302,11 +586,20 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
   // Live reaction bubbles
   const [activeReactions, setActiveReactions] = useState<Array<{ id: string; emoji: string; sender: string; timestamp: number }>>([]);
 
+  // Raise hand & waiting room
+  const [isHandRaised, setIsHandRaised] = useState(false);
+  const [waitingRoom, setWaitingRoom] = useState<MeetingParticipant[]>([]);
+  const [isWaitingRoomEnabled, setIsWaitingRoomEnabledState] = useState<boolean>(() => {
+    try { return localStorage.getItem('obsidian_meeting_waiting_room') === 'on'; } catch { return false; }
+  });
+
   // Recording State
   const [isRecording, setIsRecording] = useState(false);
   const [isRecordingPaused, setIsRecordingPaused] = useState(false);
   const [recordingDurationSeconds, setRecordingDurationSeconds] = useState(0);
   const [recordingConsentGranted, setRecordingConsentGranted] = useState(false);
+  const [recordingNotice, setRecordingNotice] = useState<string | null>(null);
+  const pendingRecordStartRef = useRef(false);
   const [lastCompletedRecording, setLastCompletedRecording] = useState<MeetingRecordingData | null>(null);
 
   // Transcripts State
@@ -349,87 +642,11 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
       const saved = localStorage.getItem('obsidian_meeting_history');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        // Earlier builds seeded three invented meetings (rec-01…rec-03); never show them as history.
+        if (Array.isArray(parsed)) return parsed.filter((m: any) => !['rec-01', 'rec-02', 'rec-03'].includes(m?.id));
       }
     } catch (e) {}
-    return [
-      {
-        id: 'rec-01',
-        roomId: 'stoic-arch-2026',
-        title: 'Q3 Enterprise Architecture Alignment',
-        date: 'Yesterday',
-        time: '15:30',
-        durationSeconds: 2538,
-        durationFormatted: '42:18',
-        hostName: 'Camelia Rose',
-        participants: [
-          { name: 'Marcus Aurelius', title: 'Managing Partner', company: 'Stoic Ventures LLC', avatar: 'MA' },
-          { name: 'Sarah Jenkins', title: 'VP Infrastructure', company: 'Alpha Tech Cloud', avatar: 'SJ' },
-          { name: 'Alex Rivera', title: 'Solutions Architect', company: 'Obsidian Cloud', avatar: 'AR' }
-        ],
-        hasRecording: true,
-        recordingUrl: '',
-        recordingSize: '284 MB',
-        hasTranscript: true,
-        transcript: [
-          { id: 't1', speakerId: 'host', speakerName: 'Camelia Rose', timestamp: '00:05', timeSeconds: 5, text: 'Welcome everyone to our Q3 Enterprise Architecture Alignment consultation.', isHost: true },
-          { id: 't2', speakerId: 'p-marcus', speakerName: 'Marcus Aurelius', timestamp: '00:22', timeSeconds: 22, text: 'Thank you Camelia. Our goal today is to benchmark the WebRTC audio tunneling SLA under 45ms P99.' },
-          { id: 't3', speakerId: 'p-sarah', speakerName: 'Sarah Jenkins', timestamp: '01:05', timeSeconds: 65, text: 'We reviewed the hybrid TURN server cluster capacity. Latency profiles look exceptionally strong.' },
-          { id: 't4', speakerId: 'p-alex', speakerName: 'Alex Rivera', timestamp: '02:18', timeSeconds: 138, text: 'The encrypted data channels have passed all SOC2 and HIPAA audit compliance rules.' },
-          { id: 't5', speakerId: 'host', speakerName: 'Camelia Rose', timestamp: '03:40', timeSeconds: 220, text: 'Excellent. I have updated the CRM dossier and scheduled follow-up technical onboarding for next week.', isHost: true }
-        ],
-        notes: 'Agreed on SLA benchmarks under 45ms. Signed NDA and pre-qualified enterprise cluster deployment.',
-        tasksCount: 3
-      },
-      {
-        id: 'rec-02',
-        roomId: 'apex-sla-review',
-        title: 'SLA Contract & Legal Review',
-        date: 'June 14, 2026',
-        time: '11:00',
-        durationSeconds: 1725,
-        durationFormatted: '28:45',
-        hostName: 'Camelia Rose',
-        participants: [
-          { name: 'Elena Rostova', title: 'Chief Legal Officer', company: 'Apex Corp', avatar: 'ER' },
-          { name: 'Marcus Aurelius', title: 'Managing Partner', company: 'Stoic Ventures', avatar: 'MA' }
-        ],
-        hasRecording: true,
-        recordingUrl: '',
-        recordingSize: '195 MB',
-        hasTranscript: true,
-        transcript: [
-          { id: 't1', speakerId: 'host', speakerName: 'Camelia Rose', timestamp: '00:08', timeSeconds: 8, text: 'Good morning Elena. We are reviewing the master services agreement legal provisions.', isHost: true },
-          { id: 't2', speakerId: 'p-elena', speakerName: 'Elena Rostova', timestamp: '00:45', timeSeconds: 45, text: 'The liability limitation and data confidentiality covenants in section 9 meet all requirements.' }
-        ],
-        notes: 'Legal approved terms. Final contract signature pending board review.',
-        tasksCount: 2
-      },
-      {
-        id: 'rec-03',
-        roomId: 'cloudpeak-demo',
-        title: 'Global Omnichannel Onboarding Demo',
-        date: 'June 10, 2026',
-        time: '14:00',
-        durationSeconds: 2110,
-        durationFormatted: '35:10',
-        hostName: 'Camelia Rose',
-        participants: [
-          { name: 'David Vance', title: 'VP Growth', company: 'CloudPeak Systems', avatar: 'DV' },
-          { name: 'Sarah Jenkins', title: 'VP Infrastructure', company: 'Alpha Tech Cloud', avatar: 'SJ' }
-        ],
-        hasRecording: true,
-        recordingUrl: '',
-        recordingSize: '240 MB',
-        hasTranscript: true,
-        transcript: [
-          { id: 't1', speakerId: 'host', speakerName: 'Camelia Rose', timestamp: '00:12', timeSeconds: 12, text: 'Walking through the omnichannel customer touchpoints and real-time screen sharing.', isHost: true },
-          { id: 't2', speakerId: 'p-david', speakerName: 'David Vance', timestamp: '01:15', timeSeconds: 75, text: 'The unified CRM softphone integration will save our sales team 12 hours a week.' }
-        ],
-        notes: 'Live demonstration completed. Scheduled migration sprint for July.',
-        tasksCount: 4
-      }
-    ];
+    return [];
   });
   
   // Refs
@@ -516,21 +733,23 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
     });
   }, []);
 
-  // SEND CHAT MESSAGE
+  // SEND CHAT MESSAGE (delivered to others over the meeting's data channel when audio/video is connected)
   const sendChatMessage = useCallback((text: string, recipientId?: string, attachment?: any) => {
     if (!text.trim() && !attachment) return;
 
-    const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const sentAt = Date.now();
+    const now = new Date(sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const targetRecipient = recipientId || 'everyone';
+    const id = `msg-${sentAt}-${Math.random().toString(36).slice(2, 7)}`;
 
     setActiveMeeting(prev => {
       if (!prev) return prev;
       const recipientObj = prev.participants.find(p => p.id === targetRecipient);
       const newMessage: MeetingChatMessage = {
-        id: `msg-${Date.now()}`,
+        id,
         senderId: 'local-user',
-        senderName: 'You (Camelia Rose)',
-        senderAvatar: 'CR',
+        senderName: `You (${localUserName})`,
+        senderAvatar: localUserName.slice(0, 2).toUpperCase(),
         isYou: true,
         recipientId: targetRecipient,
         recipientName: recipientObj ? recipientObj.name : undefined,
@@ -544,42 +763,11 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
       };
     });
 
-    playChime('chat');
-
-    // Simulated interactive reply if asking a question or greeting
-    const lower = text.toLowerCase();
-    if (lower.includes('hello') || lower.includes('hi') || lower.includes('welcome') || lower.includes('sla') || lower.includes('latency')) {
-      setTimeout(() => {
-        const replyText = lower.includes('sla') || lower.includes('latency')
-          ? "Confirmed. Our engineering team requires under 45ms P99 latency across all multi-region data nodes."
-          : "Thanks Camelia! Audio and video are crystal clear on our end.";
-
-        const responder = lower.includes('sla') ? 'p-marcus' : 'p-sarah';
-        const responderName = lower.includes('sla') ? 'Marcus Aurelius' : 'Sarah Jenkins';
-        const responderAvatar = lower.includes('sla') ? 'MA' : 'SJ';
-
-        const replyMsg: MeetingChatMessage = {
-          id: `msg-${Date.now()}`,
-          senderId: responder,
-          senderName: responderName,
-          senderAvatar: responderAvatar,
-          isYou: false,
-          recipientId: targetRecipient,
-          text: replyText,
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-        };
-
-        setActiveMeeting(prev => {
-          if (!prev) return prev;
-          return {
-            ...prev,
-            messages: [...prev.messages, replyMsg]
-          };
-        });
-        playChime('chat');
-      }, 1400);
+    if (mediaRef.current?.connected && text.trim()) {
+      mediaRef.current.sendChat({ type: 'chat', id, text: text.trim(), senderName: localUserName, sentAt, ...(targetRecipient !== 'everyone' ? { to: targetRecipient } : {}) }).catch(() => {});
     }
-  }, [playChime]);
+    playChime('chat');
+  }, [playChime, localUserName]);
 
   // Update meeting duration timer
   useEffect(() => {
@@ -602,21 +790,50 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
     };
   }, [activeMeeting?.status]);
 
-  // Simulate subtle mic voice activity when unmuted
+  // Microphone level: measured from your microphone (Web Audio), not simulated.
   useEffect(() => {
-    if (activeMeeting && !isMicMuted && !isCamOff) {
-      micIntervalRef.current = setInterval(() => {
-        setMicAudioLevel(Math.floor(35 + Math.random() * 55));
-      }, 350);
-    } else {
-      setMicAudioLevel(0);
-      if (micIntervalRef.current) clearInterval(micIntervalRef.current);
-    }
+    const track = localStream?.getAudioTracks()[0];
+    if (!activeMeeting || isMicMuted || !track || typeof window === 'undefined') { setMicAudioLevel(0); return; }
+    const AC = (window as any).AudioContext || (window as any).webkitAudioContext;
+    if (!AC) { setMicAudioLevel(0); return; }
+    let ctx: AudioContext | null = null;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      ctx = new AC() as AudioContext;
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      ctx.createMediaStreamSource(new MediaStream([track])).connect(analyser);
+      const data = new Uint8Array(analyser.frequencyBinCount);
+      const tick = () => {
+        analyser.getByteTimeDomainData(data);
+        let sum = 0;
+        for (let i = 0; i < data.length; i++) { const d = (data[i] - 128) / 128; sum += d * d; }
+        setMicAudioLevel(Math.min(100, Math.round(Math.sqrt(sum / data.length) * 300)));
+        timer = setTimeout(tick, 150);
+      };
+      tick();
+    } catch { setMicAudioLevel(0); }
+    return () => { if (timer) clearTimeout(timer); ctx?.close().catch(() => {}); };
+  }, [activeMeeting?.id, isMicMuted, localStream]);
 
-    return () => {
-      if (micIntervalRef.current) clearInterval(micIntervalRef.current);
-    };
-  }, [activeMeeting, isMicMuted, isCamOff]);
+  // Connect audio/video once the server has let you in (token from the server; nothing simulated).
+  const myRosterStatus = serverSession?.you.status;
+  useEffect(() => {
+    const cur = serverSessionRef.current;
+    if (!cur || myRosterStatus !== 'in' || !activeMeeting || activeMeeting.status !== 'active') return;
+    if (mediaRef.current?.connected || mediaConnectingRef.current) return;
+    mediaConnectingRef.current = true;
+    (async () => {
+      const r = await meetingsApi(viaRoomRef.current ? `/rooms/${encodeURIComponent(cur.roomCode)}/media-token` : `/sessions/${encodeURIComponent(cur.id)}/media-token`, { method: 'POST' });
+      if (!r.ok) {
+        setMediaStatus(r.data?.code === 'media_not_configured' ? 'not_configured' : 'failed');
+        setMediaMessage(r.data?.error || "Couldn't connect audio and video.");
+      } else {
+        await getMedia().connect(r.data.url, r.data.token, localStreamRef.current);
+      }
+      mediaConnectingRef.current = false;
+    })();
+  }, [serverSession?.id, myRosterStatus, activeMeeting?.status]);
 
   // Acquire local media stream (camera + mic)
   const initializeLocalMedia = async () => {
@@ -659,6 +876,10 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
 
   // Clean up all active media tracks
   const cleanupMediaTracks = useCallback(() => {
+    mediaRef.current?.disconnect();
+    setRemoteMedia({});
+    setMediaStatus('idle');
+    setMediaMessage(null);
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach(t => {
         try { t.stop(); } catch (e) {}
@@ -686,53 +907,57 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
       autoTranscribe?: boolean;
       startMuted?: boolean;
       startCamOff?: boolean;
+      scheduledMeetingId?: string;
     }
-  ) => {
+  ): Promise<{ success: boolean; message?: string }> => {
+    setMeetingError(null);
+    const cleanRoom = (roomCode || '').trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 63);
+    const meetingTitle = customTitle?.trim()
+      ? customTitle.trim()
+      : linkedContact
+        ? `Meeting with ${linkedContact.name}`
+        : 'Meeting';
+
+    // The server starts the meeting on the organizer's plan; without it, only sandbox builds may preview.
+    const r = await meetingsApi('/sessions', { method: 'POST', body: JSON.stringify({
+      ...(customTitle?.trim() || !initialOptions?.scheduledMeetingId ? { title: meetingTitle } : {}),
+      ...(cleanRoom.length >= 3 ? { roomCode: cleanRoom } : {}),
+      ...(initialOptions?.scheduledMeetingId ? { scheduledMeetingId: initialOptions.scheduledMeetingId } : {}),
+    }) });
+    if (!r.ok && r.data?.code === 'room_in_use' && cleanRoom) return joinMeeting(cleanRoom, linkedContact);
+    const view: ServerSessionView | null = r.ok ? r.data.session : null;
+    if (!view) {
+      if (!(r.network && previewAllowed)) {
+        const message = r.data?.error || (r.network ? "Couldn't reach the server, so the meeting can't start. Meetings need the server to apply your plan." : `The meeting couldn't start (${r.status}).`);
+        setMeetingError(message);
+        return { success: false, message };
+      }
+    }
+    viaRoomRef.current = false;
     cleanupMediaTracks();
     await initializeLocalMedia();
 
-    const uniqueRoomId = roomCode?.trim() || `omni-room-${Math.random().toString(36).substring(2, 7)}`;
+    const uniqueRoomId = view?.roomCode || cleanRoom || `omni-room-${Math.random().toString(36).substring(2, 7)}`;
     const now = Date.now();
-    const meetingTitle = customTitle?.trim() 
-      ? customTitle.trim() 
-      : linkedContact 
-        ? `Executive Alignment with ${linkedContact.name}` 
-        : `Live Strategy Consultation (${uniqueRoomId})`;
+    if (view) clockOffsetRef.current = view.serverNow - now;
 
     const newMeeting: ActiveMeetingSession = {
-      id: `mtg_${now}`,
+      id: view?.id ?? `mtg_${now}`,
       roomId: uniqueRoomId,
       title: meetingTitle,
-      hostName: 'Camelia Rose (You)',
-      startedAt: now,
+      hostName: `${localUserName} (You)`,
+      startedAt: view ? view.startedAt - clockOffsetRef.current : now,
       durationSeconds: 0,
       status: 'active',
       isHost: true,
       participants: DEFAULT_PARTICIPANTS,
       messages: INITIAL_CHAT_MESSAGES,
-      notes: `# Strategy & Architecture Notes\n\n**Date:** ${new Date().toLocaleDateString()}\n**Room:** ${uniqueRoomId}\n**Participants:** Camelia Rose (Host), Marcus Aurelius, Sarah Jenkins, Alex Rivera\n\n## Action Items & Discussion\n- [ ] Finalize double-encrypted sovereign data channels\n- [ ] Deliver high-throughput WebRTC benchmarks\n- [ ] Sign SLA contract addendum for Q4 rollout\n`,
-      tasks: [
-        {
-          id: 'task-1',
-          title: 'Send formal SLA security agreement',
-          dueDate: new Date(now + 86400000 * 2).toISOString().split('T')[0],
-          priority: 'high',
-          completed: false,
-          contactName: 'Marcus Aurelius'
-        },
-        {
-          id: 'task-2',
-          title: 'Review hybrid TURN server cluster capacity',
-          dueDate: new Date(now + 86400000 * 3).toISOString().split('T')[0],
-          priority: 'medium',
-          completed: false,
-          contactName: 'Sarah Jenkins'
-        }
-      ],
+      notes: `# ${meetingTitle}\n\n**Date:** ${new Date().toLocaleDateString()}\n**Room:** ${uniqueRoomId}\n\n## Notes\n`,
+      tasks: [],
       linkedContactId: linkedContact?.id || '1',
-      planTier: currentPlanTier,
-      maxParticipants: planConfig.maxParticipants,
-      maxDurationMinutes: planConfig.maxDurationMinutes
+      planTier: view?.tier ?? 'free',
+      maxParticipants: view?.limits.maxParticipants ?? previewPlan.limits.maxParticipants,
+      maxDurationMinutes: view?.limits.maxDurationMinutes ?? previewPlan.limits.maxDurationMinutes
     };
 
     if (initialOptions?.startMuted) {
@@ -749,52 +974,71 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
     }
 
     setActiveMeeting(newMeeting);
+    setOfflinePreview(!view);
+    if (view) applyServerSession(view);
+    else { serverSessionRef.current = null; setServerSession(null); }
     setMeetingViewMode('workspace');
     playChime('join');
 
-    if (initialOptions?.autoRecord) {
+    if (initialOptions?.autoRecord && (view ? view.features.recording : meetingFeatures.recording)) {
       setTimeout(() => {
         startRecording();
       }, 1000);
     }
+    return { success: true };
   };
 
-  // JOIN MEETING
-  const joinMeeting = async (codeOrLink: string, linkedContact?: CRMContact) => {
+  // JOIN MEETING (by code or invitation link; the server checks capacity, lock and waiting room)
+  const joinMeeting = async (codeOrLink: string, linkedContact?: CRMContact): Promise<{ success: boolean; message?: string }> => {
+    setMeetingError(null);
+    let cleanCode = codeOrLink.trim();
+    try {
+      if (cleanCode.includes('/meet/')) cleanCode = cleanCode.split('/meet/')[1];
+      else if (/[?&](meet|room)=/.test(cleanCode)) { const u = new URL(cleanCode, 'https://x.invalid'); cleanCode = u.searchParams.get('meet') || u.searchParams.get('room') || cleanCode; }
+    } catch { /* keep as typed */ }
+    cleanCode = cleanCode.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
+
+    const r = await meetingsApi(`/rooms/${encodeURIComponent(cleanCode)}/join`, { method: 'POST' });
+    const view: ServerSessionView | null = r.ok ? r.data.session : null;
+    if (!view) {
+      if (!(r.network && previewAllowed)) {
+        const message = r.data?.error || (r.network ? "Couldn't reach the server to join the meeting." : `Couldn't join the meeting (${r.status}).`);
+        if (r.data?.code === 'meeting_full') noticeFrom(r.data, message);
+        setMeetingError(message);
+        return { success: false, message };
+      }
+    }
+    viaRoomRef.current = !!view && !view.you.canManage;
     cleanupMediaTracks();
     await initializeLocalMedia();
 
-    // Extract room id from full URL or bare code
-    let cleanCode = codeOrLink.trim();
-    if (cleanCode.includes('/meet/')) {
-      cleanCode = cleanCode.split('/meet/')[1];
-    } else if (cleanCode.includes('room=')) {
-      cleanCode = new URL(cleanCode).searchParams.get('room') || cleanCode;
-    }
-
     const now = Date.now();
+    if (view) clockOffsetRef.current = view.serverNow - now;
     const joinedMeeting: ActiveMeetingSession = {
-      id: `mtg_${now}`,
-      roomId: cleanCode || `room-${Math.random().toString(36).substring(2, 6)}`,
-      title: `Consultation Room (${cleanCode || 'General'})`,
-      hostName: 'Marcus Aurelius (Host)',
-      startedAt: now,
+      id: view?.id ?? `mtg_${now}`,
+      roomId: view?.roomCode ?? (cleanCode || `room-${Math.random().toString(36).substring(2, 6)}`),
+      title: view?.title ?? `Meeting (${cleanCode || 'room'})`,
+      hostName: view ? `${view.host.name} (Host)` : 'Host',
+      startedAt: view ? view.startedAt - clockOffsetRef.current : now,
       durationSeconds: 0,
       status: 'active',
-      isHost: false,
+      isHost: view ? view.host.userId === view.you.participantId || view.you.role === 'host' : false,
       participants: DEFAULT_PARTICIPANTS,
       messages: INITIAL_CHAT_MESSAGES,
-      notes: `Joined session ${cleanCode} at ${new Date().toLocaleTimeString()}.\n`,
+      notes: `Joined ${cleanCode} at ${new Date().toLocaleTimeString()}.\n`,
       tasks: [],
       linkedContactId: linkedContact?.id || '1',
-      planTier: currentPlanTier,
-      maxParticipants: planConfig.maxParticipants,
-      maxDurationMinutes: planConfig.maxDurationMinutes
+      planTier: view?.tier ?? 'free',
+      maxParticipants: view?.limits.maxParticipants ?? previewPlan.limits.maxParticipants,
+      maxDurationMinutes: view?.limits.maxDurationMinutes ?? previewPlan.limits.maxDurationMinutes
     };
 
     setActiveMeeting(joinedMeeting);
+    setOfflinePreview(!view);
+    if (view) applyServerSession(view);
     setMeetingViewMode('workspace');
     playChime('join');
+    return { success: true, message: view?.you.status === 'waiting' ? 'You\'re in the waiting room. The host will let you in.' : undefined };
   };
 
   // RETURN TO MEETING
@@ -807,13 +1051,21 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
     setMeetingViewMode('minimized');
   };
 
-  // LEAVE MEETING (Self leaves, room remains if host or continues)
+  // LEAVE MEETING (Self leaves; the meeting ends if the host leaves without a co-host)
   const leaveMeeting = async () => {
+    await finalizeNotesBeforeEnd();
     playChime('leave');
+    const cur = serverSessionRef.current;
+    if (cur && cur.status === 'active') {
+      meetingsApi(viaRoomRef.current ? `/rooms/${encodeURIComponent(cur.roomCode)}/leave` : `/sessions/${encodeURIComponent(cur.id)}/leave`, { method: 'POST' });
+    }
+    serverSessionRef.current = null; setServerSession(null); setAwaitingAdmission(false);
     if (isRecording) {
       await stopRecording();
     }
     cleanupMediaTracks();
+    setIsHandRaised(false);
+    setWaitingRoom([]);
     setActiveMeeting(prev => prev ? { ...prev, status: 'ended' } : null);
     setTimeout(() => {
       setActiveMeeting(null);
@@ -823,11 +1075,17 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
 
   // END MEETING FOR EVERYONE (Host terminates room)
   const endMeetingForEveryone = async () => {
+    await finalizeNotesBeforeEnd();
     playChime('leave');
+    const cur = serverSessionRef.current;
+    if (cur && cur.status === 'active') await meetingsApi(`/sessions/${encodeURIComponent(cur.id)}/end`, { method: 'POST' });
+    serverSessionRef.current = null; setServerSession(null); setAwaitingAdmission(false);
     if (isRecording) {
       await stopRecording();
     }
     cleanupMediaTracks();
+    setIsHandRaised(false);
+    setWaitingRoom([]);
     setActiveMeeting(prev => prev ? { ...prev, status: 'ended' } : null);
     setTimeout(() => {
       setActiveMeeting(null);
@@ -842,6 +1100,7 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
         t.enabled = isMicMuted;
       });
     }
+    mediaRef.current?.setMicEnabled(isMicMuted).catch(() => {});
     setIsMicMuted(prev => !prev);
   };
 
@@ -851,6 +1110,7 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
       // Re-enable camera track
       if (localStreamRef.current && localStreamRef.current.getVideoTracks().length > 0) {
         localStreamRef.current.getVideoTracks().forEach(t => { t.enabled = true; });
+        mediaRef.current?.setCamEnabled(true).catch(() => {});
         setIsCamOff(false);
       } else {
         await initializeLocalMedia();
@@ -860,6 +1120,7 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
       if (localStreamRef.current) {
         localStreamRef.current.getVideoTracks().forEach(t => { t.enabled = false; });
       }
+      mediaRef.current?.setCamEnabled(false).catch(() => {});
       setIsCamOff(true);
     }
   };
@@ -873,6 +1134,7 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
           t.enabled = !next && !isCamOff;
         });
       }
+      mediaRef.current?.setCamEnabled(!next && !isCamOff).catch(() => {});
       return next;
     });
   };
@@ -965,6 +1227,39 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
 
   // START MEETING RECORDING
   const startRecording = async (): Promise<boolean> => {
+    // The plan decides whether recording is allowed; the server must agree before anything is recorded.
+    const cur = serverSessionRef.current;
+    if (cur) {
+      const r = await meetingsApi(`/sessions/${encodeURIComponent(cur.id)}/recording`, { method: 'POST', body: JSON.stringify({ action: 'start' }) });
+      if (!r.ok && r.data?.code === 'consent_pending') {
+        // Nothing is recorded until everyone agrees: ask, then start automatically once they all have.
+        if (!cur.recording?.requested) {
+          const q = await meetingsApi(`/sessions/${encodeURIComponent(cur.id)}/recording`, { method: 'POST', body: JSON.stringify({ action: 'request' }) });
+          if (!q.ok) { noticeFrom(q.data, q.data?.error || "Couldn't ask for consent to record."); return false; }
+          if (q.data?.session) applyServerSession(q.data.session);
+        }
+        pendingRecordStartRef.current = true;
+        const waiting = (r.data?.waitingFor || []).map((p: any) => p.name).filter(Boolean);
+        setRecordingNotice(waiting.length ? `Asked everyone to agree to recording. Waiting for: ${waiting.join(', ')}.` : 'Asked everyone to agree to recording.');
+        return false;
+      }
+      if (!r.ok) { noticeFrom(r.data, r.data?.error || "Recording couldn't start."); return false; }
+      pendingRecordStartRef.current = false;
+      setRecordingNotice(null);
+      if (r.data?.session) applyServerSession(r.data.session);
+      if (r.data?.session?.recording?.mode === 'cloud') {
+        // LiveKit records the whole room into the organization's storage; nothing is recorded in this browser.
+        setIsRecording(true); setIsRecordingPaused(false); setRecordingDurationSeconds(0); setRecordingConsentGranted(true);
+        if (recordingIntervalRef.current) clearInterval(recordingIntervalRef.current);
+        recordingIntervalRef.current = setInterval(() => setRecordingDurationSeconds(prev => prev + 1), 1000);
+        sendChatMessage('🔴 Recording started. Everyone agreed; it is saved to the organization\'s GREET recordings.');
+        return true;
+      }
+    } else if (!meetingFeatures.recording) {
+      const next = nextPlanFor({ feature: 'recording' });
+      setPlanNotice({ kind: 'feature', feature: 'recording', message: `Recording isn't included in the ${meetingPlanLabel} plan.`, ...(next ? { upgradeTo: next.upgradeTo, upgradeLabel: next.upgradeLabel } : {}) });
+      return false;
+    }
     try {
       recordedChunksRef.current = [];
       setRecordingDurationSeconds(0);
@@ -973,19 +1268,9 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
       let recordStream = localStreamRef.current || screenStreamRef.current;
       
       if (!recordStream) {
-        // Fallback synthetic stream so recorder still produces a valid video blob
-        const canvas = document.createElement('canvas');
-        canvas.width = 640;
-        canvas.height = 360;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.fillStyle = '#0f172a';
-          ctx.fillRect(0, 0, 640, 360);
-          ctx.fillStyle = '#38bdf8';
-          ctx.font = '20px sans-serif';
-          ctx.fillText('Obsidian Live Stream Recording', 160, 180);
-        }
-        recordStream = (canvas as any).captureStream ? (canvas as any).captureStream(10) : null;
+        setRecordingNotice('Nothing to record on this device: turn on your camera, microphone or screen share first.');
+        if (cur) meetingsApi(`/sessions/${encodeURIComponent(cur.id)}/recording`, { method: 'POST', body: JSON.stringify({ action: 'stop' }) });
+        return false;
       }
 
       if (typeof MediaRecorder !== 'undefined' && recordStream) {
@@ -1058,11 +1343,14 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
 
   // STOP RECORDING & ARCHIVE
   const stopRecording = async (): Promise<MeetingRecordingData | null> => {
+    const curSession = serverSessionRef.current;
+    if (curSession && curSession.status === 'active') meetingsApi(`/sessions/${encodeURIComponent(curSession.id)}/recording`, { method: 'POST', body: JSON.stringify({ action: 'stop' }) });
     if (recordingIntervalRef.current) {
       clearInterval(recordingIntervalRef.current);
       recordingIntervalRef.current = null;
     }
 
+    const wasCloud = curSession?.recording?.mode === 'cloud';
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       try {
         mediaRecorderRef.current.stop();
@@ -1071,19 +1359,27 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
 
     setIsRecording(false);
     setIsRecordingPaused(false);
+    pendingRecordStartRef.current = false;
+    setRecordingNotice(null);
 
-    // Build recorded video blob
+    if (wasCloud) {
+      sendChatMessage('⏹️ Recording stopped. It will appear under GREET recordings once processing finishes.');
+      return null;
+    }
+
+    // The recorded video (only what this browser actually captured).
     const chunks = recordedChunksRef.current;
-    const blob = chunks.length > 0
-      ? new Blob(chunks, { type: 'video/webm' })
-      : new Blob(['obsidian-video-recording-stream'], { type: 'video/webm' });
-    
+    if (chunks.length === 0) {
+      sendChatMessage('⏹️ Recording stopped. Nothing was captured on this device.');
+      return null;
+    }
+    const blob = new Blob(chunks, { type: 'video/webm' });
     const videoUrl = URL.createObjectURL(blob);
-    const fileSizeBytes = Math.max(blob.size, 1024 * 1024 * 12); // Realistic file size
-    const fileSizeFormatted = `${(fileSizeBytes / (1024 * 1024)).toFixed(1)} MB`;
+    const fileSizeBytes = blob.size;
+    const fileSizeFormatted = fileSizeBytes >= 1024 * 1024 ? `${(fileSizeBytes / (1024 * 1024)).toFixed(1)} MB` : `${Math.max(1, Math.round(fileSizeBytes / 1024))} KB`;
 
     const now = Date.now();
-    const duration = Math.max(recordingDurationSeconds, 15);
+    const duration = recordingDurationSeconds;
     const mins = Math.floor(duration / 60);
     const secs = duration % 60;
     const durationFormatted = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
@@ -1092,7 +1388,7 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
       id: `rec-${now}`,
       meetingId: activeMeeting?.id || `mtg-${now}`,
       roomId: activeMeeting?.roomId || 'room-demo',
-      title: activeMeeting?.title || 'Executive Video Consultation',
+      title: activeMeeting?.title || 'GREET meeting',
       startedAt: activeMeeting?.startedAt || now - duration * 1000,
       durationSeconds: duration,
       recordedAt: new Date().toLocaleString(),
@@ -1102,7 +1398,7 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
       mimeType: 'video/webm',
       transcript: [...liveTranscript],
       participants: activeMeeting ? [...activeMeeting.participants] : [...DEFAULT_PARTICIPANTS],
-      notes: activeMeeting?.notes || 'Recorded session archived into Obsidian CRM history.'
+      notes: activeMeeting?.notes || ''
     };
 
     setLastCompletedRecording(recordingData);
@@ -1116,7 +1412,7 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       durationSeconds: duration,
       durationFormatted,
-      hostName: activeMeeting?.hostName || 'Camelia Rose',
+      hostName: activeMeeting?.hostName || localUserName,
       participants: recordingData.participants.map(p => ({
         name: p.name,
         title: p.title,
@@ -1126,14 +1422,14 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
       hasRecording: true,
       recordingUrl: videoUrl,
       recordingSize: fileSizeFormatted,
-      hasTranscript: true,
+      hasTranscript: recordingData.transcript.length > 0,
       transcript: recordingData.transcript,
       notes: recordingData.notes || '',
-      tasksCount: activeMeeting?.tasks.length || 2
+      tasksCount: activeMeeting?.tasks.length || 0
     };
 
     setMeetingHistory(prev => [historyItem, ...prev]);
-    sendChatMessage(`⏹️ Meeting recording stopped. File archived (${fileSizeFormatted}) with synchronized transcript.`);
+    sendChatMessage(`⏹️ Recording stopped. Saved on this device (${fileSizeFormatted}).`);
     return recordingData;
   };
 
@@ -1179,7 +1475,7 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
               const s = (curSec % 60).toString().padStart(2, '0');
               addTranscriptItem({
                 speakerId: 'host',
-                speakerName: 'Camelia Rose (You)',
+                speakerName: `${localUserName} (You)`,
                 timestamp: `${m}:${s}`,
                 timeSeconds: curSec,
                 text: spokenText,
@@ -1279,12 +1575,12 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
       const newHistoryRecord: MeetingHistoryRecord = {
         id: newRecordId,
         roomId: activeMeeting?.roomId || `room-${now}`,
-        title: activeMeeting?.title || 'Video Consultation Transcript',
+        title: activeMeeting?.title || 'GREET meeting transcript',
         date: 'Today',
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         durationSeconds: duration,
         durationFormatted,
-        hostName: activeMeeting?.hostName || 'Camelia Rose',
+        hostName: activeMeeting?.hostName || localUserName,
         participants: activeMeeting?.participants.map(p => ({
           name: p.name,
           title: p.title,
@@ -1343,6 +1639,7 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
       screenStreamRef.current = null;
       setScreenStream(null);
     }
+    mediaRef.current?.unpublishScreen().catch(() => {});
     setIsScreenSharing(false);
     setHasSystemAudio(false);
     playChime('screen');
@@ -1385,6 +1682,8 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
       screenStreamRef.current = stream;
       setScreenStream(stream);
       setIsScreenSharing(true);
+      const [shareTrack] = stream.getVideoTracks();
+      if (shareTrack && mediaRef.current?.connected) mediaRef.current.publishScreen(shareTrack).catch(() => setScreenShareError("Your screen is shared locally, but couldn't be sent to others."));
       setHasSystemAudio(stream.getAudioTracks().length > 0);
       playChime('screen');
 
@@ -1439,51 +1738,227 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
   };
 
 
-  // INVITE PARTICIPANT BY EMAIL
-  const inviteParticipantByEmail = async (email: string): Promise<{ success: boolean; message: string }> => {
-    if (!email || !email.includes('@')) {
-      return { success: false, message: 'Please enter a valid email address.' };
-    }
-
-    if (activeMeeting && (activeMeeting.participants.length + 1) >= planConfig.maxParticipants) {
-      return {
-        success: false,
-        message: `Meeting capacity reached for ${planConfig.label} (${planConfig.maxParticipants} max participants). Upgrade to Premium (250) or Enterprise (500) for more capacity.`
-      };
-    }
-    
-    // Simulate email dispatch
-    await new Promise(r => setTimeout(r, 600));
-
-    // Add guest to room participant roster as invited/joined
-    const newGuestName = email.split('@')[0].replace('.', ' ');
-    const guestObj: MeetingParticipant = {
-      id: `p-guest-${Date.now()}`,
-      name: newGuestName.charAt(0).toUpperCase() + newGuestName.slice(1),
+  // INVITE PARTICIPANTS BY EMAIL
+  const makeGuest = (email: string): MeetingParticipant => {
+    const local = email.split('@')[0].replace(/[._-]+/g, ' ').trim() || email;
+    return {
+      id: `p-guest-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+      name: local.charAt(0).toUpperCase() + local.slice(1),
       role: 'Invited Guest',
-      title: 'Partner Representative',
-      company: email.split('@')[1] || 'Guest Organization',
+      title: '',
+      company: email.split('@')[1] || '',
       email,
-      avatar: newGuestName.substring(0, 2).toUpperCase(),
+      avatar: local.substring(0, 2).toUpperCase(),
       avatarColor: 'from-purple-600 to-indigo-700',
       isMuted: false,
       isVideoOff: false,
       isSpeaking: false,
       joinedAt: 'Just now',
-      isCrmContact: false
+      isCrmContact: false,
     };
-
-    setActiveMeeting(prev => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        participants: [...prev.participants, guestObj]
-      };
-    });
-
-    playChime('join');
-    return { success: true, message: `Invitation dispatched to ${email}. Guest joined room.` };
   };
+
+  /**
+   * Invite one or many people. Seats are counted once for the whole batch, so a batch can never
+   * overfill the room; with the waiting room on, everyone waits and admitting checks capacity.
+   */
+  const inviteParticipantsByEmail = async (emails: string[]): Promise<{ added: string[]; waiting: string[]; refused: Array<{ email: string; reason: 'invalid' | 'duplicate' | 'full' }>; message: string }> => {
+    const cur = serverSessionRef.current;
+    if (cur) {
+      const r = await meetingsApi(`/sessions/${encodeURIComponent(cur.id)}/participants`, { method: 'POST', body: JSON.stringify({ emails }) });
+      if (!r.ok) {
+        const message = noticeFrom(r.data, r.data?.error || "Couldn't add people right now.");
+        return { added: [], waiting: [], refused: emails.map(email => ({ email, reason: 'invalid' as const })), message };
+      }
+      const v: ServerSessionView = r.data.session;
+      applyServerSession(v);
+      const emailOf = (id: string) => v.participants.find(p => p.id === id)?.email || id;
+      const added: string[] = r.data.added.map(emailOf), waiting: string[] = r.data.waiting.map(emailOf);
+      const refused = (r.data.refused || []).map((x: any) => ({ email: x.email, reason: x.reason === 'invalid' || x.reason === 'duplicate' ? x.reason : 'full' }));
+      const full = refused.some((x: any) => x.reason === 'full');
+      if (full) setPlanNotice({ kind: 'capacity', message: fullRoomMessage(), upgradeTo: r.data.upgradeTo, upgradeLabel: r.data.upgradeLabel });
+      const parts: string[] = [];
+      if (added.length) parts.push(`${added.length === 1 ? added[0] + ' was' : added.length + ' people were'} added to the meeting.`);
+      if (waiting.length) parts.push(`${waiting.length === 1 ? waiting[0] + ' is' : waiting.length + ' people are'} in the waiting room.`);
+      if (added.length || waiting.length) parts.push('No emails are sent yet: share the meeting link.');
+      if (full) parts.push(fullRoomMessage());
+      if (!parts.length) parts.push(refused[0]?.reason === 'duplicate' ? `${refused[0].email} is already invited.` : r.data.refused?.[0]?.reason === 'locked' ? 'The meeting is locked: unlock it to add people.' : 'Enter a valid email address.');
+      return { added, waiting, refused, message: parts.join(' ') };
+    }
+    const refused: Array<{ email: string; reason: 'invalid' | 'duplicate' | 'full' }> = [];
+    const known = new Set([...(activeMeeting?.participants || []), ...waitingRoom].map(p => (p.email || '').toLowerCase()));
+    const valid: string[] = [];
+    for (const raw of emails) {
+      const email = raw.trim();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { refused.push({ email: raw, reason: 'invalid' }); continue; }
+      if (known.has(email.toLowerCase())) { refused.push({ email, reason: 'duplicate' }); continue; }
+      known.add(email.toLowerCase()); valid.push(email);
+    }
+
+    if (isWaitingRoomEnabled && meetingFeatures.waitingRoom) {
+      if (valid.length) { setWaitingRoom(prev => [...prev, ...valid.map(e => ({ ...makeGuest(e), joinedAt: 'Waiting' }))]); playChime('join'); }
+      return { added: [], waiting: valid, refused, message: valid.length ? `${valid.length === 1 ? valid[0] + ' is' : valid.length + ' people are'} in the waiting room until you admit them. No emails are sent yet: share the meeting link.` : 'Nobody was invited.' };
+    }
+
+    const fits = activeMeeting ? roomCapacity(meetingLimits, roomCount, valid.length).fits : valid.length;
+    const added = valid.slice(0, fits);
+    valid.slice(fits).forEach(email => refused.push({ email, reason: 'full' }));
+    if (added.length) {
+      const guests = added.map(makeGuest);
+      setActiveMeeting(prev => prev ? { ...prev, participants: capToPlan(prev, [...prev.participants, ...guests]) } : prev);
+      playChime('join');
+    }
+    const full = refused.some(r => r.reason === 'full');
+    const message = added.length === 0
+      ? (full ? fullRoomMessage() : refused[0]?.reason === 'duplicate' ? `${refused[0].email} is already invited.` : 'Enter a valid email address.')
+      : `${added.length === 1 ? added[0] + ' was' : added.length + ' people were'} added to the meeting. No emails are sent yet: share the meeting link.` + (full ? ` ${fullRoomMessage()}` : '');
+    return { added, waiting: [], refused, message };
+  };
+
+  const inviteParticipantByEmail = async (email: string): Promise<{ success: boolean; message: string }> => {
+    const r = await inviteParticipantsByEmail([email]);
+    return { success: r.added.length + r.waiting.length > 0, message: r.message };
+  };
+
+  // ---------------------------------------------------------------------------
+  // RAISE HAND
+  // ---------------------------------------------------------------------------
+  const toggleRaiseHand = useCallback(() => {
+    setIsHandRaised(prev => !prev);
+  }, []);
+
+  // ---------------------------------------------------------------------------
+  // WAITING ROOM & PARTICIPANT MANAGEMENT
+  // ---------------------------------------------------------------------------
+  const sessionCall = async (path: string, init: RequestInit, fallback: string) => {
+    const cur = serverSessionRef.current;
+    if (!cur) return null;
+    const r = await meetingsApi(`/sessions/${encodeURIComponent(cur.id)}${path}`, init);
+    if (r.ok && r.data.session) applyServerSession(r.data.session);
+    return { ...r, message: r.ok ? '' : noticeFrom(r.data, r.data?.error || fallback) };
+  };
+  const localFeatureRefusal = (feature: keyof PlanFeatures, what: string) => {
+    const next = nextPlanFor({ feature });
+    const message = `${what} isn't included in the ${meetingPlanLabel} plan.`;
+    setPlanNotice({ kind: 'feature', feature, message, ...(next ? { upgradeTo: next.upgradeTo, upgradeLabel: next.upgradeLabel } : {}) });
+    return { success: false, message };
+  };
+
+  const setWaitingRoomEnabled = async (enabled: boolean): Promise<{ success: boolean; message: string }> => {
+    const r = await sessionCall('', { method: 'PATCH', body: JSON.stringify({ waitingRoomEnabled: enabled }) }, "The waiting room couldn't be changed.");
+    if (r) return r.ok ? { success: true, message: enabled ? 'Waiting room on: you admit invited guests from Participants.' : 'Waiting room off: invited guests join directly.' } : { success: false, message: r.message };
+    if (enabled && !meetingFeatures.waitingRoom) return localFeatureRefusal('waitingRoom', 'The waiting room');
+    setIsWaitingRoomEnabledState(enabled);
+    try { localStorage.setItem('obsidian_meeting_waiting_room', enabled ? 'on' : 'off'); } catch { /* storage unavailable */ }
+    return { success: true, message: enabled ? 'Waiting room on.' : 'Waiting room off.' };
+  };
+
+  const setMeetingLocked = async (locked: boolean): Promise<{ success: boolean; message: string }> => {
+    const r = await sessionCall('', { method: 'PATCH', body: JSON.stringify({ locked }) }, "The meeting lock couldn't be changed.");
+    if (r) return r.ok ? { success: true, message: locked ? 'Meeting locked: nobody else can join.' : 'Meeting unlocked.' } : { success: false, message: r.message };
+    if (locked && !meetingFeatures.securityControls) return localFeatureRefusal('securityControls', 'Locking a meeting');
+    setIsMeetingLocked(locked);
+    return { success: true, message: locked ? 'Meeting locked.' : 'Meeting unlocked.' };
+  };
+
+  const setCoHost = async (participantId: string, on: boolean): Promise<{ success: boolean; message: string }> => {
+    const r = await sessionCall(`/participants/${encodeURIComponent(participantId)}`, { method: 'PATCH', body: JSON.stringify({ role: on ? 'cohost' : 'guest' }) }, "The role couldn't be changed.");
+    if (r) return r.ok ? { success: true, message: on ? 'Made co-host.' : 'Co-host removed.' } : { success: false, message: r.message };
+    return localFeatureRefusal('coHosts', 'Co-hosts');
+  };
+
+  const admitParticipant = async (participantId: string): Promise<{ success: boolean; message: string }> => {
+    const guest = waitingRoom.find(p => p.id === participantId);
+    const r = await sessionCall('/admit', { method: 'POST', body: JSON.stringify({ participantIds: [participantId] }) }, "Couldn't admit them.");
+    if (r) {
+      if (!r.ok) return { success: false, message: r.message };
+      if (r.data.admitted?.length) { playChime('join'); return { success: true, message: `${guest?.name ?? 'They'} joined the meeting.` }; }
+      setPlanNotice({ kind: 'capacity', message: fullRoomMessage(), upgradeTo: r.data.upgradeTo, upgradeLabel: r.data.upgradeLabel });
+      return { success: false, message: fullRoomMessage() };
+    }
+    if (!guest) return { success: false, message: 'That person is no longer waiting.' };
+    if (activeMeeting && roomCapacity(meetingLimits, roomCount).full) return { success: false, message: fullRoomMessage() };
+    setWaitingRoom(prev => prev.filter(p => p.id !== participantId));
+    setActiveMeeting(prev => prev ? { ...prev, participants: capToPlan(prev, [...prev.participants, { ...guest, joinedAt: 'Just now' }]) } : prev);
+    playChime('join');
+    return { success: true, message: `${guest.name} joined the meeting.` };
+  };
+
+  const admitAllWaiting = async (): Promise<{ success: boolean; message: string }> => {
+    if (waitingRoom.length === 0) return { success: false, message: 'Nobody is waiting.' };
+    const r = await sessionCall('/admit', { method: 'POST', body: JSON.stringify({ all: true }) }, "Couldn't admit everyone.");
+    if (r) {
+      if (!r.ok) return { success: false, message: r.message };
+      const admitted = r.data.admitted?.length || 0, left = r.data.stillWaiting?.length || 0;
+      if (admitted) playChime('join');
+      if (left) setPlanNotice({ kind: 'capacity', message: fullRoomMessage(), upgradeTo: r.data.upgradeTo, upgradeLabel: r.data.upgradeLabel });
+      return { success: admitted > 0, message: left ? `Admitted ${admitted}. ${left} still waiting: ${fullRoomMessage()}` : `Admitted ${admitted}.` };
+    }
+    const fits = activeMeeting ? roomCapacity(meetingLimits, roomCount, waitingRoom.length).fits : waitingRoom.length;
+    const admitted = waitingRoom.slice(0, fits);
+    if (admitted.length === 0) return { success: false, message: fullRoomMessage() };
+    const admittedIds = new Set(admitted.map(p => p.id));
+    setWaitingRoom(prev => prev.filter(p => !admittedIds.has(p.id)));
+    setActiveMeeting(prev => prev ? { ...prev, participants: capToPlan(prev, [...prev.participants, ...admitted.map(p => ({ ...p, joinedAt: 'Just now' }))]) } : prev);
+    playChime('join');
+    const left = waitingRoom.length - admitted.length;
+    return { success: true, message: left > 0 ? `Admitted ${admitted.length}. ${left} still waiting: ${fullRoomMessage()}` : `Admitted ${admitted.length}.` };
+  };
+
+  const denyParticipant = async (participantId: string): Promise<void> => {
+    const r = await sessionCall(`/participants/${encodeURIComponent(participantId)}/deny`, { method: 'POST' }, "Couldn't deny them.");
+    if (!r) setWaitingRoom(prev => prev.filter(p => p.id !== participantId));
+  };
+
+  const updateParticipants = useCallback((fn: (list: MeetingParticipant[]) => MeetingParticipant[]) => {
+    setActiveMeeting(prev => prev ? { ...prev, participants: fn(prev.participants) } : prev);
+  }, []);
+
+  // Host mute goes through LiveKit's server API (the server checks you may manage this meeting).
+  const muteParticipant = useCallback((participantId: string) => {
+    const cur = serverSessionRef.current;
+    if (!cur) { updateParticipants(list => list.map(p => p.id === participantId ? { ...p, isMuted: true, isSpeaking: false } : p)); return; }
+    meetingsApi(`/sessions/${encodeURIComponent(cur.id)}/participants/${encodeURIComponent(participantId)}/mute`, { method: 'POST' }).then((r) => {
+      if (r.ok) updateParticipants(list => list.map(p => p.id === participantId ? { ...p, isMuted: true, isSpeaking: false } : p));
+      else noticeFrom(r.data, r.data?.error || "Couldn't mute them.");
+    });
+  }, [updateParticipants, meetingsApi]);
+
+  const muteAllParticipants = useCallback(() => {
+    const cur = serverSessionRef.current;
+    if (!cur) { updateParticipants(list => list.map(p => ({ ...p, isMuted: true, isSpeaking: false }))); return; }
+    meetingsApi(`/sessions/${encodeURIComponent(cur.id)}/mute-all`, { method: 'POST' }).then((r) => {
+      if (r.ok) updateParticipants(list => list.map(p => (p.id === 'local-user' ? p : { ...p, isMuted: true, isSpeaking: false })));
+      else noticeFrom(r.data, r.data?.error || "Couldn't mute everyone.");
+    });
+  }, [updateParticipants, meetingsApi]);
+
+  const answerRecordingConsent = useCallback(async (agree: boolean) => {
+    const cur = serverSessionRef.current;
+    if (!cur) return { success: false, message: 'Not in a meeting.' };
+    const r = await meetingsApi(`/sessions/${encodeURIComponent(cur.id)}/recording/consent`, { method: 'POST', body: JSON.stringify({ consent: agree }) });
+    if (r.ok && r.data?.session) applyServerSession(r.data.session);
+    return r.ok ? { success: true, message: agree ? 'Thanks. You agreed to be recorded.' : 'You declined. The host has been told.' } : { success: false, message: r.data?.error || "Couldn't send your answer." };
+  }, [meetingsApi, applyServerSession]);
+
+  const removeParticipant = async (participantId: string): Promise<{ success: boolean; message: string }> => {
+    const name = activeMeeting?.participants.find(p => p.id === participantId)?.name ?? 'They';
+    const r = await sessionCall(`/participants/${encodeURIComponent(participantId)}`, { method: 'DELETE' }, "Couldn't remove them.");
+    if (r) { if (r.ok) playChime('leave'); return r.ok ? { success: true, message: `${name} was removed from the meeting.` } : { success: false, message: r.message }; }
+    if (!meetingFeatures.hostControls) return localFeatureRefusal('hostControls', 'Removing participants');
+    updateParticipants(list => list.filter(p => p.id !== participantId));
+    playChime('leave');
+    return { success: true, message: `${name} was removed from the meeting.` };
+  };
+
+  const lowerParticipantHand = useCallback((participantId: string) => {
+    updateParticipants(list => list.map(p => p.id === participantId ? { ...p, isHandRaised: false, handRaisedAt: undefined } : p));
+  }, [updateParticipants]);
+
+  const lowerAllHands = useCallback(() => {
+    setIsHandRaised(false);
+    updateParticipants(list => list.map(p => ({ ...p, isHandRaised: false, handRaisedAt: undefined })));
+  }, [updateParticipants]);
 
   // BROADCAST REACTION
   const broadcastReaction = (emoji: string) => {
@@ -1497,6 +1972,29 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
     }, 3500);
   };
 
+  // TIME LIMIT: when the plan's limit is reached the meeting ends for everyone. The recording is
+  // saved, camera and microphone are released, and the meeting stays on screen (status 'ended') so
+  // the host sees the summary; leaving or closing it clears the session as usual.
+  const timeLimitHandledRef = useRef<string | null>(null);
+  const endedByServer = !!activeMeeting && activeMeeting.status === 'ended' && !!activeMeeting.endedReason;
+  useEffect(() => {
+    if (!activeMeeting) return;
+    const reachedLocally = activeMeeting.status === 'active' && isDurationLimitReached;
+    if (!reachedLocally && !endedByServer) return;
+    if (timeLimitHandledRef.current === activeMeeting.id) return;
+    timeLimitHandledRef.current = activeMeeting.id;
+    (async () => {
+      void finalizeNotesBeforeEnd(); // the meeting ended (time limit or the host): save the notes to the CRM
+      if (isRecording) { try { await stopRecording(); } catch { /* keep ending the meeting */ } }
+      cleanupMediaTracks();
+      setIsHandRaised(false);
+      setWaitingRoom([]);
+      setAwaitingAdmission(false);
+      setActiveMeeting(prev => prev && prev.id === activeMeeting.id && prev.status === 'active' ? { ...prev, status: 'ended', endedReason: 'time_limit' } : prev);
+      playChime('leave');
+    })();
+  }, [activeMeeting?.id, activeMeeting?.status, isDurationLimitReached, endedByServer]);
+
   return (
     <MeetingSessionContext.Provider
       value={{
@@ -1504,11 +2002,37 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
         isCallActive: !!activeMeeting && activeMeeting.status === 'active',
         meetingViewMode,
         setMeetingViewMode,
-        currentPlanTier,
-        setPlanTier,
-        planConfig,
+        subscription,
+        refreshSubscription,
+        requestPlanChange,
+        cancelPlanRequest,
+        serverSession,
+        meetingLimits,
+        meetingFeatures,
+        meetingPlanLabel,
+        meetingTier,
+        warnMinutesBefore,
+        capacityWarnPercent,
+        capacityState,
+        roomCount,
         isDurationWarning,
         isDurationLimitReached,
+        durationSecondsLeft,
+        canManageMeeting,
+        offlinePreview,
+        awaitingAdmission,
+        isMeetingLocked,
+        setMeetingLocked,
+        setCoHost,
+        meetingError,
+        clearMeetingError,
+        planNotice,
+        clearPlanNotice,
+        mediaStatus,
+        mediaMessage,
+        networkQuality,
+        remoteMedia,
+        localUserName,
         localStream,
         screenStream,
         isMicMuted,
@@ -1524,6 +2048,8 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
         minimizeToDashboard,
         leaveMeeting,
         endMeetingForEveryone,
+        meetingNotes,
+        notesOutcome,
         toggleMic,
         toggleCam,
         togglePauseVideo,
@@ -1536,11 +2062,17 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
         toggleTaskCompleted,
         addParticipantToCrm,
         inviteParticipantByEmail,
+        inviteParticipantsByEmail,
         exchangeContactConsent,
         isRecording,
         isRecordingPaused,
         recordingDurationSeconds,
         recordingConsentGranted,
+        recordingConsentRequested: !!serverSession?.recording?.requested && !serverSession?.recording?.yourConsent && !(serverSession?.you?.canManage),
+        answerRecordingConsent,
+        meetingIsBeingRecorded: !!serverSession?.recording?.active || isRecording,
+        recordingMode: serverSession?.recording?.mode ?? (isRecording ? 'device' : null),
+        recordingNotice,
         setRecordingConsentGranted,
         startRecording,
         pauseRecording,
@@ -1560,7 +2092,20 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
         meetingHistory,
         deleteMeetingHistoryItem,
         broadcastReaction,
-        activeReactions
+        activeReactions,
+        isHandRaised,
+        toggleRaiseHand,
+        isWaitingRoomEnabled,
+        setWaitingRoomEnabled,
+        waitingRoom,
+        admitParticipant,
+        admitAllWaiting,
+        denyParticipant,
+        muteParticipant,
+        muteAllParticipants,
+        removeParticipant,
+        lowerParticipantHand,
+        lowerAllHands
       }}
     >
       {children}

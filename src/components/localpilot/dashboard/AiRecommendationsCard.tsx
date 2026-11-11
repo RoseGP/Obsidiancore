@@ -35,10 +35,10 @@ export const AiRecommendationsCard: React.FC<AiRecommendationsCardProps> = ({
             </div>
             <div>
               <h3 className="text-sm font-semibold text-slate-900 tracking-tight">
-                AI Recommendations
+                Top fixes
               </h3>
               <p className="text-[11px] text-slate-500">
-                ✨ Your biggest opportunities
+                From your profile checks
               </p>
             </div>
           </div>
@@ -48,7 +48,7 @@ export const AiRecommendationsCard: React.FC<AiRecommendationsCardProps> = ({
             onClick={onOpenAiAssistant}
             className="text-xs font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-1 transition cursor-pointer"
           >
-            <span>Ask AI</span>
+            <span>Ask</span>
             <ArrowRight className="h-3.5 w-3.5" />
           </button>
         </div>

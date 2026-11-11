@@ -13,6 +13,7 @@ import {
 import { encryptToken, decryptToken } from './encryption';
 import * as paymentDb from './paymentDb';
 import { optionalSecret } from '../../utils/secrets';
+import { assertProviderConfigured } from './config';
 
 export class StripeProvider implements PaymentProvider {
   private userId: string;
@@ -27,15 +28,9 @@ export class StripeProvider implements PaymentProvider {
    * Initializes Stripe SDK using either platform secret key or connected account access token
    */
   private async getStripeClient(): Promise<{ stripe: Stripe; accountId?: string }> {
+    assertProviderConfigured('stripe');
     const connected = await paymentDb.getConnectedAccount(this.userId, 'stripe');
     const secretKey = optionalSecret('STRIPE_SECRET_KEY');
-
-    if (!connected && !process.env.STRIPE_SECRET_KEY) {
-      // In development fallback mode, initialize sandbox mock
-      return {
-        stripe: new Stripe(secretKey, { apiVersion: '2023-10-16' as any })
-      };
-    }
 
     if (!connected) {
       throw new PaymentProviderError('PROVIDER_NOT_CONNECTED', 'Stripe account is not connected for this user', 'stripe', null, 400);
@@ -62,27 +57,29 @@ export class StripeProvider implements PaymentProvider {
    * Exchanges authorization code for Stripe Connect tokens
    */
   async connect(authCode: string, redirectUri: string): Promise<ConnectedAccount> {
-    const clientId = process.env.STRIPE_CLIENT_ID;
-    const secretKey = process.env.STRIPE_SECRET_KEY;
+    assertProviderConfigured('stripe');
+    const secretKey = process.env.STRIPE_SECRET_KEY as string;
+    if (!authCode) throw new PaymentProviderError('PROVIDER_VALIDATION_ERROR', 'Stripe didn\'t return an authorization code.', 'stripe', null, 400);
 
-    let stripeUserId = `acct_stripe_${Date.now()}`;
-    let accessToken = `sk_live_token_simulated_${Date.now()}`;
-    let refreshToken = `rt_live_token_simulated_${Date.now()}`;
-    let businessName = 'Stripe Connected Merchant';
-    let email = 'billing@stripe-merchant.io';
+    let stripeUserId = '';
+    let accessToken = '';
+    let refreshToken: string | undefined;
+    let businessName = '';
+    let email = '';
 
-    if (clientId && secretKey && authCode !== 'simulated_stripe_code') {
+    {
       try {
         const stripe = new Stripe(secretKey, { apiVersion: '2023-10-16' as any });
         const response = await stripe.oauth.token({
           grant_type: 'authorization_code',
           code: authCode,
-          redirect_uri: redirectUri
         });
+        void redirectUri; // Stripe Connect's token exchange doesn't take a redirect URI
 
-        stripeUserId = response.stripe_user_id || stripeUserId;
-        accessToken = response.access_token || accessToken;
-        refreshToken = response.refresh_token || refreshToken;
+        stripeUserId = response.stripe_user_id || '';
+        accessToken = response.access_token || '';
+        refreshToken = response.refresh_token || undefined;
+        if (!stripeUserId || !accessToken) throw new Error('incomplete token response');
 
         // Retrieve merchant profile
         try {
@@ -93,18 +90,8 @@ export class StripeProvider implements PaymentProvider {
           // Keep defaults
         }
       } catch (err: any) {
-        throw new PaymentProviderError(
-          'PROVIDER_AUTH_REVOKED',
-          `Stripe OAuth exchange failed: ${err.message}`,
-          'stripe',
-          err,
-          400
-        );
+        throw new PaymentProviderError('PROVIDER_AUTH_REVOKED', 'Stripe didn\'t accept the connection. Try connecting again.', 'stripe', { type: err?.type, code: err?.code }, 400);
       }
-    } else {
-      // Sandbox mode: generate realistic test merchant
-      businessName = 'Ace Studio Invoicing (Stripe Test)';
-      email = 'pay@acestudio.pro';
     }
 
     const encryptedAccessToken = encryptToken(accessToken);
@@ -161,7 +148,7 @@ export class StripeProvider implements PaymentProvider {
     return {
       provider: 'stripe',
       accountId: connected.provider_account_id,
-      businessName: connected.provider_metadata?.business_name || 'Stripe Merchant',
+      businessName: connected.provider_metadata?.business_name || '',
       email: connected.provider_metadata?.email,
       connected: true,
       environment: (connected.provider_metadata?.environment as any) || 'sandbox',
@@ -197,13 +184,12 @@ export class StripeProvider implements PaymentProvider {
           );
           stripeCustomerId = stripeCust.id;
         } else {
-          // Sandbox mock id
-          stripeCustomerId = `cus_stripe_sb_${Date.now()}`;
+          throw new PaymentProviderError('PROVIDER_NOT_CONFIGURED', 'Stripe isn\'t set up on this server.', 'stripe', null, 503);
         }
       } catch (err: any) {
         throw new PaymentProviderError(
           'CUSTOMER_CREATION_FAILED',
-          `Failed to create Stripe customer: ${err.message}`,
+          'Stripe couldn\'t create the customer.',
           'stripe',
           err
         );
@@ -224,13 +210,7 @@ export class StripeProvider implements PaymentProvider {
       provider_customer_ids: {
         stripe: stripeCustomerId
       },
-      billing_address: input.billing_address || {
-        address: '100 Business Way',
-        city: 'San Francisco',
-        state: 'CA',
-        postal_code: '94107',
-        country: 'United States'
-      },
+      billing_address: input.billing_address,
       created_at: new Date().toISOString()
     };
 
@@ -284,13 +264,13 @@ export class StripeProvider implements PaymentProvider {
 
     const total = subtotal + taxTotal;
     const invoiceId = `inv_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
-    let stripeInvoiceId = `in_stripe_sb_${Date.now()}`;
-    let hostedInvoiceUrl = `https://invoice.stripe.com/i/acct_simulated/invst_${Date.now()}`;
+    let stripeInvoiceId = '';
+    let hostedInvoiceUrl = '';
 
     // Calculate due date timestamp in seconds
     const dueTimestamp = Math.floor(new Date(input.dueDate).getTime() / 1000) || Math.floor(Date.now() / 1000) + 14 * 86400;
 
-    if (process.env.STRIPE_SECRET_KEY) {
+    {
       try {
         const stripeReqOptions = accountId ? { stripeAccount: accountId } : undefined;
 
@@ -318,6 +298,8 @@ export class StripeProvider implements PaymentProvider {
             metadata: {
               app_invoice_id: invoiceId,
               app_user_id: this.userId,
+              app_org_id: this.userId,
+              ...(input.billingInvoiceId ? { billing_invoice_id: input.billingInvoiceId } : {}),
               invoice_number: input.invoiceNumber
             }
           },
@@ -329,7 +311,7 @@ export class StripeProvider implements PaymentProvider {
       } catch (err: any) {
         throw new PaymentProviderError(
           'INVOICE_CREATION_FAILED',
-          `Stripe invoice creation failed: ${err.message}`,
+          'Stripe couldn\'t create the invoice.',
           'stripe',
           err
         );
@@ -361,6 +343,7 @@ export class StripeProvider implements PaymentProvider {
       due_date: input.dueDate,
       description: input.description || `Invoice #${input.invoiceNumber}`,
       hosted_invoice_url: hostedInvoiceUrl,
+      ...(input.billingInvoiceId ? { billing_invoice_id: input.billingInvoiceId } : {}),
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
@@ -381,24 +364,22 @@ export class StripeProvider implements PaymentProvider {
     const { stripe, accountId } = await this.getStripeClient();
     let finalUrl = invoice.hosted_invoice_url;
 
-    if (process.env.STRIPE_SECRET_KEY && !invoice.provider_invoice_id.startsWith('in_stripe_sb_')) {
+    {
       try {
         const stripeReqOptions = accountId ? { stripeAccount: accountId } : undefined;
-        const finalized = await stripe.invoices.finalizeInvoice(invoice.provider_invoice_id, stripeReqOptions);
+        const finalized = await stripe.invoices.finalizeInvoice(invoice.provider_invoice_id, {}, stripeReqOptions);
         finalUrl = finalized.hosted_invoice_url || finalUrl;
       } catch (err: any) {
         throw new PaymentProviderError(
           'INVOICE_SEND_FAILED',
-          `Failed to finalize Stripe invoice: ${err.message}`,
+          'Stripe couldn\'t finalize the invoice.',
           'stripe',
-          err
+          { type: err?.type, code: err?.code }
         );
       }
-    } else {
-      finalUrl = `https://invoice.stripe.com/test-i/${invoice.provider_invoice_id}#finalized`;
     }
 
-    const updated = await paymentDb.updateInvoiceStatus(invoice.id, 'open', {
+    const updated = await paymentDb.updateInvoiceStatus(this.userId, invoice.id, 'open', {
       hosted_invoice_url: finalUrl
     });
 
@@ -409,19 +390,19 @@ export class StripeProvider implements PaymentProvider {
     const invoice = await this.finalizeInvoice(invoiceId);
     const { stripe, accountId } = await this.getStripeClient();
 
-    if (process.env.STRIPE_SECRET_KEY && !invoice.provider_invoice_id.startsWith('in_stripe_sb_')) {
+    {
       try {
         const stripeReqOptions = accountId ? { stripeAccount: accountId } : undefined;
-        const sent = await stripe.invoices.sendInvoice(invoice.provider_invoice_id, stripeReqOptions);
+        const sent = await stripe.invoices.sendInvoice(invoice.provider_invoice_id, {}, stripeReqOptions);
         const finalUrl = sent.hosted_invoice_url || invoice.hosted_invoice_url;
-        const updated = await paymentDb.updateInvoiceStatus(invoice.id, 'open', {
+        const updated = await paymentDb.updateInvoiceStatus(this.userId, invoice.id, 'open', {
           hosted_invoice_url: finalUrl
         });
         return updated || invoice;
       } catch (err: any) {
         throw new PaymentProviderError(
           'INVOICE_SEND_FAILED',
-          `Failed to send Stripe invoice: ${err.message}`,
+          'Stripe couldn\'t send the invoice.',
           'stripe',
           err
         );
@@ -450,15 +431,15 @@ export class StripeProvider implements PaymentProvider {
     }
 
     const { stripe, accountId } = await this.getStripeClient();
-    if (process.env.STRIPE_SECRET_KEY && !invoice.provider_invoice_id.startsWith('in_stripe_sb_')) {
+    {
       try {
-        await stripe.invoices.voidInvoice(invoice.provider_invoice_id, accountId ? { stripeAccount: accountId } : undefined);
+        await stripe.invoices.voidInvoice(invoice.provider_invoice_id, {}, accountId ? { stripeAccount: accountId } : undefined);
       } catch (err: any) {
-        console.warn('[Stripe void] API warning:', err.message);
+        console.warn('[Stripe void] API warning:', err?.code || err?.type || 'error');
       }
     }
 
-    const updated = await paymentDb.updateInvoiceStatus(invoiceId, 'void');
+    const updated = await paymentDb.updateInvoiceStatus(this.userId, invoiceId, 'void');
     return updated || invoice;
   }
 }

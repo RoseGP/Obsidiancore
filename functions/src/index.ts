@@ -5,6 +5,9 @@ import { publishToPlatforms } from './publishers';
 // Initialize the Firebase Admin SDK
 admin.initializeApp();
 
+// Protected HTTPS API (master API key): GET /api/v1/health
+export { api } from './api';
+
 // Export OAuth 2.0 Callbacks
 export { linkedinCallback, facebookCallback } from './oauth';
 

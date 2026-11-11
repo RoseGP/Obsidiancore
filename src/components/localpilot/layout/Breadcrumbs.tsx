@@ -56,7 +56,7 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
               </button>
               <ChevronRight className="h-3.5 w-3.5 text-slate-400 shrink-0" />
               <span className="font-semibold text-slate-900 truncate max-w-[180px]">
-                {selectedLocationName || 'Downtown Miami'}
+                {selectedLocationName || 'Location'}
               </span>
             </>
           ) : isSubSettings ? (

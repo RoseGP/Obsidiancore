@@ -42,21 +42,14 @@ export interface BusinessProfileData {
 }
 
 /**
- * Server-enforced roles, per profile.
- *   viewer   read the profile, audits and history
- *   editor   + edit, run audits, request AI suggestions
- *   manager  + link listings, publish to external listings, archive/restore
- *   owner    + manage members, delete
+ * Access follows the organization's RBAC matrix (src/server/security/permissions.ts, module `listings`):
+ *   view    read profiles, audits and history
+ *   create  create profiles (incl. import from a listing)
+ *   edit    edit, confirm hours/review, record audits, AI suggestions, refresh listing data
+ *   share   link/unlink listings, publish to Google, archive/restore
+ *   delete  delete profiles
  */
-export const ROLES = ['viewer', 'editor', 'manager', 'owner'] as const;
-export type Role = (typeof ROLES)[number];
-export const roleRank = (r: Role | undefined) => (r ? ROLES.indexOf(r) : -1);
-export const can = {
-  view: (r?: Role) => roleRank(r) >= 0,
-  edit: (r?: Role) => roleRank(r) >= 1,
-  publish: (r?: Role) => roleRank(r) >= 2,
-  manageMembers: (r?: Role) => r === 'owner',
-};
+export interface ProfilePermissions { create: boolean; edit: boolean; publish: boolean; delete: boolean }
 
 export type ProfileStatus = 'draft' | 'active' | 'archived';
 
@@ -124,7 +117,7 @@ export interface ChangeEntry {
   id: string;
   at: string;
   by: string;
-  action: 'create' | 'update' | 'status' | 'members' | 'link' | 'unlink' | 'publish' | 'review';
+  action: 'create' | 'update' | 'status' | 'link' | 'unlink' | 'publish' | 'review';
   source: ChangeSource;
   version: number;
   summary: string;
@@ -199,8 +192,7 @@ export interface BusinessProfile {
   createdBy: string;
   updatedAt: string;
   updatedBy: string;
-  members: Record<string, Role>;
-  memberIds: string[];
+  orgId: string;
   lastReviewedAt?: string;
   lastReviewedBy?: string;
   hoursVerifiedAt?: string;
@@ -219,7 +211,6 @@ export interface ProfileSummaryView {
   primaryCategory: string;
   city?: string;
   status: ProfileStatus;
-  role: Role;
   version: number;
   updatedAt: string;
   score: number;

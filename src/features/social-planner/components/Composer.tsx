@@ -32,8 +32,9 @@ export function Composer({ open, target, defaultPlatforms, onClose }: {
   const [uploading, setUploading] = useState(false);
   const [attempt, setAttempt] = useState<'draft' | 'scheduled' | null>(null);
   const [serverError, setServerError] = useState('');
-  const [saving, setSaving] = useState<'draft' | 'scheduled' | 'delete' | null>(null);
+  const [saving, setSaving] = useState<'draft' | 'scheduled' | 'now' | 'delete' | null>(null);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const [confirmNow, setConfirmNow] = useState(false);
   const [showMore, setShowMore] = useState(false);
 
   useEffect(() => {
@@ -96,19 +97,24 @@ export function Composer({ open, target, defaultPlatforms, onClose }: {
 
   const requestClose = () => { if (busy) return; if (dirty) setConfirmDiscard(true); else onClose(); };
 
-  const submit = async (intent: 'draft' | 'scheduled') => {
-    setAttempt(intent);
+  const submit = async (intent: 'draft' | 'scheduled' | 'now') => {
+    setAttempt(intent === 'now' ? 'scheduled' : intent);
     const r = validatePost({ ...draft, intent }, { now: new Date(), accounts });
-    if (hasErrors(r) || busy) return;
+    if (hasErrors(r) || busy) { setConfirmNow(false); return; }
+    if (intent === 'now' && !confirmNow) { setConfirmNow(true); return; } // publishing can't be undone: ask first
+    setConfirmNow(false);
     setSaving(intent);
     try {
-      const payload = { content: draft.content.trim(), platforms: draft.platforms, scheduledAt: draft.scheduledAt!, mediaUrls: draft.mediaUrls, intent };
-      if (editing) await update(editing.id, { ...payload, platforms: [...payload.platforms, ...editing.otherPlatforms] });
+      const scheduledAt = intent === 'now' ? new Date().toISOString() : draft.scheduledAt!;
+      const payload = { content: draft.content.trim(), platforms: draft.platforms, scheduledAt, mediaUrls: draft.mediaUrls, intent };
+      if (editing) await update(editing.id, { ...payload, intent: intent === 'now' ? 'scheduled' : intent, platforms: [...payload.platforms, ...editing.otherPlatforms] });
       else await create(payload);
       toast({
         tone: 'success',
-        title: intent === 'draft' ? 'Draft saved' : editing ? 'Post updated' : 'Post scheduled',
-        body: intent === 'draft' ? 'It won’t publish until you schedule it.' : new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(draft.scheduledAt!)),
+        title: intent === 'draft' ? 'Draft saved' : intent === 'now' ? 'Sent for publishing' : editing ? 'Post updated' : 'Post scheduled',
+        body: intent === 'draft' ? 'It won’t publish until you schedule it.'
+          : intent === 'now' ? 'Postiz is publishing it now. Its status updates in the calendar.'
+          : new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(draft.scheduledAt!)),
       });
       onClose();
     } catch (err: any) {
@@ -141,7 +147,15 @@ export function Composer({ open, target, defaultPlatforms, onClose }: {
       width={640}
       title={editing ? 'Edit post' : 'New post'}
       description={editing?.status === 'failed' ? 'Saving moves this post back into the publishing queue.' : undefined}
-      footer={confirmDiscard ? (
+      footer={confirmNow ? (
+        <div className="flex w-full flex-wrap items-center justify-between gap-2" role="alertdialog" aria-label="Confirm publishing now">
+          <span className="text-[13.5px]">Publish now to {draft.platforms.length} {draft.platforms.length === 1 ? 'platform' : 'platforms'}? It goes live immediately.</span>
+          <div className="flex gap-2">
+            <Button variant="ghost" onClick={() => setConfirmNow(false)} data-autofocus>Cancel</Button>
+            <Button variant="primary" icon={<Zap size={14} />} onClick={() => submit('now')} loading={saving === 'now'} disabled={busy}>Publish now</Button>
+          </div>
+        </div>
+      ) : confirmDiscard ? (
         <div className="flex w-full flex-wrap items-center justify-between gap-2">
           <span className="text-[13.5px]">Discard your changes?</span>
           <div className="flex gap-2">
@@ -158,14 +172,10 @@ export function Composer({ open, target, defaultPlatforms, onClose }: {
             <Button
               variant="secondary"
               icon={<Zap size={14} />}
-              onClick={() => {
-                const nowAhead = new Date(Date.now() + 60_000).toISOString();
-                set('scheduledAt', nowAhead);
-                setTimeout(() => submit('scheduled'), 50);
-              }}
-              loading={saving === 'scheduled'}
+              onClick={() => submit('now')}
+              loading={saving === 'now'}
               disabled={busy}
-              title="Publish immediately to Postiz channels"
+              title="Publish immediately (asks to confirm)"
             >
               Publish now
             </Button>

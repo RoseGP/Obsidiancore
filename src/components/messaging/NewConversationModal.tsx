@@ -181,7 +181,7 @@ export const NewConversationModal: React.FC<NewConversationModalProps> = ({
                   type="text"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
-                  placeholder="e.g. AlphaTech Migration Deal Room"
+                  placeholder="e.g. Website redesign deal room"
                   className="w-full bg-neutral-950 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
                 />
               </div>
