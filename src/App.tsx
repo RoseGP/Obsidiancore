@@ -357,7 +357,7 @@ function AppMain() {
       case 'voice_receptionist':
         return (
           <CRMVoiceDialer
-            initialMode={activeView === 'voice_messages' ? 'monitoring' : activeView === 'voice_receptionist' ? 'twilio_ivr' : 'unified'}
+            initialMode={activeView === 'voice_messages' ? 'monitoring' : activeView === 'voice_receptionist' ? 'receptionist' : 'unified'}
             onAddCalendarEvent={handleAddCalendarEvent}
             onNavigate={(v) => setActiveView(v as SemanticView)}
           />

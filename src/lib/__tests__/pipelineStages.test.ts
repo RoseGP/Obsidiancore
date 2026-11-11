@@ -28,7 +28,7 @@ ok('lost deals go to Lost, unqualified leads to Unqualified, unknown stages neve
 for (const c of BOARD_COLUMNS) {
   assert.ok((DEAL_STAGES as readonly string[]).includes(dealStageForColumn(c)));
   const ls = leadStatusForColumn(c);
-  if (ls !== null) assert.ok((LEAD_STATUSES as readonly string[]).includes(ls) && ls !== 'converted');
+  if (ls !== null) assert.ok((LEAD_STATUSES as readonly string[]).includes(ls) && (ls as string) !== 'converted');
 }
 for (const s of DEAL_STAGES) if (s !== 'discovery' && s !== 'lead') assert.equal(dealStageForColumn(columnForDealStage(s)), s);
 assert.equal(leadStatusForColumn('proposal_sent'), null);
