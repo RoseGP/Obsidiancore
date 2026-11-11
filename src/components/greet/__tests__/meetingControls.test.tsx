@@ -131,7 +131,7 @@ const active = () => document.activeElement as any;
     await click(more); await tick(); await click(t.q(`[data-menu-id="${id}"]`));
     if (arg) assert.equal(t.calls[call].at(-1)[0], arg); else assert.ok(t.calls[call]?.length);
   }
-  ok('menu controls work: Meeting notes, Meet & Greet, Transcript, CRM, Settings, Pause video');
+  ok('menu controls work: Meeting notes, Welcome guests, Transcript, CRM, Settings, Pause video');
 
   // Participant: recording is disabled and explains why; no End for everyone.
   await click(more); await tick();

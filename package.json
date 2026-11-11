@@ -30,7 +30,7 @@
     "test:meeting-session": "npx tsx src/context/__tests__/meetingSession.test.tsx",
     "test:meeting-summary": "npx tsx src/services/__tests__/meetingSummary.test.ts",
     "test:meeting-plans": "npx tsx src/lib/__tests__/meetingPlans.test.ts && npx tsx src/server/meetings/__tests__/subscriptions.test.ts && npx tsx src/server/meetings/__tests__/media.test.ts",
-    "test:greet": "npx tsx src/server/greet/__tests__/greet.test.ts",
+    "test:greet": "npx tsx src/server/greet/__tests__/greet.test.ts && npx tsx src/lib/__tests__/greetClient.test.ts",
     "test:meeting-notes": "npx tsx src/server/meetings/__tests__/notes.test.ts",
     "test:proposals": "npx tsx src/features/proposals/__tests__/proposals.test.ts",
     "test:messaging": "npx tsx src/routes/__tests__/messaging.test.ts",

@@ -1442,7 +1442,7 @@ export default function VideoMeetingWorkspace({
             onStopRecording={async () => {
               const saved = await stopRecording();
               if (saved) {
-                showToast(`✓ Meeting recording stopped and saved to Greet Hub Vault (${saved.fileSizeFormatted}).`, 'success');
+                showToast(`✓ Recording stopped and saved on this device (${saved.fileSizeFormatted}).`, 'success');
               }
             }}
             onOpenSettings={() => setShowSettingsModal(true)}
@@ -1669,7 +1669,7 @@ export default function VideoMeetingWorkspace({
                   <div className="p-3.5 rounded-2xl bg-gradient-to-r from-indigo-950/80 to-purple-950/80 border border-indigo-500/30 space-y-2.5">
                     <div className="flex items-center gap-2">
                       <Sparkles className="h-4 w-4 text-amber-300" />
-                      <h4 className="text-xs font-bold text-white">Meet & Greet Concierge</h4>
+                      <h4 className="text-xs font-bold text-white">Welcome your guests</h4>
                     </div>
                     <p className="text-[11px] text-neutral-300 leading-relaxed">
                       Welcome attendees, exchange verified credentials, and create immediate CRM contact records.
@@ -2178,10 +2178,10 @@ export default function VideoMeetingWorkspace({
                         setTimeout(() => setTranscriptSaveNotice(null), 3500);
                       }}
                       className="w-full py-2 px-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md shadow-emerald-950/40 transition-all cursor-pointer active:scale-98"
-                      title="Save the complete meeting transcript into Greet Meeting tabs"
+                      title="Save the complete meeting transcript to GREET history"
                     >
                       <Save className="h-3.5 w-3.5" />
-                      <span>Save Transcript to Greet Hub Tabs</span>
+                      <span>Save transcript to GREET</span>
                     </button>
 
                     {transcriptSaveNotice && (
@@ -2490,7 +2490,7 @@ export default function VideoMeetingWorkspace({
             </div>
 
             <p className="text-xs text-neutral-300 leading-relaxed">
-              Recording this consultation will archive the media file into your <span className="font-semibold text-white">Greet Hub Recordings Vault</span>. All participants will receive an on-screen visual notification.
+              Recording this consultation will archive the media file on this device, or to your organization's <span className="font-semibold text-white">GREET recordings</span> when cloud recording is on. Everyone is asked to agree first and sees a red "Recording" label while it runs.
             </p>
 
             <label className="flex items-start gap-2.5 p-3 rounded-xl bg-neutral-900 border border-white/10 cursor-pointer">
@@ -2522,7 +2522,7 @@ export default function VideoMeetingWorkspace({
                   setRecordingConsentGranted(true);
                   const started = await startRecording();
                   if (started) {
-                    sendChatMessage('🔴 Meeting recording started. Session will be archived into Greet Hub Vault upon conclusion.');
+                    sendChatMessage('🔴 Recording started.');
                   }
                 }}
                 className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 disabled:opacity-40 text-white font-bold text-xs transition-all cursor-pointer shadow-md shadow-rose-950/50 flex items-center justify-center gap-1.5"
@@ -3151,7 +3151,7 @@ export default function VideoMeetingWorkspace({
                       className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-bold text-white flex items-center gap-1 cursor-pointer"
                     >
                       <Save className="h-3 w-3" />
-                      <span>Save in Greet Tabs</span>
+                      <span>Save to GREET</span>
                     </button>
                   </div>
                 </div>
@@ -3299,7 +3299,7 @@ export default function VideoMeetingWorkspace({
                 className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-all cursor-pointer shadow-md flex items-center justify-center gap-1.5"
               >
                 <Disc className="h-3.5 w-3.5" />
-                <span>View in Greet Hub Recordings Tab</span>
+                <span>View in GREET recordings</span>
               </button>
 
               <button

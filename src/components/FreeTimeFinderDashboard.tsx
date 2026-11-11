@@ -115,15 +115,19 @@ export default function FreeTimeFinderDashboard({ onAddCalendarEvent }: FreeTime
   const handleBookSlot = (slot: FreeTimeSlot) => {
     const title = `Mutual Sync (${selectedUserIds.length} Team Members)`;
     const timeStr = `${minsToTimeStr(slot.start)} - ${minsToTimeStr(slot.end)}`;
+    // Booked as a GREET meeting on the server (the join link comes from the server, not made up here).
+    const d = new Date(); const pad = (n: number) => String(n).padStart(2, '0');
+    const today = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
     const newEvent = {
       title,
-      time: timeStr,
+      date: today,
+      time: `${today} ${minsToTimeStr(slot.start)}`,
+      duration: Math.max(5, slot.end - slot.start),
       type: "call",
       contact: "Selected Team Members",
       status: "upcoming",
-      meetingLink: `https://meetlyze.app?room=sec_mtg_${Math.random().toString(36).substring(2, 8)}`,
       invitees: selectedUserIds.map(id => TEAM_MEMBERS.find(m => m.id === id)?.name).join(", "),
-      notes: `Auto-scheduled via Sweepline Free Time Finder (Interval overlap search O(N log N)).`
+      notes: `Booked from the free time finder (${timeStr}).`
     };
 
     if (onAddCalendarEvent) {
@@ -131,7 +135,7 @@ export default function FreeTimeFinderDashboard({ onAddCalendarEvent }: FreeTime
     }
 
     setBookedSlotIds(prev => [...prev, slot.id]);
-    setBookingToast(`Meeting booked for ${timeStr}! Room reserved: ${slot.availableRooms[0] || 'Alpha'}`);
+    setBookingToast(`GREET meeting requested for ${timeStr}.`);
     setTimeout(() => setBookingToast(null), 4500);
   };
 

@@ -303,7 +303,7 @@ export default function CRMVoiceDialer({ onAddCalendarEvent, onNavigate, initial
   useEffect(() => {
     if (latestAction) {
       if (latestAction.type === 'video_call') {
-        showToast("🎥 Alex AI started video call: Ready in My Meet & Greet");
+        showToast("🎥 Video call ready in GREET");
       } else if (latestAction.type === 'calendar_event') {
         showToast("📅 Calendar meeting booked autonomously by Alex AI");
       } else if (latestAction.type === 'proposal') {
@@ -985,7 +985,7 @@ export default function CRMVoiceDialer({ onAddCalendarEvent, onNavigate, initial
                 {latestAction.type === 'video_call' && (
                   <div className="flex items-center justify-between gap-2 pt-1">
                     <div>
-                      <span className="text-xs font-bold text-emerald-700 block">Routing to My Meet & Greet</span>
+                      <span className="text-xs font-bold text-emerald-700 block">Routing to GREET</span>
                       <span className="text-[10px] text-slate-500 font-mono">Room: {latestAction.data?.roomId || 'meet-greet-room'}</span>
                     </div>
                     <button
@@ -1000,7 +1000,7 @@ export default function CRMVoiceDialer({ onAddCalendarEvent, onNavigate, initial
                       className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold inline-flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
                     >
                       <Video className="h-3.5 w-3.5" />
-                      <span>Open My Meet & Greet</span>
+                      <span>Open GREET</span>
                       <ArrowRight className="h-3 w-3" />
                     </button>
                   </div>

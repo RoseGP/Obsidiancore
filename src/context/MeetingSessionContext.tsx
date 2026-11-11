@@ -1388,7 +1388,7 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
       id: `rec-${now}`,
       meetingId: activeMeeting?.id || `mtg-${now}`,
       roomId: activeMeeting?.roomId || 'room-demo',
-      title: activeMeeting?.title || 'Executive Video Consultation',
+      title: activeMeeting?.title || 'GREET meeting',
       startedAt: activeMeeting?.startedAt || now - duration * 1000,
       durationSeconds: duration,
       recordedAt: new Date().toLocaleString(),
@@ -1575,7 +1575,7 @@ export const MeetingSessionProvider: React.FC<{ children: React.ReactNode }> = (
       const newHistoryRecord: MeetingHistoryRecord = {
         id: newRecordId,
         roomId: activeMeeting?.roomId || `room-${now}`,
-        title: activeMeeting?.title || 'Video Consultation Transcript',
+        title: activeMeeting?.title || 'GREET meeting transcript',
         date: 'Today',
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         durationSeconds: duration,
