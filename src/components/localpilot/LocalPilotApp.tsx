@@ -23,7 +23,6 @@ import { SeoView } from './seo/SeoView';
 import { SecurityView } from './security/SecurityView';
 import { ReportsView } from './reports/ReportsView';
 import { SettingsView } from './settings/SettingsView';
-import { WebFormsView } from './forms/WebFormsView';
 
 // Drawers & Modals
 import { AiAssistantDrawer } from './ai/AiAssistantDrawer';
@@ -336,9 +335,6 @@ const LocalPilotInner: React.FC = () => {
                 onScheduleReport={() => showToast('Scheduled reports aren’t available yet.', 'info')}
               />
             )}
-
-            {/* Website forms → CRM */}
-            {currentRoute === 'forms' && <WebFormsView />}
 
             {/* View 9: SETTINGS */}
             {currentRoute === 'settings' && (

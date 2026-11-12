@@ -10,7 +10,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   LayoutDashboard, MessageSquare, FileText, BarChart3, Settings, ChevronLeft, ChevronRight, ChevronDown, Video, Calendar, Share2,
-  Globe, Phone, X, Brain, Bell, KanbanSquare, MessageCircle, Plug, UserCog, UserCircle2, ListChecks, ShieldCheck, Scale, CreditCard,
+  Globe, Phone, X, Brain, Bell, KanbanSquare, MessageCircle, Plug, UserCog, UserCircle2, ListChecks, ShieldCheck, Scale, CreditCard, Inbox,
 } from 'lucide-react';
 
 interface SidebarItem { id: string; label: string; icon: React.ComponentType<any>; hint: string }
@@ -39,6 +39,8 @@ export const NAV_GROUPS: SidebarGroup[] = [
   { id: 'marketing', label: 'Marketing', items: [
     { id: 'social_planner', label: 'Social Planner', icon: Share2, hint: 'Schedule social posts' },
     { id: 'gbp', label: 'Local SEO', icon: Globe, hint: 'Google Business Profile' },
+    // Separate from Local SEO: website forms don't need a Google connection and have their own data (/api/web-forms).
+    { id: 'web_forms', label: 'Website Forms', icon: Inbox, hint: 'Contact forms on your website → leads in the CRM' },
   ] },
   { id: 'settings', label: 'Settings', items: [
     { id: 'settings:integrations', label: 'Integrations', icon: Plug, hint: 'Connected services and AI providers' },

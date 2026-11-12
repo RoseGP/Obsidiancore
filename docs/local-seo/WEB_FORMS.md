@@ -1,13 +1,13 @@
 # Website forms → CRM
 
-Local SEO → **Website forms**. A business pastes a form on its website; submissions are validated, filtered for
+Marketing → **Website Forms** (its own tab, next to Local SEO; it doesn't need a Google connection). A business pastes a form on its website; submissions are validated, filtered for
 spam and duplicates, and delivered to this CRM (a lead plus a follow-up task) and/or to any other CRM through a
 signed webhook.
 
 Code: `src/server/webforms/` (`submission.ts` validation/spam, `service.ts` config + submit + log, `adapters.ts`
 CRM adapters, `safeHttp.ts` outbound requests), routes `src/routes/webFormsApi.ts`, UI
-`src/components/localpilot/forms/WebFormsView.tsx`, lead write `src/server/crm/websiteLeads.ts`.
-Tests: `npm run test:web-forms`.
+`src/features/web-forms/` (`WebFormsView.tsx`, `snippets.ts`; view id `web_forms`), lead write `src/server/crm/websiteLeads.ts`.
+Tests: `npm run test:web-forms` (endpoint) and `npm run test:web-forms-tab` (page, separate tab).
 
 ## Endpoint
 

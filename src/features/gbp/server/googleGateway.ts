@@ -10,6 +10,8 @@
  *
  * Google My Business API v4 (NOT in the generated client; per Google's published v4 reference —
  * re-verify before launch, and note v4 access must be enabled for the Cloud project):
+ * TODO(before production): run Connect → Sync against a real, approved project and confirm reviews and posts load;
+ * if Google retires a v4 method, move that call to its replacement API and update tests/mockGoogle.ts.
  *   GET    mybusiness.googleapis.com/v4/{accounts/{a}/locations/{l}}/reviews
  *   PUT    mybusiness.googleapis.com/v4/{…/reviews/{r}}/reply        { comment }
  *   DELETE mybusiness.googleapis.com/v4/{…/reviews/{r}}/reply

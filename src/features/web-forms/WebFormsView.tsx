@@ -1,14 +1,14 @@
 /**
- * Website forms → CRM. A business owner can: copy a ready-made form for their website, list the websites
- * allowed to send it, choose where submissions go (this CRM and/or a signed webhook for any other CRM), send a
+ * Website Forms tab (view id `web_forms`): separate from the Local SEO tab and independent of Google.
+ * A business owner can: copy a ready-made form for their website, list the websites allowed to send it, choose where submissions go (this CRM and/or a signed webhook for any other CRM), send a
  * test, and see recent submissions with their delivery status. Talks to /api/web-forms (server-side
  * validation, spam and duplicate handling, delivery). No form contents are shown here: they live in the CRM.
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, Copy, Globe, Inbox, KeyRound, Plus, RefreshCw, Send, ShieldCheck, Trash2, Webhook, AlertTriangle, Code2 } from 'lucide-react';
-import { Button } from '../ui/Button';
-import { Badge } from '../ui/Badge';
-import { Dialog } from '../ui/Dialog';
+import { Button } from '../../components/localpilot/ui/Button';
+import { Badge } from '../../components/localpilot/ui/Badge';
+import { Dialog } from '../../components/localpilot/ui/Dialog';
 import { htmlSnippet, fetchSnippet, reactSnippet } from './snippets';
 
 interface Delivery { adapter: 'obsidian' | 'webhook'; status: 'delivered' | 'failed' | 'pending'; attempts: number; httpStatus?: number; detail?: string; at: string }

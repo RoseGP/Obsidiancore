@@ -38,6 +38,9 @@ const limitHandler = (req: Request, res: Response) => {
   if (wantsHtml(req)) return res.status(429).type('html').send(htmlPage('Please wait a moment', 'Too many messages were sent from your network. Please try again in a few minutes.'));
   res.status(429).json({ success: false, code: 'rate_limited', error: 'Too many submissions. Please try again in a few minutes.', retryAfter: 600 });
 };
+// TODO(more than one server instance): these limiters count in memory per instance. Behind a load balancer, give
+// both a shared store (express-rate-limit `store`, e.g. Redis) or add a Cloudflare rate-limiting rule on
+// /api/web-forms/f/* so the limits hold across instances. Behind Cloudflare also set TRUST_PROXY (see WEB_FORMS.md).
 const perIp = rateLimit({ windowMs: 10 * 60_000, limit: Number(process.env.WEBFORM_IP_LIMIT) || 10, standardHeaders: 'draft-7', legacyHeaders: false, handler: limitHandler });
 const perForm = rateLimit({ windowMs: 60 * 60_000, limit: Number(process.env.WEBFORM_FORM_LIMIT) || 300, standardHeaders: false, legacyHeaders: false, keyGenerator: (req) => `form:${req.params.formId}`, handler: limitHandler });
 

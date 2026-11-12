@@ -292,7 +292,7 @@ const logOf = (org: string) => store.list(`organizations/${org}/web_form_submiss
 
 {
   // The form code shown to owners stays in sync with what the endpoint accepts
-  const { htmlSnippet, fetchSnippet, reactSnippet } = await import('../../../components/localpilot/forms/snippets');
+  const { htmlSnippet, fetchSnippet, reactSnippet } = await import('../../../features/web-forms/snippets');
   const ts = (await import('typescript')).default;
   const fields = Object.keys(SubmissionSchema.shape);
   const ep = 'https://crm.example.test/api/web-forms/f/wf_AAAAAAAAAAAAAAAA';

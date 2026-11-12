@@ -4,7 +4,7 @@ import {
   LayoutDashboard, MapPin, Star, Megaphone, 
   Search, TrendingUp, ShieldCheck, FileText, 
   Sparkles, Settings, ChevronDown, ChevronsUpDown,
-  Building2, Plus, User as UserIcon, Inbox } from 'lucide-react';
+  Building2, Plus, User as UserIcon } from 'lucide-react';
 import { LocalPilotRoute } from '../types';
 
 export interface SidebarProps {
@@ -32,7 +32,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'posts', label: 'Posts', icon: Megaphone },
     { id: 'seo', label: 'SEO', icon: Search, count: openIssuesCount, badgeVariant: 'info' },
     { id: 'analytics', label: 'Analytics', icon: TrendingUp },
-    { id: 'forms', label: 'Website forms', icon: Inbox },
   ];
 
   const managementNav = [

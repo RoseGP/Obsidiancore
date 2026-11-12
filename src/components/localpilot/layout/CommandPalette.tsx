@@ -94,13 +94,6 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
       run: () => onNavigate('analytics')
     },
     {
-      id: 'cmd-forms',
-      title: 'Website forms: connect your contact form to the CRM',
-      category: 'Navigation',
-      icon: TrendingUp,
-      run: () => onNavigate('forms')
-    },
-    {
       id: 'cmd-security',
       title: 'Check Google OAuth & security logs',
       category: 'Navigation',

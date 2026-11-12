@@ -24,6 +24,10 @@ import { SubmissionSchema, fieldErrors, fingerprint, spamVerdict, type Submissio
 
 const DAY = 86_400_000;
 const LOG_RETENTION_DAYS = 30;
+// Expired log entries are deleted when the log is read (purgeExpiredSubmissions).
+// TODO(production retention without reads): store expireAt as a Firestore Timestamp and enable a TTL policy on
+// organizations/*/web_form_submissions.expireAt (gcloud firestore fields ttls update expireAt
+// --collection-group=web_form_submissions --enable-ttl), or run purgeExpiredSubmissions from a scheduled job.
 const DUPLICATE_WINDOW_MS = 10 * 60_000;
 const RETRY_DELAYS_MS = [2_000, 15_000];
 
@@ -291,6 +295,9 @@ async function recordDelivery(orgId: string, id: string, adapter: 'obsidian' | '
 
 const pendingTimers = new Set<ReturnType<typeof setTimeout>>();
 const inflight = new Set<Promise<void>>();
+// TODO(multi-instance or zero-downtime deploys): webhook retries live in this process's memory, so a restart
+// drops pending retries (the log keeps them as "pending"). Move deliverWebhook onto a durable queue (e.g. Cloud
+// Tasks or a Firestore-backed job collection polled by a worker) before relying on webhooks for critical leads.
 const track = (p: Promise<void>) => { inflight.add(p); p.catch((e) => logger.error('webforms.delivery_crashed', { error: e })).finally(() => inflight.delete(p)); };
 /** Tests: wait for background deliveries (including retries). */
 export async function flushDeliveries() { while (pendingTimers.size || inflight.size) await new Promise((r) => setTimeout(r, 20)); }

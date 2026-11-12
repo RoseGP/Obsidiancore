@@ -16,7 +16,7 @@ dashboard figures are no longer used.
 | Profile audit (location → **Audit** tab) | **Live**: *Profile quality* (scored, completeness and engagement) and *Listing status* (unscored, what Google reports: open/closed, Voice of Merchant, pending edits, Google-updated fields, duplicate). Each finding shows its evidence; fields Google didn't return show "Not reported", never pass/fail. Not a Google ranking score. |
 | Access review (Security → **Access review**) | **Live**, on demand, not stored: owners, managers and pending invitations from the Account Management API, with findings (single owner, pending invitations, many admins). This is **not** a security audit of a Google account: Google doesn't expose sign-in activity, 2-Step Verification or password status to apps. |
 | Regular hours | **Live**: edit → confirm the changes → `PATCH …?updateMask=regularHours`. Days you don't change keep their periods (incl. split shifts). Holiday hours stay in Google. |
-| Website forms → CRM | **Live**, see [WEB_FORMS.md](WEB_FORMS.md) |
+| Website forms → CRM | **Live** in its own tab (Marketing → Website Forms, not inside Local SEO), see [WEB_FORMS.md](WEB_FORMS.md) |
 | Performance metrics (views, calls, clicks, directions) | **Live** |
 | Google posts | **Live**, publish-now only (Google's API has no scheduling) |
 | Profile edits | **Live** for phone, website, description, regular hours; others link to Google |

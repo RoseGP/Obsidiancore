@@ -10,6 +10,16 @@ const clientId = process.env.GOOGLE_CLIENT_ID?.trim() || '';
 const clientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim() || '';
 const redirectUri = process.env.GOOGLE_GBP_REDIRECT_URI?.trim() || (config.appUrl ? `${config.appUrl}/api/local-seo/callback` : '');
 const configured = !!(clientId && clientSecret && redirectUri && config.appUrl);
+// TODO(owner setup, outside this code): the Local SEO tab only works after all of these exist. Without them it
+// shows its setup state (503 not_configured) instead of data:
+//   1. Google Cloud project with Business Profile API access APPROVED by Google (request form in the GBP API docs;
+//      until approved, calls fail with 403 or a quota of 0).
+//   2. APIs enabled in that project: My Business Account Management, My Business Business Information,
+//      Business Profile Performance, and Google My Business API v4 (reviews, posts).
+//   3. OAuth client (Web) with redirect URI `${APP_URL}/api/local-seo/callback`; consent screen with the
+//      `business.manage` scope, which needs Google's verification before non-test users can connect.
+//   4. Server env: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, APP_URL, SOCIAL_ACCOUNTS_ENCRYPTION_KEY
+//      (optional GOOGLE_GBP_REDIRECT_URI, GEMINI_API_KEY for reply drafts). See docs/local-seo/README.md.
 
 let ai: AiDraft | null = null;
 if (process.env.GEMINI_API_KEY) {

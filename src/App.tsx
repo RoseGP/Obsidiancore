@@ -27,6 +27,7 @@ import CalendarView from './components/CalendarView';
 import ProposalsView from './components/ProposalsView';
 import SocialPlannerTab from './components/SocialPlannerTab';
 import GbpView from './components/GbpView';
+import { WebFormsView } from './features/web-forms/WebFormsView';
 import DealsPipelineView from './components/DealsPipelineView';
 import CRMVoiceDialer from './components/CRMVoiceDialer';
 import VideoMeetingWorkspace from './components/greet/VideoMeetingWorkspace';
@@ -106,6 +107,7 @@ const SEARCH_NAV_ITEMS = [
   { id: 'analytics', label: 'Reports & Analytics', icon: 'BarChart3' },
   { id: 'social_planner', label: 'Social Planner', icon: 'Share2' },
   { id: 'gbp', label: 'Local SEO', icon: 'Globe' },
+  { id: 'web_forms', label: 'Website Forms', icon: 'Inbox' },
   { id: 'settings', label: 'Settings', icon: 'Settings' }
 ] as const;
 
@@ -416,6 +418,13 @@ function AppMain() {
         return <SocialPlannerTab />;
       case 'gbp':
         return <GbpView />;
+      case 'web_forms':
+        // Own tab and own data (/api/web-forms); works whether or not Google is connected in Local SEO.
+        return (
+          <div className="min-h-full w-full bg-slate-50 p-4 sm:p-6 md:p-8">
+            <div className="max-w-5xl mx-auto"><WebFormsView /></div>
+          </div>
+        );
       case 'lead_intelligence':
         return (
           <div className="cc min-h-full shrink-0 w-full">

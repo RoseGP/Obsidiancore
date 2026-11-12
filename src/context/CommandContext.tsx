@@ -21,6 +21,7 @@ export type SemanticView =
   | 'analytics' 
   | 'settings' 
   | 'gbp' 
+  | 'web_forms'         // Marketing → Website Forms (form endpoint → CRM); independent of the Local SEO tab
   | 'social_planner'
   | 'deals'
   | 'sales_pipelines'
@@ -95,7 +96,7 @@ export function mapSemanticToView(view: SemanticView): string {
 export function CommandProvider({ children }: { children: ReactNode }) {
   const [activeView, setActiveViewState] = useState<SemanticView>(() => {
     const hash = typeof window !== 'undefined' ? window.location.hash.replace('#', '') as SemanticView : '';
-    if (hash && ['greet', 'dashboard', 'messages', 'calendar', 'analytics', 'settings', 'gbp', 'proposals', 'social_planner', 'deals', 'sales_pipelines', 'voice_dialer', 'call_canvas', 'public_scheduling', 'tasks', 'lead_intelligence', 'contacts', 'companies', 'voice_messages', 'meeting_room'].includes(hash)) {
+    if (hash && ['greet', 'dashboard', 'messages', 'calendar', 'analytics', 'settings', 'gbp', 'web_forms', 'proposals', 'social_planner', 'deals', 'sales_pipelines', 'voice_dialer', 'call_canvas', 'public_scheduling', 'tasks', 'lead_intelligence', 'contacts', 'companies', 'voice_messages', 'meeting_room'].includes(hash)) {
       return hash;
     }
     return 'dashboard'; // the Command Center dashboard is the homepage

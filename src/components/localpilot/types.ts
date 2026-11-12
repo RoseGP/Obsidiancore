@@ -7,7 +7,6 @@ export type LocalPilotRoute =
   | 'seo'
   | 'analytics'
   | 'security'
-  | 'forms'
   | 'reports'
   | 'ai'
   | 'settings'
