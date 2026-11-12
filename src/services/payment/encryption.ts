@@ -60,19 +60,25 @@ export function decryptToken(encryptedData: string): string {
 }
 
 export interface OAuthStatePayload {
+  /** The organization the connection is for. */
   userId: string;
   provider: 'stripe' | 'square';
   nonce: string;
   timestamp: number;
+  /** The CRM user who started the flow (recorded on the connection). */
+  actor?: string;
+  /** sha256 of a random value kept in an HttpOnly cookie of the browser that started the flow. */
+  bind?: string;
 }
 
 /**
  * Generates a signed, tamper-proof OAuth state token for CSRF defense.
  */
-export function generateOAuthState(userId: string, provider: 'stripe' | 'square'): string {
+export function generateOAuthState(userId: string, provider: 'stripe' | 'square', extra: { actor?: string; bind?: string } = {}): string {
   const nonce = crypto.randomBytes(16).toString('hex');
   const timestamp = Date.now();
-  const rawData = `${userId}:${provider}:${nonce}:${timestamp}`;
+  const actor = extra.actor || '', bind = extra.bind || '';
+  const rawData = `${userId}:${provider}:${nonce}:${timestamp}:${actor}:${bind}`;
   const signature = crypto.createHmac('sha256', HMAC_SECRET).update(rawData).digest('hex');
   
   const payload: OAuthStatePayload & { signature: string } = {
@@ -80,6 +86,8 @@ export function generateOAuthState(userId: string, provider: 'stripe' | 'square'
     provider,
     nonce,
     timestamp,
+    ...(actor ? { actor } : {}),
+    ...(bind ? { bind } : {}),
     signature
   };
 
@@ -105,6 +113,8 @@ export function validateOAuthState(stateStr: string, expectedProvider: 'stripe' 
   }
 
   const { userId, provider, nonce, timestamp, signature } = payload;
+  const actor = typeof payload.actor === 'string' ? payload.actor : '';
+  const bind = typeof payload.bind === 'string' ? payload.bind : '';
   if (!userId || !provider || !nonce || !timestamp || !signature) {
     throw new PaymentProviderError('CSRF_STATE_INVALID', 'OAuth state missing required claims', expectedProvider);
   }
@@ -120,7 +130,7 @@ export function validateOAuthState(stateStr: string, expectedProvider: 'stripe' 
   }
 
   // Verify HMAC signature
-  const rawData = `${userId}:${provider}:${nonce}:${timestamp}`;
+  const rawData = `${userId}:${provider}:${nonce}:${timestamp}:${actor}:${bind}`;
   const expectedSig = crypto.createHmac('sha256', HMAC_SECRET).update(rawData).digest('hex');
 
   const sigBuf = Buffer.from(signature, 'hex');
@@ -130,5 +140,5 @@ export function validateOAuthState(stateStr: string, expectedProvider: 'stripe' 
     throw new PaymentProviderError('CSRF_STATE_INVALID', 'OAuth state signature verification failed', expectedProvider);
   }
 
-  return { userId, provider, nonce, timestamp };
+  return { userId, provider, nonce, timestamp, ...(actor ? { actor } : {}), ...(bind ? { bind } : {}) };
 }

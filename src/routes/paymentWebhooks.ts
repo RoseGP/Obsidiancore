@@ -5,6 +5,8 @@ import * as paymentDb from '../services/payment/paymentDb';
 import { optionalSecret } from '../utils/secrets';
 import { unsignedWebhooksAllowed } from '../server/runtimeEnv';
 import { settleProviderInvoice } from '../services/payment/settlement';
+import { applyStripeInvoice, type SyncExtras } from '../services/payment/stripeInvoiceSync';
+import { markBillingInvoiceSentByProvider } from '../features/invoicing/server/providerPayments';
 
 /** Constant-time comparison of two signature strings. */
 function safeEqual(a: string, b: string): boolean {
@@ -26,8 +28,7 @@ router.post('/stripe', async (req: Request, res: Response) => {
 
   let event: any;
 
-  // Never accept unsigned webhooks in production (forged payment events). TO COMPLETE: set STRIPE_WEBHOOK_SECRET.
-
+  // Never accept unsigned webhooks in production (forged payment events): STRIPE_WEBHOOK_SECRET is required.
   // Unsigned events are accepted only in explicit development/test mode with ALLOW_UNSIGNED_WEBHOOKS=true.
   if ((!webhookSecret || !sig) && !unsignedWebhooksAllowed()) {
     console.error('[Stripe Webhook] Rejected: ' + (!webhookSecret ? 'STRIPE_WEBHOOK_SECRET is not configured.' : 'missing Stripe-Signature header.'));
@@ -63,57 +64,75 @@ router.post('/stripe', async (req: Request, res: Response) => {
   console.log(`[Stripe Webhook] Processing event: ${event.type} (${event.id})`);
 
   try {
-    switch (event.type) {
-      case 'invoice.paid': {
-        const stripeInvoice = event.data.object;
-        const localInvoice = await paymentDb.getInvoiceByProviderInvoiceId('stripe', stripeInvoice.id);
-        if (localInvoice) {
-          await settleProviderInvoice('stripe', localInvoice, { hosted_invoice_url: stripeInvoice.hosted_invoice_url || localInvoice.hosted_invoice_url });
-          console.log(`[Stripe Webhook] Marked invoice ${localInvoice.id} as PAID.`);
-        }
-        break;
-      }
-
-      case 'invoice.payment_failed': {
-        const stripeInvoice = event.data.object;
-        const localInvoice = await paymentDb.getInvoiceByProviderInvoiceId('stripe', stripeInvoice.id);
-        if (localInvoice) {
-          await paymentDb.updateInvoiceStatus(localInvoice.user_id, localInvoice.id, 'open');
-          console.log(`[Stripe Webhook] Invoice ${localInvoice.id} payment failed.`);
-        }
-        break;
-      }
-
-      case 'invoice.voided': {
-        const stripeInvoice = event.data.object;
-        const localInvoice = await paymentDb.getInvoiceByProviderInvoiceId('stripe', stripeInvoice.id);
-        if (localInvoice) {
-          await paymentDb.updateInvoiceStatus(localInvoice.user_id, localInvoice.id, 'void');
-          console.log(`[Stripe Webhook] Marked invoice ${localInvoice.id} as VOID.`);
-        }
-        break;
-      }
-
-      case 'account.application.deauthorized': {
-        const deauthAccount = event.account;
-        if (deauthAccount) {
-          await paymentDb.disconnectAccountByProviderAccountId('stripe', deauthAccount);
-        }
-        console.log(`[Stripe Webhook] Account ${deauthAccount} deauthorized by seller.`);
-        break;
-      }
-
-      default:
-        console.log(`[Stripe Webhook] Unhandled event type: ${event.type}`);
-    }
-
-    return res.status(200).json({ received: true, eventId: event.id });
+    const result = await handleStripeEvent(event);
+    return res.status(200).json({ received: true, eventId: event.id, ...(result ? { result } : {}) });
   } catch (err: any) {
     console.error('[Stripe Webhook] Event processing error:', err?.code || err?.name || 'error');
     await paymentDb.releaseWebhookEvent('stripe', String(event.id)).catch(() => undefined); // let Stripe retry
     return res.status(500).json({ error: 'Webhook processing encountered an error' });
   }
 });
+
+const INVOICE_EVENTS = new Set([
+  'invoice.finalized', 'invoice.sent', 'invoice.updated', 'invoice.paid', 'invoice.payment_succeeded',
+  'invoice.payment_failed', 'invoice.payment_action_required', 'invoice.voided', 'invoice.marked_uncollectible', 'invoice.deleted',
+]);
+
+/**
+ * Applies one verified, not-yet-processed Stripe event. Invoice events change only the organization that owns
+ * the invoice AND whose connected account sent the event (Connect events carry `account`). Status changes go
+ * through applyStripeInvoice (forward-only, settlement on paid).
+ */
+export async function handleStripeEvent(event: any): Promise<string | null> {
+  const at = typeof event.created === 'number' ? new Date(event.created * 1000).toISOString() : new Date().toISOString();
+
+  if (event.type === 'account.application.deauthorized') {
+    const acct = typeof event.account === 'string' ? event.account : '';
+    if (acct) await paymentDb.disconnectAccountByProviderAccountId('stripe', acct);
+    console.log('[Stripe Webhook] A connected account deauthorized the platform.');
+    return 'disconnected';
+  }
+  if (!INVOICE_EVENTS.has(event.type)) {
+    console.log(`[Stripe Webhook] Unhandled event type: ${event.type}`);
+    return null;
+  }
+
+  const si = event.data?.object;
+  if (!si?.id || typeof si.id !== 'string') return 'ignored';
+  const local = await paymentDb.getInvoiceByProviderInvoiceId('stripe', si.id);
+  if (!local) return 'unknown_invoice';
+
+  // The event must come from the connected account that owns this invoice's organization.
+  const acct = typeof event.account === 'string' ? event.account : '';
+  const owner = acct ? await paymentDb.orgForProviderAccount('stripe', acct) : null;
+  if ((local.provider_account_id && acct !== local.provider_account_id) || (acct && owner !== local.user_id)) {
+    console.warn(`[Stripe Webhook] ${event.type} for an invoice of another account was ignored.`);
+    return 'account_mismatch';
+  }
+
+  if (event.type === 'invoice.deleted') {
+    await paymentDb.patchInvoice(local.user_id, local.id, (cur) => (cur.status === 'draft' ? { status: 'void', voided_at: at, last_event_at: at } : null));
+    return 'deleted';
+  }
+
+  const extras: SyncExtras = { at, fromWebhook: true };
+  if (event.type === 'invoice.payment_failed') {
+    extras.failure = { message: 'A payment attempt failed. The customer can try again from the invoice link; Stripe may also retry.', code: si.last_finalization_error?.code || 'payment_failed' };
+  }
+  if (event.type === 'invoice.payment_action_required') extras.actionRequired = true;
+  if (event.type === 'invoice.sent') extras.sent = true;
+
+  // The event type is authoritative for the state it announces (the object normally carries the same status).
+  const IMPLIED: Record<string, string> = { 'invoice.paid': 'paid', 'invoice.payment_succeeded': 'paid', 'invoice.voided': 'void', 'invoice.marked_uncollectible': 'uncollectible', 'invoice.finalized': 'open', 'invoice.sent': 'open' };
+  const object = IMPLIED[event.type] && !si.status ? { ...si, status: IMPLIED[event.type] } : si;
+  const updated = await applyStripeInvoice(local, object, extras);
+  // Sent from the Stripe dashboard: the CRM invoice it collects counts as sent too.
+  if (event.type === 'invoice.sent' && updated.billing_invoice_id) {
+    await markBillingInvoiceSentByProvider(updated.user_id, updated.billing_invoice_id, { provider: 'stripe', providerReference: si.id, actorName: 'Stripe' });
+  }
+  console.log(`[Stripe Webhook] ${event.type}: invoice ${local.id} is ${updated.status}.`);
+  return updated.status;
+}
 
 /**
  * -------------------------------------------------------------

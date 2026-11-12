@@ -15,6 +15,8 @@
 import { Router, Request, Response } from 'express';
 import * as paymentDb from '../services/payment/paymentDb';
 import { getPaymentProvider } from '../services/payment/providerFactory';
+import { StripeProvider } from '../services/payment/stripeProvider';
+import { requireAccess } from '../server/security/permissions';
 import { providerConfigured } from '../services/payment/config';
 import { requirePermission, requireTenant, tenantOf } from '../server/tenancy/middleware';
 import { assertId } from '../server/data/docStore';
@@ -50,27 +52,31 @@ async function getInvoice(req: Request, res: Response) {
   } catch (err) { sendPaymentError(res, err, 'payments.invoiceGet'); }
 }
 
-/** Returns the hosted payment link, finalizing the provider invoice if it hasn't been yet. Paid only after the provider's webhook. */
+/**
+ * Returns the hosted payment link. A Stripe draft is finalized (needed for a link) but NOT emailed: emailing is the
+ * explicit "send" action. Paid only after the provider's webhook.
+ */
 async function paymentLink(req: Request, res: Response) {
   try {
     const orgId = tenantOf(req).orgId;
     const inv = await paymentDb.getInvoice(orgId, assertId(req.params.invoiceId));
     if (!inv) return res.status(404).json({ success: false, code: 'not_found', error: 'Invoice not found.' });
     if (inv.status === 'void') return res.status(409).json({ success: false, code: 'invoice_void', error: 'This invoice was voided.' });
-    const ready = inv.status === 'draft' || !inv.hosted_invoice_url ? await getPaymentProvider(orgId, inv.provider).sendInvoice(inv.id) : inv;
+    const needsLink = inv.status === 'draft' || !inv.hosted_invoice_url;
+    const ready = !needsLink ? inv : inv.provider === 'stripe' ? await new StripeProvider(orgId).finalizeInvoice(inv.id) : await getPaymentProvider(orgId, inv.provider).sendInvoice(inv.id);
     res.json({ success: true, provider: ready.provider, payment_url: ready.hosted_invoice_url, payment_status: ready.status, invoice: ready });
   } catch (err) { sendPaymentError(res, err, 'payments.paymentLink'); }
 }
 
-router.get('/invoices', requirePermission('read'), listInvoices);
-router.get('/invoices/:invoiceId', requirePermission('read'), getInvoice);
-router.post('/invoices/:invoiceId/payment', requirePermission('write'), paymentLink);
+router.get('/invoices', requirePermission('read'), requireAccess('billing', 'view'), listInvoices);
+router.get('/invoices/:invoiceId', requirePermission('read'), requireAccess('billing', 'view'), getInvoice);
+router.post('/invoices/:invoiceId/payment', requirePermission('write'), requireAccess('billing', 'edit'), paymentLink);
 
 /** /api/invoices aliases (same handlers, same tenant scoping). */
 export const invoicesRouter = Router();
 invoicesRouter.use(requireTenant);
-invoicesRouter.get('/', requirePermission('read'), listInvoices);
-invoicesRouter.get('/:invoiceId', requirePermission('read'), getInvoice);
-invoicesRouter.post('/:invoiceId/payment', requirePermission('write'), paymentLink);
+invoicesRouter.get('/', requirePermission('read'), requireAccess('billing', 'view'), listInvoices);
+invoicesRouter.get('/:invoiceId', requirePermission('read'), requireAccess('billing', 'view'), getInvoice);
+invoicesRouter.post('/:invoiceId/payment', requirePermission('write'), requireAccess('billing', 'edit'), paymentLink);
 
 export default router;

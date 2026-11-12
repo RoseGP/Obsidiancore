@@ -72,3 +72,38 @@ export async function recordProviderPayment(orgId: string, input: {
 export async function billingInvoiceExists(orgId: string, billingInvoiceId: string): Promise<boolean> {
   return (await loadSnapshot(orgId)).invoices.some((i) => i.id === billingInvoiceId);
 }
+
+/**
+ * An Invoicing invoice with its authoritative totals (recomputed on the server from the stored invoice and
+ * its payments, never taken from the browser), for collecting it through a payment provider.
+ */
+export async function loadBillingInvoiceForCollection(orgId: string, billingInvoiceId: string) {
+  const s = await loadSnapshot(orgId);
+  const invoice = s.invoices.find((i) => i.id === billingInvoiceId) ?? null;
+  if (!invoice) return null;
+  const client = invoice.clientId ? s.clients.find((c) => c.id === invoice.clientId) ?? null : null;
+  const view = buildInvoiceView(invoice, s.payments, todayISO());
+  return { invoice, client, view };
+}
+
+/**
+ * The provider emailed the invoice: a draft Invoicing invoice becomes "sent" (so it counts as outstanding and
+ * a provider payment can be recorded against it). Idempotent; an invoice that is already sent or void is left as is.
+ */
+export async function markBillingInvoiceSentByProvider(orgId: string, billingInvoiceId: string, input: {
+  provider: 'stripe' | 'square'; providerReference: string; actorName: string; now?: Date;
+}): Promise<'marked' | 'unchanged' | 'not_found'> {
+  if (!(await billingInvoiceExists(orgId, billingInvoiceId))) return 'not_found';
+  const name = input.provider === 'stripe' ? 'Stripe' : 'Square';
+  return withSnapshot<'marked' | 'unchanged' | 'not_found'>(orgId, (s) => {
+    const inv = s.invoices.find((i) => i.id === billingInvoiceId);
+    if (!inv) return { snapshot: s, result: 'not_found' };
+    if (inv.lifecycle !== 'draft') return { snapshot: s, result: 'unchanged' };
+    const at = (input.now ?? new Date()).toISOString();
+    const invoice: Invoice = {
+      ...inv, lifecycle: 'sent', sentAt: at, updatedAt: at, version: inv.version + 1,
+      activity: [...inv.activity, { id: uid('act'), at, type: 'marked_sent', message: `Sent by ${input.actorName} through ${name} (${input.providerReference})` }],
+    };
+    return { snapshot: { ...s, invoices: s.invoices.map((i) => (i.id === inv.id ? invoice : i)) }, result: 'marked' };
+  });
+}

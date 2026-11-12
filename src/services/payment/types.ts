@@ -48,6 +48,10 @@ export interface Customer {
   name: string;
   email: string;
   provider_customer_ids: Partial<Record<PaymentProviderType, string>>;
+  /** Which connected account each provider customer id belongs to (a reconnect to another account needs new customers). */
+  provider_account_ids?: Partial<Record<PaymentProviderType, string>>;
+  /** The CRM record this customer stands for, e.g. "billing_client:<id>" or "email:<address>" (dedup key). */
+  crm_ref?: string;
   billing_address: CustomerBillingAddress;
   created_at: string;
 }
@@ -81,6 +85,24 @@ export interface Invoice {
   hosted_invoice_url: string;
   /** The Invoicing app invoice (billing/{orgId}/invoices/{id}) this provider invoice collects, if any. */
   billing_invoice_id?: string;
+  /** Stripe details shown in the CRM (all optional: older records don't have them). */
+  provider_account_id?: string;
+  provider_customer_id?: string;
+  /** Totals as Stripe reports them, in minor units (cents), to show and to compare with the CRM. */
+  amount_due_minor?: number;
+  amount_paid_minor?: number;
+  /** The last failed payment attempt (cleared when the invoice is paid). */
+  payment_failure?: { message: string; code?: string; at: string } | null;
+  /** The customer must complete an extra step (e.g. 3-D Secure) on the hosted invoice page. */
+  action_required?: boolean;
+  invoice_pdf_url?: string;
+  finalized_at?: string;
+  sent_at?: string;
+  paid_at?: string;
+  voided_at?: string;
+  /** Last provider event applied (ordering guard for webhooks and refreshes). */
+  last_event_at?: string;
+  created_by?: string;
   created_at: string;
   updated_at: string;
   items?: InvoiceItem[];
@@ -153,7 +175,8 @@ export type PaymentErrorCode =
   | 'PROVIDER_VALIDATION_ERROR'
   | 'UNAUTHORIZED_ACCESS'
   | 'CSRF_STATE_INVALID'
-  | 'WEBHOOK_SIGNATURE_INVALID';
+  | 'WEBHOOK_SIGNATURE_INVALID'
+  | 'INVOICE_STATE_CONFLICT';
 
 export class PaymentProviderError extends Error {
   public code: PaymentErrorCode;

@@ -167,6 +167,61 @@ export async function updateInvoiceStatus(
   return withCustomer(orgId, updated);
 }
 
+/** The customer standing for a CRM record ("billing_client:<id>", "email:<address>"), if one was created. */
+export async function findCustomerByCrmRef(orgId: string, crmRef: string): Promise<Customer | null> {
+  return (await listCustomers(orgId)).find((c) => c.crm_ref === crmRef) || null;
+}
+
+/** Provider invoices that collect one Invoicing invoice, newest first. */
+export async function listInvoicesForBillingInvoice(orgId: string, billingInvoiceId: string): Promise<Invoice[]> {
+  return (await listInvoices(orgId)).filter((i) => i.billing_invoice_id === billingInvoiceId);
+}
+
+/** The organization a provider (connected) account belongs to, from the index written on connect. */
+export async function orgForProviderAccount(p: PaymentProviderType, providerAccountId: string): Promise<string | null> {
+  if (!providerAccountId) return null;
+  const idx = await (await getDocStore()).get(`payment_provider_accounts/${provider(p)}_${hash(providerAccountId)}`);
+  return idx?.orgId ? String(idx.orgId) : null;
+}
+
+/**
+ * Applies `patch(current)` to an invoice atomically. Return null from `patch` to leave it unchanged
+ * (used by webhooks and refreshes so concurrent updates and out-of-order events can't undo each other).
+ */
+export async function patchInvoice(orgId: string, invoiceId: string, patch: (cur: Invoice) => Partial<Invoice> | null): Promise<Invoice | null> {
+  const st = await getDocStore();
+  const path = `${org(orgId)}/payment_invoices/${seg(invoiceId)}`;
+  const result = await st.transaction(async (tx) => {
+    const cur = await tx.get(path);
+    if (!cur) return { doc: null as any, changed: false };
+    const delta = patch(cur as Invoice);
+    if (!delta) return { doc: cur, changed: false };
+    const next = { ...cur, ...delta, id: cur.id, user_id: orgId, updated_at: new Date().toISOString() };
+    tx.set(path, plain(next));
+    return { doc: next, changed: true };
+  });
+  if (!result.doc) return null;
+  if (result.changed) {
+    const d = result.doc;
+    if (d.provider && d.provider_invoice_id) await st.set(`payment_provider_invoices/${d.provider}_${hash(d.provider_invoice_id)}`, { orgId, invoiceId: d.id });
+    await logAudit(orgId, `INVOICE_STATUS_${String(d.status).toUpperCase()}`, d.provider, d.id, { status: d.status });
+  }
+  return withCustomer(orgId, result.doc);
+}
+
+/* ------------------------------------------------------------------ OAuth state (single use) */
+
+/** Consumes an OAuth state nonce once; a replayed callback link is refused. */
+export async function claimOAuthNonce(p: PaymentProviderType, nonce: string): Promise<boolean> {
+  const st = await getDocStore();
+  const path = `payment_oauth_nonces/${provider(p)}_${hash(nonce)}`;
+  return st.transaction(async (tx) => {
+    if (await tx.get(path)) return false;
+    tx.set(path, { provider: p, usedAt: new Date().toISOString() });
+    return true;
+  });
+}
+
 /* ------------------------------------------------------------------ webhook idempotency */
 
 const eventPath = (p: PaymentProviderType, eventId: string) => `payment_webhook_events/${provider(p)}_${hash(eventId)}`;
