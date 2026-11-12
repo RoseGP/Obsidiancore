@@ -85,8 +85,9 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
   // Role matrix grants (presentation only; the server enforces the same rules on every request).
   const can = useCan();
   const canCreateRecords = can('leads', 'create') || can('deals', 'create');
-  const canMoveCards = can('leads', 'edit') || can('deals', 'edit');
   const canConvert = can('leads', 'edit') && can('contacts', 'create') && can('deals', 'create');
+  /** A card moves a lead status (leads: edit) or a deal stage (deals: edit). */
+  const canMoveItem = (item: { type?: string; isConverted?: boolean }) => (item.type === 'lead' && !item.isConverted ? can('leads', 'edit') : can('deals', 'edit'));
   // Navigation / View state
   const [activeTab, setActiveTab] = useState<PipelineTab>(initialTab);
   const [openContactId, setOpenContactId] = useState<string | null>(null);
@@ -522,6 +523,7 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
     if (!item) return;
 
     if (item.stage === targetStage) return;
+    if (!canMoveItem(item)) { showToast('Your role can’t move this card. Ask an admin for access.', 'error'); return; }
 
     // A lead without a deal can't be in Proposal / Negotiation / Won: ask to convert it into a deal first.
     const leadStatus = item.type === 'lead' && !item.isConverted ? leadStatusForColumn(targetStage) : null;
@@ -1397,8 +1399,8 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
                         return (
                           <div
                             key={item.id}
-                            draggable={canMoveCards}
-                            onDragStart={(e) => { if (canMoveCards) e.dataTransfer.setData('text/plain', item.id); }}
+                            draggable={canMoveItem(item)}
+                            onDragStart={(e) => { if (canMoveItem(item)) e.dataTransfer.setData('text/plain', item.id); }}
                             onClick={() => setSelectedItem(item)}
                             className={`bg-[var(--surface)] border rounded-xl p-3.5 space-y-3 transition-all cursor-pointer relative shadow-sm hover:shadow-lg ${
                               isSelected 
@@ -1502,7 +1504,7 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
 
                             {/* Card Footer Actions */}
                             <div className="flex items-center justify-between pt-1">
-                              {item.type === 'lead' && !item.isConverted ? (
+                              {item.type === 'lead' && !item.isConverted && canConvert ? (
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
@@ -1516,11 +1518,11 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
                                 </button>
                               ) : (
                                 <span className="text-[10px] text-[var(--text-subtle)] font-medium">
-                                  Deal Active
+                                  {item.type === 'lead' && !item.isConverted ? 'Lead' : 'Deal Active'}
                                 </span>
                               )}
 
-                              <div className="flex items-center gap-1">
+                              {canMoveItem(item) && <div className="flex items-center gap-1">
                                 <button
                                   disabled={stage.id === 'new_leads'}
                                   onClick={(e) => {
@@ -1543,7 +1545,7 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
                                 >
                                   <ChevronRight className="h-3.5 w-3.5" />
                                 </button>
-                              </div>
+                              </div>}
                             </div>
                           </div>
                         );

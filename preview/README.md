@@ -5,7 +5,7 @@
 file and needs no server or install.
 
 **It is a build output, not source.** Change the app in `src/`, then rebuild this file. Don't edit `index.html`
-by hand. It was built from commit `f348bd9` on this branch.
+by hand. It was rebuilt on `updated-dashboard` after the security pass (role matrix enforcement, validation, real-time isolation).
 
 ## What it contains
 - The full React app (`src/`), built with Vite as a single file with `VITE_ENABLE_SANDBOX_LOGIN=true` so the
@@ -39,3 +39,19 @@ rm vite.preview.tmp.config.ts
 
 The only key in the file is the Firebase web config `apiKey` from `firebase-applet-config.json`, which is a public
 client identifier and already in the repository. No `.env` values are included.
+
+## Roles and server rules in the preview
+The bottom bar has **Preview as** (Owner … Read-only). The stand-in then answers exactly as the server does for
+that role: `/api/orgs/me` returns the role's grants (so the app's own `useCan()` hides actions it can't use), writes
+the role may not make get the server's `403 forbidden`, and deal stages, deal values, lead emails and budgets are
+validated with the server's rules and messages (`400 invalid_input`). This only mirrors the server's decisions:
+the preview has no real sign-in, and nothing leaves the browser.
+
+## Rebuilding the analytics bundle (second `<script>` in the head)
+The stand-in runs the real lead scoring and analytics code (`window.__pvAnalyzeLead`, `window.__pvAnalytics`).
+Bundle it with esbuild from an entry that imports `analyzeLead` (`src/server/crm/leadIntelligence.ts`), the
+`analytics/` builders, and `entityMatch` (`findMatchingPairs`, `matchAgainst`, `matchLeadsToContacts`,
+`clusterMatches`, `matchScore`, `LIKELY`, `POSSIBLE`, `buildIndex`), and assigns them to those two globals.
+Use `format: 'iife'`, `platform: 'browser'`, `minify: true`, and stub the server-only imports of
+`leadIntelligence.ts` (`docStore`, `crmRepository`, `messagingPlatform`) with empty modules. Replace the
+second head `<script>` with the output (escape `</script` as `<\/script`).
