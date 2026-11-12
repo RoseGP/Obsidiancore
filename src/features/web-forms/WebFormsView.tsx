@@ -10,6 +10,7 @@ import { Button } from '../../components/localpilot/ui/Button';
 import { Badge } from '../../components/localpilot/ui/Badge';
 import { Dialog } from '../../components/localpilot/ui/Dialog';
 import { htmlSnippet, fetchSnippet, reactSnippet } from './snippets';
+import { TestSubmissionPanel, type TestResult } from './TestSubmissionPanel';
 
 interface Delivery { adapter: 'obsidian' | 'webhook'; status: 'delivered' | 'failed' | 'pending'; attempts: number; httpStatus?: number; detail?: string; at: string }
 interface Submission { id: string; at: string; status: 'accepted' | 'duplicate' | 'spam'; reason: string | null; formName: string; originHost: string | null; deliveries: Delivery[] }
@@ -29,6 +30,11 @@ async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   return body as T;
 }
 
+/** Log filter: by result, or submissions where any destination failed. */
+export function filterSubs(list: Submission[], k: 'all' | 'accepted' | 'spam' | 'duplicate' | 'problems') {
+  return k === 'all' ? list : k === 'problems' ? list.filter((x) => x.deliveries.some((d) => d.status === 'failed')) : list.filter((x) => x.status === k);
+}
+
 const REASON: Record<string, string> = { honeypot: 'hidden spam-trap field filled', too_fast: 'sent faster than a person can type', too_many_links: 'too many links', markup: 'contained HTML' };
 
 function CopyButton({ text, label }: { text: string; label: string }) {
@@ -42,7 +48,7 @@ function CopyButton({ text, label }: { text: string; label: string }) {
 
 const SNIPPETS = { html: { label: 'Simple HTML form', make: htmlSnippet }, js: { label: 'JavaScript (no page reload)', make: fetchSnippet }, react: { label: 'React', make: reactSnippet } } as const;
 
-export const WebFormsView: React.FC = () => {
+export const WebFormsView: React.FC<{ /** Opens Sales Pipeline (leads), where received submissions land. */ onOpenLeads?: () => void }> = ({ onOpenLeads }) => {
   const [state, setState] = useState<'loading' | 'ready' | 'forbidden' | 'error'>('loading');
   const [error, setError] = useState('');
   const [config, setConfig] = useState<Config | null>(null);
@@ -58,6 +64,14 @@ export const WebFormsView: React.FC = () => {
   const [snippet, setSnippet] = useState<keyof typeof SNIPPETS>('html');
   const [confirmRotate, setConfirmRotate] = useState(false);
   const [readOnly, setReadOnly] = useState(false);
+  const [logFilter, setLogFilter] = useState<'all' | 'accepted' | 'spam' | 'duplicate' | 'problems'>('all');
+  const [refreshing, setRefreshing] = useState(false);
+  const refreshLog = useCallback(async () => {
+    setRefreshing(true);
+    try { setSubs((await api<{ submissions: Submission[] }>('/submissions')).submissions); }
+    catch (e) { setNotice({ tone: 'error', text: (e as Error).message }); }
+    finally { setRefreshing(false); }
+  }, []);
   const [siteKeyInput, setSiteKeyInput] = useState('');
   const [secretKeyInput, setSecretKeyInput] = useState('');
 
@@ -259,6 +273,9 @@ export const WebFormsView: React.FC = () => {
         </div>
       </section>
 
+      <TestSubmissionPanel disabled={readOnly} onOpenLeads={onOpenLeads} onSent={() => { void refreshLog(); }}
+        send={(body) => api<{ result: TestResult }>('/try', { method: 'POST', body: JSON.stringify(body) })} />
+
       {/* Log */}
       <section aria-labelledby="wf-log" className="bg-white rounded-xl border border-slate-200 p-5 shadow-2xs space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -266,17 +283,29 @@ export const WebFormsView: React.FC = () => {
             <h2 id="wf-log" className="text-sm font-semibold text-slate-900">Recent submissions</h2>
             <p className="text-xs text-slate-500">Delivery status for the last 30 days. Names and messages aren't kept here; open the lead in your CRM to see them.</p>
           </div>
-          <Button size="xs" variant="outline" leftIcon={<RefreshCw className="h-3 w-3" />} onClick={() => api<{ submissions: Submission[] }>('/submissions').then((s) => setSubs(s.submissions)).catch((e) => setNotice({ tone: 'error', text: e.message }))}>Refresh</Button>
+          <Button size="xs" variant="outline" isLoading={refreshing} leftIcon={<RefreshCw className="h-3 w-3" />} onClick={() => { void refreshLog(); }}>Refresh</Button>
         </div>
+        {!!subs?.length && (
+          <div role="group" aria-label="Show submissions" className="flex flex-wrap gap-1 text-xs">
+            {([['all', 'All'], ['accepted', 'Received'], ['spam', 'Spam'], ['duplicate', 'Duplicates'], ['problems', 'Delivery problems']] as const).map(([k, label]) => (
+              <button key={k} type="button" aria-pressed={logFilter === k} onClick={() => setLogFilter(k)}
+                className={`rounded-full border px-2.5 py-1 font-medium ${logFilter === k ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 text-slate-600 hover:text-slate-900'}`}>
+                {label} ({filterSubs(subs, k).length})
+              </button>
+            ))}
+          </div>
+        )}
         {!subs?.length ? (
-          <div className="rounded-lg border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">No submissions yet. Once the form is on your website, they'll appear here.</div>
+          <div className="rounded-lg border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">No submissions yet. Once the form is on your website (or you send a test above), they'll appear here.</div>
+        ) : !filterSubs(subs, logFilter).length ? (
+          <div className="rounded-lg border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">Nothing here for this filter.</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[560px] text-left text-xs">
               <caption className="sr-only">Recent website form submissions</caption>
               <thead><tr className="text-slate-500"><th className="py-2 font-medium">When</th><th className="py-2 font-medium">Form</th><th className="py-2 font-medium">Website</th><th className="py-2 font-medium">Result</th><th className="py-2 font-medium">Delivery</th></tr></thead>
               <tbody className="divide-y divide-slate-100">
-                {subs.map((s) => (
+                {filterSubs(subs, logFilter).map((s) => (
                   <tr key={s.id} className="align-top">
                     <td className="py-2 text-slate-700 whitespace-nowrap">{new Date(s.at).toLocaleString()}</td>
                     <td className="py-2 text-slate-900">{s.formName}</td>

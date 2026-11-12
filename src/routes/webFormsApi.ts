@@ -16,6 +16,8 @@
  *   PUT  /config          settings (manage) change them; adding a webhook URL returns its signing secret once
  *   POST /webhook/rotate-secret · /webhook/test · /form-id/rotate   settings (manage)
  *   GET  /submissions     settings (view)   delivery log (no names, emails or messages)
+ *   POST /try             settings (manage) send a test submission through the real pipeline (creates a real lead;
+ *                         skips only the allowed-websites and Turnstile checks); returns what happened
  */
 import { Router, type Request, type Response } from 'express';
 import rateLimit from 'express-rate-limit';
@@ -148,6 +150,20 @@ admin.post('/form-id/rotate', requireAccess('settings', 'manage'), asyncHandler(
   const config = await wf.rotateFormId(t.orgId);
   await recordAudit(t.orgId, { actorId: t.userId, action: 'web_forms.form_id_rotated', target: 'web_forms' });
   res.json({ success: true, config, endpoint: endpointFor(config.formId) });
+}));
+
+// A test from the Website Forms page. Same validation, spam rules, duplicate check and delivery as a visitor's
+// submission, so the owner sees exactly what their website will get (and the lead it creates in the CRM).
+const TRY_FORM_NAME = 'Website Forms test';
+admin.post('/try', requireAccess('settings', 'manage'), rateLimit({ windowMs: 60_000, limit: 10, standardHeaders: 'draft-7', legacyHeaders: false, keyGenerator: (req) => tenantOf(req).orgId }), asyncHandler(async (req, res) => {
+  const t = tenantOf(req);
+  const cfg = await wf.getConfig(t.orgId);
+  const { userId: _ignored, ...fields } = (req.body && typeof req.body === 'object' ? req.body : {}) as Record<string, unknown>;
+  const out = await wf.submit(cfg.formId, { ...fields, formName: TRY_FORM_NAME }, { trusted: true, ip: req.ip });
+  // This CRM is written before submit() returns; a webhook delivery may still be pending (shown as such).
+  const log = out.id ? await wf.submissionLog(t.orgId, out.id) : null;
+  await recordAudit(t.orgId, { actorId: t.userId, action: 'web_forms.test_submitted', target: 'web_forms', meta: { result: out.status } });
+  res.json({ success: true, result: { status: out.status, reason: out.reason ?? null, visitorMessage: out.message, deliveries: log?.deliveries ?? [] } });
 }));
 
 admin.get('/submissions', requireAccess('settings', 'view'), asyncHandler(async (req, res) => {

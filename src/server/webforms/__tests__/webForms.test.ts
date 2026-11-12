@@ -291,6 +291,36 @@ const logOf = (org: string) => store.list(`organizations/${org}/web_form_submiss
 }
 
 {
+  // "Send a test submission" from the Website Forms page: the real pipeline, owners/admins only
+  const SITE = '0x4AAAAAAAtestSiteKey00'; const SECRET = '0x4AAAAAAAtestSecretKey_abcdEFGH';
+  await request(app).put('/api/web-forms/config').set(as('owner_b', B.id)).send({ turnstile: { siteKey: SITE, secretKey: SECRET }, allowedOrigins: ['https://shop.example'] });
+  const tryAs = (who: string, org: string, body: object) => request(app).post('/api/web-forms/try').set(as(who, org)).send(body);
+  const ok1 = await tryAs('owner_b', B.id, { name: 'Tess Tester', email: 'tess@try.test', phone: '+1 555 0199', message: 'Testing the form', consent: true });
+  assert.equal(ok1.status, 200, JSON.stringify(ok1.body));
+  assert.equal(ok1.body.result.status, 'accepted', 'Turnstile and allowed websites don\'t block a signed-in test');
+  assert.equal(ok1.body.result.deliveries.find((d: any) => d.adapter === 'obsidian')?.status, 'delivered');
+  assert.ok((await leadsOf(B.id)).some((l: any) => l.email === 'tess@try.test'), 'a real lead is created');
+  const logRow = (await wf.recentSubmissions(B.id)).find((r: any) => r.formName === 'Website Forms test');
+  assert.ok(logRow, 'logged under the test form name');
+  const dup = await tryAs('owner_b', B.id, { name: 'Tess Tester', email: 'tess@try.test', phone: '+1 555 0199', message: 'Testing the form', consent: true });
+  assert.equal(dup.body.result.status, 'duplicate');
+  const spam = await tryAs('owner_b', B.id, { name: 'Spam Bot', email: 'bot@try.test', message: '<a href="x">buy</a>' });
+  assert.equal(spam.body.result.status, 'spam'); assert.equal(spam.body.result.reason, 'markup');
+  const bad = await tryAs('owner_b', B.id, { name: 'X', email: 'nope' });
+  assert.equal(bad.status, 400); assert.deepEqual(bad.body.fields.map((f: any) => f.field).sort(), ['email', 'name']);
+  ok('test submission: real lead, duplicate and spam rules apply, field errors returned; Turnstile/origins skipped only here');
+
+  const pub = await submit(cfgB.formId, { name: 'Public Visitor', email: 'pv@try.test', _ts: old() }, { Origin: 'https://shop.example' });
+  assert.equal(pub.body.code, 'captcha_failed', 'the public endpoint still requires Turnstile');
+  assert.equal((await tryAs('mgr_b', B.id, { name: 'Mgr Test', email: 'm@try.test' })).status, 403, 'managers can\'t send tests');
+  assert.equal((await tryAs('owner_b', A.id, { name: 'Cross Org', email: 'c@try.test' })).status, 403, 'not into another organization');
+  assert.equal((await request(app).post('/api/web-forms/try').send({ name: 'Anon', email: 'a@try.test' })).status, 401, 'signed-in only');
+  assert.ok(!(await leadsOf(A.id)).some((l: any) => l.email === 'c@try.test'));
+  await request(app).put('/api/web-forms/config').set(as('owner_b', B.id)).send({ turnstile: null });
+  ok('test submission: owners/admins of this organization only; public endpoint unchanged');
+}
+
+{
   // The form code shown to owners stays in sync with what the endpoint accepts
   const { htmlSnippet, fetchSnippet, reactSnippet } = await import('../../../features/web-forms/snippets');
   const ts = (await import('typescript')).default;

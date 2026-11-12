@@ -119,6 +119,13 @@ appears in browser code, API responses after that, logs or the audit log.
 `POST /webhook/rotate-secret`, `POST /webhook/test`, `POST /form-id/rotate` need Settings manage (owners, admins) and
 are recorded in the audit log (no URLs' secrets, no submission contents).
 
+`POST /try` (owners and admins; 10 per minute per organization; audited) sends a **test submission** from the Website
+Forms page through the real pipeline: the same validation, spam rules, duplicate check and delivery as a visitor's
+submission, so a received test creates a real lead (form name "Website Forms test"). It skips only the
+allowed-websites and Turnstile checks, which exist to keep other websites and bots off the public endpoint. It
+returns `{ result: { status, reason, visitorMessage, deliveries } }`, or 400 with field errors. Webhook deliveries
+run in the background and show as `pending` in the result; the log updates when they finish.
+
 ## Retention and privacy
 
 - Submission contents are stored only where they're delivered: as the lead in this CRM (subject to the

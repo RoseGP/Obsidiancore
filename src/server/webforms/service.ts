@@ -193,8 +193,16 @@ function payloadFrom(id: string, s: Submission, isTest = false): WebFormPayload 
 
 const PUBLIC_OK = 'Thank you! We received your message and will get back to you soon.';
 
-export interface SubmitMeta { origin?: string | null; ip?: string; now?: number }
-export interface SubmitOutcome { status: SubmissionStatus; message: string; id?: string; config: WebFormConfig; orgId: string }
+export interface SubmitMeta {
+  origin?: string | null; ip?: string; now?: number;
+  /**
+   * A signed-in owner/admin sending a test from the Website Forms page (POST /api/web-forms/try). Skips only the
+   * checks that protect the public endpoint from other websites and bots (allowed websites, Turnstile); validation,
+   * spam rules, duplicates and delivery run exactly as for a real visitor.
+   */
+  trusted?: boolean;
+}
+export interface SubmitOutcome { status: SubmissionStatus; message: string; id?: string; reason?: string; config: WebFormConfig; orgId: string }
 
 /**
  * Validates and processes a public submission. Spam and duplicates get the same success message as real
@@ -205,13 +213,13 @@ export async function submit(formId: string, raw: Record<string, unknown>, meta:
   if (!orgId) throw notFound('This form isn\'t connected. Check the form id in your website code.', 'form_not_found');
   const store = await getDocStore();
   const cfg = await getConfig(orgId, store);
-  if (meta.origin && cfg.allowedOrigins.length && !cfg.allowedOrigins.includes(meta.origin)) {
+  if (!meta.trusted && meta.origin && cfg.allowedOrigins.length && !cfg.allowedOrigins.includes(meta.origin)) {
     throw new HttpError(403, 'origin_not_allowed', 'This website isn\'t allowed to send this form. Add it under Website forms → Allowed websites.');
   }
   const parsed = SubmissionSchema.safeParse(raw ?? {});
   if (!parsed.success) throw badRequest('Please check the highlighted fields.', 'invalid_input', { fields: fieldErrors(parsed.error) });
   const s = parsed.data;
-  if (cfg.captcha) {
+  if (cfg.captcha && !meta.trusted) {
     const v = await verifyTurnstile(unsealSecret(cfg.captcha.secret), (raw ?? {})[TOKEN_FIELD], meta.ip);
     if (!v.ok) {
       logger.warn('webforms.captcha_failed', { org: orgId, reason: v.reason, codes: v.codes });
@@ -234,7 +242,7 @@ export async function submit(formId: string, raw: Record<string, unknown>, meta:
     const id = newId('wfs');
     await store.set(logPath(orgId, id), { id, at, expireAt, status: 'spam', reason: spam.reason, formName: s.formName || 'Website form', originHost, deliveries: [] });
     logger.info('webforms.spam', { org: orgId, reason: spam.reason });
-    return { status: 'spam', message: PUBLIC_OK, config: cfg, orgId };
+    return { status: 'spam', message: PUBLIC_OK, id, reason: spam.reason, config: cfg, orgId };
   }
 
   const fp = fingerprint(orgId, s);
@@ -242,7 +250,7 @@ export async function submit(formId: string, raw: Record<string, unknown>, meta:
   if (recent.some((r: any) => r.status === 'accepted' && now - Date.parse(r.at) < DUPLICATE_WINDOW_MS)) {
     const id = newId('wfs');
     await store.set(logPath(orgId, id), { id, at, expireAt, status: 'duplicate', fingerprint: fp, formName: s.formName || 'Website form', originHost, deliveries: [] });
-    return { status: 'duplicate', message: PUBLIC_OK, config: cfg, orgId };
+    return { status: 'duplicate', message: PUBLIC_OK, id, config: cfg, orgId };
   }
 
   const id = newId('wfs');
@@ -335,6 +343,12 @@ export async function purgeExpiredSubmissions(orgId: string, now = Date.now()) {
   const expired = oldest.filter((r: any) => typeof r.expireAt === 'string' && r.expireAt <= new Date(now).toISOString());
   for (const r of expired) await store.deleteRecursive(logPath(orgId, r.id));
   return expired.length;
+}
+
+/** One log entry (no contents), e.g. to show a test's delivery results. */
+export async function submissionLog(orgId: string, id: string) {
+  const r: any = await (await getDocStore()).get(logPath(orgId, id));
+  return r ? { id: r.id, at: r.at, status: r.status, reason: r.reason || null, formName: r.formName, originHost: r.originHost || null, deliveries: r.deliveries || [] } : null;
 }
 
 export async function recentSubmissions(orgId: string, limit = 50) {

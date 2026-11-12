@@ -422,7 +422,7 @@ function AppMain() {
         // Own tab and own data (/api/web-forms); works whether or not Google is connected in Local SEO.
         return (
           <div className="min-h-full w-full bg-slate-50 p-4 sm:p-6 md:p-8">
-            <div className="max-w-5xl mx-auto"><WebFormsView /></div>
+            <div className="max-w-5xl mx-auto"><WebFormsView onOpenLeads={() => setActiveView('deals' as SemanticView)} /></div>
           </div>
         );
       case 'lead_intelligence':
