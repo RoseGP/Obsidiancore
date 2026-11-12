@@ -55,3 +55,6 @@ Bundle it with esbuild from an entry that imports `analyzeLead` (`src/server/crm
 Use `format: 'iife'`, `platform: 'browser'`, `minify: true`, and stub the server-only imports of
 `leadIntelligence.ts` (`docStore`, `crmRepository`, `messagingPlatform`) with empty modules. Replace the
 second head `<script>` with the output (escape `</script` as `<\/script`).
+
+After splicing the app bundle, write any raw U+FFFD character in it as the escape `\uFFFD` (the Markdown library has
+it inside string literals, where the escape is identical; the artifact publisher rejects the raw character).
