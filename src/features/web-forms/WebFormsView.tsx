@@ -250,7 +250,8 @@ export const WebFormsView: React.FC<{ /** Opens Sales Pipeline (leads), where re
           <form className="flex flex-col gap-2 sm:flex-row" onSubmit={(e) => { e.preventDefault(); void save('webhook', { webhookUrl: webhookInput.trim() || null }, webhookInput.trim() ? 'Webhook URL saved.' : 'Webhook removed.'); }}>
             <label htmlFor="wf-webhook" className="sr-only">Webhook URL</label>
             <input id="wf-webhook" value={webhookInput} onChange={(e) => setWebhookInput(e.target.value)} placeholder="https://hooks.example.com/…" disabled={readOnly} className="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400" />
-            <Button type="submit" size="sm" variant="outline" disabled={readOnly} isLoading={busy === 'webhook'}>{webhookInput.trim() ? 'Save URL' : 'Remove'}</Button>
+            {/* With no webhook saved there's nothing to remove: the button only saves, and needs a URL. */}
+            <Button type="submit" size="sm" variant="outline" disabled={readOnly || (!config.webhook && !webhookInput.trim())} isLoading={busy === 'webhook'}>{webhookInput.trim() || !config.webhook ? 'Save URL' : 'Remove webhook'}</Button>
           </form>
           {config.webhook && (
             <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
