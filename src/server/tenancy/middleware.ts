@@ -10,24 +10,20 @@ import type { NextFunction, Request, Response } from 'express';
 import { InvalidIdError, assertId, getDocStore } from '../data/docStore';
 import { can, getMember, getMembershipIndex, TenancyError, type Action, type Role } from './orgs';
 import { checkCredentialAgainstPolicy, getSecurityPolicy, noteMemberActivity } from '../security/policy';
+import { toErrorResponse } from '../http/errors';
+import { logger } from '../http/logger';
 
 export interface Tenant { orgId: string; userId: string; role: Role; email: string; name: string }
 export type TenantRequest = Request & { tenant?: Tenant };
 
 /** Logs the real error server-side; the client gets a stable code and a safe message (no stack, no internals). */
 export function sendError(res: Response, err: unknown, tag: string) {
-  if (err instanceof TenancyError) return res.status(err.status).json({ success: false, code: err.code, error: err.message });
-  if (err instanceof InvalidIdError) return res.status(400).json({ success: false, code: 'invalid_id', error: 'Invalid id.' });
-  if ((err as any)?.name === 'ZodError' && Array.isArray((err as any).issues)) {
-    const i = (err as any).issues[0];
-    return res.status(400).json({ success: false, code: 'invalid_input', field: i?.path?.join('.') || undefined, error: i?.message || 'Invalid input.' });
-  }
-  const status = (err as any)?.status;
-  if (typeof status === 'number' && status >= 400 && status < 500) {
-    return res.status(status).json({ success: false, code: (err as any).code || 'bad_request', error: (err as any).message || 'Bad request.' });
-  }
-  console.error(`[${tag}]`, err);
-  return res.status(500).json({ success: false, code: 'server_error', error: 'Something went wrong on our side. Please try again.' });
+  // Same mapping as the app-wide error handler (src/server/http/errors.ts), so every route answers alike.
+  const r = toErrorResponse(err);
+  const requestId = (res.req as Request | undefined)?.id;
+  if (r.unexpected) logger.error('http.route_error', { tag, requestId, error: err });
+  for (const [k, v] of Object.entries(r.headers ?? {})) res.setHeader(k, v);
+  return res.status(r.status).json(requestId ? { ...r.body, requestId } : r.body);
 }
 
 async function ensurePersonalOrg(user: { id: string; email?: string; name?: string }): Promise<string> {

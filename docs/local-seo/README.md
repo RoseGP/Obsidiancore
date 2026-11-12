@@ -13,10 +13,13 @@ dashboard figures are no longer used.
 | Review sync, sentiment + topics (rule-based estimate) | **Live** |
 | AI reply drafts with safety flags, human approval to publish | **Live** (needs `GEMINI_API_KEY`; no canned fallback) |
 | Publish / delete replies | **Live** |
-| Profile health audit + recommendations | **Live** (this app's diagnostic, not a Google score) |
+| Profile audit (location → **Audit** tab) | **Live**: *Profile quality* (scored, completeness and engagement) and *Listing status* (unscored, what Google reports: open/closed, Voice of Merchant, pending edits, Google-updated fields, duplicate). Each finding shows its evidence; fields Google didn't return show "Not reported", never pass/fail. Not a Google ranking score. |
+| Access review (Security → **Access review**) | **Live**, on demand, not stored: owners, managers and pending invitations from the Account Management API, with findings (single owner, pending invitations, many admins). This is **not** a security audit of a Google account: Google doesn't expose sign-in activity, 2-Step Verification or password status to apps. |
+| Regular hours | **Live**: edit → confirm the changes → `PATCH …?updateMask=regularHours`. Days you don't change keep their periods (incl. split shifts). Holiday hours stay in Google. |
+| Website forms → CRM | **Live**, see [WEB_FORMS.md](WEB_FORMS.md) |
 | Performance metrics (views, calls, clicks, directions) | **Live** |
 | Google posts | **Live**, publish-now only (Google's API has no scheduling) |
-| Profile edits | **Live** for phone, website, description; others link to Google |
+| Profile edits | **Live** for phone, website, description, regular hours; others link to Google |
 | AI assistant drawer, Security log, Reports, Team settings, Photos, Attributes | **Not wired yet** (Phase 3); they show empty states, no fabricated data |
 | New-review notifications (Pub/Sub) | Not built (use **Sync now** or a scheduled job) |
 
@@ -49,6 +52,16 @@ routes/localSeoApi.ts  ──► features/gbp/server/service.ts   (rules, owners
                                  └─► features/gbp/server/googleGateway.ts (the only Google-specific code)
 components/localpilot/live/      (client, connection panel, performance view) ──► existing LocalPilot views
 ```
+
+Additional endpoints: `GET mybusinessaccountmanagement/v1/{location}/admins` (access review; needs owner or
+manager rights on the location, otherwise the panel says Google refused and shows nothing),
+readMask fields `metadata` and `openInfo` (listing status).
+
+Prerequisites Google controls (this app can't bypass them): approved Business Profile API access for the Cloud
+project (until approved, calls fail with 403 or zero quota); the APIs above enabled; OAuth verification of the
+sensitive `business.manage` scope for production; the signed-in Google user must be an owner or manager of the
+locations; edits to unverified listings (no Voice of Merchant) may be accepted by the API but not published.
+This app never asks for or stores Google passwords: sign-in happens on Google's page.
 
 Google endpoints used (verified against the `googleapis@178` generated clients unless noted):
 `GET mybusinessaccountmanagement/v1/accounts`, `GET mybusinessbusinessinformation/v1/{account}/locations?readMask`,
@@ -86,4 +99,6 @@ reviews themselves are never changed by disconnecting.
 
 ## Tests
 
-`npm run test:local-seo`: 27 end-to-end checks against a Google stand-in (`src/features/gbp/__tests__`).
+`npm run test:local-seo`: 31 end-to-end checks (incl. audit sections, access review, hours) against a Google stand-in (`src/features/gbp/__tests__`).
+
+`npm run test:web-forms`: 13 checks for website forms (validation, spam, duplicates, CORS, webhook signing and retries, SSRF, roles, cross-organization isolation, retention).

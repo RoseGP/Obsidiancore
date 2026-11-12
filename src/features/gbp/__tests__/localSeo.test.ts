@@ -112,6 +112,61 @@ files.alice.google.accessExpiresAt = 0; (await import('node:fs')).writeFileSync(
 r = await request(app).get('/api/local-seo/posts').set(A).query({ location: 'locations/1001' });
 assert.equal(r.status, 200); assert.equal(g.state.refreshCalls, before + 1); ok('expired access token refreshed with the stored refresh token');
 
+// ---- Audit: evidence, listing status kept apart from profile quality ----
+{
+  const ov = await request(app).get('/api/local-seo/overview').set(A);
+  const audit = ov.body.locations[0].audit;
+  const by = (id: string) => audit.checks.find((x: any) => x.id === id);
+  assert.ok(audit.checks.every((x: any) => typeof x.evidence === 'string' && x.evidence.length > 0 && (x.section === 'profile' || x.section === 'listing')));
+  assert.equal(by('pending').state, 'fail'); assert.equal(by('pending').section, 'listing'); assert.match(by('pending').evidence, /pending Google’s review/);
+  assert.equal(by('verified').state, 'pass'); assert.equal(by('open').state, 'pass'); assert.equal(by('googleUpdated').state, 'pass');
+  assert.equal(by('phone').state, 'pass'); assert.match(by('phone').evidence, /\+1 512 555 0100/);
+  const { auditLocation } = await import('../server/service');
+  const bare = auditLocation({ name: 'locations/x', accountName: 'accounts/1', title: 'X', additionalCategories: [], regularHours: [], hasSpecialHours: false, serviceItemCount: 0 }, []);
+  for (const id of ['open', 'verified', 'pending', 'googleUpdated', 'duplicate']) assert.equal(bare.checks.find((x) => x.id === id)!.state, 'unknown', id);
+  const withMeta = auditLocation({ name: 'locations/x', accountName: 'accounts/1', title: 'X', additionalCategories: [], regularHours: [], hasSpecialHours: false, serviceItemCount: 0, openStatus: 'CLOSED_PERMANENTLY', listing: { hasVoiceOfMerchant: false, duplicateLocation: 'locations/9' } }, []);
+  assert.equal(bare.score, withMeta.score, 'listing status doesn\u2019t change the profile score');
+  assert.equal(withMeta.checks.find((x) => x.id === 'open')!.state, 'fail'); assert.equal(withMeta.checks.find((x) => x.id === 'duplicate')!.state, 'fail');
+  ok('audit: every finding has evidence; listing status (Google metadata) is separate and unscored; missing data is "unknown", not a pass');
+}
+
+// ---- Access review (live from Google, not stored) ----
+{
+  let ar = await request(app).get('/api/local-seo/locations/access').set(A).query({ location: 'locations/1001' });
+  assert.equal(ar.status, 200); assert.equal(ar.body.available, true); assert.equal(ar.body.admins.length, 2);
+  assert.deepEqual(ar.body.findings.map((f: any) => f.id).sort(), ['pending_invites', 'single_owner']);
+  assert.ok(!readFileSync(path.join(dataDir, 'gbp.json'), 'utf8').includes('new.manager@example.com'), 'admin list is not stored');
+  assert.equal((await request(app).get('/api/local-seo/locations/access').set(A).query({ location: 'locations/1002' })).status, 404, 'only locations you manage here');
+  assert.equal((await request(app).get('/api/local-seo/locations/access').set(B).query({ location: 'locations/1001' })).status, 409, 'another user who hasn\u2019t connected');
+  g.state.adminsForbidden = true;
+  ar = await request(app).get('/api/local-seo/locations/access').set(A).query({ location: 'locations/1001' });
+  assert.equal(ar.status, 200); assert.equal(ar.body.available, false); assert.match(ar.body.reason, /only owners and managers/);
+  g.state.adminsForbidden = false;
+  ok('access review: who can manage the location, read live (not stored); explains when Google doesn\u2019t allow it');
+}
+
+// ---- Hours ----
+{
+  assert.equal((await request(app).put('/api/local-seo/locations/hours').set('X-Dev-User-Id', 'alice').send({ location: 'locations/1001', hours: [] })).status, 403, 'writes need the app\u2019s Origin');
+  const bad = [
+    [{ day: 'MONDAY', open: '9:00', close: '17:00' }],
+    [{ day: 'MONDAY', open: '09:00', close: '09:00' }],
+    [{ day: 'MONDAY', open: '08:00', close: '10:00' }, { day: 'MONDAY', open: '11:00', close: '12:00' }, { day: 'MONDAY', open: '13:00', close: '14:00' }],
+    [{ day: 'FUNDAY', open: '09:00', close: '17:00' }],
+  ];
+  for (const hours of bad) assert.equal((await request(app).put('/api/local-seo/locations/hours').set(A).send({ location: 'locations/1001', hours })).status, 400, JSON.stringify(hours));
+  assert.equal((await request(app).put('/api/local-seo/locations/hours').set(A).send({ location: 'locations/1002', hours: [] })).status, 404);
+  const hr = await request(app).put('/api/local-seo/locations/hours').set(A).send({ location: 'locations/1001', hours: [{ day: 'MONDAY', open: '09:00', close: '17:30' }, { day: 'FRIDAY', open: '18:00', close: '02:00' }, { day: 'SATURDAY', open: '00:00', close: '24:00' }] });
+  assert.equal(hr.status, 200);
+  assert.equal(g.state.lastPatch.mask, 'regularHours');
+  assert.deepEqual(g.state.lastPatch.body.regularHours.periods, [
+    { openDay: 'MONDAY', openTime: { hours: 9, minutes: 0 }, closeDay: 'MONDAY', closeTime: { hours: 17, minutes: 30 } },
+    { openDay: 'FRIDAY', openTime: { hours: 18, minutes: 0 }, closeDay: 'SATURDAY', closeTime: { hours: 2, minutes: 0 } },
+    { openDay: 'SATURDAY', openTime: { hours: 0, minutes: 0 }, closeDay: 'SATURDAY', closeTime: { hours: 24 } },
+  ]);
+  ok('hours: validated (24-hour times, ≤2 periods a day), overnight periods close the next day, only on locations you manage');
+}
+
 const raw = readFileSync(path.join(dataDir, 'gbp.json'), 'utf8');
 assert.ok(!/ya29\.[0-9a-f]{10}/.test(raw) && !/1\/\/[0-9a-f]{10}/.test(raw)); ok('Google tokens encrypted at rest');
 assert.ok(!/ya29\.abc|1\/\/xyz/.test(redact('token ya29.abcdef refresh 1//xyzxyz {"refresh_token":"1//q"}'))); ok('logs redact Google access and refresh tokens');

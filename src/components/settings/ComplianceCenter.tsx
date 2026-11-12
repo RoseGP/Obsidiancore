@@ -7,12 +7,12 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Download, Loader2, RefreshCw } from 'lucide-react';
 import { sapi } from './securityApi';
 
-const card = 'rounded-2xl p-5 bg-neutral-900/40 border border-white/5 space-y-4';
-const input = 'w-full text-xs bg-neutral-950/80 border border-white/10 rounded-xl p-2.5 text-white outline-none focus-visible:ring-2 focus-visible:ring-indigo-500';
+const card = 'rounded-2xl p-5 bg-[var(--surface)] border border-[var(--border)] space-y-4';
+const input = 'w-full text-xs bg-[var(--surface-sunken)] border border-[var(--border)] rounded-xl p-2.5 text-[var(--text)] outline-none focus-visible:ring-2 focus-visible:ring-indigo-500';
 const btn = 'px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs disabled:opacity-50 disabled:cursor-not-allowed';
-const ghost = 'px-3 py-1.5 rounded-lg border border-white/10 text-neutral-200 hover:bg-white/5 font-semibold text-xs disabled:opacity-50';
-const th = 'py-2 pr-3 text-left font-semibold text-neutral-400';
-const td = 'py-2 pr-3 align-top text-neutral-200';
+const ghost = 'px-3 py-1.5 rounded-lg border border-[var(--border)] text-[var(--text)] hover:bg-[var(--surface-sunken)] font-semibold text-xs disabled:opacity-50';
+const th = 'py-2 pr-3 text-left font-semibold text-[var(--text-muted)]';
+const td = 'py-2 pr-3 align-top text-[var(--text)]';
 const fmt = (v?: string | null) => (v ? new Date(v).toLocaleString() : '—');
 
 type Section = 'requests' | 'consent' | 'retention' | 'reviews' | 'incidents' | 'audit' | 'docs';
@@ -30,8 +30,8 @@ function useLoad<T>(path: string) {
 }
 
 function Status({ error, ok }: { error?: string | null; ok?: string | null }) {
-  if (error) return <p role="alert" className="text-xs text-rose-300">{error}</p>;
-  if (ok) return <p role="status" className="text-xs text-emerald-300">{ok}</p>;
+  if (error) return <p role="alert" className="text-xs text-[var(--danger)]">{error}</p>;
+  if (ok) return <p role="status" className="text-xs text-[var(--success)]">{ok}</p>;
   return null;
 }
 
@@ -77,32 +77,32 @@ function Requests() {
   return (
     <div className="space-y-4">
       <form onSubmit={create} className={card}>
-        <h4 className="text-sm font-bold text-white">Log a request</h4>
-        <p className="text-xs text-neutral-400">When someone asks to see, take a copy of, correct or delete their data. Verify who they are first. Target: answer within 30 days (GDPR; CCPA allows 45).</p>
+        <h4 className="text-sm font-bold text-[var(--text)]">Log a request</h4>
+        <p className="text-xs text-[var(--text-muted)]">When someone asks to see, take a copy of, correct or delete their data. Verify who they are first. Target: answer within 30 days (GDPR; CCPA allows 45).</p>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <label className="text-xs text-neutral-300">Type
+          <label className="text-xs text-[var(--text-muted)]">Type
             <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} className={`${input} mt-1`}>
               <option value="access">See their data (access)</option><option value="export">Copy of their data (portability)</option>
               <option value="correction">Correct their data</option><option value="deletion">Delete their data</option>
             </select>
           </label>
-          <label className="text-xs text-neutral-300 sm:col-span-2">Their email address
+          <label className="text-xs text-[var(--text-muted)] sm:col-span-2">Their email address
             <input type="email" required value={form.subjectEmail} onChange={(e) => setForm({ ...form, subjectEmail: e.target.value })} className={`${input} mt-1`} />
           </label>
         </div>
         {form.type === 'correction' && (
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <label className="text-xs text-neutral-300">Field
+            <label className="text-xs text-[var(--text-muted)]">Field
               <select value={form.field} onChange={(e) => setForm({ ...form, field: e.target.value })} className={`${input} mt-1`}>
                 {['name', 'email', 'phone', 'company', 'title'].map((f) => <option key={f} value={f}>{f}</option>)}
               </select>
             </label>
-            <label className="text-xs text-neutral-300 sm:col-span-2">Correct value
+            <label className="text-xs text-[var(--text-muted)] sm:col-span-2">Correct value
               <input required value={form.value} onChange={(e) => setForm({ ...form, value: e.target.value })} className={`${input} mt-1`} />
             </label>
           </div>
         )}
-        <label className="text-xs text-neutral-300 block">Notes (how it was received, identity check)
+        <label className="text-xs text-[var(--text-muted)] block">Notes (how it was received, identity check)
           <textarea value={form.details} onChange={(e) => setForm({ ...form, details: e.target.value })} rows={2} className={`${input} mt-1`} />
         </label>
         <div className="flex justify-end"><button type="submit" className={btn}>Log request</button></div>
@@ -110,24 +110,24 @@ function Requests() {
       </form>
 
       <div className={card}>
-        <div className="flex items-center justify-between"><h4 className="text-sm font-bold text-white">Requests</h4><button type="button" onClick={() => void load()} className={ghost} aria-label="Refresh"><RefreshCw size={13} /></button></div>
+        <div className="flex items-center justify-between"><h4 className="text-sm font-bold text-[var(--text)]">Requests</h4><button type="button" onClick={() => void load()} className={ghost} aria-label="Refresh"><RefreshCw size={13} /></button></div>
         {error && <Status error={error} />}
-        {!data && !error && <p className="text-xs text-neutral-400">Loading…</p>}
-        {data && !data.requests.length && <p className="text-xs text-neutral-400">No requests yet.</p>}
+        {!data && !error && <p className="text-xs text-[var(--text-muted)]">Loading…</p>}
+        {data && !data.requests.length && <p className="text-xs text-[var(--text-muted)]">No requests yet.</p>}
         <ul className="space-y-3">
           {data?.requests.map((r) => (
-            <li key={r.id} className="p-3 rounded-xl bg-neutral-950/40 border border-white/5 space-y-2">
+            <li key={r.id} className="p-3 rounded-xl bg-[var(--surface-sunken)] border border-[var(--border)] space-y-2">
               <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-                <span className="text-white font-semibold capitalize">{r.type} · {r.subjectEmail}</span>
-                <span className="text-neutral-400">{r.status} · logged {fmt(r.requestedAt)} · due {fmt(r.dueBy)}</span>
+                <span className="text-[var(--text)] font-semibold capitalize">{r.type} · {r.subjectEmail}</span>
+                <span className="text-[var(--text-muted)]">{r.status} · logged {fmt(r.requestedAt)} · due {fmt(r.dueBy)}</span>
               </div>
               {preview[r.id] && (
-                <p className="text-[11px] text-neutral-300">
+                <p className="text-[11px] text-[var(--text-muted)]">
                   {preview[r.id].fields ? `Will change ${preview[r.id].fields.join(', ')} on ${preview[r.id].leads} lead(s) and ${preview[r.id].contacts} contact(s).`
                     : `Found: ${Object.entries(preview[r.id].counts || {}).filter(([, n]) => Number(n) > 0).map(([k, n]) => `${n} ${k}`).join(', ') || 'nothing'}.`}
                 </p>
               )}
-              {r.result?.counts && r.status === 'completed' && <p className="text-[11px] text-emerald-300">Completed {fmt(r.completedAt)}.</p>}
+              {r.result?.counts && r.status === 'completed' && <p className="text-[11px] text-[var(--success)]">Completed {fmt(r.completedAt)}.</p>}
               <div className="flex flex-wrap gap-2">
                 {r.status !== 'completed' && r.status !== 'rejected' && <button type="button" className={ghost} disabled={!!busy} onClick={() => act(r.id, 'preview')}>{busy === r.id + 'preview' ? <Loader2 size={12} className="animate-spin" /> : 'Preview'}</button>}
                 {r.status === 'requested' && <><button type="button" className={ghost} disabled={!!busy} onClick={() => act(r.id, 'approve')}>Approve</button><button type="button" className={ghost} disabled={!!busy} onClick={() => act(r.id, 'reject')}>Reject</button></>}
@@ -160,8 +160,8 @@ function Consent() {
   return (
     <div className="space-y-4">
       <form onSubmit={record} className={card}>
-        <h4 className="text-sm font-bold text-white">Record consent</h4>
-        <p className="text-xs text-neutral-400">Website forms record consent automatically when they send it. Use this for consent given by phone, email or in person.</p>
+        <h4 className="text-sm font-bold text-[var(--text)]">Record consent</h4>
+        <p className="text-xs text-[var(--text-muted)]">Website forms record consent automatically when they send it. Use this for consent given by phone, email or in person.</p>
         <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
           <input aria-label="Email" type="email" required placeholder="Email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className={`${input} sm:col-span-2`} />
           <select aria-label="Purpose" value={form.purpose} onChange={(e) => setForm({ ...form, purpose: e.target.value })} className={input}>
@@ -182,12 +182,12 @@ function Consent() {
           {q && <button type="button" className={ghost} onClick={() => { setQ(''); setEmail(''); }}>All</button>}
         </form>
         {error && <Status error={error} />}
-        {data?.current && <p className="text-xs text-neutral-200">Current: {Object.entries(data.current).map(([p, s]) => `${p.replace(/_/g, ' ')} ${s}`).join(' · ') || 'no consent recorded'}</p>}
+        {data?.current && <p className="text-xs text-[var(--text)]">Current: {Object.entries(data.current).map(([p, s]) => `${p.replace(/_/g, ' ')} ${s}`).join(' · ') || 'no consent recorded'}</p>}
         <div className="overflow-x-auto"><table className="w-full min-w-[520px] text-xs">
           <thead><tr><th className={th}>When</th><th className={th}>Email</th><th className={th}>Purpose</th><th className={th}>Status</th><th className={th}>Source</th></tr></thead>
-          <tbody>{data?.consents.map((c) => <tr key={c.id} className="border-t border-white/5"><td className={td}>{fmt(c.at)}</td><td className={td}>{c.email || '(removed)'}</td><td className={td}>{c.purpose.replace(/_/g, ' ')}</td><td className={td}>{c.status}</td><td className={td}>{c.source}</td></tr>)}</tbody>
+          <tbody>{data?.consents.map((c) => <tr key={c.id} className="border-t border-[var(--border)]"><td className={td}>{fmt(c.at)}</td><td className={td}>{c.email || '(removed)'}</td><td className={td}>{c.purpose.replace(/_/g, ' ')}</td><td className={td}>{c.status}</td><td className={td}>{c.source}</td></tr>)}</tbody>
         </table></div>
-        {data && !data.consents.length && <p className="text-xs text-neutral-400">No consent records{q ? ' for this email' : ''}.</p>}
+        {data && !data.consents.length && <p className="text-xs text-[var(--text-muted)]">No consent records{q ? ' for this email' : ''}.</p>}
       </div>
     </div>
   );
@@ -201,7 +201,7 @@ function Retention() {
   const [msg, setMsg] = useState<{ error?: string; ok?: string }>({});
   useEffect(() => { if (data) setDraft(data.policies || {}); }, [data]);
   if (error) return <div className={card}><Status error={error} /></div>;
-  if (!data) return <div className={card}><p className="text-xs text-neutral-400">Loading…</p></div>;
+  if (!data) return <div className={card}><p className="text-xs text-[var(--text-muted)]">Loading…</p></div>;
   const save = async () => {
     setMsg({});
     try { await sapi('/api/compliance/retention', { method: 'PUT', body: JSON.stringify({ policies: draft }) }); setMsg({ ok: 'Saved.' }); void load(); }
@@ -215,18 +215,18 @@ function Retention() {
   };
   return (
     <div className={card}>
-      <h4 className="text-sm font-bold text-white">How long data is kept</h4>
-      <p className="text-xs text-neutral-400">Nothing is deleted: “archive” marks records as archived, “anonymize” removes personal details and keeps the record. Rules only run automatically if you tick “Apply automatically”; otherwise the daily check just counts what would change.</p>
+      <h4 className="text-sm font-bold text-[var(--text)]">How long data is kept</h4>
+      <p className="text-xs text-[var(--text-muted)]">Nothing is deleted: “archive” marks records as archived, “anonymize” removes personal details and keeps the record. Rules only run automatically if you tick “Apply automatically”; otherwise the daily check just counts what would change.</p>
       <div className="space-y-2">
         {data.types.map((t) => {
           const p = draft[t.id] || { enabled: false, days: Math.max(t.minDays, 365), action: t.actions[0], autoApply: false };
           const set = (patch: any) => setDraft({ ...draft, [t.id]: { ...p, ...patch } });
           return (
-            <div key={t.id} className="grid grid-cols-2 sm:grid-cols-5 gap-2 items-center p-2.5 rounded-xl bg-neutral-950/40 border border-white/5 text-xs">
-              <label className="col-span-2 flex items-center gap-2 text-neutral-200"><input type="checkbox" checked={!!p.enabled} onChange={(e) => set({ enabled: e.target.checked })} /> {t.label}</label>
-              <label className="flex items-center gap-1 text-neutral-400">after <input type="number" min={t.minDays} value={p.days} onChange={(e) => set({ days: Number(e.target.value) })} className={`${input} w-20 p-1.5`} /> days</label>
+            <div key={t.id} className="grid grid-cols-2 sm:grid-cols-5 gap-2 items-center p-2.5 rounded-xl bg-[var(--surface-sunken)] border border-[var(--border)] text-xs">
+              <label className="col-span-2 flex items-center gap-2 text-[var(--text)]"><input type="checkbox" checked={!!p.enabled} onChange={(e) => set({ enabled: e.target.checked })} /> {t.label}</label>
+              <label className="flex items-center gap-1 text-[var(--text-muted)]">after <input type="number" min={t.minDays} value={p.days} onChange={(e) => set({ days: Number(e.target.value) })} className={`${input} w-20 p-1.5`} /> days</label>
               <select aria-label={`${t.label} action`} value={p.action} onChange={(e) => set({ action: e.target.value })} className={`${input} p-1.5`}>{t.actions.map((a: string) => <option key={a} value={a}>{a}</option>)}</select>
-              <label className="flex items-center gap-2 text-neutral-400"><input type="checkbox" checked={!!p.autoApply} onChange={(e) => set({ autoApply: e.target.checked })} /> Apply automatically</label>
+              <label className="flex items-center gap-2 text-[var(--text-muted)]"><input type="checkbox" checked={!!p.autoApply} onChange={(e) => set({ autoApply: e.target.checked })} /> Apply automatically</label>
             </div>
           );
         })}
@@ -238,8 +238,8 @@ function Retention() {
       </div>
       <Status error={msg.error} ok={msg.ok} />
       {(run || data.lastRun) && (
-        <div className="text-xs text-neutral-300 space-y-1">
-          <p className="text-neutral-400">{run ? 'This run' : 'Last check'}: {fmt((run || data.lastRun).at)}</p>
+        <div className="text-xs text-[var(--text-muted)] space-y-1">
+          <p className="text-[var(--text-muted)]">{run ? 'This run' : 'Last check'}: {fmt((run || data.lastRun).at)}</p>
           {(run || data.lastRun).results.map((r: any) => <p key={r.type}>{r.label}: {r.matched} past the limit{r.applied ? `, ${r.applied} ${r.action}d` : ''}</p>)}
         </div>
       )}
@@ -260,16 +260,16 @@ function Reviews() {
   if (error) return <div className={card}><Status error={error} /></div>;
   return (
     <div className={card}>
-      <h4 className="text-sm font-bold text-white">Who has access</h4>
-      <p className="text-xs text-neutral-400">Check that everyone still needs their access and role (SOC 2 suggests every quarter). Change roles or remove people in Settings › Organization & team.</p>
+      <h4 className="text-sm font-bold text-[var(--text)]">Who has access</h4>
+      <p className="text-xs text-[var(--text-muted)]">Check that everyone still needs their access and role (SOC 2 suggests every quarter). Change roles or remove people in Settings › Organization & team.</p>
       <div className="overflow-x-auto"><table className="w-full min-w-[560px] text-xs">
         <thead><tr><th className={th}>Member</th><th className={th}>Role</th><th className={th}>Last active</th><th className={th}>Two-step at last sign-in</th></tr></thead>
-        <tbody>{data?.members.map((m) => <tr key={m.userId} className="border-t border-white/5"><td className={td}>{m.name || m.email || m.userId}<div className="text-neutral-500">{m.email}</div></td><td className={td}>{m.role}</td><td className={td}>{fmt(m.lastActiveAt)}</td><td className={td}>{m.lastSignInMfa === null ? 'Not seen yet' : m.lastSignInMfa ? 'Yes' : 'No'}</td></tr>)}</tbody>
+        <tbody>{data?.members.map((m) => <tr key={m.userId} className="border-t border-[var(--border)]"><td className={td}>{m.name || m.email || m.userId}<div className="text-[var(--text-subtle)]">{m.email}</div></td><td className={td}>{m.role}</td><td className={td}>{fmt(m.lastActiveAt)}</td><td className={td}>{m.lastSignInMfa === null ? 'Not seen yet' : m.lastSignInMfa ? 'Yes' : 'No'}</td></tr>)}</tbody>
       </table></div>
       <textarea aria-label="Review notes" placeholder="Notes (what you checked, changes made)" value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className={input} />
       <div className="flex justify-end"><button type="button" onClick={complete} className={btn}>Mark review complete</button></div>
       <Status error={msg.error} ok={msg.ok} />
-      {!!data?.reviews.length && <div className="text-xs text-neutral-300 space-y-1">{data.reviews.slice(0, 5).map((r) => <p key={r.id}>{fmt(r.completedAt)} · {r.members.length} members{r.notes ? ` · ${r.notes}` : ''}</p>)}</div>}
+      {!!data?.reviews.length && <div className="text-xs text-[var(--text-muted)] space-y-1">{data.reviews.slice(0, 5).map((r) => <p key={r.id}>{fmt(r.completedAt)} · {r.members.length} members{r.notes ? ` · ${r.notes}` : ''}</p>)}</div>}
     </div>
   );
 }
@@ -291,23 +291,23 @@ function Incidents() {
   return (
     <div className="space-y-4">
       <form onSubmit={create} className={card}>
-        <h4 className="text-sm font-bold text-white">Record a security incident</h4>
-        <p className="text-xs text-neutral-400">If personal data is involved, GDPR requires telling the supervisory authority within 72 hours. See docs/compliance/INCIDENT_RESPONSE.md.</p>
+        <h4 className="text-sm font-bold text-[var(--text)]">Record a security incident</h4>
+        <p className="text-xs text-[var(--text-muted)]">If personal data is involved, GDPR requires telling the supervisory authority within 72 hours. See docs/compliance/INCIDENT_RESPONSE.md.</p>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <input aria-label="Title" required placeholder="What happened" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} className={`${input} sm:col-span-2`} />
           <select aria-label="Severity" value={form.severity} onChange={(e) => setForm({ ...form, severity: e.target.value })} className={input}>{['low', 'medium', 'high', 'critical'].map((s) => <option key={s} value={s}>{s}</option>)}</select>
         </div>
         <textarea aria-label="Details" placeholder="Details" rows={2} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className={input} />
-        <label className="flex items-center gap-2 text-xs text-neutral-300"><input type="checkbox" checked={form.personalDataInvolved} onChange={(e) => setForm({ ...form, personalDataInvolved: e.target.checked })} /> Personal data involved</label>
+        <label className="flex items-center gap-2 text-xs text-[var(--text-muted)]"><input type="checkbox" checked={form.personalDataInvolved} onChange={(e) => setForm({ ...form, personalDataInvolved: e.target.checked })} /> Personal data involved</label>
         <div className="flex justify-end"><button type="submit" className={btn}>Record incident</button></div>
         <Status error={msg.error} ok={msg.ok} />
       </form>
       <div className={card}>
         {error && <Status error={error} />}
-        {data && !data.incidents.length && <p className="text-xs text-neutral-400">No incidents recorded.</p>}
+        {data && !data.incidents.length && <p className="text-xs text-[var(--text-muted)]">No incidents recorded.</p>}
         <ul className="space-y-2">{data?.incidents.map((i) => (
-          <li key={i.id} className="p-3 rounded-xl bg-neutral-950/40 border border-white/5 text-xs flex flex-wrap items-center justify-between gap-2">
-            <span className="text-white"><strong>{i.title}</strong> <span className="text-neutral-400">· {i.severity} · detected {fmt(i.detectedAt)}{i.personalDataInvolved ? ' · personal data' : ''}</span></span>
+          <li key={i.id} className="p-3 rounded-xl bg-[var(--surface-sunken)] border border-[var(--border)] text-xs flex flex-wrap items-center justify-between gap-2">
+            <span className="text-[var(--text)]"><strong>{i.title}</strong> <span className="text-[var(--text-muted)]">· {i.severity} · detected {fmt(i.detectedAt)}{i.personalDataInvolved ? ' · personal data' : ''}</span></span>
             <select aria-label={`Status of ${i.title}`} value={i.status} onChange={(e) => setStatus(i.id, e.target.value)} className={`${input} w-auto p-1.5`}>{['open', 'investigating', 'contained', 'resolved', 'closed'].map((s) => <option key={s} value={s}>{s}</option>)}</select>
           </li>
         ))}</ul>
@@ -342,25 +342,25 @@ function Audit() {
   return (
     <div className={card}>
       <div className="flex flex-wrap items-center gap-2 justify-between">
-        <h4 className="text-sm font-bold text-white">Audit log</h4>
+        <h4 className="text-sm font-bold text-[var(--text)]">Audit log</h4>
         <div className="flex gap-2">
           <input aria-label="Filter by action" placeholder="Action, e.g. member.role_changed" value={action} onChange={(e) => setAction(e.target.value.trim())} className={`${input} w-56 p-2`} />
           <button type="button" onClick={download} className={ghost}><span className="inline-flex items-center gap-1"><Download size={12} /> CSV</span></button>
         </div>
       </div>
-      <p className="text-xs text-neutral-400">Security-relevant actions in this organization. Entries can’t be edited or deleted. Secrets and message text are never recorded.</p>
+      <p className="text-xs text-[var(--text-muted)]">Security-relevant actions in this organization. Entries can’t be edited or deleted. Secrets and message text are never recorded.</p>
       {error && <Status error={error} />}
       <div className="overflow-x-auto"><table className="w-full min-w-[640px] text-xs">
         <thead><tr><th className={th}>When</th><th className={th}>Who</th><th className={th}>Action</th><th className={th}>What</th><th className={th}>Details</th></tr></thead>
         <tbody>{entries?.map((e) => (
-          <tr key={e.id} className="border-t border-white/5">
+          <tr key={e.id} className="border-t border-[var(--border)]">
             <td className={td}>{fmt(e.at)}</td><td className={td}>{e.actorEmail || e.actorId}</td><td className={`${td} font-mono`}>{e.action}</td>
             <td className={td}>{e.target?.type}{e.target?.label ? `: ${e.target.label}` : ''}</td>
-            <td className={`${td} text-neutral-400`}>{Object.entries(e.meta || {}).map(([k, v]) => `${k}: ${v}`).join(', ')}</td>
+            <td className={`${td} text-[var(--text-muted)]`}>{Object.entries(e.meta || {}).map(([k, v]) => `${k}: ${v}`).join(', ')}</td>
           </tr>
         ))}</tbody>
       </table></div>
-      {entries && !entries.length && <p className="text-xs text-neutral-400">No entries{action ? ' for this action' : ''}.</p>}
+      {entries && !entries.length && <p className="text-xs text-[var(--text-muted)]">No entries{action ? ' for this action' : ''}.</p>}
       {next && <button type="button" onClick={() => load(next)} className={ghost}>Load older</button>}
     </div>
   );
@@ -380,9 +380,9 @@ function Controls() {
   ];
   return (
     <div className={card}>
-      <h4 className="text-sm font-bold text-white">Controls in place</h4>
-      <p className="text-xs text-neutral-400">These help you meet GDPR, CCPA/CPRA and SOC 2 requirements; they don’t make you compliant on their own, and this app makes no HIPAA claim. Full details are in docs/compliance/ in the code repository.</p>
-      <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3">{rows.map(([k, v]) => <div key={k} className="p-3 rounded-xl bg-neutral-950/40 border border-white/5"><dt className="text-xs font-semibold text-white">{k}</dt><dd className="text-xs text-neutral-400 mt-0.5">{v}</dd></div>)}</dl>
+      <h4 className="text-sm font-bold text-[var(--text)]">Controls in place</h4>
+      <p className="text-xs text-[var(--text-muted)]">These help you meet GDPR, CCPA/CPRA and SOC 2 requirements; they don’t make you compliant on their own, and this app makes no HIPAA claim. Full details are in docs/compliance/ in the code repository.</p>
+      <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3">{rows.map(([k, v]) => <div key={k} className="p-3 rounded-xl bg-[var(--surface-sunken)] border border-[var(--border)]"><dt className="text-xs font-semibold text-[var(--text)]">{k}</dt><dd className="text-xs text-[var(--text-muted)] mt-0.5">{v}</dd></div>)}</dl>
     </div>
   );
 }
@@ -391,14 +391,14 @@ export default function ComplianceCenter() {
   const [section, setSection] = useState<Section>('requests');
   return (
     <div className="space-y-4">
-      <div className="border-b border-white/5 pb-3">
-        <h3 className="text-base font-bold text-white">Privacy & compliance</h3>
-        <p className="text-xs text-neutral-400 mt-0.5">Data requests, consent, retention, access reviews, incidents and the audit log. Owners and admins only.</p>
+      <div className="border-b border-[var(--border)] pb-3">
+        <h3 className="text-base font-bold text-[var(--text)]">Privacy & compliance</h3>
+        <p className="text-xs text-[var(--text-muted)] mt-0.5">Data requests, consent, retention, access reviews, incidents and the audit log. Owners and admins only.</p>
       </div>
       <div className="flex gap-1.5 overflow-x-auto" role="tablist" aria-label="Privacy and compliance sections">
         {SECTIONS.map((s) => (
           <button key={s.id} type="button" role="tab" aria-selected={section === s.id} onClick={() => setSection(s.id)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap ${section === s.id ? 'bg-indigo-600 text-white' : 'bg-white/5 text-neutral-300 hover:bg-white/10'}`}>{s.label}</button>
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap ${section === s.id ? 'bg-indigo-600 text-white' : 'bg-[var(--surface-sunken)] text-[var(--text-muted)] hover:bg-[var(--border)]'}`}>{s.label}</button>
         ))}
       </div>
       {section === 'requests' && <Requests />}

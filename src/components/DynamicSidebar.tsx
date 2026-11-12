@@ -88,15 +88,15 @@ export default function DynamicSidebar({ activeId = 'dashboard', onActiveIdChang
         <button
           type="button" id={domId} onClick={() => go(item.id)}
           aria-current={active ? 'page' : undefined} aria-label={labels ? undefined : item.label}
-          className={`relative w-full flex items-center gap-3 rounded-lg px-3 py-[7px] text-[13px] font-medium transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--obsidian-accent)] ${labels ? '' : 'justify-center'} ${active ? 'bg-white/[0.08] text-white' : 'text-neutral-400 hover:text-neutral-100 hover:bg-white/[0.04]'}`}
+          className={`relative w-full flex items-center gap-3 rounded-lg px-3 py-[7px] text-[13px] font-medium transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-text)] ${labels ? '' : 'justify-center'} ${active ? 'bg-white/[0.08] text-[var(--text)]' : 'text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-white/[0.04]'}`}
         >
           <span className={`absolute left-0 top-2 bottom-2 w-[3px] rounded-r bg-[var(--accent)] transition-opacity ${active ? 'opacity-100' : 'opacity-0'}`} aria-hidden="true" />
-          <Icon className={`h-[17px] w-[17px] shrink-0 ${active ? 'text-[var(--obsidian-accent)]' : 'text-neutral-500 group-hover/item:text-neutral-200'}`} aria-hidden="true" />
+          <Icon className={`h-[17px] w-[17px] shrink-0 ${active ? 'text-[var(--accent-text)]' : 'text-[var(--text-subtle)] group-hover/item:text-[var(--text)]'}`} aria-hidden="true" />
           {labels && <span className="truncate">{item.label}</span>}
         </button>
         {desktop && !expanded && (
-          <span role="tooltip" className="pointer-events-none absolute left-full top-1/2 -translate-y-1/2 ml-3 z-50 whitespace-nowrap rounded-lg border border-white/10 bg-neutral-950 px-2.5 py-1.5 text-[12px] text-white shadow-xl opacity-0 group-hover/item:opacity-100 group-focus-within/item:opacity-100 transition-opacity">
-            <span className="font-medium">{item.label}</span><span className="block text-[11px] text-neutral-400">{item.hint}</span>
+          <span role="tooltip" className="pointer-events-none absolute left-full top-1/2 -translate-y-1/2 ml-3 z-50 whitespace-nowrap rounded-lg border border-[var(--border)] bg-[var(--surface-sunken)] px-2.5 py-1.5 text-[12px] text-[var(--text)] shadow-xl opacity-0 group-hover/item:opacity-100 group-focus-within/item:opacity-100 transition-opacity">
+            <span className="font-medium">{item.label}</span><span className="block text-[11px] text-[var(--text-muted)]">{item.hint}</span>
           </span>
         )}
       </li>
@@ -113,7 +113,7 @@ export default function DynamicSidebar({ activeId = 'dashboard', onActiveIdChang
           <div key={g.id}>
             {g.label && (labels ? (
               <button type="button" onClick={() => toggleGroup(g.id)} aria-expanded={!closed} aria-controls={listId}
-                className="w-full flex items-center justify-between px-3 pb-1 pt-0.5 text-[10px] font-semibold uppercase tracking-[0.09em] text-neutral-500 hover:text-neutral-300 cursor-pointer rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--obsidian-accent)]">
+                className="w-full flex items-center justify-between px-3 pb-1 pt-0.5 text-[10px] font-semibold uppercase tracking-[0.09em] text-[var(--text-subtle)] hover:text-[var(--text-muted)] cursor-pointer rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-text)]">
                 {g.label}<ChevronDown className={`h-3 w-3 transition-transform ${closed ? '-rotate-90' : ''}`} aria-hidden="true" />
               </button>
             ) : <div className="mx-3 mb-2 h-px bg-white/[0.06]" aria-hidden="true" />)}
@@ -126,8 +126,8 @@ export default function DynamicSidebar({ activeId = 'dashboard', onActiveIdChang
 
   const brand = (
     <div className="flex items-center gap-3 overflow-hidden">
-      <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-[#5b6cff] to-[#22d3ee] flex items-center justify-center shrink-0 shadow-[0_0_16px_rgb(91_108_255/0.45)]" aria-hidden="true"><LayoutDashboard className="h-4 w-4 text-white" /></div>
-      <div className="flex flex-col whitespace-nowrap"><span className="font-semibold text-[13px] text-white tracking-[-0.01em]">Obsidian</span><span className="text-[11px] text-neutral-500">AI Command Center</span></div>
+      <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-[#5b6cff] to-[#22d3ee] flex items-center justify-center shrink-0 shadow-[0_0_16px_rgb(91_108_255/0.45)]" aria-hidden="true"><LayoutDashboard className="h-4 w-4 text-[var(--text)]" /></div>
+      <div className="flex flex-col whitespace-nowrap"><span className="font-semibold text-[13px] text-[var(--text)] tracking-[-0.01em]">Obsidian</span><span className="text-[11px] text-[var(--text-subtle)]">AI Command Center</span></div>
     </div>
   );
 
@@ -135,33 +135,33 @@ export default function DynamicSidebar({ activeId = 'dashboard', onActiveIdChang
     <>
       <aside
         id="dynamic-sidebar-container"
-        className={`hidden md:flex print:!hidden relative flex-col h-screen shrink-0 select-none obsidian bg-[var(--obsidian-1)] border-r border-[var(--obsidian-line)] text-neutral-300 transition-[width] duration-200 ${expanded ? 'w-[244px]' : 'w-[68px]'} ${className}`}
+        className={`hidden md:flex print:!hidden relative flex-col h-screen shrink-0 select-none bg-[var(--surface)] border-r border-[var(--border)] text-[var(--text-muted)] transition-[width] duration-200 ${expanded ? 'w-[244px]' : 'w-[68px]'} ${className}`}
       >
-        <div className={`h-14 flex items-center border-b border-white/5 shrink-0 ${expanded ? 'justify-between px-4' : 'justify-center px-2'}`}>
+        <div className={`h-14 flex items-center border-b border-[var(--border)] shrink-0 ${expanded ? 'justify-between px-4' : 'justify-center px-2'}`}>
           {expanded && brand}
           <button
             id="sidebar-collapse-toggle-btn" type="button" onClick={() => setExpanded(!expanded)}
-            className="p-1.5 rounded-lg bg-white/5 border border-white/10 text-neutral-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--obsidian-accent)]"
+            className="p-1.5 rounded-lg bg-[var(--surface-sunken)] border border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--border)] transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-text)]"
             aria-label={expanded ? 'Collapse navigation' : 'Expand navigation'} aria-expanded={expanded}
           >
             {expanded ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
           </button>
         </div>
         {renderNav(true)}
-        <div className="border-t border-white/5 px-3 py-3">
+        <div className="border-t border-[var(--border)] px-3 py-3">
           <ul>{renderItem({ id: 'settings', label: 'All settings', icon: Settings, hint: 'Account and organization' }, true)}</ul>
         </div>
       </aside>
 
       <div className={`md:hidden fixed inset-0 z-[80] ${mobileOpen ? '' : 'pointer-events-none'}`} aria-hidden={!mobileOpen}>
-        <div className={`absolute inset-0 bg-black/50 transition-opacity ${mobileOpen ? 'opacity-100' : 'opacity-0'}`} onClick={onMobileClose} />
+        <div className={`absolute inset-0 bg-[var(--surface)] transition-opacity ${mobileOpen ? 'opacity-100' : 'opacity-0'}`} onClick={onMobileClose} />
         <aside
           role="dialog" aria-modal="true" aria-label="Navigation"
-          className={`obsidian absolute inset-y-0 left-0 w-[min(288px,86vw)] flex flex-col bg-[var(--obsidian-1)] text-neutral-300 shadow-2xl transition-transform duration-200 ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}`}
+          className={`absolute inset-y-0 left-0 w-[min(288px,86vw)] flex flex-col bg-[var(--surface)] text-[var(--text-muted)] shadow-2xl transition-transform duration-200 ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}`}
         >
-          <div className="h-14 flex items-center justify-between px-4 border-b border-white/5 shrink-0">
+          <div className="h-14 flex items-center justify-between px-4 border-b border-[var(--border)] shrink-0">
             {brand}
-            <button type="button" onClick={onMobileClose} aria-label="Close navigation" className="p-2 rounded-lg text-neutral-400 hover:text-white hover:bg-white/10 cursor-pointer"><X className="h-4 w-4" /></button>
+            <button type="button" onClick={onMobileClose} aria-label="Close navigation" className="p-2 rounded-lg text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--border)] cursor-pointer"><X className="h-4 w-4" /></button>
           </div>
           {mobileOpen && renderNav(false)}
         </aside>

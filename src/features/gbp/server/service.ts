@@ -6,7 +6,7 @@
 import crypto from 'node:crypto';
 import { randomId, seal, signState, unseal, verifyState, type SocialAccountsConfig } from '../../social-accounts/server/config';
 import { AccountsError } from '../../social-accounts/server/service';
-import { GatewayError, v4Location, type GLocation, type GoogleGateway } from './googleGateway';
+import { GatewayError, v4Location, type GAdmin, type GLocation, type GoogleGateway } from './googleGateway';
 import type { GbpDoc, GbpStore, StoredReview } from './store';
 
 export const GBP_STATE_COOKIE = 'gbp_oauth_state';
@@ -42,30 +42,80 @@ export function replyFlags(text: string): string[] {
   return f;
 }
 
-// ---------- Profile health (this app's diagnostic, not a Google score) ----------
+// ---------- Profile audit (this app's diagnostic from Google's own data; not a Google score) ----------
+//
+// Two kinds of findings, kept apart in the UI:
+//   section 'profile': completeness and engagement, from the fields the Business Information API returns.
+//                      These make up the score.
+//   section 'listing': listing status Google reports in location metadata (pending edits, Google-suggested
+//                      updates, duplicate, verification / "Voice of Merchant", open status). Not scored.
+// Every check carries the evidence it was judged on. A field Google didn't return is 'unknown', never a pass
+// or a failure. Nothing here is an account- or cyber-security assessment (see accessReview for who has access).
 
-export interface Check { id: string; label: string; passed: boolean; weight: number; group: string; fix?: { title: string; description: string; category: string; impact: 'High' | 'Medium' | 'Low'; effort: 'Low' | 'Medium' | 'High'; actionType: string; actionLabel: string } }
+export type CheckState = 'pass' | 'fail' | 'unknown';
+export interface Check {
+  id: string; label: string; passed: boolean; state: CheckState; weight: number; group: string; section: 'profile' | 'listing';
+  severity: 'high' | 'medium' | 'low' | 'info'; evidence: string;
+  fix?: { title: string; description: string; category: string; impact: 'High' | 'Medium' | 'Low'; effort: 'Low' | 'Medium' | 'High'; actionType: string; actionLabel: string };
+}
+
+const DAY_LABEL: Record<string, string> = { MONDAY: 'Mon', TUESDAY: 'Tue', WEDNESDAY: 'Wed', THURSDAY: 'Thu', FRIDAY: 'Fri', SATURDAY: 'Sat', SUNDAY: 'Sun' };
 
 export function auditLocation(l: GLocation, reviews: StoredReview[]): { score: number; checks: Check[]; responseRate: number | null } {
   const replied = reviews.filter((r) => r.reply).length;
   const responseRate = reviews.length ? replied / reviews.length : null;
   const desc = (l.description || '').trim();
+  const c = (x: Omit<Check, 'passed' | 'state' | 'section' | 'severity'> & { ok: boolean | null; section?: Check['section']; severity?: Check['severity'] }): Check => {
+    const { ok, section, severity, ...rest } = x;
+    return { ...rest, section: section ?? 'profile', state: ok === null ? 'unknown' : ok ? 'pass' : 'fail', passed: ok !== false, severity: severity ?? (x.weight >= 10 ? 'high' : x.weight >= 6 ? 'medium' : 'low') };
+  };
+  const hoursText = l.regularHours.length ? [...new Set(l.regularHours.map((h) => DAY_LABEL[h.day] || h.day))].join(', ') : 'no periods';
+  const meta = l.listing;
   const checks: Check[] = [
-    { id: 'title', group: 'Completeness', weight: 6, label: 'Business name set', passed: !!l.title },
-    { id: 'address', group: 'Completeness', weight: 6, label: 'Address on the profile', passed: !!l.address?.lines?.length },
-    { id: 'phone', group: 'Completeness', weight: 8, label: 'Primary phone number', passed: !!l.phone, fix: { title: 'Add a phone number', description: 'Customers can’t call you from your profile. Add the number you answer.', category: 'Profile', impact: 'High', effort: 'Low', actionType: 'update_attributes', actionLabel: 'Edit profile' } },
-    { id: 'website', group: 'Completeness', weight: 8, label: 'Website link', passed: !!l.website, fix: { title: 'Add your website', description: 'A website link lets customers learn more and book. Add the page that best matches this location.', category: 'Profile', impact: 'Medium', effort: 'Low', actionType: 'update_attributes', actionLabel: 'Edit profile' } },
-    { id: 'description', group: 'Completeness', weight: 12, label: 'Description of at least 250 characters', passed: desc.length >= 250, fix: { title: desc ? 'Expand your business description' : 'Add a business description', description: 'A clear description helps customers understand what you offer. Describe your real services and who you serve, without keyword stuffing.', category: 'Content', impact: 'Medium', effort: 'Low', actionType: 'update_attributes', actionLabel: 'Draft description' } },
-    { id: 'primaryCategory', group: 'Categories & services', weight: 10, label: 'Primary category set', passed: !!l.primaryCategory },
-    { id: 'additional', group: 'Categories & services', weight: 4, label: 'Additional categories considered', passed: l.additionalCategories.length > 0, fix: { title: 'Review additional categories', description: 'If you offer services beyond your primary category, check whether an accurate additional category exists in Google’s list.', category: 'Services', impact: 'Low', effort: 'Low', actionType: 'fix_services', actionLabel: 'Review categories' } },
-    { id: 'services', group: 'Categories & services', weight: 6, label: 'Services listed', passed: l.serviceItemCount > 0, fix: { title: 'List your services', description: 'No services are listed. Add the services you genuinely provide so customers can see them on your profile.', category: 'Services', impact: 'Medium', effort: 'Medium', actionType: 'fix_services', actionLabel: 'Review services' } },
-    { id: 'replies', group: 'Review engagement', weight: 25, label: 'Replies to at least 80% of reviews', passed: responseRate === null || responseRate >= 0.8, fix: { title: `Reply to ${reviews.length - replied} unanswered review${reviews.length - replied === 1 ? '' : 's'}`, description: 'Replying shows customers you’re listening. Draft personalised replies and approve each one.', category: 'Reviews', impact: 'High', effort: 'Low', actionType: 'reply_reviews', actionLabel: 'Reply to reviews' } },
-    { id: 'hours', group: 'Maintenance', weight: 10, label: 'Regular hours set', passed: l.regularHours.length > 0, fix: { title: 'Add your opening hours', description: 'Without hours, customers can’t tell when you’re open. Set your regular hours.', category: 'Profile', impact: 'High', effort: 'Low', actionType: 'verify_hours', actionLabel: 'Edit hours in Google' } },
-    { id: 'special', group: 'Maintenance', weight: 5, label: 'Special (holiday) hours set', passed: l.hasSpecialHours, fix: { title: 'Check holiday hours', description: 'No special hours are set. Add hours for upcoming holidays if they differ from usual.', category: 'Profile', impact: 'Low', effort: 'Low', actionType: 'verify_hours', actionLabel: 'Edit hours in Google' } },
+    c({ id: 'title', group: 'Completeness', weight: 6, label: 'Business name set', ok: !!l.title, evidence: l.title ? `Name on Google: "${l.title}".` : 'Google returned no business name.' }),
+    c({ id: 'address', group: 'Completeness', weight: 6, label: 'Address on the profile', ok: !!l.address?.lines?.length, evidence: l.address?.lines?.length ? `Address: ${[...l.address.lines, l.address.city].filter(Boolean).join(', ')}.` : 'No storefront address (fine for service-area businesses that hide their address).' }),
+    c({ id: 'phone', group: 'Completeness', weight: 8, label: 'Primary phone number', ok: !!l.phone, evidence: l.phone ? `Primary phone: ${l.phone}.` : 'No primary phone number.', fix: { title: 'Add a phone number', description: 'Customers can’t call you from your profile. Add the number you answer.', category: 'Profile', impact: 'High', effort: 'Low', actionType: 'update_attributes', actionLabel: 'Edit profile' } }),
+    c({ id: 'website', group: 'Completeness', weight: 8, label: 'Website link', ok: !!l.website, evidence: l.website ? `Website: ${l.website}.` : 'No website link.', fix: { title: 'Add your website', description: 'A website link lets customers learn more and book. Add the page that best matches this location.', category: 'Profile', impact: 'Medium', effort: 'Low', actionType: 'update_attributes', actionLabel: 'Edit profile' } }),
+    c({ id: 'description', group: 'Completeness', weight: 12, label: 'Description of at least 250 characters', ok: desc.length >= 250, evidence: desc ? `Description is ${desc.length} characters (Google allows up to 750).` : 'No description.', fix: { title: desc ? 'Expand your business description' : 'Add a business description', description: 'A clear description helps customers understand what you offer. Describe your real services and who you serve, without keyword stuffing.', category: 'Content', impact: 'Medium', effort: 'Low', actionType: 'update_attributes', actionLabel: 'Draft description' } }),
+    c({ id: 'primaryCategory', group: 'Categories & services', weight: 10, label: 'Primary category set', ok: !!l.primaryCategory, evidence: l.primaryCategory ? `Primary category: ${l.primaryCategory}.` : 'No primary category.' }),
+    c({ id: 'additional', group: 'Categories & services', weight: 4, label: 'Additional categories considered', ok: l.additionalCategories.length > 0, evidence: l.additionalCategories.length ? `Additional: ${l.additionalCategories.join(', ')}.` : 'No additional categories (only add ones that are accurate).', fix: { title: 'Review additional categories', description: 'If you offer services beyond your primary category, check whether an accurate additional category exists in Google’s list.', category: 'Services', impact: 'Low', effort: 'Low', actionType: 'fix_services', actionLabel: 'Review categories' } }),
+    c({ id: 'services', group: 'Categories & services', weight: 6, label: 'Services listed', ok: l.serviceItemCount > 0, evidence: `${l.serviceItemCount} service item${l.serviceItemCount === 1 ? '' : 's'} listed.`, fix: { title: 'List your services', description: 'No services are listed. Add the services you genuinely provide so customers can see them on your profile.', category: 'Services', impact: 'Medium', effort: 'Medium', actionType: 'fix_services', actionLabel: 'Review services' } }),
+    c({ id: 'replies', group: 'Review engagement', weight: 25, label: 'Replies to at least 80% of reviews', ok: responseRate === null ? true : responseRate >= 0.8, evidence: reviews.length ? `${replied} of ${reviews.length} synced reviews have a reply (${Math.round((responseRate ?? 0) * 100)}%).` : 'No reviews synced yet.', fix: { title: `Reply to ${reviews.length - replied} unanswered review${reviews.length - replied === 1 ? '' : 's'}`, description: 'Replying shows customers you’re listening. Draft personalised replies and approve each one.', category: 'Reviews', impact: 'High', effort: 'Low', actionType: 'reply_reviews', actionLabel: 'Reply to reviews' } }),
+    c({ id: 'hours', group: 'Maintenance', weight: 10, label: 'Regular hours set', ok: l.regularHours.length > 0, evidence: l.regularHours.length ? `Hours set for: ${hoursText}.` : 'No regular hours.', fix: { title: 'Add your opening hours', description: 'Without hours, customers can’t tell when you’re open. Set your regular hours.', category: 'Profile', impact: 'High', effort: 'Low', actionType: 'verify_hours', actionLabel: 'Edit hours' } }),
+    c({ id: 'special', group: 'Maintenance', weight: 5, label: 'Special (holiday) hours set', ok: l.hasSpecialHours, evidence: l.hasSpecialHours ? 'Special hours are set.' : 'No special hours.', fix: { title: 'Check holiday hours', description: 'No special hours are set. Add hours for upcoming holidays if they differ from usual.', category: 'Profile', impact: 'Low', effort: 'Low', actionType: 'verify_hours', actionLabel: 'Edit hours in Google' } }),
+    // ---- Listing status (from Google's metadata; not scored) ----
+    c({ id: 'open', section: 'listing', group: 'Listing status', weight: 0, severity: 'high', label: 'Listed as open', ok: l.openStatus ? l.openStatus === 'OPEN' : null,
+      evidence: l.openStatus ? `Google reports: ${l.openStatus.replace(/_/g, ' ').toLowerCase()}.` : 'Google didn’t return the open status.',
+      fix: { title: 'Check the listing’s open status', description: 'Google shows this business as closed. If it’s open, reopen it in Business Profile.', category: 'Listing', impact: 'High', effort: 'Low', actionType: 'open_in_google', actionLabel: 'Open in Google' } }),
+    c({ id: 'verified', section: 'listing', group: 'Listing status', weight: 0, severity: 'high', label: 'Verified, able to manage the listing (Voice of Merchant)', ok: meta?.hasVoiceOfMerchant ?? null,
+      evidence: meta?.hasVoiceOfMerchant === undefined ? 'Google didn’t say whether this listing has Voice of Merchant.' : meta.hasVoiceOfMerchant ? 'Google reports Voice of Merchant: your edits can go live.' : 'Google reports no Voice of Merchant: usually the listing isn’t verified or is suspended, so edits won’t be published.',
+      fix: { title: 'Finish verification', description: 'Google says this listing can’t publish your changes. Open Business Profile to see why (often verification is pending).', category: 'Listing', impact: 'High', effort: 'Medium', actionType: 'open_in_google', actionLabel: 'Open in Google' } }),
+    c({ id: 'pending', section: 'listing', group: 'Listing status', weight: 0, severity: 'info', label: 'No edits waiting for Google’s review', ok: meta?.hasPendingEdits === undefined ? null : !meta.hasPendingEdits,
+      evidence: meta?.hasPendingEdits === undefined ? 'Google didn’t say whether edits are pending.' : meta.hasPendingEdits ? 'Some profile changes are pending Google’s review; they may not be public yet.' : 'No pending edits.' }),
+    c({ id: 'googleUpdated', section: 'listing', group: 'Listing status', weight: 0, severity: 'medium', label: 'No Google-suggested changes waiting', ok: meta?.hasGoogleUpdated === undefined ? null : !meta.hasGoogleUpdated,
+      evidence: meta?.hasGoogleUpdated === undefined ? 'Google didn’t say whether it has suggested updates.' : meta.hasGoogleUpdated ? 'Google has updates from other sources for this listing that you should accept or reject.' : 'No Google-suggested updates.',
+      fix: { title: 'Review Google’s suggested updates', description: 'Google changed or suggested details from other sources. Check them in Business Profile so your information stays accurate.', category: 'Listing', impact: 'Medium', effort: 'Low', actionType: 'open_in_google', actionLabel: 'Open in Google' } }),
+    c({ id: 'duplicate', section: 'listing', group: 'Listing status', weight: 0, severity: 'medium', label: 'Not marked as a duplicate', ok: meta ? !meta.duplicateLocation : null,
+      evidence: !meta ? 'Google returned no listing metadata.' : meta.duplicateLocation ? `Google marks this listing as a duplicate of ${meta.duplicateLocation}.` : 'Not marked as a duplicate.',
+      fix: { title: 'Resolve a duplicate listing', description: 'Duplicate listings split reviews and confuse customers. Follow Google’s steps to mark the right one as the duplicate.', category: 'Listing', impact: 'Medium', effort: 'Medium', actionType: 'open_in_google', actionLabel: 'Open in Google' } }),
   ];
-  const total = checks.reduce((a, c) => a + c.weight, 0);
-  const got = checks.filter((c) => c.passed).reduce((a, c) => a + c.weight, 0);
-  return { score: Math.round((got / total) * 100), checks, responseRate };
+  const scored = checks.filter((x) => x.section === 'profile' && x.weight > 0 && x.state !== 'unknown');
+  const total = scored.reduce((a, x) => a + x.weight, 0);
+  const got = scored.filter((x) => x.state === 'pass').reduce((a, x) => a + x.weight, 0);
+  return { score: total ? Math.round((got / total) * 100) : 0, checks, responseRate };
+}
+
+/** Access review findings from the admin list (who can manage the listing). Not a security audit. */
+export function accessFindings(admins: GAdmin[]) {
+  const roles = (r: string) => admins.filter((a) => a.role === r && !a.pendingInvitation).length;
+  const owners = roles('PRIMARY_OWNER') + roles('OWNER');
+  const pending = admins.filter((a) => a.pendingInvitation);
+  const findings: { id: string; severity: 'medium' | 'low' | 'info'; title: string; evidence: string; action: string }[] = [];
+  if (owners < 2) findings.push({ id: 'single_owner', severity: 'medium', title: owners === 0 ? 'No active owner on this location' : 'Only one owner', evidence: `${owners} active owner${owners === 1 ? '' : 's'}, ${admins.length} people with access in total.`, action: 'Consider adding a second trusted owner so the business doesn’t lose access if one account is unavailable.' });
+  if (pending.length) findings.push({ id: 'pending_invites', severity: 'low', title: `${pending.length} invitation${pending.length === 1 ? '' : 's'} not yet accepted`, evidence: 'Pending invitations are listed below with the invited address.', action: 'Withdraw any invitation you don’t recognise in Business Profile → People and access.' });
+  if (admins.length > 8) findings.push({ id: 'many_admins', severity: 'low', title: 'Many people have access', evidence: `${admins.length} people or groups can manage this location.`, action: 'Remove anyone who no longer needs access.' });
+  if (!findings.length) findings.push({ id: 'ok', severity: 'info', title: 'Nothing unusual in the access list', evidence: `${owners} owners, ${admins.length} people with access, no pending invitations.`, action: 'Review the list from time to time.' });
+  return findings;
 }
 
 // ---------- Service ----------
@@ -382,6 +432,39 @@ export function createGbpService(deps: { cfg: SocialAccountsConfig; google: Goog
     });
   }
 
+  /** Opening hours: one or two periods per day; days not listed are shown as closed. Google may review the change. */
+  async function updateHours(userId: string, locationName: string, hours: { day: string; open: string; close: string }[]) {
+    const token = await accessToken(userId);
+    ownLocation(await store.get(userId), locationName);
+    await call(() => google.patchLocation(token, locationName, { hours }));
+    return store.update(userId, (x) => {
+      const l = x.locations.find((y) => y.name === locationName)!;
+      l.regularHours = hours;
+      log(x, 'profile', `Updated opening hours for ${l.title}. Google may review changes before they appear.`);
+      return l;
+    });
+  }
+
+  /**
+   * Who can manage a location, read live from Google (not stored). Needs owner/manager rights on the location;
+   * otherwise Google answers 403 and this says so.
+   */
+  async function accessReview(userId: string, locationName: string) {
+    const token = await accessToken(userId);
+    ownLocation(await store.get(userId), locationName);
+    try {
+      const admins = await google.listLocationAdmins(token, locationName);
+      return {
+        available: true as const, checkedAt: now(),
+        admins: admins.map((a) => ({ who: a.admin || 'Unnamed', role: a.role, pendingInvitation: a.pendingInvitation })),
+        findings: accessFindings(admins),
+      };
+    } catch (err) {
+      if (err instanceof GatewayError && err.status === 403) return { available: false as const, checkedAt: now(), reason: 'Google didn’t let this account see who has access (only owners and managers can). Ask an owner to check Business Profile → People and access.' };
+      throw mapErr(err);
+    }
+  }
+
   async function draftDescription(userId: string, locationName: string, input: { services: string; audience: string; differentiators: string; area: string }) {
     if (!deps.ai) throw new AccountsError('AI drafting isn’t configured on the server (GEMINI_API_KEY).', 503, 'ai_not_configured');
     const l = ownLocation(await store.get(userId), locationName);
@@ -399,7 +482,7 @@ export function createGbpService(deps: { cfg: SocialAccountsConfig; google: Goog
     return store.update(userId, (d) => { d.settings = { ...d.settings, ...s }; return d.settings; });
   }
 
-  return { startConnect, callback, connection, disconnect, discoverLocations, listLocations, selectLocations, sync, reviews, draftReply, publishReply, deleteReply, overview, performance, listPosts, createPost, updateProfile, draftDescription, saveSettings };
+  return { startConnect, callback, connection, disconnect, discoverLocations, listLocations, selectLocations, sync, reviews, draftReply, publishReply, deleteReply, overview, performance, listPosts, createPost, updateProfile, updateHours, accessReview, draftDescription, saveSettings };
 }
 
 export type GbpService = ReturnType<typeof createGbpService>;

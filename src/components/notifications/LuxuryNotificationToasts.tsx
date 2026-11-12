@@ -72,17 +72,17 @@ const ToastCard: React.FC<ToastCardProps> = ({ toast, onDismiss, onNavigate }) =
   const getChannelBadge = () => {
     switch (toast.channel) {
       case 'whatsapp':
-        return <span className="text-[10px] font-mono font-bold text-emerald-400">WhatsApp</span>;
+        return <span className="text-[10px] font-mono font-bold text-[var(--success)]">WhatsApp</span>;
       case 'email':
-        return <span className="text-[10px] font-mono font-bold text-cyan-400">Email Inbound</span>;
+        return <span className="text-[10px] font-mono font-bold text-[var(--info)]">Email Inbound</span>;
       case 'instagram':
-        return <span className="text-[10px] font-mono font-bold text-pink-400">Instagram</span>;
+        return <span className="text-[10px] font-mono font-bold text-[var(--danger)]">Instagram</span>;
       case 'telegram':
-        return <span className="text-[10px] font-mono font-bold text-sky-400">Telegram</span>;
+        return <span className="text-[10px] font-mono font-bold text-[var(--info)]">Telegram</span>;
       case 'phone':
-        return <span className="text-[10px] font-mono font-bold text-amber-400">Voice SIP</span>;
+        return <span className="text-[10px] font-mono font-bold text-[var(--warning)]">Voice SIP</span>;
       default:
-        return <span className="text-[10px] font-mono font-bold text-indigo-400">Omnichannel Hub</span>;
+        return <span className="text-[10px] font-mono font-bold text-[var(--accent-text)]">Omnichannel Hub</span>;
     }
   };
 
@@ -106,7 +106,7 @@ const ToastCard: React.FC<ToastCardProps> = ({ toast, onDismiss, onNavigate }) =
       transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
       onMouseEnter={() => setIsPaused(true)}
       onMouseLeave={() => setIsPaused(false)}
-      className="pointer-events-auto relative overflow-hidden rounded-2xl bg-[#0B0C10]/95 backdrop-blur-2xl border border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.85)] p-4 text-slate-100 group select-none hover:border-white/20 transition-colors"
+      className="pointer-events-auto relative overflow-hidden rounded-2xl bg-[#0B0C10]/95 backdrop-blur-2xl border border-[var(--border)] shadow-[0_20px_50px_rgba(0,0,0,0.85)] p-4 text-[var(--text)] group select-none hover:border-[var(--border)] transition-colors"
     >
       {/* Luxury Obsidian Ambient Accent Glow */}
       <div className={`absolute top-0 right-0 w-36 h-36 rounded-full blur-3xl opacity-20 pointer-events-none ${
@@ -121,13 +121,13 @@ const ToastCard: React.FC<ToastCardProps> = ({ toast, onDismiss, onNavigate }) =
             <img 
               src={toast.avatar} 
               alt={toast.title} 
-              className="h-8 w-8 rounded-xl object-cover border border-white/15 shrink-0 shadow-xs" 
+              className="h-8 w-8 rounded-xl object-cover border border-[var(--border)] shrink-0 shadow-xs" 
             />
           ) : (
-            <div className={`h-8 w-8 rounded-xl flex items-center justify-center shrink-0 border border-white/10 ${
+            <div className={`h-8 w-8 rounded-xl flex items-center justify-center shrink-0 border border-[var(--border)] ${
               toast.priority === 'urgent' 
-                ? 'bg-amber-500/15 text-amber-400' 
-                : (toast.type === 'lead' ? 'bg-emerald-500/15 text-emerald-400' : 'bg-indigo-500/15 text-indigo-400')
+                ? 'bg-amber-500/15 text-[var(--warning)]' 
+                : (toast.type === 'lead' ? 'bg-emerald-500/15 text-[var(--success)]' : 'bg-indigo-500/15 text-[var(--accent-text)]')
             }`}>
               {toast.type === 'lead' ? <Flame className="h-4 w-4" /> : <MessageSquare className="h-4 w-4" />}
             </div>
@@ -135,13 +135,13 @@ const ToastCard: React.FC<ToastCardProps> = ({ toast, onDismiss, onNavigate }) =
 
           <div className="min-w-0">
             <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="text-xs font-bold text-white truncate max-w-[190px]">
+              <span className="text-xs font-bold text-[var(--text)] truncate max-w-[190px]">
                 {toast.title}
               </span>
-              <span className="text-neutral-500 text-[10px]">•</span>
+              <span className="text-[var(--text-subtle)] text-[10px]">•</span>
               {getChannelBadge()}
             </div>
-            <span className="text-[10px] text-neutral-400 font-mono">
+            <span className="text-[10px] text-[var(--text-muted)] font-mono">
               {toast.timestamp}
             </span>
           </div>
@@ -151,7 +151,7 @@ const ToastCard: React.FC<ToastCardProps> = ({ toast, onDismiss, onNavigate }) =
         <button
           type="button"
           onClick={onDismiss}
-          className="text-neutral-400 hover:text-white p-1 rounded-lg hover:bg-white/5 transition-colors cursor-pointer shrink-0"
+          className="text-[var(--text-muted)] hover:text-[var(--text)] p-1 rounded-lg hover:bg-[var(--surface-sunken)] transition-colors cursor-pointer shrink-0"
           title="Dismiss alert"
         >
           <X className="h-3.5 w-3.5" />
@@ -159,13 +159,13 @@ const ToastCard: React.FC<ToastCardProps> = ({ toast, onDismiss, onNavigate }) =
       </div>
 
       {/* Body Message */}
-      <p className="text-xs text-neutral-300 mt-2.5 leading-relaxed line-clamp-2">
+      <p className="text-xs text-[var(--text-muted)] mt-2.5 leading-relaxed line-clamp-2">
         {toast.message}
       </p>
 
       {/* Bottom Action Bar */}
-      <div className="mt-3 pt-2.5 border-t border-white/5 flex items-center justify-between gap-2">
-        <span className="text-[10px] text-neutral-400 font-mono flex items-center gap-1">
+      <div className="mt-3 pt-2.5 border-t border-[var(--border)] flex items-center justify-between gap-2">
+        <span className="text-[10px] text-[var(--text-muted)] font-mono flex items-center gap-1">
           <span className={`h-1.5 w-1.5 rounded-full ${
             toast.priority === 'urgent' ? 'bg-amber-400 animate-ping' : 'bg-emerald-400'
           }`} />
@@ -176,7 +176,7 @@ const ToastCard: React.FC<ToastCardProps> = ({ toast, onDismiss, onNavigate }) =
           <button
             type="button"
             onClick={() => onNavigate(toast.targetView!, toast.targetId)}
-            className="flex items-center gap-1 text-[11px] font-semibold text-indigo-400 hover:text-indigo-300 transition-colors cursor-pointer group/btn"
+            className="flex items-center gap-1 text-[11px] font-semibold text-[var(--accent-text)] hover:text-[var(--accent-text)] transition-colors cursor-pointer group/btn"
           >
             <span>{getActionLabel()}</span>
             <ArrowRight className="h-3 w-3 group-hover/btn:translate-x-0.5 transition-transform" />
@@ -185,7 +185,7 @@ const ToastCard: React.FC<ToastCardProps> = ({ toast, onDismiss, onNavigate }) =
       </div>
 
       {/* Progress countdown line */}
-      <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-white/5 overflow-hidden">
+      <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[var(--surface-sunken)] overflow-hidden">
         <div 
           className="h-full bg-gradient-to-r from-indigo-500 via-purple-500 to-emerald-400 transition-all duration-75"
           style={{ width: `${progress}%` }}

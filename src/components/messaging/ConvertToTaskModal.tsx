@@ -55,22 +55,22 @@ export const ConvertToTaskModal: React.FC<ConvertToTaskModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
-      <div className="bg-neutral-900 border border-white/10 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[var(--surface)] backdrop-blur-md animate-in fade-in duration-200">
+      <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl">
         {/* Header */}
-        <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between bg-neutral-950/60">
+        <div className="px-6 py-4 border-b border-[var(--border)] flex items-center justify-between bg-[var(--surface-sunken)]">
           <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400">
+            <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-[var(--warning)]">
               <CheckSquare className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-sm font-semibold text-white">Convert Message to CRM Task</h3>
-              <p className="text-xs text-neutral-400">Assign actionable work directly to a CRM team member</p>
+              <h3 className="text-sm font-semibold text-[var(--text)]">Convert Message to CRM Task</h3>
+              <p className="text-xs text-[var(--text-muted)]">Assign actionable work directly to a CRM team member</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg text-neutral-400 hover:text-white hover:bg-white/10 transition cursor-pointer"
+            className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--border)] transition cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
@@ -79,35 +79,35 @@ export const ConvertToTaskModal: React.FC<ConvertToTaskModalProps> = ({
         {/* Form Body */}
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           {/* Source Quote snippet */}
-          <div className="p-3 rounded-xl bg-neutral-950 border border-white/5 text-xs text-neutral-400">
-            <p className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wider mb-1 flex items-center gap-1">
-              <FileText className="w-3 h-3 text-amber-400" />
+          <div className="p-3 rounded-xl bg-[var(--surface-sunken)] border border-[var(--border)] text-xs text-[var(--text-muted)]">
+            <p className="text-[10px] font-semibold text-[var(--text-subtle)] uppercase tracking-wider mb-1 flex items-center gap-1">
+              <FileText className="w-3 h-3 text-[var(--warning)]" />
               Source Message from {message.senderName}
             </p>
-            <p className="italic text-neutral-300 line-clamp-2">"{message.content}"</p>
+            <p className="italic text-[var(--text-muted)] line-clamp-2">"{message.content}"</p>
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-neutral-300 mb-1.5">Actionable Task Title</label>
+            <label className="block text-xs font-medium text-[var(--text-muted)] mb-1.5">Actionable Task Title</label>
             <input
               type="text"
               required
               value={taskTitle}
               onChange={(e) => setTaskTitle(e.target.value)}
-              className="w-full bg-neutral-950 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500 transition"
+              className="w-full bg-[var(--surface-sunken)] border border-[var(--border)] rounded-xl px-3 py-2 text-xs text-[var(--text)] focus:outline-none focus:border-amber-500 transition"
               placeholder="What needs to be accomplished?"
             />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-neutral-300 mb-1.5 flex items-center gap-1">
-                <Flag className="w-3.5 h-3.5 text-rose-400" /> Priority Level
+              <label className="block text-xs font-medium text-[var(--text-muted)] mb-1.5 flex items-center gap-1">
+                <Flag className="w-3.5 h-3.5 text-[var(--danger)]" /> Priority Level
               </label>
               <select
                 value={priority}
                 onChange={(e) => setPriority(e.target.value as any)}
-                className="w-full bg-neutral-950 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
+                className="w-full bg-[var(--surface-sunken)] border border-[var(--border)] rounded-xl px-3 py-2 text-xs text-[var(--text)] focus:outline-none focus:border-amber-500"
               >
                 <option value="low">Low Priority</option>
                 <option value="medium">Medium</option>
@@ -117,27 +117,27 @@ export const ConvertToTaskModal: React.FC<ConvertToTaskModalProps> = ({
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-neutral-300 mb-1.5 flex items-center gap-1">
-                <Calendar className="w-3.5 h-3.5 text-blue-400" /> Due Date
+              <label className="block text-xs font-medium text-[var(--text-muted)] mb-1.5 flex items-center gap-1">
+                <Calendar className="w-3.5 h-3.5 text-[var(--accent-text)]" /> Due Date
               </label>
               <input
                 type="date"
                 required
                 value={dueDate}
                 onChange={(e) => setDueDate(e.target.value)}
-                className="w-full bg-neutral-950 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
+                className="w-full bg-[var(--surface-sunken)] border border-[var(--border)] rounded-xl px-3 py-2 text-xs text-[var(--text)] focus:outline-none focus:border-amber-500"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-neutral-300 mb-1.5 flex items-center gap-1">
-              <User className="w-3.5 h-3.5 text-emerald-400" /> Assigned Collaborator
+            <label className="block text-xs font-medium text-[var(--text-muted)] mb-1.5 flex items-center gap-1">
+              <User className="w-3.5 h-3.5 text-[var(--success)]" /> Assigned Collaborator
             </label>
             <select
               value={assignee}
               onChange={(e) => setAssignee(e.target.value)}
-              className="w-full bg-neutral-950 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
+              className="w-full bg-[var(--surface-sunken)] border border-[var(--border)] rounded-xl px-3 py-2 text-xs text-[var(--text)] focus:outline-none focus:border-amber-500"
             >
               {registeredAgents.map((agent) => (
                 <option key={agent.id} value={agent.name}>
@@ -147,11 +147,11 @@ export const ConvertToTaskModal: React.FC<ConvertToTaskModalProps> = ({
             </select>
           </div>
 
-          <div className="pt-3 border-t border-white/10 flex justify-end gap-2.5">
+          <div className="pt-3 border-t border-[var(--border)] flex justify-end gap-2.5">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 rounded-xl text-neutral-400 hover:text-white hover:bg-white/5 text-xs transition cursor-pointer"
+              className="px-4 py-2 rounded-xl text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-sunken)] text-xs transition cursor-pointer"
             >
               Cancel
             </button>

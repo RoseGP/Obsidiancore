@@ -500,7 +500,7 @@ export default function ReceptionistTrainingCenter({
   });
 
   return (
-    <div className={inline ? 'w-full text-left' : 'fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-neutral-950/85 backdrop-blur-md animate-fade-in text-left'}>
+    <div className={inline ? 'w-full text-left' : 'fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-[var(--surface-sunken)] backdrop-blur-md animate-fade-in text-left'}>
       
       {/* Toast Notification */}
       <AnimatePresence>
@@ -511,27 +511,27 @@ export default function ReceptionistTrainingCenter({
             exit={{ opacity: 0, y: -20, scale: 0.95 }}
             className="fixed top-6 z-50 px-4 py-2.5 rounded-2xl bg-blue-600 text-white text-xs font-bold shadow-2xl flex items-center gap-2 border border-blue-400/30"
           >
-            <Sparkles className="h-4 w-4 text-blue-200 animate-pulse" />
+            <Sparkles className="h-4 w-4 text-[var(--accent-text)] animate-pulse" />
             <span>{toastMessage}</span>
           </motion.div>
         )}
       </AnimatePresence>
 
-      <div className={`obsidian w-full ${inline ? 'h-[80vh] min-h-[560px]' : 'max-w-6xl h-[92vh] shadow-2xl'} bg-[var(--obsidian-1)] border border-white/15 rounded-3xl flex flex-col overflow-hidden relative`}>
+      <div className={`w-full ${inline ? 'h-[80vh] min-h-[560px]' : 'max-w-6xl h-[92vh] shadow-2xl'} bg-[var(--surface)] border border-[var(--border)] rounded-3xl flex flex-col overflow-hidden relative`}>
         
         {/* ========================================================================= */}
         {/* HEADER BAR                                                               */}
         {/* ========================================================================= */}
-        <div className="obsidian px-6 py-4 border-b border-white/10 flex flex-wrap items-center justify-between gap-4 bg-[var(--obsidian-1)]">
+        <div className="px-6 py-4 border-b border-[var(--border)] flex flex-wrap items-center justify-between gap-4 bg-[var(--surface)]">
           <div className="flex items-center gap-3">
             <div className="h-10 w-10 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center shadow-lg shadow-blue-900/30">
               <Bot className="h-5 w-5 text-white" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-base font-extrabold text-white tracking-tight">AI Receptionist Training Studio</h2>
+                <h2 className="text-base font-extrabold text-[var(--text)] tracking-tight">AI Receptionist Training Studio</h2>
               </div>
-              <p className="text-xs text-neutral-400 mt-0.5">
+              <p className="text-xs text-[var(--text-muted)] mt-0.5">
                 Train your front-desk AI receptionist to answer any custom business questions via chat or live voice
               </p>
             </div>
@@ -539,11 +539,11 @@ export default function ReceptionistTrainingCenter({
 
           {/* Quick Metrics & Close Button */}
           <div className="flex items-center gap-2.5">
-            <div className="obsidian hidden sm:flex items-center gap-3 px-3 py-1.5 rounded-2xl bg-[var(--obsidian-2)] border border-white/5 text-xs">
+            <div className="hidden sm:flex items-center gap-3 px-3 py-1.5 rounded-2xl bg-[var(--surface-sunken)] border border-[var(--border)] text-xs">
               <div className="flex items-center gap-1.5">
-                <BookOpen className="h-3.5 w-3.5 text-blue-400" />
-                <span className="text-neutral-400">Memory:</span>
-                <span className="font-bold text-white">{store?.qas.length || 0} Q&As</span>
+                <BookOpen className="h-3.5 w-3.5 text-[var(--accent-text)]" />
+                <span className="text-[var(--text-muted)]">Memory:</span>
+                <span className="font-bold text-[var(--text)]">{store?.qas.length || 0} Q&As</span>
               </div>
             </div>
 
@@ -558,7 +558,7 @@ export default function ReceptionistTrainingCenter({
             {onClose && (
               <button
                 onClick={onClose}
-                className="p-2 rounded-xl text-neutral-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+                className="p-2 rounded-xl text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--border)] transition-colors cursor-pointer"
                 title="Close Training Studio"
               >
                 <X className="h-5 w-5" />
@@ -570,7 +570,7 @@ export default function ReceptionistTrainingCenter({
         {/* ========================================================================= */}
         {/* SUB-NAVIGATION TABS                                                      */}
         {/* ========================================================================= */}
-        <div className="obsidian px-6 border-b border-white/10 flex items-center gap-2 overflow-x-auto bg-[var(--obsidian-0)] py-2 scrollbar-none">
+        <div className="px-6 border-b border-[var(--border)] flex items-center gap-2 overflow-x-auto bg-[var(--app-bg)] py-2 scrollbar-none">
           {[
             { id: 'qas', label: 'Q&A Knowledge Base', icon: BookOpen, count: store?.qas.length },
             { id: 'documents', label: 'AI Document Trainer', icon: FileText, count: store?.documents.length },
@@ -586,15 +586,15 @@ export default function ReceptionistTrainingCenter({
                 onClick={() => setActiveTab(tab.id as any)}
                 className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
                   isActive
-                    ? 'bg-blue-600/20 border border-blue-500/40 text-blue-300 shadow-sm'
-                    : 'text-neutral-400 hover:text-neutral-200 hover:bg-white/5 border border-transparent'
+                    ? 'bg-blue-600/20 border border-blue-500/40 text-[var(--accent-text)] shadow-sm'
+                    : 'text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-sunken)] border border-transparent'
                 }`}
               >
-                <Icon className={`h-3.5 w-3.5 ${isActive ? 'text-blue-400' : 'text-neutral-400'}`} />
+                <Icon className={`h-3.5 w-3.5 ${isActive ? 'text-[var(--accent-text)]' : 'text-[var(--text-muted)]'}`} />
                 <span>{tab.label}</span>
                 {tab.count !== undefined && (
                   <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
-                    isActive ? 'bg-blue-500/30 text-blue-200' : 'bg-white/10 text-neutral-400'
+                    isActive ? 'bg-blue-500/30 text-[var(--accent-text)]' : 'bg-[var(--border)] text-[var(--text-muted)]'
                   }`}>
                     {tab.count}
                   </span>
@@ -616,16 +616,16 @@ export default function ReceptionistTrainingCenter({
             <div className="space-y-4">
               
               {/* Filter & Action Bar */}
-              <div className="obsidian flex flex-wrap items-center justify-between gap-3 bg-[var(--obsidian-1)] p-3 rounded-2xl border border-white/5">
+              <div className="flex flex-wrap items-center justify-between gap-3 bg-[var(--surface)] p-3 rounded-2xl border border-[var(--border)]">
                 <div className="flex items-center gap-2 flex-1 max-w-md">
                   <div className="relative flex-1">
-                    <Search className="h-3.5 w-3.5 text-neutral-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <Search className="h-3.5 w-3.5 text-[var(--text-muted)] absolute left-3 top-1/2 -translate-y-1/2" />
                     <input
                       type="text"
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                       placeholder="Search questions, answers, or keywords..."
-                      className="obsidian w-full bg-[var(--obsidian-0)] border border-white/10 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-blue-500"
+                      className="w-full bg-[var(--app-bg)] border border-[var(--border)] rounded-xl pl-8 pr-3 py-1.5 text-xs text-[var(--text)] placeholder:text-[var(--text-subtle)] focus:outline-none focus:border-blue-500"
                     />
                   </div>
                 </div>
@@ -639,7 +639,7 @@ export default function ReceptionistTrainingCenter({
                       className={`text-[11px] font-semibold px-2.5 py-1 rounded-xl transition-all cursor-pointer uppercase tracking-wider ${
                         selectedCategory === cat
                           ? 'bg-blue-600 text-white shadow-sm'
-                          : 'bg-[var(--obsidian-2)] text-neutral-400 hover:text-white border border-white/5'
+                          : 'bg-[var(--surface-sunken)] text-[var(--text-muted)] hover:text-[var(--text)] border border-[var(--border)]'
                       }`}
                     >
                       {cat}
@@ -673,19 +673,19 @@ export default function ReceptionistTrainingCenter({
                     key={qa.id}
                     className={`p-4 rounded-2xl border transition-all flex flex-col justify-between ${
                       qa.enabled 
-                        ? 'bg-[var(--obsidian-1)] border-white/10 hover:border-blue-500/30' 
-                        : 'bg-slate-900/50 border-white/5 opacity-60'
+                        ? 'bg-[var(--surface)] border-[var(--border)] hover:border-blue-500/30' 
+                        : 'bg-[var(--surface)] border-[var(--border)] opacity-60'
                     }`}
                   >
                     <div>
                       {/* Top Header of Card */}
                       <div className="flex items-center justify-between gap-2 mb-2">
                         <div className="flex items-center gap-2">
-                          <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-blue-500/10 text-blue-300 border border-blue-500/20">
+                          <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-blue-500/10 text-[var(--accent-text)] border border-blue-500/20">
                             {qa.category}
                           </span>
                           <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
-                            qa.priority === 'high' ? 'text-amber-400 bg-amber-500/10' : 'text-neutral-400 bg-neutral-800'
+                            qa.priority === 'high' ? 'text-[var(--warning)] bg-amber-500/10' : 'text-[var(--text-muted)] bg-[var(--surface-sunken)]'
                           }`}>
                             {qa.priority}
                           </span>
@@ -696,7 +696,7 @@ export default function ReceptionistTrainingCenter({
                           <button
                             onClick={() => handleToggleQA(qa.id, qa.enabled)}
                             className={`p-1.5 rounded-lg text-xs transition-colors cursor-pointer ${
-                              qa.enabled ? 'text-emerald-400 hover:bg-emerald-500/10' : 'text-neutral-500 hover:bg-neutral-800'
+                              qa.enabled ? 'text-[var(--success)] hover:bg-emerald-500/10' : 'text-[var(--text-subtle)] hover:bg-[var(--surface-sunken)]'
                             }`}
                             title={qa.enabled ? 'Enabled in voice/chat (Click to disable)' : 'Disabled (Click to enable)'}
                           >
@@ -708,7 +708,7 @@ export default function ReceptionistTrainingCenter({
                               setEditingQA(qa);
                               setIsAddingQA(false);
                             }}
-                            className="p-1.5 rounded-lg text-neutral-400 hover:text-blue-300 hover:bg-blue-500/10 transition-colors cursor-pointer"
+                            className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--accent-text)] hover:bg-blue-500/10 transition-colors cursor-pointer"
                             title="Edit this Q&A"
                           >
                             <Edit3 className="h-3.5 w-3.5" />
@@ -716,7 +716,7 @@ export default function ReceptionistTrainingCenter({
 
                           <button
                             onClick={() => handleDeleteQA(qa.id)}
-                            className="p-1.5 rounded-lg text-neutral-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
+                            className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--danger)] hover:bg-rose-500/10 transition-colors cursor-pointer"
                             title="Delete Q&A"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
@@ -725,21 +725,21 @@ export default function ReceptionistTrainingCenter({
                       </div>
 
                       {/* Question */}
-                      <h4 className="text-xs font-bold text-white mb-1.5 leading-snug">
+                      <h4 className="text-xs font-bold text-[var(--text)] mb-1.5 leading-snug">
                         {qa.question}
                       </h4>
 
                       {/* Spoken Answer */}
-                      <p className="obsidian text-xs text-neutral-300 leading-relaxed bg-[var(--obsidian-0)] p-2.5 rounded-xl border border-white/5">
+                      <p className="text-xs text-[var(--text-muted)] leading-relaxed bg-[var(--app-bg)] p-2.5 rounded-xl border border-[var(--border)]">
                         {qa.answer}
                       </p>
                     </div>
 
                     {/* Footer Keywords & Test CTA */}
-                    <div className="flex items-center justify-between gap-2 mt-3 pt-2.5 border-t border-white/5">
+                    <div className="flex items-center justify-between gap-2 mt-3 pt-2.5 border-t border-[var(--border)]">
                       <div className="flex flex-wrap gap-1">
                         {qa.keywords.slice(0, 3).map((kw, idx) => (
-                          <span key={idx} className="text-[10px] text-neutral-400 font-mono">
+                          <span key={idx} className="text-[10px] text-[var(--text-muted)] font-mono">
                             #{kw}
                           </span>
                         ))}
@@ -748,7 +748,7 @@ export default function ReceptionistTrainingCenter({
                       <div className="flex items-center gap-1.5">
                         <button
                           onClick={() => speakSpokenText(qa.answer)}
-                          className="flex items-center gap-1 text-[11px] text-neutral-400 hover:text-blue-300 px-2 py-1 rounded-lg hover:bg-white/5 transition-colors cursor-pointer"
+                          className="flex items-center gap-1 text-[11px] text-[var(--text-muted)] hover:text-[var(--accent-text)] px-2 py-1 rounded-lg hover:bg-[var(--surface-sunken)] transition-colors cursor-pointer"
                           title="Listen to spoken audio"
                         >
                           <Volume2 className="h-3 w-3" />
@@ -760,7 +760,7 @@ export default function ReceptionistTrainingCenter({
                             setActiveTab('simulator');
                             handleSendSimulatorQuery(qa.question);
                           }}
-                          className="flex items-center gap-1 text-[11px] text-blue-400 hover:text-blue-300 font-semibold px-2 py-1 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 transition-all cursor-pointer"
+                          className="flex items-center gap-1 text-[11px] text-[var(--accent-text)] hover:text-[var(--accent-text)] font-semibold px-2 py-1 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 transition-all cursor-pointer"
                         >
                           <span>Test</span>
                           <ArrowRight className="h-3 w-3" />
@@ -772,10 +772,10 @@ export default function ReceptionistTrainingCenter({
               </div>
 
               {filteredQAs.length === 0 && (
-                <div className="obsidian p-8 text-center bg-[var(--obsidian-1)] rounded-2xl border border-white/5">
+                <div className="p-8 text-center bg-[var(--surface)] rounded-2xl border border-[var(--border)]">
                   <BookOpen className="h-8 w-8 text-neutral-600 mx-auto mb-2" />
-                  <p className="text-xs font-semibold text-neutral-300">No Q&As found matching your search.</p>
-                  <p className="text-[11px] text-neutral-500 mt-1">Try clearing your filters or click "Add Training Q&A".</p>
+                  <p className="text-xs font-semibold text-[var(--text-muted)]">No Q&As found matching your search.</p>
+                  <p className="text-[11px] text-[var(--text-subtle)] mt-1">Try clearing your filters or click "Add Training Q&A".</p>
                 </div>
               )}
             </div>
@@ -787,19 +787,19 @@ export default function ReceptionistTrainingCenter({
           {activeTab === 'documents' && (
             <div className="space-y-5 max-w-4xl mx-auto">
               
-              <div className="obsidian bg-[var(--obsidian-1)] border border-white/10 rounded-3xl p-5 shadow-xl">
+              <div className="bg-[var(--surface)] border border-[var(--border)] rounded-3xl p-5 shadow-xl">
                 <div className="flex items-center gap-2 mb-2">
-                  <Sparkles className="h-4 w-4 text-blue-400" />
-                  <h3 className="text-sm font-bold text-white">AI Instant Document & Knowledge Ingestion</h3>
+                  <Sparkles className="h-4 w-4 text-[var(--accent-text)]" />
+                  <h3 className="text-sm font-bold text-[var(--text)]">AI Instant Document & Knowledge Ingestion</h3>
                 </div>
-                <p className="text-xs text-neutral-400 mb-4 leading-relaxed">
+                <p className="text-xs text-[var(--text-muted)] mb-4 leading-relaxed">
                   Paste raw policy documents, product documentation, onboarding guides, or pricing sheets. Gemini 3.7 Flash will automatically digest the content, extract structured Q&A pairs, and update the voice dialer knowledge base.
                 </p>
 
                 <form onSubmit={handleTrainDocument} className="space-y-3">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
-                      <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block mb-1">
+                      <label className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider block mb-1">
                         Document Title
                       </label>
                       <input
@@ -808,18 +808,18 @@ export default function ReceptionistTrainingCenter({
                         onChange={(e) => setDocTitle(e.target.value)}
                         placeholder="e.g., 2026 Refund & Cancellation Policy"
                         required
-                        className="obsidian w-full bg-[var(--obsidian-0)] border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-blue-500"
+                        className="w-full bg-[var(--app-bg)] border border-[var(--border)] rounded-xl px-3 py-2 text-xs text-[var(--text)] placeholder:text-[var(--text-subtle)] focus:outline-none focus:border-blue-500"
                       />
                     </div>
 
                     <div>
-                      <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block mb-1">
+                      <label className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider block mb-1">
                         Category
                       </label>
                       <select
                         value={docCategory}
                         onChange={(e) => setDocCategory(e.target.value)}
-                        className="obsidian w-full bg-[var(--obsidian-0)] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500 cursor-pointer"
+                        className="w-full bg-[var(--app-bg)] border border-[var(--border)] rounded-xl px-3 py-2 text-xs text-[var(--text)] focus:outline-none focus:border-blue-500 cursor-pointer"
                       >
                         <option value="Company Policy">Company Policy</option>
                         <option value="Pricing & Plans">Pricing & Plans</option>
@@ -831,7 +831,7 @@ export default function ReceptionistTrainingCenter({
                   </div>
 
                   <div>
-                    <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block mb-1">
+                    <label className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider block mb-1">
                       Raw Content / Text to Ingest
                     </label>
                     <textarea
@@ -840,13 +840,13 @@ export default function ReceptionistTrainingCenter({
                       placeholder="Paste paragraphs, employee handbooks, pricing summaries, or customer FAQs here..."
                       rows={6}
                       required
-                      className="obsidian w-full bg-[var(--obsidian-0)] border border-white/10 rounded-xl p-3 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-blue-500 resize-none leading-relaxed"
+                      className="w-full bg-[var(--app-bg)] border border-[var(--border)] rounded-xl p-3 text-xs text-[var(--text)] placeholder:text-[var(--text-subtle)] focus:outline-none focus:border-blue-500 resize-none leading-relaxed"
                     />
                   </div>
 
                   <div className="flex items-center justify-between pt-2">
-                    <div className="flex items-center gap-1.5 text-[11px] text-neutral-400">
-                      <Zap className="h-3.5 w-3.5 text-amber-400" />
+                    <div className="flex items-center gap-1.5 text-[11px] text-[var(--text-muted)]">
+                      <Zap className="h-3.5 w-3.5 text-[var(--warning)]" />
                       <span>Gemini will automatically generate verified spoken answers & keywords</span>
                     </div>
 
@@ -873,23 +873,23 @@ export default function ReceptionistTrainingCenter({
 
               {/* List of Ingested Documents */}
               <div className="space-y-3">
-                <h4 className="text-xs font-bold text-neutral-300 uppercase tracking-wider">
+                <h4 className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider">
                   Ingested Knowledge Documents ({store?.documents.length || 0})
                 </h4>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {store?.documents.map(doc => (
-                    <div key={doc.id} className="obsidian p-4 rounded-2xl bg-[var(--obsidian-1)] border border-white/10 text-left space-y-2">
+                    <div key={doc.id} className="p-4 rounded-2xl bg-[var(--surface)] border border-[var(--border)] text-left space-y-2">
                       <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-500/10 text-blue-300 border border-blue-500/20 uppercase tracking-wider">
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-500/10 text-[var(--accent-text)] border border-blue-500/20 uppercase tracking-wider">
                           {doc.category}
                         </span>
-                        <span className="text-[10px] text-neutral-400 font-mono">
+                        <span className="text-[10px] text-[var(--text-muted)] font-mono">
                           {doc.extractedQAsCount} Q&As learned
                         </span>
                       </div>
-                      <h5 className="text-xs font-bold text-white">{doc.title}</h5>
-                      <p className="text-xs text-neutral-400 line-clamp-2 leading-relaxed">{doc.summary || doc.rawContent}</p>
+                      <h5 className="text-xs font-bold text-[var(--text)]">{doc.title}</h5>
+                      <p className="text-xs text-[var(--text-muted)] line-clamp-2 leading-relaxed">{doc.summary || doc.rawContent}</p>
                     </div>
                   ))}
                 </div>
@@ -904,16 +904,16 @@ export default function ReceptionistTrainingCenter({
           {activeTab === 'profile' && store && (
             <form onSubmit={handleSaveProfile} className="space-y-5 max-w-4xl mx-auto">
               
-              <div className="obsidian bg-[var(--obsidian-1)] border border-white/10 rounded-3xl p-5 shadow-xl space-y-4">
-                <div className="flex items-center justify-between border-b border-white/5 pb-3">
+              <div className="bg-[var(--surface)] border border-[var(--border)] rounded-3xl p-5 shadow-xl space-y-4">
+                <div className="flex items-center justify-between border-b border-[var(--border)] pb-3">
                   <div className="flex items-center gap-2">
-                    <Building2 className="h-4 w-4 text-blue-400" />
-                    <h3 className="text-sm font-bold text-white">Company Identity & Front-Desk Persona</h3>
+                    <Building2 className="h-4 w-4 text-[var(--accent-text)]" />
+                    <h3 className="text-sm font-bold text-[var(--text)]">Company Identity & Front-Desk Persona</h3>
                   </div>
                   <button
                     type="button"
                     onClick={handleResetDefaults}
-                    className="text-[11px] text-neutral-400 hover:text-amber-400 flex items-center gap-1 transition-colors cursor-pointer"
+                    className="text-[11px] text-[var(--text-muted)] hover:text-[var(--warning)] flex items-center gap-1 transition-colors cursor-pointer"
                   >
                     <RefreshCw className="h-3 w-3" />
                     <span>Reset to Defaults</span>
@@ -922,85 +922,85 @@ export default function ReceptionistTrainingCenter({
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block mb-1">
+                    <label className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider block mb-1">
                       Company Name
                     </label>
                     <input
                       type="text"
                       value={store.profile.companyName}
                       onChange={(e) => setStore({ ...store, profile: { ...store.profile, companyName: e.target.value } })}
-                      className="obsidian w-full bg-[var(--obsidian-0)] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
+                      className="w-full bg-[var(--app-bg)] border border-[var(--border)] rounded-xl px-3 py-2 text-xs text-[var(--text)] focus:outline-none focus:border-blue-500"
                     />
                   </div>
 
                   <div>
-                    <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block mb-1">
+                    <label className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider block mb-1">
                       Industry / Sector
                     </label>
                     <input
                       type="text"
                       value={store.profile.industry}
                       onChange={(e) => setStore({ ...store, profile: { ...store.profile, industry: e.target.value } })}
-                      className="obsidian w-full bg-[var(--obsidian-0)] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
+                      className="w-full bg-[var(--app-bg)] border border-[var(--border)] rounded-xl px-3 py-2 text-xs text-[var(--text)] focus:outline-none focus:border-blue-500"
                     />
                   </div>
 
                   <div>
-                    <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block mb-1">
+                    <label className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider block mb-1">
                       Business Hours
                     </label>
                     <input
                       type="text"
                       value={store.profile.businessHours}
                       onChange={(e) => setStore({ ...store, profile: { ...store.profile, businessHours: e.target.value } })}
-                      className="obsidian w-full bg-[var(--obsidian-0)] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
+                      className="w-full bg-[var(--app-bg)] border border-[var(--border)] rounded-xl px-3 py-2 text-xs text-[var(--text)] focus:outline-none focus:border-blue-500"
                     />
                   </div>
 
                   <div>
-                    <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block mb-1">
+                    <label className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider block mb-1">
                       Timezone
                     </label>
                     <input
                       type="text"
                       value={store.profile.timezone}
                       onChange={(e) => setStore({ ...store, profile: { ...store.profile, timezone: e.target.value } })}
-                      className="obsidian w-full bg-[var(--obsidian-0)] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
+                      className="w-full bg-[var(--app-bg)] border border-[var(--border)] rounded-xl px-3 py-2 text-xs text-[var(--text)] focus:outline-none focus:border-blue-500"
                     />
                   </div>
 
                   <div className="sm:col-span-2">
-                    <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block mb-1">
+                    <label className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider block mb-1">
                       Office / Corporate Address
                     </label>
                     <input
                       type="text"
                       value={store.profile.address}
                       onChange={(e) => setStore({ ...store, profile: { ...store.profile, address: e.target.value } })}
-                      className="obsidian w-full bg-[var(--obsidian-0)] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
+                      className="w-full bg-[var(--app-bg)] border border-[var(--border)] rounded-xl px-3 py-2 text-xs text-[var(--text)] focus:outline-none focus:border-blue-500"
                     />
                   </div>
 
                   <div>
-                    <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block mb-1">
+                    <label className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider block mb-1">
                       Emergency On-Call Hotline
                     </label>
                     <input
                       type="text"
                       value={store.profile.emergencyPhone}
                       onChange={(e) => setStore({ ...store, profile: { ...store.profile, emergencyPhone: e.target.value } })}
-                      className="obsidian w-full bg-[var(--obsidian-0)] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
+                      className="w-full bg-[var(--app-bg)] border border-[var(--border)] rounded-xl px-3 py-2 text-xs text-[var(--text)] focus:outline-none focus:border-blue-500"
                     />
                   </div>
 
                   <div>
-                    <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block mb-1">
+                    <label className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider block mb-1">
                       Receptionist Persona Tone
                     </label>
                     <select
                       value={store.profile.voiceTone}
                       onChange={(e) => setStore({ ...store, profile: { ...store.profile, voiceTone: e.target.value as any } })}
-                      className="obsidian w-full bg-[var(--obsidian-0)] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500 cursor-pointer"
+                      className="w-full bg-[var(--app-bg)] border border-[var(--border)] rounded-xl px-3 py-2 text-xs text-[var(--text)] focus:outline-none focus:border-blue-500 cursor-pointer"
                     >
                       <option value="executive">Executive & Professional</option>
                       <option value="friendly">Warm & Friendly Concierge</option>
@@ -1010,31 +1010,31 @@ export default function ReceptionistTrainingCenter({
                   </div>
 
                   <div className="sm:col-span-2">
-                    <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block mb-1">
+                    <label className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider block mb-1">
                       Default Opening Spoken Greeting
                     </label>
                     <textarea
                       value={store.profile.defaultGreeting}
                       onChange={(e) => setStore({ ...store, profile: { ...store.profile, defaultGreeting: e.target.value } })}
                       rows={2}
-                      className="obsidian w-full bg-[var(--obsidian-0)] border border-white/10 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-blue-500 resize-none leading-relaxed"
+                      className="w-full bg-[var(--app-bg)] border border-[var(--border)] rounded-xl p-2.5 text-xs text-[var(--text)] focus:outline-none focus:border-blue-500 resize-none leading-relaxed"
                     />
                   </div>
 
                   <div className="sm:col-span-2">
-                    <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block mb-1">
+                    <label className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider block mb-1">
                       Fallback & Unanswered Question Policy
                     </label>
                     <input
                       type="text"
                       value={store.profile.fallbackInstructions}
                       onChange={(e) => setStore({ ...store, profile: { ...store.profile, fallbackInstructions: e.target.value } })}
-                      className="obsidian w-full bg-[var(--obsidian-0)] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
+                      className="w-full bg-[var(--app-bg)] border border-[var(--border)] rounded-xl px-3 py-2 text-xs text-[var(--text)] focus:outline-none focus:border-blue-500"
                     />
                   </div>
                 </div>
 
-                <div className="flex justify-end pt-3 border-t border-white/5">
+                <div className="flex justify-end pt-3 border-t border-[var(--border)]">
                   <button
                     type="submit"
                     disabled={saving}
@@ -1054,30 +1054,30 @@ export default function ReceptionistTrainingCenter({
           {/* ----------------------------------------------------------------------- */}
           {activeTab === 'departments' && store && (
             <div className="space-y-4 max-w-4xl mx-auto">
-              <div className="obsidian bg-[var(--obsidian-1)] border border-white/10 rounded-3xl p-5 shadow-xl">
-                <div className="flex items-center justify-between mb-4 border-b border-white/5 pb-3">
+              <div className="bg-[var(--surface)] border border-[var(--border)] rounded-3xl p-5 shadow-xl">
+                <div className="flex items-center justify-between mb-4 border-b border-[var(--border)] pb-3">
                   <div>
-                    <h3 className="text-sm font-bold text-white">Department Routing & Spoken Triggers</h3>
-                    <p className="text-xs text-neutral-400 mt-0.5">When callers mention these keywords, the AI receptionist initiates warm transfers</p>
+                    <h3 className="text-sm font-bold text-[var(--text)]">Department Routing & Spoken Triggers</h3>
+                    <p className="text-xs text-[var(--text-muted)] mt-0.5">When callers mention these keywords, the AI receptionist initiates warm transfers</p>
                   </div>
                 </div>
 
                 <div className="space-y-3">
                   {store.departments.map(dept => (
-                    <div key={dept.departmentKey} className="obsidian p-4 rounded-2xl bg-[var(--obsidian-2)] border border-white/5 space-y-2.5 text-left">
+                    <div key={dept.departmentKey} className="p-4 rounded-2xl bg-[var(--surface-sunken)] border border-[var(--border)] space-y-2.5 text-left">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
-                          <span className="font-mono text-xs font-bold text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded-lg border border-blue-500/20">
+                          <span className="font-mono text-xs font-bold text-[var(--accent-text)] bg-blue-500/10 px-2 py-0.5 rounded-lg border border-blue-500/20">
                             Ext {dept.extension}
                           </span>
-                          <h4 className="text-xs font-bold text-white">{dept.name}</h4>
-                          <span className="text-xs text-neutral-400">({dept.leadPerson} • {dept.title})</span>
+                          <h4 className="text-xs font-bold text-[var(--text)]">{dept.name}</h4>
+                          <span className="text-xs text-[var(--text-muted)]">({dept.leadPerson} • {dept.title})</span>
                         </div>
 
                         <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border uppercase tracking-wider ${
-                          dept.status === 'available' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
-                          dept.status === 'in_meeting' ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' :
-                          'bg-neutral-800 text-neutral-400 border-neutral-700'
+                          dept.status === 'available' ? 'bg-emerald-500/10 text-[var(--success)] border-emerald-500/20' :
+                          dept.status === 'in_meeting' ? 'bg-amber-500/10 text-[var(--warning)] border-amber-500/20' :
+                          'bg-[var(--surface-sunken)] text-[var(--text-muted)] border-[var(--border)]'
                         }`}>
                           {dept.status === 'in_meeting' ? 'In Meeting (Takes Messages)' : dept.status}
                         </span>
@@ -1085,12 +1085,12 @@ export default function ReceptionistTrainingCenter({
 
                       {/* Trigger keywords */}
                       <div>
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-400 block mb-1">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] block mb-1">
                           Spoken Transfer Trigger Words:
                         </span>
                         <div className="flex flex-wrap gap-1.5">
                           {dept.triggers.map((trig, idx) => (
-                            <span key={idx} className="obsidian text-[11px] px-2 py-0.5 rounded-lg bg-[var(--obsidian-0)] text-neutral-300 border border-white/5">
+                            <span key={idx} className="text-[11px] px-2 py-0.5 rounded-lg bg-[var(--app-bg)] text-[var(--text-muted)] border border-[var(--border)]">
                               "{trig}"
                             </span>
                           ))}
@@ -1107,13 +1107,13 @@ export default function ReceptionistTrainingCenter({
           {/* TAB 5: MULTI-MODAL AI SIMULATOR PLAYGROUND                              */}
           {/* ----------------------------------------------------------------------- */}
           {activeTab === 'simulator' && (
-            <div className="obsidian max-w-4xl mx-auto h-[68vh] flex flex-col bg-[var(--obsidian-1)] border border-white/10 rounded-3xl p-4 shadow-xl overflow-hidden">
+            <div className="max-w-4xl mx-auto h-[68vh] flex flex-col bg-[var(--surface)] border border-[var(--border)] rounded-3xl p-4 shadow-xl overflow-hidden">
               
               {/* Simulator Top Controls */}
-              <div className="flex items-center justify-between border-b border-white/5 pb-3 mb-3">
+              <div className="flex items-center justify-between border-b border-[var(--border)] pb-3 mb-3">
                 <div className="flex items-center gap-2">
-                  <MessageSquare className="h-4 w-4 text-blue-400" />
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-white">Live Receptionist Test Sandbox</h3>
+                  <MessageSquare className="h-4 w-4 text-[var(--accent-text)]" />
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text)]">Live Receptionist Test Sandbox</h3>
                 </div>
 
                 <div className="flex items-center gap-3">
@@ -1121,17 +1121,17 @@ export default function ReceptionistTrainingCenter({
                   <button
                     onClick={() => setAutoSpeakReplies(!autoSpeakReplies)}
                     className={`flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-xl transition-all cursor-pointer ${
-                      autoSpeakReplies ? 'bg-blue-600/20 text-blue-300 border border-blue-500/30' : 'bg-neutral-800 text-neutral-400'
+                      autoSpeakReplies ? 'bg-blue-600/20 text-[var(--accent-text)] border border-blue-500/30' : 'bg-[var(--surface-sunken)] text-[var(--text-muted)]'
                     }`}
                     title="Read answers out loud using SpeechSynthesis"
                   >
-                    {autoSpeakReplies ? <Volume2 className="h-3.5 w-3.5 text-blue-400" /> : <VolumeX className="h-3.5 w-3.5" />}
+                    {autoSpeakReplies ? <Volume2 className="h-3.5 w-3.5 text-[var(--accent-text)]" /> : <VolumeX className="h-3.5 w-3.5" />}
                     <span>Voice Audio {autoSpeakReplies ? 'ON' : 'OFF'}</span>
                   </button>
 
                   <button
                     onClick={() => setChatMessages([])}
-                    className="text-[11px] text-neutral-400 hover:text-white transition-colors cursor-pointer"
+                    className="text-[11px] text-[var(--text-muted)] hover:text-[var(--text)] transition-colors cursor-pointer"
                   >
                     Clear History
                   </button>
@@ -1150,34 +1150,34 @@ export default function ReceptionistTrainingCenter({
                       className={`flex flex-col ${isUser ? 'items-end' : 'items-start'}`}
                     >
                       <div className="flex items-center gap-1.5 mb-1 px-1">
-                        <span className={`text-[10px] font-bold ${isUser ? 'text-emerald-400' : 'text-blue-400'}`}>
+                        <span className={`text-[10px] font-bold ${isUser ? 'text-[var(--success)]' : 'text-[var(--accent-text)]'}`}>
                           {isUser ? 'You (Caller / Chat)' : 'Sophia (AI Receptionist)'}
                         </span>
-                        <span className="text-[9px] text-neutral-500 font-mono">{msg.timestamp}</span>
+                        <span className="text-[9px] text-[var(--text-subtle)] font-mono">{msg.timestamp}</span>
                       </div>
 
                       <div className={`p-3.5 rounded-2xl text-xs leading-relaxed max-w-[85%] ${
                         isUser
                           ? 'bg-blue-600 text-white rounded-tr-sm shadow-md'
-                          : 'bg-[var(--obsidian-2)] text-neutral-200 border border-white/5 rounded-tl-sm shadow-sm'
+                          : 'bg-[var(--surface-sunken)] text-[var(--text)] border border-[var(--border)] rounded-tl-sm shadow-sm'
                       }`}>
                         <div className="whitespace-pre-wrap">{msg.text}</div>
 
                         {/* Autonomous Action Result Card */}
                         {!isUser && msg.executedAction && (
-                          <div className="obsidian mt-3 p-3 rounded-xl bg-[var(--obsidian-1)] border border-blue-500/30 space-y-2 text-left shadow-md">
+                          <div className="mt-3 p-3 rounded-xl bg-[var(--surface)] border border-blue-500/30 space-y-2 text-left shadow-md">
                             <div className="flex items-center justify-between">
                               <div className="flex items-center gap-1.5">
-                                {msg.executedAction.type === 'video_call' && <Video className="h-4 w-4 text-emerald-400" />}
-                                {msg.executedAction.type === 'calendar_event' && <Calendar className="h-4 w-4 text-blue-400" />}
-                                {msg.executedAction.type === 'proposal' && <FileSignature className="h-4 w-4 text-amber-400" />}
-                                <span className="text-[11px] font-bold text-white uppercase tracking-wider">
+                                {msg.executedAction.type === 'video_call' && <Video className="h-4 w-4 text-[var(--success)]" />}
+                                {msg.executedAction.type === 'calendar_event' && <Calendar className="h-4 w-4 text-[var(--accent-text)]" />}
+                                {msg.executedAction.type === 'proposal' && <FileSignature className="h-4 w-4 text-[var(--warning)]" />}
+                                <span className="text-[11px] font-bold text-[var(--text)] uppercase tracking-wider">
                                   {msg.executedAction.type === 'video_call' ? 'Live Video Room Generated' :
                                    msg.executedAction.type === 'calendar_event' ? 'Calendar Meeting Booked' :
                                    'Enterprise Proposal Generated'}
                                 </span>
                               </div>
-                              <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-semibold">
+                              <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/20 text-[var(--success)] font-semibold">
                                 Autonomous Tool Executed
                               </span>
                             </div>
@@ -1185,8 +1185,8 @@ export default function ReceptionistTrainingCenter({
                             {/* Video Call Details */}
                             {msg.executedAction.type === 'video_call' && (
                               <div className="space-y-1.5 text-[11px]">
-                                <div className="text-neutral-300 font-semibold">{msg.executedAction.data?.roomName || 'GREET meeting'}</div>
-                                <div className="text-[10px] text-neutral-400">Encrypted Room ID: <span className="font-mono text-emerald-400">{msg.executedAction.data?.roomId || 'meet-and-greet'}</span> • Destination: <span className="text-blue-300 font-semibold">GREET</span></div>
+                                <div className="text-[var(--text-muted)] font-semibold">{msg.executedAction.data?.roomName || 'GREET meeting'}</div>
+                                <div className="text-[10px] text-[var(--text-muted)]">Encrypted Room ID: <span className="font-mono text-[var(--success)]">{msg.executedAction.data?.roomId || 'meet-and-greet'}</span> • Destination: <span className="text-[var(--accent-text)] font-semibold">GREET</span></div>
                                 <div className="pt-1">
                                   <button
                                     type="button"
@@ -1211,13 +1211,13 @@ export default function ReceptionistTrainingCenter({
                             {/* Calendar Event Details */}
                             {msg.executedAction.type === 'calendar_event' && (
                               <div className="space-y-1 text-[11px]">
-                                <div className="text-neutral-200 font-semibold">{msg.executedAction.data?.title}</div>
-                                <div className="flex flex-wrap items-center gap-2 text-[10px] text-neutral-400">
-                                  <span className="text-blue-300 font-mono">📅 {msg.executedAction.data?.date} at {msg.executedAction.data?.time}</span>
+                                <div className="text-[var(--text)] font-semibold">{msg.executedAction.data?.title}</div>
+                                <div className="flex flex-wrap items-center gap-2 text-[10px] text-[var(--text-muted)]">
+                                  <span className="text-[var(--accent-text)] font-mono">📅 {msg.executedAction.data?.date} at {msg.executedAction.data?.time}</span>
                                   <span>•</span>
                                   <span>⏳ {msg.executedAction.data?.duration} mins</span>
                                 </div>
-                                <div className="text-[10px] text-neutral-400 font-mono truncate">
+                                <div className="text-[10px] text-[var(--text-muted)] font-mono truncate">
                                   Invited: {msg.executedAction.data?.attendees?.join(', ')}
                                 </div>
                               </div>
@@ -1227,13 +1227,13 @@ export default function ReceptionistTrainingCenter({
                             {msg.executedAction.type === 'proposal' && (
                               <div className="space-y-1.5 text-[11px]">
                                 <div className="flex items-center justify-between">
-                                  <span className="text-neutral-200 font-semibold">{msg.executedAction.data?.title}</span>
-                                  <span className="text-amber-400 font-bold font-mono text-xs">
+                                  <span className="text-[var(--text)] font-semibold">{msg.executedAction.data?.title}</span>
+                                  <span className="text-[var(--warning)] font-bold font-mono text-xs">
                                     ${Number(msg.executedAction.data?.price || 78000).toLocaleString()}
                                   </span>
                                 </div>
                                 {msg.executedAction.data?.deliverables && (
-                                  <ul className="space-y-0.5 text-[10px] text-neutral-400 pl-3 list-disc">
+                                  <ul className="space-y-0.5 text-[10px] text-[var(--text-muted)] pl-3 list-disc">
                                     {msg.executedAction.data.deliverables.slice(0, 3).map((item: string, idx: number) => (
                                       <li key={idx}>{item}</li>
                                     ))}
@@ -1246,15 +1246,15 @@ export default function ReceptionistTrainingCenter({
 
                         {/* Metadata badge tags for AI Receptionist responses */}
                         {!isUser && (
-                          <div className="mt-2.5 pt-2 border-t border-white/5 flex flex-wrap items-center justify-between gap-2">
+                          <div className="mt-2.5 pt-2 border-t border-[var(--border)] flex flex-wrap items-center justify-between gap-2">
                             <div className="flex items-center gap-2">
                               {msg.confidenceScore && (
-                                <span className="text-[10px] font-mono text-emerald-400 font-bold bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
+                                <span className="text-[10px] font-mono text-[var(--success)] font-bold bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
                                   {msg.confidenceScore}% Confidence
                                 </span>
                               )}
                               {msg.matchedTopic && (
-                                <span className="text-[10px] text-blue-300 font-semibold bg-blue-500/10 px-1.5 py-0.5 rounded border border-blue-500/20">
+                                <span className="text-[10px] text-[var(--accent-text)] font-semibold bg-blue-500/10 px-1.5 py-0.5 rounded border border-blue-500/20">
                                   {msg.matchedTopic}
                                 </span>
                               )}
@@ -1263,7 +1263,7 @@ export default function ReceptionistTrainingCenter({
                             {msg.spokenReply && (
                               <button
                                 onClick={() => speakSpokenText(msg.spokenReply!)}
-                                className="flex items-center gap-1 text-[10px] text-neutral-400 hover:text-blue-300 cursor-pointer"
+                                className="flex items-center gap-1 text-[10px] text-[var(--text-muted)] hover:text-[var(--accent-text)] cursor-pointer"
                                 title="Replay spoken audio"
                               >
                                 <Volume2 className="h-3 w-3" />
@@ -1275,8 +1275,8 @@ export default function ReceptionistTrainingCenter({
 
                         {/* Suggested Follow-up chips */}
                         {!isUser && msg.suggestedQuestions && msg.suggestedQuestions.length > 0 && (
-                          <div className="mt-2.5 pt-2 border-t border-white/5">
-                            <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-wider block mb-1">
+                          <div className="mt-2.5 pt-2 border-t border-[var(--border)]">
+                            <span className="text-[9px] font-bold text-[var(--text-muted)] uppercase tracking-wider block mb-1">
                               Suggested Follow-ups:
                             </span>
                             <div className="flex flex-wrap gap-1.5">
@@ -1284,7 +1284,7 @@ export default function ReceptionistTrainingCenter({
                                 <button
                                   key={idx}
                                   onClick={() => handleSendSimulatorQuery(q)}
-                                  className="obsidian text-[10px] px-2 py-0.5 rounded-lg bg-[var(--obsidian-0)] hover:bg-blue-600/30 hover:text-white border border-white/10 text-neutral-300 transition-all cursor-pointer"
+                                  className="text-[10px] px-2 py-0.5 rounded-lg bg-[var(--app-bg)] hover:bg-blue-600/30 hover:text-[var(--text)] border border-[var(--border)] text-[var(--text-muted)] transition-all cursor-pointer"
                                 >
                                   {q}
                                 </button>
@@ -1298,8 +1298,8 @@ export default function ReceptionistTrainingCenter({
                 })}
 
                 {simLoading && (
-                  <div className="obsidian flex items-center gap-2 p-3 rounded-2xl bg-[var(--obsidian-2)] text-neutral-400 text-xs w-fit">
-                    <RefreshCw className="h-3.5 w-3.5 animate-spin text-blue-400" />
+                  <div className="flex items-center gap-2 p-3 rounded-2xl bg-[var(--surface-sunken)] text-[var(--text-muted)] text-xs w-fit">
+                    <RefreshCw className="h-3.5 w-3.5 animate-spin text-[var(--accent-text)]" />
                     <span>AI Receptionist is consulting trained memory...</span>
                   </div>
                 )}
@@ -1307,7 +1307,7 @@ export default function ReceptionistTrainingCenter({
               </div>
 
               {/* Simulator Input Bar */}
-              <div className="mt-3 pt-2 border-t border-white/5">
+              <div className="mt-3 pt-2 border-t border-[var(--border)]">
                 <form onSubmit={(e) => { e.preventDefault(); handleSendSimulatorQuery(); }} className="flex items-center gap-2">
                   <button
                     type="button"
@@ -1315,7 +1315,7 @@ export default function ReceptionistTrainingCenter({
                     className={`h-9 w-9 rounded-xl flex items-center justify-center transition-all cursor-pointer ${
                       simVoiceActive
                         ? 'bg-rose-600 text-white animate-pulse shadow-lg shadow-rose-900/40'
-                        : 'bg-[var(--obsidian-2)] hover:bg-white/10 text-neutral-300'
+                        : 'bg-[var(--surface-sunken)] hover:bg-[var(--border)] text-[var(--text-muted)]'
                     }`}
                     title={simVoiceActive ? 'Listening... click to stop' : 'Speak via microphone'}
                   >
@@ -1327,7 +1327,7 @@ export default function ReceptionistTrainingCenter({
                     value={simQuery}
                     onChange={(e) => setSimQuery(e.target.value)}
                     placeholder="Ask any question (e.g., 'What are your hours?', 'Where are you located?', 'Do you have SOC2?')"
-                    className="obsidian flex-1 bg-[var(--obsidian-0)] border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-blue-500"
+                    className="flex-1 bg-[var(--app-bg)] border border-[var(--border)] rounded-xl px-3 py-2 text-xs text-[var(--text)] placeholder:text-[var(--text-subtle)] focus:outline-none focus:border-blue-500"
                   />
 
                   <button
@@ -1353,23 +1353,23 @@ export default function ReceptionistTrainingCenter({
       {/* ========================================================================= */}
       <AnimatePresence>
         {editingQA && (
-          <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-neutral-950/80 backdrop-blur-md">
+          <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-[var(--surface-sunken)] backdrop-blur-md">
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="obsidian w-full max-w-lg bg-[var(--obsidian-1)] border border-white/15 rounded-3xl p-5 shadow-2xl text-left"
+              className="w-full max-w-lg bg-[var(--surface)] border border-[var(--border)] rounded-3xl p-5 shadow-2xl text-left"
             >
-              <div className="flex items-center justify-between border-b border-white/10 pb-3 mb-4">
+              <div className="flex items-center justify-between border-b border-[var(--border)] pb-3 mb-4">
                 <div className="flex items-center gap-2">
-                  <Edit3 className="h-4 w-4 text-blue-400" />
-                  <h3 className="text-sm font-bold text-white">
+                  <Edit3 className="h-4 w-4 text-[var(--accent-text)]" />
+                  <h3 className="text-sm font-bold text-[var(--text)]">
                     {editingQA.id ? 'Edit Trained Q&A' : 'Add New Receptionist Q&A'}
                   </h3>
                 </div>
                 <button
                   onClick={() => setEditingQA(null)}
-                  className="p-1 rounded-lg text-neutral-400 hover:text-white"
+                  className="p-1 rounded-lg text-[var(--text-muted)] hover:text-[var(--text)]"
                 >
                   <X className="h-4 w-4" />
                 </button>
@@ -1377,7 +1377,7 @@ export default function ReceptionistTrainingCenter({
 
               <form onSubmit={handleSaveQA} className="space-y-3">
                 <div>
-                  <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block mb-1">
+                  <label className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider block mb-1">
                     Question (What callers or clients will ask)
                   </label>
                   <input
@@ -1386,12 +1386,12 @@ export default function ReceptionistTrainingCenter({
                     onChange={(e) => setEditingQA({ ...editingQA, question: e.target.value })}
                     placeholder="e.g., What are your holiday hours?"
                     required
-                    className="obsidian w-full bg-[var(--obsidian-0)] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
+                    className="w-full bg-[var(--app-bg)] border border-[var(--border)] rounded-xl px-3 py-2 text-xs text-[var(--text)] focus:outline-none focus:border-blue-500"
                   />
                 </div>
 
                 <div>
-                  <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block mb-1">
+                  <label className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider block mb-1">
                     Spoken Answer (Keep under 40 words, spoken-friendly)
                   </label>
                   <textarea
@@ -1400,19 +1400,19 @@ export default function ReceptionistTrainingCenter({
                     placeholder="e.g., We are closed on major federal holidays, but 24/7 on-call DevOps remains active."
                     rows={3}
                     required
-                    className="obsidian w-full bg-[var(--obsidian-0)] border border-white/10 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-blue-500 resize-none leading-relaxed"
+                    className="w-full bg-[var(--app-bg)] border border-[var(--border)] rounded-xl p-2.5 text-xs text-[var(--text)] focus:outline-none focus:border-blue-500 resize-none leading-relaxed"
                   />
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block mb-1">
+                    <label className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider block mb-1">
                       Category
                     </label>
                     <select
                       value={editingQA.category || 'general'}
                       onChange={(e) => setEditingQA({ ...editingQA, category: e.target.value as any })}
-                      className="obsidian w-full bg-[var(--obsidian-0)] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500 cursor-pointer"
+                      className="w-full bg-[var(--app-bg)] border border-[var(--border)] rounded-xl px-3 py-2 text-xs text-[var(--text)] focus:outline-none focus:border-blue-500 cursor-pointer"
                     >
                       <option value="general">General Operations</option>
                       <option value="pricing">Pricing & Plans</option>
@@ -1425,13 +1425,13 @@ export default function ReceptionistTrainingCenter({
                   </div>
 
                   <div>
-                    <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block mb-1">
+                    <label className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider block mb-1">
                       Priority
                     </label>
                     <select
                       value={editingQA.priority || 'medium'}
                       onChange={(e) => setEditingQA({ ...editingQA, priority: e.target.value as any })}
-                      className="obsidian w-full bg-[var(--obsidian-0)] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500 cursor-pointer"
+                      className="w-full bg-[var(--app-bg)] border border-[var(--border)] rounded-xl px-3 py-2 text-xs text-[var(--text)] focus:outline-none focus:border-blue-500 cursor-pointer"
                     >
                       <option value="high">High (Immediate Answer)</option>
                       <option value="medium">Medium</option>
@@ -1441,7 +1441,7 @@ export default function ReceptionistTrainingCenter({
                 </div>
 
                 <div>
-                  <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block mb-1">
+                  <label className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider block mb-1">
                     Search Trigger Keywords (comma separated)
                   </label>
                   <input
@@ -1449,15 +1449,15 @@ export default function ReceptionistTrainingCenter({
                     value={Array.isArray(editingQA.keywords) ? editingQA.keywords.join(', ') : editingQA.keywords || ''}
                     onChange={(e) => setEditingQA({ ...editingQA, keywords: e.target.value as any })}
                     placeholder="e.g., holiday, thanksgiving, christmas, schedule, hours"
-                    className="obsidian w-full bg-[var(--obsidian-0)] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
+                    className="w-full bg-[var(--app-bg)] border border-[var(--border)] rounded-xl px-3 py-2 text-xs text-[var(--text)] focus:outline-none focus:border-blue-500"
                   />
                 </div>
 
-                <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-white/10">
+                <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-[var(--border)]">
                   <button
                     type="button"
                     onClick={() => setEditingQA(null)}
-                    className="px-4 py-2 rounded-xl border border-white/10 text-neutral-400 hover:text-white text-xs font-semibold"
+                    className="px-4 py-2 rounded-xl border border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text)] text-xs font-semibold"
                   >
                     Cancel
                   </button>

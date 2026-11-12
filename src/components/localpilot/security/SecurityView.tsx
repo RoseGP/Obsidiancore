@@ -7,6 +7,7 @@ import { ShieldCheck, CheckCircle2, AlertTriangle, RefreshCw } from 'lucide-reac
 import { Button } from '../ui/Button';
 import { LocalPilotRoute } from '../types';
 import { useOptionalLocalSeo } from '../live/localSeoClient';
+import { AccessReviewPanel } from './AccessReviewPanel';
 
 export interface SecurityViewProps {
   onNavigate: (route: LocalPilotRoute) => void;
@@ -101,6 +102,8 @@ export const SecurityView: React.FC<SecurityViewProps> = ({ onNavigate, onRefres
           </div>
         )}
       </div>
+
+      {c?.connected && <AccessReviewPanel />}
 
       <p className="text-[11px] text-slate-400">
         Team roles are managed in the main app. <button type="button" className="text-blue-600 hover:underline cursor-pointer" onClick={() => onNavigate('settings')}>Local SEO settings</button>

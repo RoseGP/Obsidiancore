@@ -74,6 +74,25 @@ router.patch('/locations/profile', handle('profile', (req) => {
   return gbp.updateProfile(uid(req), b.location, { phone: b.phone, website: b.website, description: b.description });
 }));
 
+// Opening hours (Business Information v1 regularHours). Up to two periods per day; days left out are closed.
+const HHMM = z.string().regex(/^(([01]\d|2[0-3]):[0-5]\d|24:00)$/, 'Use 24-hour times like 09:00.');
+const DAY = z.enum(['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY']);
+router.put('/locations/hours', handle('hours', (req) => {
+  const b = z.object({ location: locName, hours: z.array(z.object({ day: DAY, open: HHMM, close: HHMM }).strict()).max(14) }).strict()
+    .superRefine((x, ctx) => {
+      const perDay = new Map<string, number>();
+      for (const h of x.hours) {
+        perDay.set(h.day, (perDay.get(h.day) || 0) + 1);
+        if (h.open === h.close) ctx.addIssue({ code: 'custom', path: ['hours'], message: `${h.day.toLowerCase()}: opening and closing times are the same.` });
+        if (h.open === '24:00') ctx.addIssue({ code: 'custom', path: ['hours'], message: 'Opening time can\'t be 24:00.' });
+      }
+      if ([...perDay.values()].some((n) => n > 2)) ctx.addIssue({ code: 'custom', path: ['hours'], message: 'At most two opening periods per day.' });
+    }).parse(req.body ?? {});
+  return gbp.updateHours(uid(req), b.location, b.hours);
+}));
+// Who can manage a location (read live from Google, not stored).
+router.get('/locations/access', heavy, handle('access', (req) => gbp.accessReview(uid(req), z.object({ location: locName }).parse(req.query).location)));
+
 router.get('/overview', handle('overview', (req) => gbp.overview(uid(req))));
 router.post('/sync', heavy, handle('sync', (req) => gbp.sync(uid(req))));
 router.get('/reviews', handle('reviews', (req) => {

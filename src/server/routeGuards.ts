@@ -47,6 +47,10 @@ export function guard(publicPaths: RegExp[] = []) {
 /** Public paths per router (relative to its mount point). Keep these minimal. */
 export const PUBLIC = {
   none: [] as RegExp[],
+  // Passwordless sign-in links: asking for a link and redeeming one happen before sign-in (rate limited, single-use tokens).
+  magicLink: [/^\/(status|request|verify)$/],
+  // Website form submissions from customers' websites (form id checked, rate limited, validated in the handler).
+  webForms: [/^\/f\/[^/]+$/],
   // Inbound mail webhook from the mail provider. TO COMPLETE: verify the provider's signature in the handler.
   mail: [/^\/inbound-webhook$/],
   // Public booking page (PublicSchedulingPage): read event types and book a slot.

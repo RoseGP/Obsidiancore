@@ -11,10 +11,10 @@ import { KeyRound, ShieldCheck, ShieldAlert, Trash2 } from 'lucide-react';
 import { auth as firebaseAuth } from '../../lib/firebase';
 import { sapi, isAdminRole, type PolicyResponse, type SecurityPolicy } from './securityApi';
 
-const card = 'rounded-2xl p-6 bg-neutral-900/40 border border-white/5 space-y-4';
-const input = 'w-full text-xs font-medium bg-neutral-950/80 border border-white/10 rounded-xl p-3 text-white outline-none focus-visible:ring-2 focus-visible:ring-indigo-500';
+const card = 'rounded-2xl p-6 bg-[var(--surface)] border border-[var(--border)] space-y-4';
+const input = 'w-full text-xs font-medium bg-[var(--surface-sunken)] border border-[var(--border)] rounded-xl p-3 text-[var(--text)] outline-none focus-visible:ring-2 focus-visible:ring-indigo-500';
 const btn = 'px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs disabled:opacity-50 disabled:cursor-not-allowed';
-const ghost = 'px-4 py-2 rounded-xl border border-white/10 text-neutral-200 hover:bg-white/5 font-semibold text-xs';
+const ghost = 'px-4 py-2 rounded-xl border border-[var(--border)] text-[var(--text)] hover:bg-[var(--surface-sunken)] font-semibold text-xs';
 
 function explain(err: any): string {
   switch (err?.code) {
@@ -40,8 +40,8 @@ export function TwoStepCard() {
   if (!user) {
     return (
       <div className={card}>
-        <h3 className="text-base font-bold text-white">Two-step sign-in</h3>
-        <p className="text-xs text-neutral-400">You’re using a sandbox sign-in, which has no account to protect. Sign in with email or Google to set up two-step sign-in.</p>
+        <h3 className="text-base font-bold text-[var(--text)]">Two-step sign-in</h3>
+        <p className="text-xs text-[var(--text-muted)]">You’re using a sandbox sign-in, which has no account to protect. Sign in with email or Google to set up two-step sign-in.</p>
       </div>
     );
   }
@@ -75,19 +75,19 @@ export function TwoStepCard() {
 
   return (
     <div className={card}>
-      <div className="flex items-start gap-3 border-b border-white/5 pb-3">
-        {factors.length ? <ShieldCheck className="text-emerald-400 shrink-0" size={18} /> : <ShieldAlert className="text-amber-400 shrink-0" size={18} />}
+      <div className="flex items-start gap-3 border-b border-[var(--border)] pb-3">
+        {factors.length ? <ShieldCheck className="text-[var(--success)] shrink-0" size={18} /> : <ShieldAlert className="text-[var(--warning)] shrink-0" size={18} />}
         <div>
-          <h3 className="text-base font-bold text-white">Two-step sign-in</h3>
-          <p className="text-xs text-neutral-400 mt-0.5">After your password, you’ll also enter a code from an authenticator app (Google Authenticator, 1Password, Authy…).</p>
+          <h3 className="text-base font-bold text-[var(--text)]">Two-step sign-in</h3>
+          <p className="text-xs text-[var(--text-muted)] mt-0.5">After your password, you’ll also enter a code from an authenticator app (Google Authenticator, 1Password, Authy…).</p>
         </div>
       </div>
       {factors.length > 0 && (
         <ul className="space-y-2">
           {factors.map((f) => (
-            <li key={f.uid} className="flex items-center justify-between gap-3 p-3 rounded-xl bg-neutral-950/40 border border-white/5">
-              <span className="text-xs text-white flex items-center gap-2"><KeyRound size={14} className="text-indigo-400" /> {f.displayName || 'Authenticator app'} <span className="text-neutral-500">added {new Date(f.enrollmentTime).toLocaleDateString()}</span></span>
-              <button type="button" onClick={() => remove(f.uid)} disabled={busy} className="text-xs text-rose-300 hover:text-rose-200 flex items-center gap-1"><Trash2 size={13} /> Remove</button>
+            <li key={f.uid} className="flex items-center justify-between gap-3 p-3 rounded-xl bg-[var(--surface-sunken)] border border-[var(--border)]">
+              <span className="text-xs text-[var(--text)] flex items-center gap-2"><KeyRound size={14} className="text-[var(--accent-text)]" /> {f.displayName || 'Authenticator app'} <span className="text-[var(--text-subtle)]">added {new Date(f.enrollmentTime).toLocaleDateString()}</span></span>
+              <button type="button" onClick={() => remove(f.uid)} disabled={busy} className="text-xs text-[var(--danger)] hover:text-[var(--danger)] flex items-center gap-1"><Trash2 size={13} /> Remove</button>
             </li>
           ))}
         </ul>
@@ -95,10 +95,10 @@ export function TwoStepCard() {
       {!factors.length && !secret && <button type="button" onClick={start} disabled={busy} className={btn}>{busy ? 'Starting…' : 'Set up authenticator app'}</button>}
       {secret && (
         <form onSubmit={finish} className="space-y-3">
-          <p className="text-xs text-neutral-300">1. In your authenticator app, add an account and enter this key (or open the link on your phone):</p>
-          <code className="block break-all p-3 rounded-xl bg-neutral-950/80 border border-white/10 text-sm text-emerald-300 select-all">{secret.secretKey}</code>
-          <a href={secret.generateQrCodeUrl(user.email || 'account', 'Obsidian CRM')} className="text-xs text-indigo-300 underline">Open in authenticator app</a>
-          <label htmlFor="enroll-code" className="block text-xs text-neutral-300">2. Enter the 6-digit code it shows:</label>
+          <p className="text-xs text-[var(--text-muted)]">1. In your authenticator app, add an account and enter this key (or open the link on your phone):</p>
+          <code className="block break-all p-3 rounded-xl bg-[var(--surface-sunken)] border border-[var(--border)] text-sm text-[var(--success)] select-all">{secret.secretKey}</code>
+          <a href={secret.generateQrCodeUrl(user.email || 'account', 'Obsidian CRM')} className="text-xs text-[var(--accent-text)] underline">Open in authenticator app</a>
+          <label htmlFor="enroll-code" className="block text-xs text-[var(--text-muted)]">2. Enter the 6-digit code it shows:</label>
           <input id="enroll-code" inputMode="numeric" autoComplete="one-time-code" maxLength={7} value={code} onChange={(e) => setCode(e.target.value.replace(/[^\d ]/g, ''))} className={`${input} max-w-[200px] font-mono tracking-widest`} />
           <div className="flex gap-2">
             <button type="submit" disabled={busy || code.replace(/\s/g, '').length !== 6} className={btn}>{busy ? 'Checking…' : 'Turn on'}</button>
@@ -106,7 +106,7 @@ export function TwoStepCard() {
           </div>
         </form>
       )}
-      {msg && <p role={msg.kind === 'error' ? 'alert' : 'status'} className={`text-xs ${msg.kind === 'error' ? 'text-rose-300' : 'text-emerald-300'}`}>{msg.text}</p>}
+      {msg && <p role={msg.kind === 'error' ? 'alert' : 'status'} className={`text-xs ${msg.kind === 'error' ? 'text-[var(--danger)]' : 'text-[var(--success)]'}`}>{msg.text}</p>}
     </div>
   );
 }
@@ -122,8 +122,8 @@ export function OrgSecurityPolicyCard() {
     catch (e: any) { setError(e.message); }
   }, []);
   useEffect(() => { void load(); }, [load]);
-  if (error && !data) return <div className={card}><h3 className="text-base font-bold text-white">Organization security</h3><p className="text-xs text-rose-300">{error}</p></div>;
-  if (!data || !draft) return <div className={card}><p className="text-xs text-neutral-400">Loading security settings…</p></div>;
+  if (error && !data) return <div className={card}><h3 className="text-base font-bold text-[var(--text)]">Organization security</h3><p className="text-xs text-[var(--danger)]">{error}</p></div>;
+  if (!data || !draft) return <div className={card}><p className="text-xs text-[var(--text-muted)]">Loading security settings…</p></div>;
   const admin = isAdminRole(data.me.role);
 
   const save = async () => {
@@ -135,28 +135,28 @@ export function OrgSecurityPolicyCard() {
 
   return (
     <div className={card}>
-      <div className="border-b border-white/5 pb-3">
-        <h3 className="text-base font-bold text-white">Organization security</h3>
-        <p className="text-xs text-neutral-400 mt-0.5">
+      <div className="border-b border-[var(--border)] pb-3">
+        <h3 className="text-base font-bold text-[var(--text)]">Organization security</h3>
+        <p className="text-xs text-[var(--text-muted)] mt-0.5">
           {admin ? 'Rules for everyone in this organization. The server enforces them on every request.' : 'Set by your organization’s admins.'}
           {' '}This sign-in: {data.me.twoStep ? 'two-step' : 'password or Google only'}.
         </p>
       </div>
-      <label className="flex items-start gap-3 text-xs text-neutral-200">
+      <label className="flex items-start gap-3 text-xs text-[var(--text)]">
         <input type="checkbox" className="mt-0.5" disabled={!admin} checked={draft.requireMfa} onChange={(e) => setDraft({ ...draft, requireMfa: e.target.checked })} />
-        <span><strong className="text-white">Require two-step sign-in</strong><br /><span className="text-neutral-400">Members who haven’t set it up can only open Security &amp; Access until they do. Turn it on for yourself first.</span></span>
+        <span><strong className="text-[var(--text)]">Require two-step sign-in</strong><br /><span className="text-[var(--text-muted)]">Members who haven’t set it up can only open Security &amp; Access until they do. Turn it on for yourself first.</span></span>
       </label>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <label className="text-xs text-neutral-300">Sign in again after (hours, 0 = never)
+        <label className="text-xs text-[var(--text-muted)]">Sign in again after (hours, 0 = never)
           <input type="number" min={0} max={2160} disabled={!admin} value={draft.maxSessionHours} onChange={(e) => setDraft({ ...draft, maxSessionHours: Number(e.target.value) })} className={`${input} mt-1.5`} />
         </label>
-        <label className="text-xs text-neutral-300">Sign out after inactivity (minutes, 0 = off)
+        <label className="text-xs text-[var(--text-muted)]">Sign out after inactivity (minutes, 0 = off)
           <input type="number" min={0} max={1440} disabled={!admin} value={draft.idleSignOutMinutes} onChange={(e) => setDraft({ ...draft, idleSignOutMinutes: Number(e.target.value) })} className={`${input} mt-1.5`} />
         </label>
       </div>
       {admin && <div className="flex justify-end"><button type="button" onClick={save} disabled={busy} className={btn}>{busy ? 'Saving…' : 'Save security rules'}</button></div>}
-      {error && <p role="alert" className="text-xs text-rose-300">{error}</p>}
-      {saved && <p role="status" className="text-xs text-emerald-300">{saved}</p>}
+      {error && <p role="alert" className="text-xs text-[var(--danger)]">{error}</p>}
+      {saved && <p role="status" className="text-xs text-[var(--success)]">{saved}</p>}
     </div>
   );
 }

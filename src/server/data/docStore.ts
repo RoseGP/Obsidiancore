@@ -39,6 +39,7 @@ export interface DocStore {
 
 export class InvalidIdError extends Error {
   status = 400;
+  override name = 'InvalidIdError';
   constructor() { super('Invalid id.'); }
 }
 

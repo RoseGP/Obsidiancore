@@ -65,7 +65,7 @@ export function DashboardPage({ onOpenCalendar, onCompose }: { onOpenCalendar: (
                 {p.platforms[0] && <PlatformTile id={p.platforms[0]} size={22} />}
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-[13.5px] font-medium">{postTitle(p, 80)}</p>
-                  <p className="text-[12px]" style={{ color: '#fca5a5' }}>{p.failureReason || 'Publishing failed.'}</p>
+                  <p className="text-[12px]" style={{ color: 'var(--danger)' }}>{p.failureReason || 'Publishing failed.'}</p>
                 </div>
                 <Button size="sm" variant="secondary" icon={<RotateCcw size={14} />} loading={isBusy(p.id)} onClick={async () => {
                   try { await retry(p.id); toast({ tone: 'success', title: 'Queued for another try' }); } catch (e: any) { if (e?.code !== 'busy') toast({ tone: 'error', title: 'Retry failed', body: e?.message }); }

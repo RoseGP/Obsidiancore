@@ -70,11 +70,11 @@ export const LeftSlimSidebar: React.FC<LeftSlimSidebarProps> = ({
   ];
 
   return (
-    <aside className="hidden md:flex w-16 bg-neutral-950/80 backdrop-blur-xl border-r border-white/5 flex-col items-center py-4 justify-between z-20 shrink-0 select-none">
+    <aside className="hidden md:flex w-16 bg-[var(--surface-sunken)] backdrop-blur-xl border-r border-[var(--border)] flex-col items-center py-4 justify-between z-20 shrink-0 select-none">
       {/* Top Logo / App Brand */}
       <div className="flex flex-col items-center gap-6">
         <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center shadow-lg shadow-blue-500/20 cursor-pointer transition-transform hover:scale-105">
-          <Zap className="w-5 h-5 text-white" />
+          <Zap className="w-5 h-5 text-[var(--text)]" />
         </div>
 
         {/* Primary Navigation Icons */}
@@ -91,7 +91,7 @@ export const LeftSlimSidebar: React.FC<LeftSlimSidebarProps> = ({
                 className={`relative group w-11 h-11 rounded-xl flex items-center justify-center transition-all duration-200 cursor-pointer ${
                   isActive
                     ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
-                    : 'text-neutral-400 hover:text-white hover:bg-white/5'
+                    : 'text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-sunken)]'
                 }`}
               >
                 <Icon className="w-5 h-5" />
@@ -102,7 +102,7 @@ export const LeftSlimSidebar: React.FC<LeftSlimSidebarProps> = ({
                 ) : null}
 
                 {/* Tooltip */}
-                <div className="absolute left-14 px-2.5 py-1 bg-neutral-900 border border-white/10 text-white text-xs font-medium rounded-md shadow-xl whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity z-50">
+                <div className="absolute left-14 px-2.5 py-1 bg-[var(--surface)] border border-[var(--border)] text-[var(--text)] text-xs font-medium rounded-md shadow-xl whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity z-50">
                   {item.label}
                 </div>
               </button>
@@ -118,7 +118,7 @@ export const LeftSlimSidebar: React.FC<LeftSlimSidebarProps> = ({
             <img
               src={currentUser.avatar || initialsAvatar(currentUser.name)}
               alt={currentUser.name}
-              className="w-10 h-10 rounded-xl object-cover ring-2 ring-white/10 hover:ring-blue-500/40 transition-all"
+              className="w-10 h-10 rounded-xl object-cover ring-2 ring-[var(--border)] hover:ring-blue-500/40 transition-all"
             />
             <span
               className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full ring-2 ring-neutral-950 ${
@@ -128,24 +128,24 @@ export const LeftSlimSidebar: React.FC<LeftSlimSidebarProps> = ({
           </div>
 
           {/* Status Quick Popover */}
-          <div className="absolute left-14 bottom-0 w-44 p-2 bg-neutral-900 border border-white/10 rounded-xl shadow-2xl opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-all z-50">
-            <div className="px-2 py-1 mb-1 border-b border-white/5">
-              <p className="text-xs font-semibold text-white truncate">{currentUser.name}</p>
-              <p className="text-[10px] text-neutral-400 capitalize">{currentUser.status}</p>
+          <div className="absolute left-14 bottom-0 w-44 p-2 bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-2xl opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-all z-50">
+            <div className="px-2 py-1 mb-1 border-b border-[var(--border)]">
+              <p className="text-xs font-semibold text-[var(--text)] truncate">{currentUser.name}</p>
+              <p className="text-[10px] text-[var(--text-muted)] capitalize">{currentUser.status}</p>
             </div>
             {(['online', 'busy', 'away', 'offline'] as UserStatus[]).map((st) => (
               <button
                 key={st}
                 onClick={() => onStatusChange(st)}
                 className={`w-full flex items-center justify-between px-2 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
-                  currentUser.status === st ? 'bg-white/10 text-white' : 'text-neutral-400 hover:text-white hover:bg-white/5'
+                  currentUser.status === st ? 'bg-[var(--border)] text-[var(--text)]' : 'text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-sunken)]'
                 }`}
               >
                 <span className="flex items-center gap-2 capitalize">
                   <span className={`w-2 h-2 rounded-full ${statusColors[st]}`} />
                   {st}
                 </span>
-                {currentUser.status === st && <ChevronRight className="w-3 h-3 text-neutral-400" />}
+                {currentUser.status === st && <ChevronRight className="w-3 h-3 text-[var(--text-muted)]" />}
               </button>
             ))}
           </div>

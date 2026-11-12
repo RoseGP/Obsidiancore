@@ -45,7 +45,7 @@ export default function SessionLockScreen() {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#08090E]/90 backdrop-blur-xl text-white select-none">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#08090E]/90 backdrop-blur-xl text-[var(--text)] select-none">
       {/* Ambient background glows */}
       <div className="absolute top-1/3 left-1/3 w-96 h-96 bg-indigo-600/20 rounded-full blur-[128px] pointer-events-none" />
       <div className="absolute bottom-1/3 right-1/3 w-96 h-96 bg-purple-600/15 rounded-full blur-[128px] pointer-events-none" />
@@ -55,7 +55,7 @@ export default function SessionLockScreen() {
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.94, y: 15 }}
         transition={{ duration: 0.25 }}
-        className="w-full max-w-md bg-slate-900/95 border border-white/10 rounded-3xl p-6 sm:p-8 shadow-2xl relative z-10 text-center space-y-6"
+        className="w-full max-w-md bg-[var(--surface)] border border-[var(--border)] rounded-3xl p-6 sm:p-8 shadow-2xl relative z-10 text-center space-y-6"
       >
         {/* Lock Icon Beacon */}
         <div className="relative inline-block">
@@ -65,21 +65,21 @@ export default function SessionLockScreen() {
             className="h-20 w-20 rounded-3xl object-cover border-2 border-indigo-500/40 mx-auto shadow-xl"
             referrerPolicy="no-referrer"
           />
-          <div className="absolute -bottom-2 -right-2 h-8 w-8 rounded-xl bg-indigo-600 border-2 border-[var(--obsidian-1)] flex items-center justify-center text-white shadow-lg">
+          <div className="absolute -bottom-2 -right-2 h-8 w-8 rounded-xl bg-indigo-600 border-2 border-[var(--border)] flex items-center justify-center text-white shadow-lg">
             <Lock className="h-4 w-4" />
           </div>
         </div>
 
         {/* User Info */}
         <div className="space-y-1">
-          <h2 className="text-lg font-bold text-white tracking-tight">
+          <h2 className="text-lg font-bold text-[var(--text)] tracking-tight">
             {userProfile.displayName || userProfile.email}
           </h2>
-          <p className="text-xs text-neutral-400 font-mono">
+          <p className="text-xs text-[var(--text-muted)] font-mono">
             {userProfile.email}
           </p>
           <div className="pt-1.5 flex items-center justify-center gap-2">
-            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-500/15 text-amber-300 border border-amber-500/30">
+            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-500/15 text-[var(--warning)] border border-amber-500/30">
               <Clock className="h-3 w-3" />
               <span>Screen locked</span>
             </span>
@@ -91,11 +91,11 @@ export default function SessionLockScreen() {
           {usesPassword ? (
           <div className="space-y-1.5 text-left">
             <div className="flex items-center justify-between">
-              <label className="text-xs font-semibold text-neutral-300">Password</label>
+              <label className="text-xs font-semibold text-[var(--text-muted)]">Password</label>
               <button
                 type="button"
                 onClick={() => setShowPin(!showPin)}
-                className="text-[11px] text-neutral-400 hover:text-white flex items-center gap-1 cursor-pointer"
+                className="text-[11px] text-[var(--text-muted)] hover:text-[var(--text)] flex items-center gap-1 cursor-pointer"
               >
                 {showPin ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
                 <span>{showPin ? 'Hide' : 'Show'}</span>
@@ -103,7 +103,7 @@ export default function SessionLockScreen() {
             </div>
 
             <div className="relative">
-              <KeyRound className="h-4 w-4 text-neutral-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <KeyRound className="h-4 w-4 text-[var(--text-subtle)] absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input
                 type={showPin ? 'text' : 'password'}
                 autoFocus
@@ -113,12 +113,12 @@ export default function SessionLockScreen() {
                   setError(null);
                 }}
                 autoComplete="current-password"
-                className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-black/40 border border-white/10 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-indigo-500 text-center font-mono tracking-widest text-sm"
+                className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-[var(--surface)] border border-[var(--border)] text-xs text-[var(--text)] placeholder:text-[var(--text-subtle)] focus:outline-none focus:border-indigo-500 text-center font-mono tracking-widest text-sm"
               />
             </div>
           </div>
           ) : (
-            <p className="text-xs text-neutral-400">{auth?.currentUser ? 'Confirm it\'s you with your sign-in provider to unlock.' : 'Unlock to continue.'}</p>
+            <p className="text-xs text-[var(--text-muted)]">{auth?.currentUser ? 'Confirm it\'s you with your sign-in provider to unlock.' : 'Unlock to continue.'}</p>
           )}
 
           <AnimatePresence>
@@ -127,7 +127,7 @@ export default function SessionLockScreen() {
                 initial={{ opacity: 0, y: -4 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -4 }}
-                className="p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs flex items-center justify-center gap-2"
+                className="p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-[var(--danger)] text-xs flex items-center justify-center gap-2"
               >
                 <AlertCircle className="h-3.5 w-3.5 shrink-0" />
                 <span>{error}</span>
@@ -149,13 +149,13 @@ export default function SessionLockScreen() {
         </form>
 
         {/* Footer: Switch User or Sign Out */}
-        <div className="pt-3 border-t border-white/5 flex items-center justify-between text-xs text-neutral-400">
+        <div className="pt-3 border-t border-[var(--border)] flex items-center justify-between text-xs text-[var(--text-muted)]">
           <span />
 
           <button
             type="button"
             onClick={logout}
-            className="flex items-center gap-1.5 text-rose-400 hover:text-rose-300 text-xs font-semibold cursor-pointer"
+            className="flex items-center gap-1.5 text-[var(--danger)] hover:text-[var(--danger)] text-xs font-semibold cursor-pointer"
           >
             <LogOut className="h-3.5 w-3.5" />
             <span>Sign out</span>

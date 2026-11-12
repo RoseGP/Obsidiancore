@@ -314,16 +314,16 @@ export const ChatDetailColumn: React.FC<ChatDetailColumnProps> = ({
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
-      className="flex-1 flex flex-col h-full bg-neutral-950 overflow-hidden relative"
+      className="flex-1 flex flex-col h-full bg-[var(--surface-sunken)] overflow-hidden relative"
     >
       {/* ---------------------------------------------------- */}
       {/* DRAG AND DROP VISUAL OVERLAY DROPZONE                */}
       {/* ---------------------------------------------------- */}
       {isDraggingOver && (
-        <div className="absolute inset-0 z-50 bg-blue-950/80 backdrop-blur-md border-2 border-dashed border-blue-400 m-4 rounded-3xl flex flex-col items-center justify-center text-white pointer-events-none animate-in fade-in duration-150">
-          <UploadCloud className="w-16 h-16 text-blue-400 mb-3 animate-bounce" />
+        <div className="absolute inset-0 z-50 bg-[var(--accent-soft)] backdrop-blur-md border-2 border-dashed border-blue-400 m-4 rounded-3xl flex flex-col items-center justify-center text-[var(--text)] pointer-events-none animate-in fade-in duration-150">
+          <UploadCloud className="w-16 h-16 text-[var(--accent-text)] mb-3 animate-bounce" />
           <h3 className="text-lg font-bold">Drop Business File to Attach</h3>
-          <p className="text-xs text-blue-200 mt-1">
+          <p className="text-xs text-[var(--accent-text)] mt-1">
             Securely upload to {conversation.title} (PDF, DOCX, XLSX, Images up to 25MB)
           </p>
         </div>
@@ -332,17 +332,17 @@ export const ChatDetailColumn: React.FC<ChatDetailColumnProps> = ({
       {/* ---------------------------------------------------- */}
       {/* 1. TOP CONVERSATION HEADER BAR                       */}
       {/* ---------------------------------------------------- */}
-      <div className="px-3 sm:px-5 py-3.5 border-b border-white/5 bg-neutral-900/60 backdrop-blur-md flex items-center justify-between z-20 shrink-0">
+      <div className="px-3 sm:px-5 py-3.5 border-b border-[var(--border)] bg-[var(--surface)] backdrop-blur-md flex items-center justify-between z-20 shrink-0">
         <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           {onBackToList && (
             <button
               onClick={onBackToList}
               id="btn-back-to-conv-list"
               title="Back to conversations list"
-              className="flex md:hidden p-1.5 rounded-lg text-neutral-400 hover:text-white hover:bg-white/10 transition cursor-pointer items-center gap-1 shrink-0"
+              className="flex md:hidden p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--border)] transition cursor-pointer items-center gap-1 shrink-0"
             >
-              <ArrowLeft className="w-4 h-4 text-blue-400" />
-              <span className="text-xs font-semibold text-neutral-300">Chats</span>
+              <ArrowLeft className="w-4 h-4 text-[var(--accent-text)]" />
+              <span className="text-xs font-semibold text-[var(--text-muted)]">Chats</span>
             </button>
           )}
 
@@ -350,7 +350,7 @@ export const ChatDetailColumn: React.FC<ChatDetailColumnProps> = ({
             <button
               onClick={onToggleConversationList}
               title={isConversationListCollapsed ? 'Expand conversation list' : 'Collapse conversation list'}
-              className="hidden md:flex p-1.5 rounded-lg text-neutral-400 hover:text-white hover:bg-white/5 transition cursor-pointer shrink-0"
+              className="hidden md:flex p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-sunken)] transition cursor-pointer shrink-0"
             >
               {isConversationListCollapsed ? <SidebarOpen className="w-4 h-4" /> : <SidebarClose className="w-4 h-4" />}
             </button>
@@ -358,9 +358,9 @@ export const ChatDetailColumn: React.FC<ChatDetailColumnProps> = ({
 
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <h3 className="text-sm font-bold text-white tracking-tight truncate">{conversation.title}</h3>
+              <h3 className="text-sm font-bold text-[var(--text)] tracking-tight truncate">{conversation.title}</h3>
               {conversation.crmRecord && (
-                <span className="flex items-center gap-1 text-[10px] font-semibold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">
+                <span className="flex items-center gap-1 text-[10px] font-semibold text-[var(--warning)] bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">
                   <Briefcase className="w-3 h-3" />
                   <span>{conversation.crmRecord.title}</span>
                   {conversation.crmRecord.value && <span>({conversation.crmRecord.value})</span>}
@@ -368,17 +368,17 @@ export const ChatDetailColumn: React.FC<ChatDetailColumnProps> = ({
               )}
             </div>
 
-            <div className="flex items-center gap-2 mt-0.5 text-xs text-neutral-400">
+            <div className="flex items-center gap-2 mt-0.5 text-xs text-[var(--text-muted)]">
               <span className="flex items-center gap-1 text-[11px]">
-                <Users className="w-3 h-3 text-neutral-500" />
+                <Users className="w-3 h-3 text-[var(--text-subtle)]" />
                 <span>{conversation.participants.length} participants</span>
               </span>
               <span>•</span>
-              <span className="capitalize text-[11px] text-emerald-400 font-medium">{conversation.status}</span>
+              <span className="capitalize text-[11px] text-[var(--success)] font-medium">{conversation.status}</span>
               {conversation.isPinned && (
                 <>
                   <span>•</span>
-                  <span className="flex items-center gap-0.5 text-[10px] text-amber-400">
+                  <span className="flex items-center gap-0.5 text-[10px] text-[var(--warning)]">
                     <Pin className="w-2.5 h-2.5 fill-amber-400" /> Pinned
                   </span>
                 </>
@@ -397,7 +397,7 @@ export const ChatDetailColumn: React.FC<ChatDetailColumnProps> = ({
             }}
             title="Search in this conversation"
             className={`p-2 rounded-xl transition cursor-pointer ${
-              isSearchActive ? 'bg-blue-600/20 text-blue-400' : 'text-neutral-400 hover:text-white hover:bg-white/5'
+              isSearchActive ? 'bg-blue-600/20 text-[var(--accent-text)]' : 'text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-sunken)]'
             }`}
           >
             <Search className="w-4 h-4" />
@@ -406,9 +406,9 @@ export const ChatDetailColumn: React.FC<ChatDetailColumnProps> = ({
           {/* Structured Prompt Button */}
           <button
             onClick={onOpenPromptLibrary}
-            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-600/15 border border-purple-500/30 text-purple-300 hover:bg-purple-600/25 text-xs font-semibold shadow-sm transition cursor-pointer"
+            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-600/15 border border-purple-500/30 text-[var(--accent-text)] hover:bg-purple-600/25 text-xs font-semibold shadow-sm transition cursor-pointer"
           >
-            <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+            <Sparkles className="w-3.5 h-3.5 text-[var(--accent-text)]" />
             <span>AI Prompts & SOP</span>
           </button>
 
@@ -416,7 +416,7 @@ export const ChatDetailColumn: React.FC<ChatDetailColumnProps> = ({
           <select
             value={conversation.status}
             onChange={(e) => onUpdateConversationStatus(e.target.value as any)}
-            className="bg-neutral-950 border border-white/10 text-xs text-neutral-300 rounded-xl px-2.5 py-1.5 focus:outline-none focus:border-blue-500 cursor-pointer"
+            className="bg-[var(--surface-sunken)] border border-[var(--border)] text-xs text-[var(--text-muted)] rounded-xl px-2.5 py-1.5 focus:outline-none focus:border-blue-500 cursor-pointer"
           >
             <option value="open">🟢 Open</option>
             <option value="pending">🟡 Pending</option>
@@ -429,8 +429,8 @@ export const ChatDetailColumn: React.FC<ChatDetailColumnProps> = ({
             title={isDetailsPanelOpen ? 'Hide CRM details' : 'Show CRM details'}
             className={`p-2 rounded-xl border transition cursor-pointer ${
               isDetailsPanelOpen
-                ? 'bg-blue-600/20 border-blue-500/40 text-blue-400'
-                : 'bg-white/5 border-white/10 text-neutral-400 hover:text-white'
+                ? 'bg-blue-600/20 border-blue-500/40 text-[var(--accent-text)]'
+                : 'bg-[var(--surface-sunken)] border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text)]'
             }`}
           >
             <Briefcase className="w-4 h-4" />
@@ -442,18 +442,18 @@ export const ChatDetailColumn: React.FC<ChatDetailColumnProps> = ({
       {/* 2. SEARCH WITHIN CONVERSATION INPUT BAR              */}
       {/* ---------------------------------------------------- */}
       {isSearchActive && (
-        <div className="px-5 py-2.5 bg-neutral-900 border-b border-white/10 flex items-center gap-2 animate-in slide-in-from-top-2 duration-150">
-          <Search className="w-4 h-4 text-blue-400 shrink-0" />
+        <div className="px-5 py-2.5 bg-[var(--surface)] border-b border-[var(--border)] flex items-center gap-2 animate-in slide-in-from-top-2 duration-150">
+          <Search className="w-4 h-4 text-[var(--accent-text)] shrink-0" />
           <input
             type="text"
             autoFocus
             placeholder="Filter messages in this timeline..."
             value={searchInConvQuery}
             onChange={(e) => setSearchInConvQuery(e.target.value)}
-            className="flex-1 bg-transparent text-xs text-white placeholder-neutral-500 focus:outline-none"
+            className="flex-1 bg-transparent text-xs text-[var(--text)] placeholder:text-[var(--text-subtle)] focus:outline-none"
           />
           {searchInConvQuery && (
-            <span className="text-[11px] text-neutral-400 font-mono">
+            <span className="text-[11px] text-[var(--text-muted)] font-mono">
               {displayedMessages.length} found
             </span>
           )}
@@ -462,7 +462,7 @@ export const ChatDetailColumn: React.FC<ChatDetailColumnProps> = ({
               setIsSearchActive(false);
               setSearchInConvQuery('');
             }}
-            className="p-1 rounded text-neutral-400 hover:text-white"
+            className="p-1 rounded text-[var(--text-muted)] hover:text-[var(--text)]"
           >
             <X className="w-4 h-4" />
           </button>
@@ -473,10 +473,10 @@ export const ChatDetailColumn: React.FC<ChatDetailColumnProps> = ({
       {/* 3. PINNED MESSAGES BANNER                            */}
       {/* ---------------------------------------------------- */}
       {pinnedMessages.length > 0 && (
-        <div className="px-5 py-2 bg-amber-500/10 border-b border-amber-500/20 flex items-center justify-between text-xs text-amber-300">
+        <div className="px-5 py-2 bg-amber-500/10 border-b border-amber-500/20 flex items-center justify-between text-xs text-[var(--warning)]">
           <div className="flex items-center gap-2 truncate">
-            <Pin className="w-3.5 h-3.5 text-amber-400 fill-amber-400 shrink-0" />
-            <span className="font-semibold text-amber-400">Pinned:</span>
+            <Pin className="w-3.5 h-3.5 text-[var(--warning)] fill-amber-400 shrink-0" />
+            <span className="font-semibold text-[var(--warning)]">Pinned:</span>
             <span className="truncate text-amber-200/90 font-medium">
               "{pinnedMessages[0].content || pinnedMessages[0].structuredPrompt?.title || 'Pinned Item'}"
             </span>
@@ -484,7 +484,7 @@ export const ChatDetailColumn: React.FC<ChatDetailColumnProps> = ({
           {onTogglePinMessage && (
             <button
               onClick={() => onTogglePinMessage(pinnedMessages[0].id)}
-              className="text-[10px] text-amber-400 hover:text-white underline cursor-pointer ml-3 shrink-0"
+              className="text-[10px] text-[var(--warning)] hover:text-[var(--text)] underline cursor-pointer ml-3 shrink-0"
             >
               Unpin
             </button>
@@ -497,12 +497,12 @@ export const ChatDetailColumn: React.FC<ChatDetailColumnProps> = ({
       {/* ---------------------------------------------------- */}
       <div className="flex-1 overflow-y-auto px-5 py-6 space-y-5">
         {displayedMessages.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center text-center p-8 text-neutral-500">
+          <div className="h-full flex flex-col items-center justify-center text-center p-8 text-[var(--text-subtle)]">
             <Sparkles className="w-10 h-10 text-purple-400/40 mb-3" />
-            <h4 className="text-sm font-semibold text-neutral-300 mb-1">
+            <h4 className="text-sm font-semibold text-[var(--text-muted)] mb-1">
               {searchInConvQuery ? 'No matching messages' : 'Conversation Room Started'}
             </h4>
-            <p className="text-xs text-neutral-500 max-w-sm">
+            <p className="text-xs text-[var(--text-subtle)] max-w-sm">
               {searchInConvQuery
                 ? 'Try a different search keyword.'
                 : 'Send a message, drag and drop documents, or trigger an enterprise AI prompt blueprint.'}
@@ -525,7 +525,7 @@ export const ChatDetailColumn: React.FC<ChatDetailColumnProps> = ({
               <React.Fragment key={msg.id}>
                 {showDateSeparator && (
                   <div className="flex items-center justify-center my-4">
-                    <span className="px-3 py-1 rounded-full bg-white/5 border border-white/10 text-[10px] font-semibold text-neutral-400 uppercase tracking-wider">
+                    <span className="px-3 py-1 rounded-full bg-[var(--surface-sunken)] border border-[var(--border)] text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-wider">
                       {formatDateSeparator(msg.createdAt)}
                     </span>
                   </div>
@@ -539,8 +539,8 @@ export const ChatDetailColumn: React.FC<ChatDetailColumnProps> = ({
                 >
                   {/* Internal Note Banner */}
                   {isInternal ? (
-                    <div className="w-full max-w-xl p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-xs shadow-sm space-y-1">
-                      <div className="flex items-center justify-between text-[11px] font-semibold text-amber-400">
+                    <div className="w-full max-w-xl p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-[var(--warning)] text-xs shadow-sm space-y-1">
+                      <div className="flex items-center justify-between text-[11px] font-semibold text-[var(--warning)]">
                         <span className="flex items-center gap-1.5">
                           <Lock className="w-3.5 h-3.5" />
                           Internal Team Note (Private to CRM Agents)
@@ -551,78 +551,78 @@ export const ChatDetailColumn: React.FC<ChatDetailColumnProps> = ({
                     </div>
                   ) : msg.contentType === 'crm_activity' ? (
                     /* CRM Activity Audit Pill */
-                    <div className="w-full max-w-lg p-3 rounded-xl bg-blue-950/40 border border-blue-500/30 text-blue-200 text-xs shadow-sm flex items-center justify-between gap-3">
+                    <div className="w-full max-w-lg p-3 rounded-xl bg-[var(--accent-soft)] border border-blue-500/30 text-[var(--accent-text)] text-xs shadow-sm flex items-center justify-between gap-3">
                       <div className="flex items-center gap-2.5">
-                        <div className="p-1.5 rounded-lg bg-blue-500/20 text-blue-400 shrink-0">
+                        <div className="p-1.5 rounded-lg bg-blue-500/20 text-[var(--accent-text)] shrink-0">
                           <CheckSquare className="w-4 h-4" />
                         </div>
                         <div>
-                          <p className="font-semibold text-white">{msg.crmActivityData?.targetTitle || msg.content}</p>
+                          <p className="font-semibold text-[var(--text)]">{msg.crmActivityData?.targetTitle || msg.content}</p>
                           {msg.crmActivityData?.details && (
-                            <p className="text-[11px] text-neutral-400">{msg.crmActivityData.details}</p>
+                            <p className="text-[11px] text-[var(--text-muted)]">{msg.crmActivityData.details}</p>
                           )}
                         </div>
                       </div>
-                      <span className="text-[10px] text-neutral-500 shrink-0">
+                      <span className="text-[10px] text-[var(--text-subtle)] shrink-0">
                         {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </span>
                     </div>
                   ) : msg.contentType === 'ai_response' && msg.aiResponseData ? (
                     /* AI Copilot Response Card */
-                    <div className="w-full max-w-2xl p-4 rounded-2xl bg-neutral-900/90 border border-purple-500/30 shadow-xl space-y-3">
-                      <div className="flex items-center justify-between border-b border-white/5 pb-2.5">
+                    <div className="w-full max-w-2xl p-4 rounded-2xl bg-[var(--surface)] border border-purple-500/30 shadow-xl space-y-3">
+                      <div className="flex items-center justify-between border-b border-[var(--border)] pb-2.5">
                         <div className="flex items-center gap-2">
-                          <div className="p-1.5 rounded-lg bg-purple-500/20 text-purple-400">
+                          <div className="p-1.5 rounded-lg bg-purple-500/20 text-[var(--accent-text)]">
                             <Bot className="w-4 h-4" />
                           </div>
                           <div>
-                            <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                            <span className="text-xs font-bold text-[var(--text)] flex items-center gap-1.5">
                               Gemini CRM Copilot
-                              <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                              <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-purple-500/20 text-[var(--accent-text)] border border-purple-500/30">
                                 {msg.aiResponseData.model}
                               </span>
                             </span>
-                            <span className="text-[10px] text-neutral-400 block">
+                            <span className="text-[10px] text-[var(--text-muted)] block">
                               Executed for: "{msg.aiResponseData.promptUsed}"
                             </span>
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-2 text-[10px] text-neutral-400">
+                        <div className="flex items-center gap-2 text-[10px] text-[var(--text-muted)]">
                           <span className="flex items-center gap-1">
-                            <Cpu className="w-3 h-3 text-purple-400" />
+                            <Cpu className="w-3 h-3 text-[var(--accent-text)]" />
                             {msg.aiResponseData.tokensUsed} tokens
                           </span>
                           <span>•</span>
                           <span className="flex items-center gap-1">
-                            <Clock className="w-3 h-3 text-neutral-500" />
+                            <Clock className="w-3 h-3 text-[var(--text-subtle)]" />
                             {msg.aiResponseData.executionTimeMs}ms
                           </span>
                         </div>
                       </div>
 
-                      <div className="text-xs text-neutral-200 leading-relaxed whitespace-pre-wrap font-sans">
+                      <div className="text-xs text-[var(--text)] leading-relaxed whitespace-pre-wrap font-sans">
                         {msg.aiResponseData.generatedText}
                       </div>
 
-                      <div className="flex items-center justify-between pt-2 border-t border-white/5 text-[11px]">
-                        <span className="text-emerald-400 font-medium flex items-center gap-1">
+                      <div className="flex items-center justify-between pt-2 border-t border-[var(--border)] text-[11px]">
+                        <span className="text-[var(--success)] font-medium flex items-center gap-1">
                           <Check className="w-3.5 h-3.5" /> Human Verified Output
                         </span>
                         <div className="flex items-center gap-2">
                           <button
                             onClick={() => onOpenConvertToTask(msg)}
-                            className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-neutral-300 hover:text-white flex items-center gap-1 cursor-pointer"
+                            className="px-2.5 py-1 rounded-lg bg-[var(--surface-sunken)] hover:bg-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text)] flex items-center gap-1 cursor-pointer"
                           >
-                            <CheckSquare className="w-3 h-3 text-amber-400" />
+                            <CheckSquare className="w-3 h-3 text-[var(--warning)]" />
                             <span>Convert to CRM Task</span>
                           </button>
                           {onAddNote && (
                             <button
                               onClick={() => onAddNote(msg.aiResponseData?.generatedText || msg.content)}
-                              className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-neutral-300 hover:text-white flex items-center gap-1 cursor-pointer"
+                              className="px-2.5 py-1 rounded-lg bg-[var(--surface-sunken)] hover:bg-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text)] flex items-center gap-1 cursor-pointer"
                             >
-                              <Bookmark className="w-3 h-3 text-blue-400" />
+                              <Bookmark className="w-3 h-3 text-[var(--accent-text)]" />
                               <span>Log as Note</span>
                             </button>
                           )}
@@ -644,7 +644,7 @@ export const ChatDetailColumn: React.FC<ChatDetailColumnProps> = ({
                             initialsAvatar(msg.senderName)
                           }
                           alt={msg.senderName}
-                          className="w-8 h-8 rounded-xl object-cover ring-1 ring-white/10 shrink-0 mt-1"
+                          className="w-8 h-8 rounded-xl object-cover ring-1 ring-[var(--border)] shrink-0 mt-1"
                         />
                       ) : (
                         <div className="w-8 shrink-0" />
@@ -655,15 +655,15 @@ export const ChatDetailColumn: React.FC<ChatDetailColumnProps> = ({
                         {isFirstOfGroup && (
                           <div
                             className={`flex items-center gap-2 mb-1 px-1 text-[11px] ${
-                              isMe ? 'justify-end text-neutral-400' : 'text-neutral-400'
+                              isMe ? 'justify-end text-[var(--text-muted)]' : 'text-[var(--text-muted)]'
                             }`}
                           >
-                            <span className="font-semibold text-neutral-200">{msg.senderName}</span>
-                            <span className="text-[10px] text-neutral-500">
+                            <span className="font-semibold text-[var(--text)]">{msg.senderName}</span>
+                            <span className="text-[10px] text-[var(--text-subtle)]">
                               {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                             </span>
                             {msg.isPinned && (
-                              <span className="flex items-center gap-0.5 text-[9px] text-amber-400 bg-amber-500/10 px-1.5 py-0.2 rounded border border-amber-500/20">
+                              <span className="flex items-center gap-0.5 text-[9px] text-[var(--warning)] bg-amber-500/10 px-1.5 py-0.2 rounded border border-amber-500/20">
                                 <Pin className="w-2.5 h-2.5 fill-amber-400" /> Pinned
                               </span>
                             )}
@@ -672,8 +672,8 @@ export const ChatDetailColumn: React.FC<ChatDetailColumnProps> = ({
 
                         {/* Quoted Reply context if present */}
                         {msg.replyTo && (
-                          <div className="mb-1.5 p-2 rounded-lg bg-white/5 border-l-2 border-blue-500 text-[11px] text-neutral-300 max-w-md">
-                            <span className="font-semibold text-blue-400 block">{msg.replyTo.senderName}:</span>
+                          <div className="mb-1.5 p-2 rounded-lg bg-[var(--surface-sunken)] border-l-2 border-blue-500 text-[11px] text-[var(--text-muted)] max-w-md">
+                            <span className="font-semibold text-[var(--accent-text)] block">{msg.replyTo.senderName}:</span>
                             <span className="italic line-clamp-1">{msg.replyTo.contentSnippet}</span>
                           </div>
                         )}
@@ -683,7 +683,7 @@ export const ChatDetailColumn: React.FC<ChatDetailColumnProps> = ({
                           className={`relative rounded-2xl p-3.5 text-xs shadow-md transition-all ${
                             isMe
                               ? 'bg-blue-600 text-white rounded-tr-sm'
-                              : 'bg-neutral-900 border border-white/10 text-neutral-200 rounded-tl-sm'
+                              : 'bg-[var(--surface)] border border-[var(--border)] text-[var(--text)] rounded-tl-sm'
                           }`}
                         >
                           {/* Inline Edit Form */}
@@ -692,13 +692,13 @@ export const ChatDetailColumn: React.FC<ChatDetailColumnProps> = ({
                               <textarea
                                 value={editingText}
                                 onChange={(e) => setEditingText(e.target.value)}
-                                className="w-full bg-neutral-950 border border-white/20 rounded-lg p-2 text-xs text-white focus:outline-none"
+                                className="w-full bg-[var(--surface-sunken)] border border-[var(--border)] rounded-lg p-2 text-xs text-[var(--text)] focus:outline-none"
                                 rows={3}
                               />
                               <div className="flex justify-end gap-2 text-xs">
                                 <button
                                   onClick={() => setEditingMessageId(null)}
-                                  className="px-2 py-1 rounded bg-white/10 text-neutral-300 hover:text-white"
+                                  className="px-2 py-1 rounded bg-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text)]"
                                 >
                                   Cancel
                                 </button>
@@ -721,7 +721,7 @@ export const ChatDetailColumn: React.FC<ChatDetailColumnProps> = ({
                               {msg.contentType === 'prompt' && msg.structuredPrompt ? (
                                 <div className="space-y-3 min-w-[280px] max-w-md text-left">
                                   <div className="flex items-center justify-between">
-                                    <span className="text-[10px] font-semibold text-purple-300 bg-purple-500/20 px-2 py-0.5 rounded-full border border-purple-400/30">
+                                    <span className="text-[10px] font-semibold text-[var(--accent-text)] bg-purple-500/20 px-2 py-0.5 rounded-full border border-purple-400/30">
                                       ✨ {msg.structuredPrompt.category}
                                     </span>
                                     {msg.structuredPrompt.modelSuggestion && (
@@ -730,12 +730,12 @@ export const ChatDetailColumn: React.FC<ChatDetailColumnProps> = ({
                                       </span>
                                     )}
                                   </div>
-                                  <h4 className="text-sm font-bold text-white tracking-tight">
+                                  <h4 className="text-sm font-bold text-[var(--text)] tracking-tight">
                                     {msg.structuredPrompt.title}
                                   </h4>
                                   <p className="text-xs text-purple-100/90">{msg.structuredPrompt.goal}</p>
 
-                                  <div className="p-3 rounded-xl bg-neutral-950/80 border border-white/10 text-xs font-mono text-neutral-300 whitespace-pre-wrap leading-relaxed">
+                                  <div className="p-3 rounded-xl bg-[var(--surface-sunken)] border border-[var(--border)] text-xs font-mono text-[var(--text-muted)] whitespace-pre-wrap leading-relaxed">
                                     {msg.structuredPrompt.template}
                                   </div>
 
@@ -744,7 +744,7 @@ export const ChatDetailColumn: React.FC<ChatDetailColumnProps> = ({
                                       onClick={() => {
                                         navigator.clipboard?.writeText(msg.structuredPrompt?.template || '');
                                       }}
-                                      className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white text-[11px] font-medium flex items-center gap-1 transition cursor-pointer"
+                                      className="px-2.5 py-1 rounded-lg bg-[var(--border)] hover:bg-[var(--border)] text-[var(--text)] text-[11px] font-medium flex items-center gap-1 transition cursor-pointer"
                                     >
                                       <Copy className="w-3 h-3" />
                                       <span>Copy Template</span>
@@ -765,12 +765,12 @@ export const ChatDetailColumn: React.FC<ChatDetailColumnProps> = ({
                                 /* Structured SOP Checklist */
                                 <div className="space-y-3 min-w-[280px] max-w-md text-left">
                                   <div className="flex items-center justify-between">
-                                    <span className="text-[10px] font-semibold text-emerald-300 bg-emerald-500/20 px-2 py-0.5 rounded-full border border-emerald-400/30">
+                                    <span className="text-[10px] font-semibold text-[var(--success)] bg-emerald-500/20 px-2 py-0.5 rounded-full border border-emerald-400/30">
                                       📋 {msg.structuredInstruction.sopCategory}
                                     </span>
-                                    <span className="text-[10px] text-neutral-400">Interactive Checklist</span>
+                                    <span className="text-[10px] text-[var(--text-muted)]">Interactive Checklist</span>
                                   </div>
-                                  <h4 className="text-sm font-bold text-white">{msg.structuredInstruction.title}</h4>
+                                  <h4 className="text-sm font-bold text-[var(--text)]">{msg.structuredInstruction.title}</h4>
 
                                   <div className="space-y-1.5">
                                     {msg.structuredInstruction.steps.map((step) => {
@@ -780,8 +780,8 @@ export const ChatDetailColumn: React.FC<ChatDetailColumnProps> = ({
                                           key={step.id}
                                           className={`flex items-start gap-2 p-2 rounded-lg border transition cursor-pointer ${
                                             isDone
-                                              ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-200'
-                                              : 'bg-white/5 border-white/5 text-neutral-200 hover:bg-white/10'
+                                              ? 'bg-emerald-500/10 border-emerald-500/20 text-[var(--success)]'
+                                              : 'bg-[var(--surface-sunken)] border-[var(--border)] text-[var(--text)] hover:bg-[var(--border)]'
                                           }`}
                                         >
                                           <input
@@ -793,14 +793,14 @@ export const ChatDetailColumn: React.FC<ChatDetailColumnProps> = ({
                                                 [step.id]: !isDone
                                               }))
                                             }
-                                            className="mt-0.5 rounded border-white/20 text-emerald-600 focus:ring-0"
+                                            className="mt-0.5 rounded border-[var(--border)] text-emerald-600 focus:ring-0"
                                           />
                                           <div className="flex-1 text-xs">
                                             <span className={isDone ? 'line-through opacity-70' : ''}>
                                               {step.text}
                                             </span>
                                             {step.assignee && (
-                                              <span className="block text-[10px] text-neutral-400 mt-0.5">
+                                              <span className="block text-[10px] text-[var(--text-muted)] mt-0.5">
                                                 Assigned: {step.assignee}
                                               </span>
                                             )}
@@ -814,16 +814,16 @@ export const ChatDetailColumn: React.FC<ChatDetailColumnProps> = ({
                                 /* Document / File Attachment */
                                 <div className="space-y-2 min-w-[240px]">
                                   <p className="text-xs leading-relaxed">{msg.content}</p>
-                                  <div className="p-3 rounded-xl bg-neutral-950/60 border border-white/10 flex items-center justify-between gap-3">
+                                  <div className="p-3 rounded-xl bg-[var(--surface-sunken)] border border-[var(--border)] flex items-center justify-between gap-3">
                                     <div className="flex items-center gap-2.5 min-w-0">
-                                      <div className="p-2 rounded-lg bg-blue-500/20 text-blue-400 shrink-0">
+                                      <div className="p-2 rounded-lg bg-blue-500/20 text-[var(--accent-text)] shrink-0">
                                         <FileText className="w-5 h-5" />
                                       </div>
                                       <div className="min-w-0">
-                                        <p className="text-xs font-semibold text-white truncate">
+                                        <p className="text-xs font-semibold text-[var(--text)] truncate">
                                           {msg.attachmentName || 'Shared Document.pdf'}
                                         </p>
-                                        <p className="text-[10px] text-neutral-400">{msg.attachmentSize || '2.4 MB'}</p>
+                                        <p className="text-[10px] text-[var(--text-muted)]">{msg.attachmentSize || '2.4 MB'}</p>
                                       </div>
                                     </div>
                                     <div className="flex items-center gap-1.5 shrink-0">
@@ -838,7 +838,7 @@ export const ChatDetailColumn: React.FC<ChatDetailColumnProps> = ({
                                             timestamp: new Date(msg.createdAt).toLocaleTimeString()
                                           })
                                         }
-                                        className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white transition cursor-pointer"
+                                        className="p-1.5 rounded-lg bg-[var(--border)] hover:bg-[var(--border)] text-[var(--text)] transition cursor-pointer"
                                         title="Preview Document"
                                       >
                                         <Eye className="w-3.5 h-3.5" />
@@ -881,8 +881,8 @@ export const ChatDetailColumn: React.FC<ChatDetailColumnProps> = ({
                                   onClick={() => onToggleReaction(msg.id, r.emoji)}
                                   className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border transition cursor-pointer ${
                                     hasReacted
-                                      ? 'bg-blue-600/30 border-blue-500/50 text-white font-bold'
-                                      : 'bg-white/5 border-white/10 text-neutral-300 hover:bg-white/10'
+                                      ? 'bg-blue-600/30 border-blue-500/50 text-[var(--text)] font-bold'
+                                      : 'bg-[var(--surface-sunken)] border-[var(--border)] text-[var(--text-muted)] hover:bg-[var(--border)]'
                                   }`}
                                 >
                                   <span>{r.emoji}</span>
@@ -899,7 +899,7 @@ export const ChatDetailColumn: React.FC<ChatDetailColumnProps> = ({
                   {/* Hover Actions Toolbar */}
                   {!isInternal && !isEditing && msg.contentType !== 'crm_activity' && (
                     <div
-                      className={`absolute top-0 opacity-0 group-hover:opacity-100 transition-opacity duration-150 flex items-center gap-1 p-1 rounded-xl bg-neutral-900 border border-white/15 shadow-xl z-20 ${
+                      className={`absolute top-0 opacity-0 group-hover:opacity-100 transition-opacity duration-150 flex items-center gap-1 p-1 rounded-xl bg-[var(--surface)] border border-[var(--border)] shadow-xl z-20 ${
                         isMe ? 'right-12 -translate-y-3' : 'left-12 -translate-y-3'
                       }`}
                     >
@@ -910,12 +910,12 @@ export const ChatDetailColumn: React.FC<ChatDetailColumnProps> = ({
                             setShowEmojiPickerForMsgId(showEmojiPickerForMsgId === msg.id ? null : msg.id)
                           }
                           title="Add Reaction"
-                          className="p-1 rounded-lg text-neutral-400 hover:text-amber-400 hover:bg-white/10 transition cursor-pointer"
+                          className="p-1 rounded-lg text-[var(--text-muted)] hover:text-[var(--warning)] hover:bg-[var(--border)] transition cursor-pointer"
                         >
                           <Smile className="w-3.5 h-3.5" />
                         </button>
                         {showEmojiPickerForMsgId === msg.id && (
-                          <div className="absolute left-0 bottom-8 bg-neutral-900 border border-white/15 rounded-xl shadow-2xl p-1.5 flex gap-1 z-30 animate-in zoom-in-95">
+                          <div className="absolute left-0 bottom-8 bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-2xl p-1.5 flex gap-1 z-30 animate-in zoom-in-95">
                             {EMOJI_OPTIONS.map((em) => (
                               <button
                                 key={em}
@@ -942,7 +942,7 @@ export const ChatDetailColumn: React.FC<ChatDetailColumnProps> = ({
                           })
                         }
                         title="Reply / Quote"
-                        className="p-1 rounded-lg text-neutral-400 hover:text-blue-400 hover:bg-white/10 transition cursor-pointer"
+                        className="p-1 rounded-lg text-[var(--text-muted)] hover:text-[var(--accent-text)] hover:bg-[var(--border)] transition cursor-pointer"
                       >
                         <Reply className="w-3.5 h-3.5" />
                       </button>
@@ -951,7 +951,7 @@ export const ChatDetailColumn: React.FC<ChatDetailColumnProps> = ({
                       <button
                         onClick={() => onOpenConvertToTask(msg)}
                         title="Convert to CRM Task"
-                        className="p-1 rounded-lg text-neutral-400 hover:text-amber-400 hover:bg-white/10 transition cursor-pointer"
+                        className="p-1 rounded-lg text-[var(--text-muted)] hover:text-[var(--warning)] hover:bg-[var(--border)] transition cursor-pointer"
                       >
                         <CheckSquare className="w-3.5 h-3.5" />
                       </button>
@@ -961,7 +961,7 @@ export const ChatDetailColumn: React.FC<ChatDetailColumnProps> = ({
                         <button
                           onClick={() => onAddNote(msg.content)}
                           title="Log as CRM Note"
-                          className="p-1 rounded-lg text-neutral-400 hover:text-blue-400 hover:bg-white/10 transition cursor-pointer"
+                          className="p-1 rounded-lg text-[var(--text-muted)] hover:text-[var(--accent-text)] hover:bg-[var(--border)] transition cursor-pointer"
                         >
                           <Bookmark className="w-3.5 h-3.5" />
                         </button>
@@ -973,7 +973,7 @@ export const ChatDetailColumn: React.FC<ChatDetailColumnProps> = ({
                           onClick={() => onTogglePinMessage(msg.id)}
                           title={msg.isPinned ? 'Unpin message' : 'Pin message'}
                           className={`p-1 rounded-lg transition cursor-pointer ${
-                            msg.isPinned ? 'text-amber-400' : 'text-neutral-400 hover:text-amber-400 hover:bg-white/10'
+                            msg.isPinned ? 'text-[var(--warning)]' : 'text-[var(--text-muted)] hover:text-[var(--warning)] hover:bg-[var(--border)]'
                           }`}
                         >
                           <Pin className="w-3.5 h-3.5" />
@@ -988,7 +988,7 @@ export const ChatDetailColumn: React.FC<ChatDetailColumnProps> = ({
                             setEditingText(msg.content);
                           }}
                           title="Edit Message"
-                          className="p-1 rounded-lg text-neutral-400 hover:text-white hover:bg-white/10 transition cursor-pointer"
+                          className="p-1 rounded-lg text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--border)] transition cursor-pointer"
                         >
                           <Edit2 className="w-3.5 h-3.5" />
                         </button>
@@ -999,7 +999,7 @@ export const ChatDetailColumn: React.FC<ChatDetailColumnProps> = ({
                         <button
                           onClick={() => onDeleteMessage(msg.id)}
                           title="Delete Message"
-                          className="p-1 rounded-lg text-neutral-400 hover:text-rose-400 hover:bg-rose-500/10 transition cursor-pointer"
+                          className="p-1 rounded-lg text-[var(--text-muted)] hover:text-[var(--danger)] hover:bg-rose-500/10 transition cursor-pointer"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -1009,7 +1009,7 @@ export const ChatDetailColumn: React.FC<ChatDetailColumnProps> = ({
                       <button
                         onClick={() => navigator.clipboard?.writeText(msg.content)}
                         title="Copy text"
-                        className="p-1 rounded-lg text-neutral-400 hover:text-white hover:bg-white/10 transition cursor-pointer"
+                        className="p-1 rounded-lg text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--border)] transition cursor-pointer"
                       >
                         <Copy className="w-3.5 h-3.5" />
                       </button>
@@ -1027,8 +1027,8 @@ export const ChatDetailColumn: React.FC<ChatDetailColumnProps> = ({
       {/* 5. MENTION AUTOCOMPLETE POPUP                        */}
       {/* ---------------------------------------------------- */}
       {showMentionPicker && (
-        <div className="absolute left-6 bottom-24 z-30 w-64 bg-neutral-900 border border-white/15 rounded-xl shadow-2xl p-1.5 animate-in slide-in-from-bottom-2">
-          <p className="text-[10px] font-semibold text-neutral-400 px-2 py-1 uppercase tracking-wider">
+        <div className="absolute left-6 bottom-24 z-30 w-64 bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-2xl p-1.5 animate-in slide-in-from-bottom-2">
+          <p className="text-[10px] font-semibold text-[var(--text-muted)] px-2 py-1 uppercase tracking-wider">
             Mention CRM Teammate
           </p>
           <div className="space-y-0.5 max-h-40 overflow-y-auto">
@@ -1038,7 +1038,7 @@ export const ChatDetailColumn: React.FC<ChatDetailColumnProps> = ({
                 <button
                   key={u.id}
                   onClick={() => handleSelectMention(u)}
-                  className="w-full text-left p-1.5 rounded-lg hover:bg-white/10 flex items-center gap-2 cursor-pointer text-xs text-white"
+                  className="w-full text-left p-1.5 rounded-lg hover:bg-[var(--border)] flex items-center gap-2 cursor-pointer text-xs text-[var(--text)]"
                 >
                   <img src={u.avatar || initialsAvatar(u.name)} alt={u.name} className="w-5 h-5 rounded-full object-cover" />
                   <span className="font-medium truncate">{u.name}</span>
@@ -1052,8 +1052,8 @@ export const ChatDetailColumn: React.FC<ChatDetailColumnProps> = ({
       {/* 6. CANNED SHORTCUT AUTOCOMPLETE                      */}
       {/* ---------------------------------------------------- */}
       {showCannedDropdown && (
-        <div className="absolute left-6 bottom-24 z-30 w-80 bg-neutral-900 border border-white/15 rounded-xl shadow-2xl p-2 animate-in slide-in-from-bottom-2">
-          <p className="text-[10px] font-semibold text-neutral-400 px-2 py-1 uppercase tracking-wider">
+        <div className="absolute left-6 bottom-24 z-30 w-80 bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-2xl p-2 animate-in slide-in-from-bottom-2">
+          <p className="text-[10px] font-semibold text-[var(--text-muted)] px-2 py-1 uppercase tracking-wider">
             Insert Canned Response
           </p>
           <div className="space-y-1 max-h-48 overflow-y-auto">
@@ -1061,13 +1061,13 @@ export const ChatDetailColumn: React.FC<ChatDetailColumnProps> = ({
               <button
                 key={cr.id}
                 onClick={() => handleInsertCanned(cr.content)}
-                className="w-full text-left p-2 rounded-lg hover:bg-white/10 text-xs text-white cursor-pointer"
+                className="w-full text-left p-2 rounded-lg hover:bg-[var(--border)] text-xs text-[var(--text)] cursor-pointer"
               >
                 <div className="flex justify-between items-center">
-                  <span className="font-semibold text-blue-400">{cr.shortcut}</span>
-                  <span className="text-[10px] text-neutral-500">{cr.category}</span>
+                  <span className="font-semibold text-[var(--accent-text)]">{cr.shortcut}</span>
+                  <span className="text-[10px] text-[var(--text-subtle)]">{cr.category}</span>
                 </div>
-                <p className="text-[11px] text-neutral-300 line-clamp-1">{cr.content}</p>
+                <p className="text-[11px] text-[var(--text-muted)] line-clamp-1">{cr.content}</p>
               </button>
             ))}
           </div>
@@ -1077,18 +1077,18 @@ export const ChatDetailColumn: React.FC<ChatDetailColumnProps> = ({
       {/* ---------------------------------------------------- */}
       {/* 7. MESSAGE COMPOSER                                  */}
       {/* ---------------------------------------------------- */}
-      <div className="p-4 border-t border-white/5 bg-neutral-900/60 backdrop-blur-xl shrink-0 space-y-2">
+      <div className="p-4 border-t border-[var(--border)] bg-[var(--surface)] backdrop-blur-xl shrink-0 space-y-2">
         {/* Upload Progress Bar */}
         {uploadProgress !== null && (
-          <div className="p-2 rounded-xl bg-blue-600/10 border border-blue-500/20 text-xs text-blue-300 space-y-1.5 animate-in fade-in">
+          <div className="p-2 rounded-xl bg-blue-600/10 border border-blue-500/20 text-xs text-[var(--accent-text)] space-y-1.5 animate-in fade-in">
             <div className="flex justify-between items-center text-[10px] font-semibold">
               <span className="flex items-center gap-1.5">
-                <FileUp className="w-3.5 h-3.5 text-blue-400 animate-pulse" />
+                <FileUp className="w-3.5 h-3.5 text-[var(--accent-text)] animate-pulse" />
                 Encrypting & Uploading CRM Document to Vault...
               </span>
               <span>{uploadProgress}%</span>
             </div>
-            <div className="w-full bg-neutral-900 h-1.5 rounded-full overflow-hidden">
+            <div className="w-full bg-[var(--surface)] h-1.5 rounded-full overflow-hidden">
               <div
                 style={{ width: `${uploadProgress}%` }}
                 className="bg-blue-500 h-full transition-all duration-200"
@@ -1099,15 +1099,15 @@ export const ChatDetailColumn: React.FC<ChatDetailColumnProps> = ({
 
         {/* Reply Preview Bar */}
         {activeReply && (
-          <div className="p-2 rounded-xl bg-blue-600/15 border border-blue-500/30 flex items-center justify-between text-xs text-blue-300">
+          <div className="p-2 rounded-xl bg-blue-600/15 border border-blue-500/30 flex items-center justify-between text-xs text-[var(--accent-text)]">
             <div className="flex items-center gap-2 truncate">
-              <CornerUpLeft className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-              <span className="font-semibold text-white">Replying to {activeReply.senderName}:</span>
-              <span className="truncate italic text-neutral-300">"{activeReply.contentSnippet}"</span>
+              <CornerUpLeft className="w-3.5 h-3.5 text-[var(--accent-text)] shrink-0" />
+              <span className="font-semibold text-[var(--text)]">Replying to {activeReply.senderName}:</span>
+              <span className="truncate italic text-[var(--text-muted)]">"{activeReply.contentSnippet}"</span>
             </div>
             <button
               onClick={() => setActiveReply(null)}
-              className="p-1 rounded text-neutral-400 hover:text-white cursor-pointer"
+              className="p-1 rounded text-[var(--text-muted)] hover:text-[var(--text)] cursor-pointer"
             >
               <X className="w-3.5 h-3.5" />
             </button>
@@ -1116,8 +1116,8 @@ export const ChatDetailColumn: React.FC<ChatDetailColumnProps> = ({
 
         {/* Internal note mode indicator */}
         {isInternalNote && (
-          <div className="px-3 py-1.5 rounded-lg bg-amber-500/15 border border-amber-500/30 flex items-center gap-2 text-xs font-semibold text-amber-300">
-            <Lock className="w-3.5 h-3.5 text-amber-400" />
+          <div className="px-3 py-1.5 rounded-lg bg-amber-500/15 border border-amber-500/30 flex items-center gap-2 text-xs font-semibold text-[var(--warning)]">
+            <Lock className="w-3.5 h-3.5 text-[var(--warning)]" />
             <span>Posting as Internal Team Note — will be highlighted yellow and not shown to clients</span>
           </div>
         )}
@@ -1135,18 +1135,18 @@ export const ChatDetailColumn: React.FC<ChatDetailColumnProps> = ({
         <div
           className={`flex items-end gap-2 p-2 rounded-2xl border transition-all ${
             isInternalNote
-              ? 'bg-amber-950/20 border-amber-500/40 focus-within:border-amber-400'
-              : 'bg-neutral-950 border-white/10 focus-within:border-blue-500'
+              ? 'bg-[var(--warning-soft)] border-amber-500/40 focus-within:border-amber-400'
+              : 'bg-[var(--surface-sunken)] border-[var(--border)] focus-within:border-blue-500'
           }`}
         >
           {/* Action icon buttons */}
-          <div className="flex items-center gap-1 text-neutral-400 pb-1">
+          <div className="flex items-center gap-1 text-[var(--text-muted)] pb-1">
             {/* Attachment Button */}
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
               title="Attach Business Document or Drag & Drop (PDF, DOCX, XLSX, Images)"
-              className="p-2 rounded-xl hover:text-white hover:bg-white/10 transition cursor-pointer"
+              className="p-2 rounded-xl hover:text-[var(--text)] hover:bg-[var(--border)] transition cursor-pointer"
             >
               <Paperclip className="w-4 h-4" />
             </button>
@@ -1156,9 +1156,9 @@ export const ChatDetailColumn: React.FC<ChatDetailColumnProps> = ({
               type="button"
               onClick={onOpenPromptLibrary}
               title="Open Structured Prompts & SOP Checklists"
-              className="p-2 rounded-xl hover:text-purple-400 hover:bg-purple-500/10 transition cursor-pointer"
+              className="p-2 rounded-xl hover:text-[var(--accent-text)] hover:bg-purple-500/10 transition cursor-pointer"
             >
-              <Sparkles className="w-4 h-4 text-purple-400" />
+              <Sparkles className="w-4 h-4 text-[var(--accent-text)]" />
             </button>
 
             {/* Quick Emoji Tray Trigger */}
@@ -1166,7 +1166,7 @@ export const ChatDetailColumn: React.FC<ChatDetailColumnProps> = ({
               type="button"
               onClick={() => setShowComposerEmojiTray(!showComposerEmojiTray)}
               title="Add Emoji"
-              className="p-2 rounded-xl hover:text-amber-400 hover:bg-white/10 transition cursor-pointer"
+              className="p-2 rounded-xl hover:text-[var(--warning)] hover:bg-[var(--border)] transition cursor-pointer"
             >
               <Smile className="w-4 h-4" />
             </button>
@@ -1177,7 +1177,7 @@ export const ChatDetailColumn: React.FC<ChatDetailColumnProps> = ({
               onClick={() => setIsInternalNote(!isInternalNote)}
               title={isInternalNote ? 'Switch to client response' : 'Switch to internal note'}
               className={`p-2 rounded-xl transition cursor-pointer ${
-                isInternalNote ? 'bg-amber-500 text-neutral-950 font-bold' : 'hover:text-white hover:bg-white/10'
+                isInternalNote ? 'bg-amber-500 text-neutral-950 font-bold' : 'hover:text-[var(--text)] hover:bg-[var(--border)]'
               }`}
             >
               <Lock className="w-4 h-4" />
@@ -1196,7 +1196,7 @@ export const ChatDetailColumn: React.FC<ChatDetailColumnProps> = ({
                 ? 'Type internal note for CRM team... (Enter to post, Shift+Enter for new line)'
                 : 'Write a message... (Enter to send, Shift+Enter for new line, @ to mention, / for canned snippets)'
             }
-            className="flex-1 bg-transparent text-xs text-white placeholder-neutral-500 resize-none max-h-32 focus:outline-none py-2"
+            className="flex-1 bg-transparent text-xs text-[var(--text)] placeholder:text-[var(--text-subtle)] resize-none max-h-32 focus:outline-none py-2"
           />
 
           {/* Send Button */}
@@ -1209,7 +1209,7 @@ export const ChatDetailColumn: React.FC<ChatDetailColumnProps> = ({
                 ? isInternalNote
                   ? 'bg-amber-500 hover:bg-amber-400 text-neutral-950 shadow-lg shadow-amber-500/20'
                   : 'bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-600/30'
-                : 'bg-white/5 text-neutral-600 cursor-not-allowed'
+                : 'bg-[var(--surface-sunken)] text-neutral-600 cursor-not-allowed'
             }`}
           >
             <Send className="w-4 h-4" />
@@ -1218,7 +1218,7 @@ export const ChatDetailColumn: React.FC<ChatDetailColumnProps> = ({
 
         {/* Emoji Tray Popup */}
         {showComposerEmojiTray && (
-          <div className="flex items-center gap-1.5 p-2 bg-neutral-950 rounded-xl border border-white/10 text-base">
+          <div className="flex items-center gap-1.5 p-2 bg-[var(--surface-sunken)] rounded-xl border border-[var(--border)] text-base">
             {EMOJI_OPTIONS.map((em) => (
               <button
                 key={em}

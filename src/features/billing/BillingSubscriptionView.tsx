@@ -17,11 +17,11 @@ import { formatMoney } from '../invoicing/domain/money';
 import type { BillingSnapshot, InvoiceStatus } from '../invoicing/domain/types';
 import type { BillingRepository } from '../invoicing/services/repository';
 
-const card = 'rounded-2xl p-6 bg-neutral-900/40 border border-white/5 space-y-4';
-const linkBtn = 'inline-flex items-center gap-1.5 px-4 py-2 rounded-xl border border-white/10 text-xs font-semibold text-neutral-200 hover:bg-white/5 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500';
+const card = 'rounded-2xl p-6 bg-[var(--surface)] border border-[var(--border)] space-y-4';
+const linkBtn = 'inline-flex items-center gap-1.5 px-4 py-2 rounded-xl border border-[var(--border)] text-xs font-semibold text-[var(--text)] hover:bg-[var(--surface-sunken)] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500';
 const TONE: Record<InvoiceStatus, string> = {
-  draft: 'bg-neutral-700/40 text-neutral-300', sent: 'bg-sky-500/15 text-sky-300', viewed: 'bg-indigo-500/15 text-indigo-300',
-  partially_paid: 'bg-amber-500/15 text-amber-300', paid: 'bg-emerald-500/15 text-emerald-300', overdue: 'bg-rose-500/15 text-rose-300', void: 'bg-neutral-700/40 text-neutral-400',
+  draft: 'bg-[var(--border)] text-[var(--text-muted)]', sent: 'bg-sky-500/15 text-[var(--info)]', viewed: 'bg-indigo-500/15 text-[var(--accent-text)]',
+  partially_paid: 'bg-amber-500/15 text-[var(--warning)]', paid: 'bg-emerald-500/15 text-[var(--success)]', overdue: 'bg-rose-500/15 text-[var(--danger)]', void: 'bg-[var(--border)] text-[var(--text-muted)]',
 };
 
 type InvoiceState =
@@ -79,33 +79,33 @@ export function InvoicesSummaryCard({ onNavigate, connect = connectBillingReposi
 
   return (
     <section className={card} aria-labelledby="billing-invoices">
-        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-white/5 pb-3">
+        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--border)] pb-3">
           <div>
-            <h3 id="billing-invoices" className="flex items-center gap-2 text-base font-bold text-white"><ReceiptText size={16} className="text-indigo-400" />Invoices</h3>
-            <p className="text-xs text-neutral-400 mt-0.5">The latest invoices from Invoicing, with their current status.</p>
+            <h3 id="billing-invoices" className="flex items-center gap-2 text-base font-bold text-[var(--text)]"><ReceiptText size={16} className="text-[var(--accent-text)]" />Invoices</h3>
+            <p className="text-xs text-[var(--text-muted)] mt-0.5">The latest invoices from Invoicing, with their current status.</p>
           </div>
           <button type="button" className={linkBtn} onClick={() => openProposals(onNavigate)}><FileText size={14} />Open invoicing<ArrowRight size={14} /></button>
         </div>
-        {inv.kind === 'loading' && <p className="flex items-center gap-2 text-xs text-neutral-400"><Loader2 size={14} className="animate-spin" />Loading invoices…</p>}
-        {inv.kind === 'unavailable' && <p className="text-xs text-neutral-400">{inv.reason} Invoices appear here once the billing server is available.</p>}
+        {inv.kind === 'loading' && <p className="flex items-center gap-2 text-xs text-[var(--text-muted)]"><Loader2 size={14} className="animate-spin" />Loading invoices…</p>}
+        {inv.kind === 'unavailable' && <p className="text-xs text-[var(--text-muted)]">{inv.reason} Invoices appear here once the billing server is available.</p>}
         {inv.kind === 'ready' && (rows.length === 0 ? (
-          <p className="text-xs text-neutral-400">No invoices yet. Create one in Invoicing.</p>
+          <p className="text-xs text-[var(--text-muted)]">No invoices yet. Create one in Invoicing.</p>
         ) : (
           <>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div className="rounded-xl bg-neutral-950/40 border border-white/5 p-3"><p className="text-[11px] text-neutral-500">Open invoices</p><p className="text-lg font-bold text-white tabular-nums">{summary.open}</p></div>
-              <div className="rounded-xl bg-neutral-950/40 border border-white/5 p-3"><p className="text-[11px] text-neutral-500">Overdue</p><p className={`text-lg font-bold tabular-nums ${summary.overdue ? 'text-rose-300' : 'text-white'}`}>{summary.overdue}</p></div>
-              <div className="rounded-xl bg-neutral-950/40 border border-white/5 p-3"><p className="text-[11px] text-neutral-500">Still to be paid</p><p className="text-lg font-bold text-white tabular-nums">{summary.due ?? (summary.mixed ? 'Several currencies' : '—')}</p></div>
+              <div className="rounded-xl bg-[var(--surface-sunken)] border border-[var(--border)] p-3"><p className="text-[11px] text-[var(--text-subtle)]">Open invoices</p><p className="text-lg font-bold text-[var(--text)] tabular-nums">{summary.open}</p></div>
+              <div className="rounded-xl bg-[var(--surface-sunken)] border border-[var(--border)] p-3"><p className="text-[11px] text-[var(--text-subtle)]">Overdue</p><p className={`text-lg font-bold tabular-nums ${summary.overdue ? 'text-[var(--danger)]' : 'text-[var(--text)]'}`}>{summary.overdue}</p></div>
+              <div className="rounded-xl bg-[var(--surface-sunken)] border border-[var(--border)] p-3"><p className="text-[11px] text-[var(--text-subtle)]">Still to be paid</p><p className="text-lg font-bold text-[var(--text)] tabular-nums">{summary.due ?? (summary.mixed ? 'Several currencies' : '—')}</p></div>
             </div>
-            <ul className="divide-y divide-white/5 rounded-xl border border-white/5">
+            <ul className="divide-y divide-[var(--border)] rounded-xl border border-[var(--border)]">
               {rows.slice(0, 8).map((r) => (
                 <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5 text-xs">
-                  <span className="min-w-0"><span className="font-semibold text-white">{r.number || 'Draft'}</span> <span className="text-neutral-400">· {r.client} · due {r.due}</span></span>
-                  <span className="flex items-center gap-2"><span className="font-semibold text-neutral-200 tabular-nums">{r.total}</span><span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${TONE[r.status]}`}>{STATUS_LABELS[r.status]}</span></span>
+                  <span className="min-w-0"><span className="font-semibold text-[var(--text)]">{r.number || 'Draft'}</span> <span className="text-[var(--text-muted)]">· {r.client} · due {r.due}</span></span>
+                  <span className="flex items-center gap-2"><span className="font-semibold text-[var(--text)] tabular-nums">{r.total}</span><span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${TONE[r.status]}`}>{STATUS_LABELS[r.status]}</span></span>
                 </li>
               ))}
             </ul>
-            {rows.length > 8 && <p className="text-[11px] text-neutral-500">Showing the 8 most recent of {rows.length}. Open invoicing for the rest.</p>}
+            {rows.length > 8 && <p className="text-[11px] text-[var(--text-subtle)]">Showing the 8 most recent of {rows.length}. Open invoicing for the rest.</p>}
           </>
         ))}
       </section>
@@ -120,9 +120,9 @@ export default function BillingSubscriptionView({ onNavigate }: { onNavigate: (v
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 space-y-6" id="billing-subscription">
-      <div className="border-b border-white/5 pb-4">
-        <h2 className="font-sans font-bold text-xl text-white tracking-tight">Billing &amp; Subscription</h2>
-        <p className="text-xs text-neutral-400 mt-0.5">Your organization’s plan, the invoices you send, and how you get paid.</p>
+      <div className="border-b border-[var(--border)] pb-4">
+        <h2 className="font-sans font-bold text-xl text-[var(--text)] tracking-tight">Billing &amp; Subscription</h2>
+        <p className="text-xs text-[var(--text-muted)] mt-0.5">Your organization’s plan, the invoices you send, and how you get paid.</p>
       </div>
 
       <SubscriptionSettings isAdmin={isAdmin} />
@@ -132,8 +132,8 @@ export default function BillingSubscriptionView({ onNavigate }: { onNavigate: (v
       <section className={card} aria-labelledby="billing-getting-paid">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h3 id="billing-getting-paid" className="flex items-center gap-2 text-base font-bold text-white"><CreditCard size={16} className="text-emerald-400" />Getting paid</h3>
-            <p className="text-xs text-neutral-400 mt-0.5">Connect Stripe or Square so customers can pay invoices online. Invoices are marked paid when the provider confirms the payment.</p>
+            <h3 id="billing-getting-paid" className="flex items-center gap-2 text-base font-bold text-[var(--text)]"><CreditCard size={16} className="text-[var(--success)]" />Getting paid</h3>
+            <p className="text-xs text-[var(--text-muted)] mt-0.5">Connect Stripe or Square so customers can pay invoices online. Invoices are marked paid when the provider confirms the payment.</p>
           </div>
           <button type="button" className={linkBtn} onClick={() => openProposals(onNavigate, 'payment_providers')}>Payment providers<ArrowRight size={14} /></button>
         </div>

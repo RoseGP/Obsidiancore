@@ -62,7 +62,14 @@ export interface GLocation {
   hasSpecialHours: boolean;
   serviceItemCount: number;
   mapsUri?: string;
+  /** openInfo.status: OPEN, CLOSED_PERMANENTLY, CLOSED_TEMPORARILY (absent = not returned). */
+  openStatus?: string;
+  /** Output-only listing metadata from Business Information v1 (absent fields = Google didn't return them). */
+  listing?: { hasPendingEdits?: boolean; hasGoogleUpdated?: boolean; duplicateLocation?: string; hasVoiceOfMerchant?: boolean; canModifyServiceList?: boolean; placeId?: string; newReviewUri?: string };
 }
+
+/** Account Management v1 Admin (locations/{l}/admins). The admin field is a name, or an email while an invitation is pending. */
+export interface GAdmin { name: string; admin: string; role: string; pendingInvitation: boolean }
 
 export interface GReview {
   name: string; // accounts/…/locations/…/reviews/…
@@ -132,7 +139,7 @@ export function createGoogleGateway(cfg: { clientId: string; clientSecret: strin
     },
 
     async listLocations(token: string, accountName: string): Promise<GLocation[]> {
-      const readMask = 'name,title,categories,storefrontAddress,phoneNumbers,websiteUri,profile,regularHours,specialHours,serviceItems,metadata';
+      const readMask = 'name,title,categories,storefrontAddress,phoneNumbers,websiteUri,profile,regularHours,specialHours,serviceItems,metadata,openInfo';
       const out: GLocation[] = [];
       let pageToken = '';
       do {
@@ -151,6 +158,16 @@ export function createGoogleGateway(cfg: { clientId: string; clientSecret: strin
             hasSpecialHours: Array.isArray(l.specialHours?.specialHourPeriods) && l.specialHours.specialHourPeriods.length > 0,
             serviceItemCount: Array.isArray(l.serviceItems) ? l.serviceItems.length : 0,
             mapsUri: l.metadata?.mapsUri,
+            openStatus: typeof l.openInfo?.status === 'string' ? l.openInfo.status : undefined,
+            listing: l.metadata ? {
+              hasPendingEdits: typeof l.metadata.hasPendingEdits === 'boolean' ? l.metadata.hasPendingEdits : undefined,
+              hasGoogleUpdated: typeof l.metadata.hasGoogleUpdated === 'boolean' ? l.metadata.hasGoogleUpdated : undefined,
+              duplicateLocation: typeof l.metadata.duplicateLocation === 'string' && l.metadata.duplicateLocation ? l.metadata.duplicateLocation : undefined,
+              hasVoiceOfMerchant: typeof l.metadata.hasVoiceOfMerchant === 'boolean' ? l.metadata.hasVoiceOfMerchant : undefined,
+              canModifyServiceList: typeof l.metadata.canModifyServiceList === 'boolean' ? l.metadata.canModifyServiceList : undefined,
+              placeId: typeof l.metadata.placeId === 'string' ? l.metadata.placeId : undefined,
+              newReviewUri: typeof l.metadata.newReviewUri === 'string' && l.metadata.newReviewUri.startsWith('https://') ? l.metadata.newReviewUri : undefined,
+            } : undefined,
           });
         }
         pageToken = b?.nextPageToken || '';
@@ -159,14 +176,30 @@ export function createGoogleGateway(cfg: { clientId: string; clientSecret: strin
     },
 
     /** Only fields Business Information v1 lets owners update directly; Google may hold edits for review. */
-    async patchLocation(token: string, locationName: string, patch: { phone?: string; website?: string; description?: string }) {
+    async patchLocation(token: string, locationName: string, patch: { phone?: string; website?: string; description?: string; hours?: { day: string; open: string; close: string }[] }) {
       const body: any = {}; const mask: string[] = [];
+      if (patch.hours !== undefined) {
+        const DAYS = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'];
+        const t = (hm: string) => { const [h, m] = hm.split(':').map(Number); return { hours: h, minutes: m }; };
+        body.regularHours = { periods: patch.hours.map((p) => {
+          // Closing at or before opening means after midnight: Google wants the next day as closeDay.
+          const overnight = p.close <= p.open;
+          return { openDay: p.day, openTime: t(p.open), closeDay: overnight ? DAYS[(DAYS.indexOf(p.day) + 1) % 7] : p.day, closeTime: p.close === '24:00' ? { hours: 24 } : t(p.close) };
+        }) };
+        mask.push('regularHours');
+      }
       if (patch.phone !== undefined) { body.phoneNumbers = { primaryPhone: patch.phone }; mask.push('phoneNumbers.primaryPhone'); }
       if (patch.website !== undefined) { body.websiteUri = patch.website; mask.push('websiteUri'); }
       if (patch.description !== undefined) { body.profile = { description: patch.description }; mask.push('profile.description'); }
       await http(`${B.info}/v1/${locationName}?updateMask=${encodeURIComponent(mask.join(','))}`, {
         method: 'PATCH', headers: { ...bearer(token), 'Content-Type': 'application/json' }, body: JSON.stringify(body),
       });
+    },
+
+    /** Account Management v1: who can manage this location (needs owner or manager rights; 403 otherwise). */
+    async listLocationAdmins(token: string, locationName: string): Promise<GAdmin[]> {
+      const b = await http(`${B.accounts}/v1/${locationName}/admins`, { headers: bearer(token) });
+      return (b?.admins ?? []).map((a: any) => ({ name: String(a.name ?? ''), admin: String(a.admin ?? ''), role: String(a.role ?? 'ROLE_UNSPECIFIED'), pendingInvitation: a.pendingInvitation === true }));
     },
 
     /** v4: accounts/{a}/locations/{l} */

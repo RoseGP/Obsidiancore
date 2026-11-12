@@ -100,37 +100,37 @@ export const WidgetStudioView: React.FC<WidgetStudioViewProps> = ({
   const colorPresets = ['#2563eb', '#4f46e5', '#059669', '#d97706', '#dc2626', '#0f172a'];
 
   return (
-    <div className="flex-1 flex flex-col lg:flex-row h-full overflow-y-auto bg-neutral-950/60 backdrop-blur-xl relative">
+    <div className="flex-1 flex flex-col lg:flex-row h-full overflow-y-auto bg-[var(--surface-sunken)] backdrop-blur-xl relative">
       {/* Left Settings & Code Generator Column */}
-      <div className="w-full lg:w-1/2 p-6 lg:p-8 space-y-8 border-r border-white/5 overflow-y-auto">
+      <div className="w-full lg:w-1/2 p-6 lg:p-8 space-y-8 border-r border-[var(--border)] overflow-y-auto">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <span className="p-1.5 rounded-lg bg-blue-600/20 text-blue-400">
+            <span className="p-1.5 rounded-lg bg-blue-600/20 text-[var(--accent-text)]">
               <Sliders className="w-4 h-4" />
             </span>
-            <h2 className="text-xl font-bold text-white tracking-tight">Widget Studio & Embed Code</h2>
+            <h2 className="text-xl font-bold text-[var(--text)] tracking-tight">Widget Studio & Embed Code</h2>
           </div>
-          <p className="text-xs text-neutral-400">
+          <p className="text-xs text-[var(--text-muted)]">
             Configure your embeddable live chat widget, customize branding, and copy the single script tag.
           </p>
         </div>
 
         {/* 1-Click Embed Snippet Card */}
-        <div className="p-5 rounded-2xl bg-neutral-900/90 border border-white/10 shadow-xl space-y-4">
+        <div className="p-5 rounded-2xl bg-[var(--surface)] border border-[var(--border)] shadow-xl space-y-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Code className="w-4 h-4 text-emerald-400" />
-              <h3 className="text-xs font-bold uppercase tracking-wider text-white">Embed Script Tag</h3>
+              <Code className="w-4 h-4 text-[var(--success)]" />
+              <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text)]">Embed Script Tag</h3>
             </div>
-            <span className="text-[11px] font-mono text-neutral-400">Key: {config.widgetKey}</span>
+            <span className="text-[11px] font-mono text-[var(--text-muted)]">Key: {config.widgetKey}</span>
           </div>
 
-          <p className="text-xs text-neutral-300">
-            Paste this snippet immediately before the closing <code className="text-blue-400 font-mono">&lt;/body&gt;</code> tag on any website (WordPress, Shopify, Next.js, Webflow, or static HTML):
+          <p className="text-xs text-[var(--text-muted)]">
+            Paste this snippet immediately before the closing <code className="text-[var(--accent-text)] font-mono">&lt;/body&gt;</code> tag on any website (WordPress, Shopify, Next.js, Webflow, or static HTML):
           </p>
 
           <div className="relative">
-            <pre className="p-3.5 rounded-xl bg-neutral-950 border border-white/10 font-mono text-xs text-emerald-400 overflow-x-auto whitespace-pre-wrap leading-relaxed select-all">
+            <pre className="p-3.5 rounded-xl bg-[var(--surface-sunken)] border border-[var(--border)] font-mono text-xs text-[var(--success)] overflow-x-auto whitespace-pre-wrap leading-relaxed select-all">
               {embedCode}
             </pre>
             <button
@@ -139,7 +139,7 @@ export const WidgetStudioView: React.FC<WidgetStudioViewProps> = ({
               className={`absolute top-2.5 right-2.5 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                 copied
                   ? 'bg-emerald-600 text-white'
-                  : 'bg-white/10 hover:bg-white/20 text-white'
+                  : 'bg-[var(--border)] hover:bg-[var(--border)] text-[var(--text)]'
               }`}
             >
               {copied ? (
@@ -159,9 +159,9 @@ export const WidgetStudioView: React.FC<WidgetStudioViewProps> = ({
           {/* Quick Integration Tabs */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2">
             {['WordPress', 'Shopify', 'Next.js / React', 'Webflow'].map((platform) => (
-              <div key={platform} className="p-2 rounded-lg bg-white/[0.03] border border-white/5 text-center">
-                <span className="text-[11px] font-semibold text-neutral-300">{platform}</span>
-                <p className="text-[9px] text-neutral-500 mt-0.5">Plug & play script</p>
+              <div key={platform} className="p-2 rounded-lg bg-white/[0.03] border border-[var(--border)] text-center">
+                <span className="text-[11px] font-semibold text-[var(--text-muted)]">{platform}</span>
+                <p className="text-[9px] text-[var(--text-subtle)] mt-0.5">Plug & play script</p>
               </div>
             ))}
           </div>
@@ -169,37 +169,37 @@ export const WidgetStudioView: React.FC<WidgetStudioViewProps> = ({
 
         {/* Visual Customization Form */}
         <div className="space-y-5">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-400">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
             Appearance & Brand Controls
           </h3>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Business Name */}
             <div>
-              <label className="block text-xs font-medium text-neutral-300 mb-1.5">Business Name</label>
+              <label className="block text-xs font-medium text-[var(--text-muted)] mb-1.5">Business Name</label>
               <input
                 type="text"
                 value={config.businessName}
                 onChange={(e) => setConfig({ ...config, businessName: e.target.value })}
-                className="w-full bg-neutral-900 border border-white/10 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-blue-500/50"
+                className="w-full bg-[var(--surface)] border border-[var(--border)] rounded-xl px-3.5 py-2 text-xs text-[var(--text)] focus:outline-none focus:border-blue-500/50"
               />
             </div>
 
             {/* Tagline */}
             <div>
-              <label className="block text-xs font-medium text-neutral-300 mb-1.5">Response Tagline</label>
+              <label className="block text-xs font-medium text-[var(--text-muted)] mb-1.5">Response Tagline</label>
               <input
                 type="text"
                 value={config.tagline || ''}
                 onChange={(e) => setConfig({ ...config, tagline: e.target.value })}
-                className="w-full bg-neutral-900 border border-white/10 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-blue-500/50"
+                className="w-full bg-[var(--surface)] border border-[var(--border)] rounded-xl px-3.5 py-2 text-xs text-[var(--text)] focus:outline-none focus:border-blue-500/50"
               />
             </div>
           </div>
 
           {/* Primary Brand Color */}
           <div>
-            <label className="block text-xs font-medium text-neutral-300 mb-2">Primary Brand Color</label>
+            <label className="block text-xs font-medium text-[var(--text-muted)] mb-2">Primary Brand Color</label>
             <div className="flex items-center gap-3">
               <input
                 type="color"
@@ -211,7 +211,7 @@ export const WidgetStudioView: React.FC<WidgetStudioViewProps> = ({
                 type="text"
                 value={config.primaryColor}
                 onChange={(e) => setConfig({ ...config, primaryColor: e.target.value })}
-                className="w-28 bg-neutral-900 border border-white/10 rounded-xl px-3 py-1.5 text-xs font-mono text-white focus:outline-none"
+                className="w-28 bg-[var(--surface)] border border-[var(--border)] rounded-xl px-3 py-1.5 text-xs font-mono text-[var(--text)] focus:outline-none"
               />
               <div className="flex items-center gap-1.5">
                 {colorPresets.map((hex) => (
@@ -219,7 +219,7 @@ export const WidgetStudioView: React.FC<WidgetStudioViewProps> = ({
                     key={hex}
                     type="button"
                     onClick={() => setConfig({ ...config, primaryColor: hex })}
-                    className="w-6 h-6 rounded-full border border-white/20 transition-transform hover:scale-110 cursor-pointer"
+                    className="w-6 h-6 rounded-full border border-[var(--border)] transition-transform hover:scale-110 cursor-pointer"
                     style={{ backgroundColor: hex }}
                   />
                 ))}
@@ -229,7 +229,7 @@ export const WidgetStudioView: React.FC<WidgetStudioViewProps> = ({
 
           {/* Position */}
           <div>
-            <label className="block text-xs font-medium text-neutral-300 mb-1.5">Launcher Screen Position</label>
+            <label className="block text-xs font-medium text-[var(--text-muted)] mb-1.5">Launcher Screen Position</label>
             <div className="grid grid-cols-2 gap-3">
               {(['bottom-right', 'bottom-left'] as const).map((pos) => (
                 <button
@@ -238,8 +238,8 @@ export const WidgetStudioView: React.FC<WidgetStudioViewProps> = ({
                   onClick={() => setConfig({ ...config, position: pos })}
                   className={`p-3 rounded-xl border text-xs font-medium capitalize transition-all cursor-pointer ${
                     config.position === pos
-                      ? 'bg-blue-600/20 border-blue-500 text-white font-semibold'
-                      : 'bg-neutral-900 border-white/10 text-neutral-400 hover:text-white'
+                      ? 'bg-blue-600/20 border-blue-500 text-[var(--text)] font-semibold'
+                      : 'bg-[var(--surface)] border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text)]'
                   }`}
                 >
                   {pos.replace('-', ' ')}
@@ -250,37 +250,37 @@ export const WidgetStudioView: React.FC<WidgetStudioViewProps> = ({
 
           {/* Welcome Greeting */}
           <div>
-            <label className="block text-xs font-medium text-neutral-300 mb-1.5">Welcome Greeting Message</label>
+            <label className="block text-xs font-medium text-[var(--text-muted)] mb-1.5">Welcome Greeting Message</label>
             <textarea
               rows={2}
               value={config.greetingMessage}
               onChange={(e) => setConfig({ ...config, greetingMessage: e.target.value })}
-              className="w-full bg-neutral-900 border border-white/10 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-blue-500/50 resize-none"
+              className="w-full bg-[var(--surface)] border border-[var(--border)] rounded-xl p-3 text-xs text-[var(--text)] focus:outline-none focus:border-blue-500/50 resize-none"
             />
           </div>
 
           {/* Auto-reply Message */}
           <div>
-            <label className="block text-xs font-medium text-neutral-300 mb-1.5">Instant Auto-Reply</label>
+            <label className="block text-xs font-medium text-[var(--text-muted)] mb-1.5">Instant Auto-Reply</label>
             <input
               type="text"
               value={config.autoReplyMessage}
               onChange={(e) => setConfig({ ...config, autoReplyMessage: e.target.value })}
-              className="w-full bg-neutral-900 border border-white/10 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-blue-500/50"
+              className="w-full bg-[var(--surface)] border border-[var(--border)] rounded-xl px-3.5 py-2 text-xs text-[var(--text)] focus:outline-none focus:border-blue-500/50"
             />
           </div>
 
           {/* Require Visitor Email Toggle */}
-          <div className="flex items-center justify-between p-3.5 rounded-xl bg-neutral-900/60 border border-white/5">
+          <div className="flex items-center justify-between p-3.5 rounded-xl bg-[var(--surface)] border border-[var(--border)]">
             <div>
-              <p className="text-xs font-semibold text-white">Require Visitor Email</p>
-              <p className="text-[11px] text-neutral-400">Prompt visitor for email address before starting chat</p>
+              <p className="text-xs font-semibold text-[var(--text)]">Require Visitor Email</p>
+              <p className="text-[11px] text-[var(--text-muted)]">Prompt visitor for email address before starting chat</p>
             </div>
             <button
               type="button"
               onClick={() => setConfig({ ...config, requireEmail: !config.requireEmail })}
               className={`w-11 h-6 rounded-full transition-colors relative cursor-pointer ${
-                config.requireEmail ? 'bg-blue-600' : 'bg-neutral-700'
+                config.requireEmail ? 'bg-blue-600' : 'bg-[var(--border)]'
               }`}
             >
               <span
@@ -322,12 +322,12 @@ export const WidgetStudioView: React.FC<WidgetStudioViewProps> = ({
       </div>
 
       {/* Right Column: Interactive Sandbox Preview */}
-      <div className="w-full lg:w-1/2 p-6 lg:p-8 flex flex-col justify-between bg-neutral-900/30 overflow-hidden">
+      <div className="w-full lg:w-1/2 p-6 lg:p-8 flex flex-col justify-between bg-[var(--surface)] overflow-hidden">
         {/* Sandbox Top Bar */}
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
-            <Eye className="w-4 h-4 text-blue-400" />
-            <h3 className="text-xs font-bold uppercase tracking-wider text-white">
+            <Eye className="w-4 h-4 text-[var(--accent-text)]" />
+            <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text)]">
               Live Interactive Website Sandbox
             </h3>
           </div>
@@ -336,7 +336,7 @@ export const WidgetStudioView: React.FC<WidgetStudioViewProps> = ({
             <button
               onClick={() => setPreviewDevice('desktop')}
               className={`p-1.5 rounded-lg text-xs cursor-pointer ${
-                previewDevice === 'desktop' ? 'bg-white/10 text-white' : 'text-neutral-500 hover:text-neutral-300'
+                previewDevice === 'desktop' ? 'bg-[var(--border)] text-[var(--text)]' : 'text-[var(--text-subtle)] hover:text-[var(--text-muted)]'
               }`}
             >
               <Laptop className="w-4 h-4" />
@@ -344,7 +344,7 @@ export const WidgetStudioView: React.FC<WidgetStudioViewProps> = ({
             <button
               onClick={() => setPreviewDevice('mobile')}
               className={`p-1.5 rounded-lg text-xs cursor-pointer ${
-                previewDevice === 'mobile' ? 'bg-white/10 text-white' : 'text-neutral-500 hover:text-neutral-300'
+                previewDevice === 'mobile' ? 'bg-[var(--border)] text-[var(--text)]' : 'text-[var(--text-subtle)] hover:text-[var(--text-muted)]'
               }`}
             >
               <Smartphone className="w-4 h-4" />
@@ -353,17 +353,17 @@ export const WidgetStudioView: React.FC<WidgetStudioViewProps> = ({
         </div>
 
         {/* Mock Host Website Container */}
-        <div className={`flex-1 rounded-2xl border border-white/10 bg-neutral-950/80 shadow-2xl relative overflow-hidden flex flex-col transition-all mx-auto w-full ${
+        <div className={`flex-1 rounded-2xl border border-[var(--border)] bg-[var(--surface-sunken)] shadow-2xl relative overflow-hidden flex flex-col transition-all mx-auto w-full ${
           previewDevice === 'mobile' ? 'max-w-sm h-[640px]' : 'h-[580px]'
         }`}>
           {/* Simulated Browser Address Bar */}
-          <div className="h-9 px-4 bg-neutral-900 border-b border-white/5 flex items-center gap-3 shrink-0">
+          <div className="h-9 px-4 bg-[var(--surface)] border-b border-[var(--border)] flex items-center gap-3 shrink-0">
             <div className="flex items-center gap-1.5">
               <span className="w-2.5 h-2.5 rounded-full bg-rose-500/80" />
               <span className="w-2.5 h-2.5 rounded-full bg-amber-500/80" />
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-500/80" />
             </div>
-            <div className="flex-1 max-w-xs mx-auto bg-neutral-950 px-3 py-1 rounded-md text-[10px] text-neutral-400 font-mono text-center truncate">
+            <div className="flex-1 max-w-xs mx-auto bg-[var(--surface-sunken)] px-3 py-1 rounded-md text-[10px] text-[var(--text-muted)] font-mono text-center truncate">
               https://your-company-domain.com/pricing
             </div>
           </div>
@@ -371,24 +371,24 @@ export const WidgetStudioView: React.FC<WidgetStudioViewProps> = ({
           {/* Simulated Website Content (Clean modern SaaS landing) */}
           <div className="flex-1 p-6 overflow-y-auto space-y-6 opacity-60">
             <div className="space-y-2">
-              <div className="h-6 w-40 bg-white/20 rounded-md" />
-              <div className="h-3 w-64 bg-white/10 rounded" />
+              <div className="h-6 w-40 bg-[var(--border)] rounded-md" />
+              <div className="h-3 w-64 bg-[var(--border)] rounded" />
             </div>
 
             <div className="grid grid-cols-2 gap-4">
-              <div className="p-4 rounded-xl bg-white/[0.03] border border-white/5 space-y-2">
+              <div className="p-4 rounded-xl bg-white/[0.03] border border-[var(--border)] space-y-2">
                 <div className="h-4 w-20 bg-blue-500/40 rounded" />
-                <div className="h-3 w-full bg-white/10 rounded" />
-                <div className="h-8 w-24 bg-white/15 rounded-lg mt-3" />
+                <div className="h-3 w-full bg-[var(--border)] rounded" />
+                <div className="h-8 w-24 bg-[var(--border)] rounded-lg mt-3" />
               </div>
-              <div className="p-4 rounded-xl bg-white/[0.03] border border-white/5 space-y-2">
+              <div className="p-4 rounded-xl bg-white/[0.03] border border-[var(--border)] space-y-2">
                 <div className="h-4 w-24 bg-emerald-500/40 rounded" />
-                <div className="h-3 w-full bg-white/10 rounded" />
-                <div className="h-8 w-24 bg-white/15 rounded-lg mt-3" />
+                <div className="h-3 w-full bg-[var(--border)] rounded" />
+                <div className="h-8 w-24 bg-[var(--border)] rounded-lg mt-3" />
               </div>
             </div>
 
-            <p className="text-[11px] text-neutral-400 leading-relaxed">
+            <p className="text-[11px] text-[var(--text-muted)] leading-relaxed">
               This simulated canvas mirrors how your visitors experience the chat bubble on your production website. Try clicking the launcher and typing!
             </p>
           </div>
@@ -401,17 +401,17 @@ export const WidgetStudioView: React.FC<WidgetStudioViewProps> = ({
           >
             {/* Chatbox Window */}
             {isSandboxOpen && (
-              <div className="w-72 sm:w-80 h-96 rounded-2xl bg-neutral-900 border border-white/15 shadow-2xl flex flex-col overflow-hidden mb-3 animate-in fade-in zoom-in-95 duration-200">
+              <div className="w-72 sm:w-80 h-96 rounded-2xl bg-[var(--surface)] border border-[var(--border)] shadow-2xl flex flex-col overflow-hidden mb-3 animate-in fade-in zoom-in-95 duration-200">
                 {/* Header */}
                 <div
-                  className="p-3.5 flex items-center justify-between text-white"
+                  className="p-3.5 flex items-center justify-between text-[var(--text)]"
                   style={{ backgroundColor: config.primaryColor }}
                 >
                   <div className="flex items-center gap-2.5">
                     <img
                       src={config.avatarUrl}
                       alt="Avatar"
-                      className="w-8 h-8 rounded-full object-cover ring-2 ring-white/20"
+                      className="w-8 h-8 rounded-full object-cover ring-2 ring-[var(--border)]"
                     />
                     <div>
                       <h4 className="text-xs font-bold leading-tight">{config.businessName}</h4>
@@ -420,14 +420,14 @@ export const WidgetStudioView: React.FC<WidgetStudioViewProps> = ({
                   </div>
                   <button
                     onClick={() => setIsSandboxOpen(false)}
-                    className="p-1 rounded hover:bg-black/20 text-white cursor-pointer"
+                    className="p-1 rounded hover:bg-[var(--surface)] text-[var(--text)] cursor-pointer"
                   >
                     &times;
                   </button>
                 </div>
 
                 {/* Messages Body */}
-                <div className="flex-1 p-3 overflow-y-auto space-y-2 bg-neutral-950 text-xs">
+                <div className="flex-1 p-3 overflow-y-auto space-y-2 bg-[var(--surface-sunken)] text-xs">
                   {sandboxMessages.map((m, i) => (
                     <div
                       key={i}
@@ -439,13 +439,13 @@ export const WidgetStudioView: React.FC<WidgetStudioViewProps> = ({
                         className={`p-2.5 rounded-xl max-w-[85%] text-xs leading-relaxed ${
                           m.sender === 'visitor'
                             ? 'bg-blue-600 text-white rounded-br-none'
-                            : 'bg-neutral-800 text-neutral-100 rounded-bl-none border border-white/5'
+                            : 'bg-[var(--surface-sunken)] text-[var(--text)] rounded-bl-none border border-[var(--border)]'
                         }`}
                         style={m.sender === 'visitor' ? { backgroundColor: config.primaryColor } : {}}
                       >
                         {m.text}
                       </div>
-                      <span className="text-[9px] text-neutral-500 mt-0.5 px-1">{m.time}</span>
+                      <span className="text-[9px] text-[var(--text-subtle)] mt-0.5 px-1">{m.time}</span>
                     </div>
                   ))}
                 </div>
@@ -453,18 +453,18 @@ export const WidgetStudioView: React.FC<WidgetStudioViewProps> = ({
                 {/* Input Form */}
                 <form
                   onSubmit={handleSendSandboxMessage}
-                  className="p-2.5 bg-neutral-900 border-t border-white/10 flex gap-2"
+                  className="p-2.5 bg-[var(--surface)] border-t border-[var(--border)] flex gap-2"
                 >
                   <input
                     type="text"
                     value={sandboxInput}
                     onChange={(e) => setSandboxInput(e.target.value)}
                     placeholder={config.placeholderText}
-                    className="flex-1 bg-neutral-950 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white placeholder-neutral-500 focus:outline-none"
+                    className="flex-1 bg-[var(--surface-sunken)] border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs text-[var(--text)] placeholder:text-[var(--text-subtle)] focus:outline-none"
                   />
                   <button
                     type="submit"
-                    className="p-2 rounded-lg text-white cursor-pointer"
+                    className="p-2 rounded-lg text-[var(--text)] cursor-pointer"
                     style={{ backgroundColor: config.primaryColor }}
                   >
                     <Send className="w-3.5 h-3.5" />
@@ -476,7 +476,7 @@ export const WidgetStudioView: React.FC<WidgetStudioViewProps> = ({
             {/* Launcher Button */}
             <button
               onClick={() => setIsSandboxOpen(!isSandboxOpen)}
-              className="w-13 h-13 rounded-full flex items-center justify-center text-white shadow-xl hover:scale-105 transition-transform cursor-pointer"
+              className="w-13 h-13 rounded-full flex items-center justify-center text-[var(--text)] shadow-xl hover:scale-105 transition-transform cursor-pointer"
               style={{ backgroundColor: config.primaryColor }}
             >
               <MessageSquare className="w-6 h-6" />

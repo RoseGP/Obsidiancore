@@ -73,7 +73,7 @@ export default function TopNavProfileDropdown({
         className={`flex items-center gap-2.5 p-1.5 pl-2.5 rounded-2xl border text-xs font-medium transition-all cursor-pointer shadow-2xs ${
           themeMode === 'light'
             ? 'bg-white hover:bg-neutral-50/90 border-neutral-200/90 text-neutral-800'
-            : 'bg-neutral-900/70 hover:bg-neutral-800/80 border-white/10 text-neutral-200'
+            : 'bg-[var(--surface)] hover:bg-[var(--surface-sunken)] border-[var(--border)] text-[var(--text)]'
         }`}
         title="Your account"
       >
@@ -82,11 +82,11 @@ export default function TopNavProfileDropdown({
           <img
             src={userProfile.photoURL || initialsAvatar(userProfile.displayName || userProfile.email)}
             alt={userProfile.displayName || 'Profile'}
-            className="h-8 w-8 rounded-xl object-cover border border-neutral-300 dark:border-neutral-700 shadow-2xs"
+            className="h-8 w-8 rounded-xl object-cover border border-neutral-300 dark:border-[var(--border)] shadow-2xs"
             referrerPolicy="no-referrer"
           />
           <span className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 ${
-            themeMode === 'light' ? 'border-white' : 'border-neutral-900'
+            themeMode === 'light' ? 'border-white' : 'border-[var(--border)]'
           } ${currentPresence.color}`} />
         </div>
 
@@ -95,12 +95,12 @@ export default function TopNavProfileDropdown({
           <span className="text-xs font-bold leading-tight truncate max-w-[130px]">
             {userProfile.displayName || userProfile.email || 'Your account'}
           </span>
-          <span className="text-[10px] text-neutral-400 font-mono leading-tight truncate max-w-[130px]">
+          <span className="text-[10px] text-[var(--text-muted)] font-mono leading-tight truncate max-w-[130px]">
             {userProfile.email}
           </span>
         </div>
 
-        <ChevronDown className={`h-3.5 w-3.5 text-neutral-400 transition-transform duration-200 ${isOpen ? 'rotate-180 text-indigo-500' : ''}`} />
+        <ChevronDown className={`h-3.5 w-3.5 text-[var(--text-muted)] transition-transform duration-200 ${isOpen ? 'rotate-180 text-indigo-500' : ''}`} />
       </button>
 
       {/* DROPDOWN MENU */}
@@ -114,7 +114,7 @@ export default function TopNavProfileDropdown({
             className={`absolute right-0 top-full mt-2 w-80 rounded-2xl border shadow-2xl z-50 p-2 text-xs overflow-hidden ${
               themeMode === 'light'
                 ? 'bg-white border-neutral-200 text-neutral-800'
-                : 'bg-[var(--obsidian-0)] border-white/10 text-neutral-200'
+                : 'bg-[var(--app-bg)] border-[var(--border)] text-[var(--text)]'
             }`}
           >
             {/* Header Profile Summary */}
@@ -127,7 +127,7 @@ export default function TopNavProfileDropdown({
                 <img
                   src={userProfile.photoURL || initialsAvatar(userProfile.displayName || userProfile.email)}
                   alt="Profile"
-                  className="h-11 w-11 rounded-xl object-cover border-2 border-white dark:border-neutral-800 shadow-xs"
+                  className="h-11 w-11 rounded-xl object-cover border-2 border-white dark:border-[var(--border)] shadow-xs"
                   referrerPolicy="no-referrer"
                 />
                 <div className="overflow-hidden flex-1">
@@ -137,18 +137,18 @@ export default function TopNavProfileDropdown({
                       VIP
                     </span>
                   </div>
-                  <p className="text-[10.5px] text-neutral-500 dark:text-neutral-300 truncate font-mono mt-0.5">
+                  <p className="text-[10.5px] text-[var(--text-subtle)] dark:text-[var(--text-muted)] truncate font-mono mt-0.5">
                     {userProfile.email}
                   </p>
-                  <span className="inline-block mt-1 px-1.5 py-0.2 rounded bg-emerald-100 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-300 text-[9px] font-extrabold uppercase">
+                  <span className="inline-block mt-1 px-1.5 py-0.2 rounded bg-emerald-100 dark:bg-[var(--success-soft)] text-emerald-800 dark:text-[var(--success)] text-[9px] font-extrabold uppercase">
                     {userProfile.role || 'Executive Director'}
                   </span>
                 </div>
               </div>
 
               {/* Status Presence Pills */}
-              <div className="mt-3 pt-2.5 border-t border-neutral-200/70 dark:border-white/10">
-                <span className="text-[9.5px] font-bold uppercase text-neutral-400 block mb-1 font-mono">
+              <div className="mt-3 pt-2.5 border-t border-neutral-200/70 dark:border-[var(--border)]">
+                <span className="text-[9.5px] font-bold uppercase text-[var(--text-muted)] block mb-1 font-mono">
                   Presence Status:
                 </span>
                 <div className="grid grid-cols-3 gap-1">
@@ -164,7 +164,7 @@ export default function TopNavProfileDropdown({
                             'bg-amber-600 text-white shadow-xs'
                           : themeMode === 'light'
                             ? 'bg-white/80 hover:bg-white text-neutral-600 border border-neutral-200/80'
-                            : 'bg-white/5 hover:bg-white/10 text-neutral-400'
+                            : 'bg-[var(--surface-sunken)] hover:bg-[var(--border)] text-[var(--text-muted)]'
                       }`}
                     >
                       <span className="capitalize">{p === 'online' ? '● Online' : p === 'busy' ? '■ Busy' : '▲ Away'}</span>
@@ -175,7 +175,7 @@ export default function TopNavProfileDropdown({
             </div>
 
             {/* Menu Items: Section 1 (Profile & Workspace) */}
-            <div className="space-y-0.5 pb-1 border-b border-neutral-200 dark:border-white/10 mb-1">
+            <div className="space-y-0.5 pb-1 border-b border-neutral-200 dark:border-[var(--border)] mb-1">
               <button
                 type="button"
                 id="menu-item-account-settings"
@@ -183,13 +183,13 @@ export default function TopNavProfileDropdown({
                   setIsOpen(false);
                   onNavigateToSettings('account');
                 }}
-                className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl hover:bg-neutral-100 dark:hover:bg-white/5 font-medium transition-colors cursor-pointer text-left"
+                className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl hover:bg-neutral-100 dark:hover:bg-[var(--surface-sunken)] font-medium transition-colors cursor-pointer text-left"
               >
                 <div className="flex items-center gap-2.5">
                   <User className="h-4 w-4 text-indigo-500" />
                   <span>Your profile</span>
                 </div>
-                <span className="text-[10px] text-neutral-400">Profile & Info</span>
+                <span className="text-[10px] text-[var(--text-muted)]">Profile & Info</span>
               </button>
 
               <button
@@ -199,19 +199,19 @@ export default function TopNavProfileDropdown({
                   setIsOpen(false);
                   onNavigateToSettings('workspace');
                 }}
-                className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl hover:bg-neutral-100 dark:hover:bg-white/5 font-medium transition-colors cursor-pointer text-left"
+                className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl hover:bg-neutral-100 dark:hover:bg-[var(--surface-sunken)] font-medium transition-colors cursor-pointer text-left"
               >
                 <div className="flex items-center gap-2.5">
                   <Layers className="h-4 w-4 text-purple-500" />
                   <span>Organization &amp; team</span>
                 </div>
-                <span className="text-[10px] text-neutral-400">Members, plan</span>
+                <span className="text-[10px] text-[var(--text-muted)]">Members, plan</span>
               </button>
 
             </div>
 
             {/* Menu Items: Section 2 (Platform & Operations) */}
-            <div className="space-y-0.5 pb-1 border-b border-neutral-200 dark:border-white/10 mb-1">
+            <div className="space-y-0.5 pb-1 border-b border-neutral-200 dark:border-[var(--border)] mb-1">
               <button
                 type="button"
                 id="menu-item-notifications"
@@ -219,7 +219,7 @@ export default function TopNavProfileDropdown({
                   setIsOpen(false);
                   onNavigateToSettings('notifications');
                 }}
-                className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl hover:bg-neutral-100 dark:hover:bg-white/5 font-medium transition-colors cursor-pointer text-left"
+                className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl hover:bg-neutral-100 dark:hover:bg-[var(--surface-sunken)] font-medium transition-colors cursor-pointer text-left"
               >
                 <div className="flex items-center gap-2.5">
                   <Bell className="h-4 w-4 text-amber-500" />
@@ -236,13 +236,13 @@ export default function TopNavProfileDropdown({
                   setIsOpen(false);
                   onNavigateToSettings('security');
                 }}
-                className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl hover:bg-neutral-100 dark:hover:bg-white/5 font-medium transition-colors cursor-pointer text-left"
+                className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl hover:bg-neutral-100 dark:hover:bg-[var(--surface-sunken)] font-medium transition-colors cursor-pointer text-left"
               >
                 <div className="flex items-center gap-2.5">
                   <Lock className="h-4 w-4 text-teal-500" />
                   <span>Security</span>
                 </div>
-                <span className="text-[10px] text-neutral-400">Password, devices</span>
+                <span className="text-[10px] text-[var(--text-muted)]">Password, devices</span>
               </button>
 
               <button
@@ -252,13 +252,13 @@ export default function TopNavProfileDropdown({
                   setIsOpen(false);
                   onNavigateToSettings('channels');
                 }}
-                className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl hover:bg-neutral-100 dark:hover:bg-white/5 font-medium transition-colors cursor-pointer text-left"
+                className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl hover:bg-neutral-100 dark:hover:bg-[var(--surface-sunken)] font-medium transition-colors cursor-pointer text-left"
               >
                 <div className="flex items-center gap-2.5">
                   <Globe className="h-4 w-4 text-cyan-500" />
                   <span>Connected accounts</span>
                 </div>
-                <span className="text-[10px] text-neutral-400">LinkedIn, X, etc.</span>
+                <span className="text-[10px] text-[var(--text-muted)]">LinkedIn, X, etc.</span>
               </button>
             </div>
 
@@ -270,17 +270,17 @@ export default function TopNavProfileDropdown({
                   onToggleTheme();
                   setIsOpen(false);
                 }}
-                className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl hover:bg-neutral-100 dark:hover:bg-white/5 font-medium transition-colors cursor-pointer text-left"
+                className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl hover:bg-neutral-100 dark:hover:bg-[var(--surface-sunken)] font-medium transition-colors cursor-pointer text-left"
               >
                 <div className="flex items-center gap-2.5">
                   {themeMode === 'light' ? (
                     <Moon className="h-4 w-4 text-slate-700" />
                   ) : (
-                    <Sun className="h-4 w-4 text-amber-400" />
+                    <Sun className="h-4 w-4 text-[var(--warning)]" />
                   )}
                   <span>{themeMode === 'light' ? 'Switch to Dark Mode' : 'Switch to Light Mode'}</span>
                 </div>
-                <span className="text-[10px] text-neutral-400 capitalize">{themeMode}</span>
+                <span className="text-[10px] text-[var(--text-muted)] capitalize">{themeMode}</span>
               </button>
 
               <button
@@ -291,9 +291,9 @@ export default function TopNavProfileDropdown({
                   if (onLockSession) onLockSession();
                   onShowToast('Session locked.');
                 }}
-                className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl hover:bg-neutral-100 dark:hover:bg-white/5 text-amber-500 dark:text-amber-400 font-medium transition-colors cursor-pointer text-left"
+                className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl hover:bg-neutral-100 dark:hover:bg-[var(--surface-sunken)] text-amber-500 dark:text-[var(--warning)] font-medium transition-colors cursor-pointer text-left"
               >
-                <Lock className="h-4 w-4 text-amber-400" />
+                <Lock className="h-4 w-4 text-[var(--warning)]" />
                 <span>Lock screen</span>
               </button>
 
@@ -304,7 +304,7 @@ export default function TopNavProfileDropdown({
                     setIsOpen(false);
                     onOpenAuthFlow();
                   }}
-                  className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl hover:bg-neutral-100 dark:hover:bg-white/5 text-indigo-500 dark:text-indigo-400 font-medium transition-colors cursor-pointer text-left"
+                  className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl hover:bg-neutral-100 dark:hover:bg-[var(--surface-sunken)] text-indigo-500 dark:text-[var(--accent-text)] font-medium transition-colors cursor-pointer text-left"
                 >
                   <Sparkles className="h-4 w-4" />
                   <span>Switch account</span>
@@ -315,7 +315,7 @@ export default function TopNavProfileDropdown({
                 type="button"
                 id="menu-item-logout"
                 onClick={handleLogoutClick}
-                className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 font-bold transition-colors cursor-pointer text-left"
+                className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-rose-600 dark:text-[var(--danger)] hover:bg-rose-50 dark:hover:bg-[var(--danger-soft)] font-bold transition-colors cursor-pointer text-left"
               >
                 <LogOut className="h-4 w-4" />
                 <span>Sign out</span>

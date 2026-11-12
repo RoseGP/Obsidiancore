@@ -91,36 +91,36 @@ export const NewConversationModal: React.FC<NewConversationModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
-      <div className="bg-neutral-900 border border-white/10 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[var(--surface)] backdrop-blur-md animate-in fade-in duration-200">
+      <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl">
         {/* Header */}
-        <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between bg-neutral-950/60">
+        <div className="px-6 py-4 border-b border-[var(--border)] flex items-center justify-between bg-[var(--surface-sunken)]">
           <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-400">
+            <div className="p-2 rounded-xl bg-blue-500/10 border border-blue-500/20 text-[var(--accent-text)]">
               <Plus className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-sm font-semibold text-white">Create New Conversation</h3>
-              <p className="text-xs text-neutral-400">Connect team members, customers, or CRM records</p>
+              <h3 className="text-sm font-semibold text-[var(--text)]">Create New Conversation</h3>
+              <p className="text-xs text-[var(--text-muted)]">Connect team members, customers, or CRM records</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg text-neutral-400 hover:text-white hover:bg-white/10 transition cursor-pointer"
+            className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--border)] transition cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Mode Selector Tabs */}
-        <div className="p-4 border-b border-white/5 bg-neutral-950/40 grid grid-cols-3 gap-2">
+        <div className="p-4 border-b border-[var(--border)] bg-[var(--surface-sunken)] grid grid-cols-3 gap-2">
           <button
             type="button"
             onClick={() => setActiveTab('crm')}
             className={`p-2.5 rounded-xl border text-xs font-semibold flex flex-col items-center gap-1 transition cursor-pointer ${
               activeTab === 'crm'
-                ? 'bg-blue-600/20 border-blue-500/40 text-blue-400 shadow-sm'
-                : 'bg-white/5 border-white/5 text-neutral-400 hover:text-white hover:bg-white/10'
+                ? 'bg-blue-600/20 border-blue-500/40 text-[var(--accent-text)] shadow-sm'
+                : 'bg-[var(--surface-sunken)] border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--border)]'
             }`}
           >
             <Briefcase className="w-4 h-4" />
@@ -131,8 +131,8 @@ export const NewConversationModal: React.FC<NewConversationModalProps> = ({
             onClick={() => setActiveTab('group')}
             className={`p-2.5 rounded-xl border text-xs font-semibold flex flex-col items-center gap-1 transition cursor-pointer ${
               activeTab === 'group'
-                ? 'bg-purple-600/20 border-purple-500/40 text-purple-400 shadow-sm'
-                : 'bg-white/5 border-white/5 text-neutral-400 hover:text-white hover:bg-white/10'
+                ? 'bg-purple-600/20 border-purple-500/40 text-[var(--accent-text)] shadow-sm'
+                : 'bg-[var(--surface-sunken)] border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--border)]'
             }`}
           >
             <Users className="w-4 h-4" />
@@ -143,8 +143,8 @@ export const NewConversationModal: React.FC<NewConversationModalProps> = ({
             onClick={() => setActiveTab('direct')}
             className={`p-2.5 rounded-xl border text-xs font-semibold flex flex-col items-center gap-1 transition cursor-pointer ${
               activeTab === 'direct'
-                ? 'bg-emerald-600/20 border-emerald-500/40 text-emerald-400 shadow-sm'
-                : 'bg-white/5 border-white/5 text-neutral-400 hover:text-white hover:bg-white/10'
+                ? 'bg-emerald-600/20 border-emerald-500/40 text-[var(--success)] shadow-sm'
+                : 'bg-[var(--surface-sunken)] border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--border)]'
             }`}
           >
             <MessageSquare className="w-4 h-4" />
@@ -157,13 +157,13 @@ export const NewConversationModal: React.FC<NewConversationModalProps> = ({
           {activeTab === 'crm' && (
             <div className="space-y-4">
               <div>
-                <label className="block text-xs font-medium text-neutral-300 mb-1.5">
+                <label className="block text-xs font-medium text-[var(--text-muted)] mb-1.5">
                   Select Associated CRM Record (Deal, Ticket, Contact)
                 </label>
                 <select
                   value={selectedCrmRecordId}
                   onChange={(e) => setSelectedCrmRecordId(e.target.value)}
-                  className="w-full bg-neutral-950 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
+                  className="w-full bg-[var(--surface-sunken)] border border-[var(--border)] rounded-xl px-3 py-2 text-xs text-[var(--text)] focus:outline-none focus:border-blue-500"
                 >
                   {availableCrmRecords.map((r) => (
                     <option key={r.id} value={r.id}>
@@ -174,7 +174,7 @@ export const NewConversationModal: React.FC<NewConversationModalProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-neutral-300 mb-1.5">
+                <label className="block text-xs font-medium text-[var(--text-muted)] mb-1.5">
                   Room Title (Optional, defaults to record title)
                 </label>
                 <input
@@ -182,26 +182,26 @@ export const NewConversationModal: React.FC<NewConversationModalProps> = ({
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   placeholder="e.g. Website redesign deal room"
-                  className="w-full bg-neutral-950 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
+                  className="w-full bg-[var(--surface-sunken)] border border-[var(--border)] rounded-xl px-3 py-2 text-xs text-[var(--text)] focus:outline-none focus:border-blue-500"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-neutral-300 mb-1.5">Include Participants</label>
-                <div className="space-y-1.5 max-h-32 overflow-y-auto p-2 bg-neutral-950 rounded-xl border border-white/5">
+                <label className="block text-xs font-medium text-[var(--text-muted)] mb-1.5">Include Participants</label>
+                <div className="space-y-1.5 max-h-32 overflow-y-auto p-2 bg-[var(--surface-sunken)] rounded-xl border border-[var(--border)]">
                   {registeredAgents.map((agent) => (
                     <label
                       key={agent.id}
-                      className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-white/5 cursor-pointer text-xs text-neutral-300"
+                      className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-[var(--surface-sunken)] cursor-pointer text-xs text-[var(--text-muted)]"
                     >
                       <input
                         type="checkbox"
                         checked={selectedParticipantIds.includes(agent.id)}
                         onChange={() => handleToggleParticipant(agent.id)}
-                        className="rounded border-white/20 text-blue-600 focus:ring-0"
+                        className="rounded border-[var(--border)] text-blue-600 focus:ring-0"
                       />
                       <span>{agent.name}</span>
-                      <span className="text-[10px] text-neutral-500">({agent.department || agent.role})</span>
+                      <span className="text-[10px] text-[var(--text-subtle)]">({agent.department || agent.role})</span>
                     </label>
                   ))}
                 </div>
@@ -213,33 +213,33 @@ export const NewConversationModal: React.FC<NewConversationModalProps> = ({
           {activeTab === 'group' && (
             <div className="space-y-4">
               <div>
-                <label className="block text-xs font-medium text-neutral-300 mb-1.5">Group Channel Name</label>
+                <label className="block text-xs font-medium text-[var(--text-muted)] mb-1.5">Group Channel Name</label>
                 <input
                   type="text"
                   required
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   placeholder="e.g. Enterprise Solution Architects"
-                  className="w-full bg-neutral-950 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500"
+                  className="w-full bg-[var(--surface-sunken)] border border-[var(--border)] rounded-xl px-3 py-2 text-xs text-[var(--text)] focus:outline-none focus:border-purple-500"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-neutral-300 mb-1.5">Select Channel Members</label>
-                <div className="space-y-1.5 max-h-36 overflow-y-auto p-2 bg-neutral-950 rounded-xl border border-white/5">
+                <label className="block text-xs font-medium text-[var(--text-muted)] mb-1.5">Select Channel Members</label>
+                <div className="space-y-1.5 max-h-36 overflow-y-auto p-2 bg-[var(--surface-sunken)] rounded-xl border border-[var(--border)]">
                   {registeredAgents.map((agent) => (
                     <label
                       key={agent.id}
-                      className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-white/5 cursor-pointer text-xs text-neutral-300"
+                      className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-[var(--surface-sunken)] cursor-pointer text-xs text-[var(--text-muted)]"
                     >
                       <input
                         type="checkbox"
                         checked={selectedParticipantIds.includes(agent.id)}
                         onChange={() => handleToggleParticipant(agent.id)}
-                        className="rounded border-white/20 text-purple-600 focus:ring-0"
+                        className="rounded border-[var(--border)] text-purple-600 focus:ring-0"
                       />
                       <span>{agent.name}</span>
-                      <span className="text-[10px] text-neutral-500">({agent.department})</span>
+                      <span className="text-[10px] text-[var(--text-subtle)]">({agent.department})</span>
                     </label>
                   ))}
                 </div>
@@ -251,11 +251,11 @@ export const NewConversationModal: React.FC<NewConversationModalProps> = ({
           {activeTab === 'direct' && (
             <div className="space-y-4">
               <div>
-                <label className="block text-xs font-medium text-neutral-300 mb-1.5">Select Recipient</label>
+                <label className="block text-xs font-medium text-[var(--text-muted)] mb-1.5">Select Recipient</label>
                 <select
                   value={selectedRecipientId}
                   onChange={(e) => setSelectedRecipientId(e.target.value)}
-                  className="w-full bg-neutral-950 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
+                  className="w-full bg-[var(--surface-sunken)] border border-[var(--border)] rounded-xl px-3 py-2 text-xs text-[var(--text)] focus:outline-none focus:border-emerald-500"
                 >
                   {registeredAgents
                     .filter((a) => a.id !== 'user_agent_1')
@@ -271,11 +271,11 @@ export const NewConversationModal: React.FC<NewConversationModalProps> = ({
 
           <div className="grid grid-cols-2 gap-3 pt-2">
             <div>
-              <label className="block text-xs font-medium text-neutral-300 mb-1.5">Priority</label>
+              <label className="block text-xs font-medium text-[var(--text-muted)] mb-1.5">Priority</label>
               <select
                 value={priority}
                 onChange={(e) => setPriority(e.target.value as any)}
-                className="w-full bg-neutral-950 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
+                className="w-full bg-[var(--surface-sunken)] border border-[var(--border)] rounded-xl px-3 py-2 text-xs text-[var(--text)] focus:outline-none focus:border-blue-500"
               >
                 <option value="low">Low Priority</option>
                 <option value="medium">Medium</option>
@@ -284,22 +284,22 @@ export const NewConversationModal: React.FC<NewConversationModalProps> = ({
               </select>
             </div>
             <div>
-              <label className="block text-xs font-medium text-neutral-300 mb-1.5">Tags (Comma-separated)</label>
+              <label className="block text-xs font-medium text-[var(--text-muted)] mb-1.5">Tags (Comma-separated)</label>
               <input
                 type="text"
                 value={customTags}
                 onChange={(e) => setCustomTags(e.target.value)}
                 placeholder="Enterprise, SLA"
-                className="w-full bg-neutral-950 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
+                className="w-full bg-[var(--surface-sunken)] border border-[var(--border)] rounded-xl px-3 py-2 text-xs text-[var(--text)] focus:outline-none focus:border-blue-500"
               />
             </div>
           </div>
 
-          <div className="pt-3 border-t border-white/10 flex justify-end gap-2.5">
+          <div className="pt-3 border-t border-[var(--border)] flex justify-end gap-2.5">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 rounded-xl text-neutral-400 hover:text-white hover:bg-white/5 text-xs transition cursor-pointer"
+              className="px-4 py-2 rounded-xl text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-sunken)] text-xs transition cursor-pointer"
             >
               Cancel
             </button>

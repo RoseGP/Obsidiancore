@@ -120,11 +120,11 @@ export const SupportTicketsWidget: React.FC<{ onNavigate?: (view: any) => void }
   const getPriorityBadge = (priority: SupportTicket['priority']) => {
     switch (priority) {
       case 'critical':
-        return <span className="text-[10px] font-mono font-bold text-rose-400 bg-rose-500/15 border border-rose-500/30 px-1.5 py-0.5 rounded">Critical</span>;
+        return <span className="text-[10px] font-mono font-bold text-[var(--danger)] bg-rose-500/15 border border-rose-500/30 px-1.5 py-0.5 rounded">Critical</span>;
       case 'high':
-        return <span className="text-[10px] font-mono font-bold text-amber-400 bg-amber-500/15 border border-amber-500/30 px-1.5 py-0.5 rounded">High Priority</span>;
+        return <span className="text-[10px] font-mono font-bold text-[var(--warning)] bg-amber-500/15 border border-amber-500/30 px-1.5 py-0.5 rounded">High Priority</span>;
       case 'normal':
-        return <span className="text-[10px] font-mono font-bold text-neutral-400 bg-white/5 border border-white/10 px-1.5 py-0.5 rounded">Standard</span>;
+        return <span className="text-[10px] font-mono font-bold text-[var(--text-muted)] bg-[var(--surface-sunken)] border border-[var(--border)] px-1.5 py-0.5 rounded">Standard</span>;
       default:
         return null;
     }
@@ -137,33 +137,33 @@ export const SupportTicketsWidget: React.FC<{ onNavigate?: (view: any) => void }
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-sm font-bold text-white tracking-tight">Support tickets</span>
-              <span className="text-[10px] font-mono font-bold text-emerald-400 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">
+              <span className="text-sm font-bold text-[var(--text)] tracking-tight">Support tickets</span>
+              <span className="text-[10px] font-mono font-bold text-[var(--success)] px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">
                 {tickets.length - openTickets.length} resolved
               </span>
             </div>
-            <p className="text-xs text-neutral-400 mt-0.5">
+            <p className="text-xs text-[var(--text-muted)] mt-0.5">
               Open tickets, newest first. Reply or mark them done.
             </p>
           </div>
 
           <div className="flex items-center gap-4 text-xs font-mono">
             <div>
-              <span className="text-[10px] text-neutral-500 block">Open Queue</span>
-              <span className="font-bold text-amber-400 tabular-nums">{openTickets.length} tickets</span>
+              <span className="text-[10px] text-[var(--text-subtle)] block">Open Queue</span>
+              <span className="font-bold text-[var(--warning)] tabular-nums">{openTickets.length} tickets</span>
             </div>
-            <div className="h-6 w-px bg-white/10" />
+            <div className="h-6 w-px bg-[var(--border)]" />
             <div>
-              <span className="text-[10px] text-neutral-500 block">Critical</span>
-              <span className="font-bold text-rose-400 tabular-nums">{openTickets.filter(t => t.priority === 'critical').length}</span>
+              <span className="text-[10px] text-[var(--text-subtle)] block">Critical</span>
+              <span className="font-bold text-[var(--danger)] tabular-nums">{openTickets.filter(t => t.priority === 'critical').length}</span>
             </div>
             <button
               onClick={fetchTickets}
               disabled={isLoading}
-              className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-neutral-400 hover:text-white transition"
+              className="p-1.5 rounded-lg bg-[var(--surface-sunken)] hover:bg-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text)] transition"
               title="Refresh Tickets"
             >
-              <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? 'animate-spin text-indigo-400' : ''}`} />
+              <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? 'animate-spin text-[var(--accent-text)]' : ''}`} />
             </button>
           </div>
         </div>
@@ -174,7 +174,7 @@ export const SupportTicketsWidget: React.FC<{ onNavigate?: (view: any) => void }
             <button
               onClick={() => setFilterPriority('all')}
               className={`px-2.5 py-1 rounded-lg text-[10px] font-mono transition-colors cursor-pointer ${
-                filterPriority === 'all' ? 'bg-white/20 text-white font-bold' : 'text-neutral-400 hover:text-white'
+                filterPriority === 'all' ? 'bg-[var(--border)] text-[var(--text)] font-bold' : 'text-[var(--text-muted)] hover:text-[var(--text)]'
               }`}
             >
               All
@@ -182,7 +182,7 @@ export const SupportTicketsWidget: React.FC<{ onNavigate?: (view: any) => void }
             <button
               onClick={() => setFilterPriority('open')}
               className={`px-2.5 py-1 rounded-lg text-[10px] font-mono transition-colors cursor-pointer ${
-                filterPriority === 'open' ? 'bg-indigo-600 text-white font-bold' : 'text-neutral-400 hover:text-white'
+                filterPriority === 'open' ? 'bg-indigo-600 text-white font-bold' : 'text-[var(--text-muted)] hover:text-[var(--text)]'
               }`}
             >
               Active ({openTickets.length})
@@ -190,35 +190,35 @@ export const SupportTicketsWidget: React.FC<{ onNavigate?: (view: any) => void }
             <button
               onClick={() => setFilterPriority('critical')}
               className={`px-2.5 py-1 rounded-lg text-[10px] font-mono transition-colors cursor-pointer ${
-                filterPriority === 'critical' ? 'bg-rose-600 text-white font-bold' : 'text-neutral-400 hover:text-white'
+                filterPriority === 'critical' ? 'bg-rose-600 text-white font-bold' : 'text-[var(--text-muted)] hover:text-[var(--text)]'
               }`}
             >
               Critical
             </button>
           </div>
 
-          {notice && <span role="status" className="text-[10px] text-neutral-400 truncate">{notice}</span>}
+          {notice && <span role="status" className="text-[10px] text-[var(--text-muted)] truncate">{notice}</span>}
         </div>
 
         {/* Tickets List */}
         {isLoading ? (
-          <div className="py-12 flex flex-col items-center justify-center gap-2 text-neutral-400 text-xs">
+          <div className="py-12 flex flex-col items-center justify-center gap-2 text-[var(--text-muted)] text-xs">
             <RefreshCw className="h-5 w-5 animate-spin text-indigo-500" />
             <span>Loading tickets…</span>
           </div>
         ) : error ? (
-          <div className="py-8 text-center text-xs text-rose-400 bg-rose-500/10 border border-rose-500/20 rounded-xl p-3 flex flex-col items-center gap-2">
+          <div className="py-8 text-center text-xs text-[var(--danger)] bg-rose-500/10 border border-rose-500/20 rounded-xl p-3 flex flex-col items-center gap-2">
             <AlertCircle className="h-4 w-4" />
             <span>{error}</span>
             <button
               onClick={fetchTickets}
-              className="text-xs font-bold text-white underline underline-offset-2 hover:text-rose-200"
+              className="text-xs font-bold text-[var(--text)] underline underline-offset-2 hover:text-[var(--danger)]"
             >
               Retry
             </button>
           </div>
         ) : filteredTickets.length === 0 ? (
-          <div className="py-8 text-center text-xs text-neutral-500 rounded-xl border border-dashed border-white/10 p-4">
+          <div className="py-8 text-center text-xs text-[var(--text-subtle)] rounded-xl border border-dashed border-[var(--border)] p-4">
             {tickets.length === 0 ? 'No support tickets yet.' : 'No tickets in this view.'}
           </div>
         ) : (
@@ -228,18 +228,18 @@ export const SupportTicketsWidget: React.FC<{ onNavigate?: (view: any) => void }
                 key={ticket.id ? `ticket-${ticket.id}-${idx}` : `ticket-${idx}`}
                 className={`p-3 rounded-xl border transition-all ${
                   ticket.status === 'resolved'
-                    ? 'bg-white/[0.01] border-white/5 opacity-60'
-                    : 'bg-white/[0.03] border-white/10 hover:border-white/20'
+                    ? 'bg-white/[0.01] border-[var(--border)] opacity-60'
+                    : 'bg-white/[0.03] border-[var(--border)] hover:border-[var(--border)]'
                 }`}
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-xs font-bold text-white truncate">{ticket.customerName}</span>
-                      {ticket.company && <span className="text-[11px] text-neutral-400 font-mono">({ticket.company})</span>}
+                      <span className="text-xs font-bold text-[var(--text)] truncate">{ticket.customerName}</span>
+                      {ticket.company && <span className="text-[11px] text-[var(--text-muted)] font-mono">({ticket.company})</span>}
                       {getPriorityBadge(ticket.priority)}
                     </div>
-                    <p className="text-xs text-neutral-300 mt-1 line-clamp-1 leading-relaxed">
+                    <p className="text-xs text-[var(--text-muted)] mt-1 line-clamp-1 leading-relaxed">
                       {ticket.subject}
                     </p>
                   </div>
@@ -247,11 +247,11 @@ export const SupportTicketsWidget: React.FC<{ onNavigate?: (view: any) => void }
                   {/* Response deadline when the ticket has one, otherwise its age */}
                   <div className="text-right shrink-0">
                     <span className={`text-xs font-mono font-bold block tabular-nums ${
-                      typeof ticket.slaMinutesRemaining === 'number' && ticket.slaMinutesRemaining < 30 && ticket.status !== 'resolved' ? 'text-rose-400' : 'text-emerald-400'
+                      typeof ticket.slaMinutesRemaining === 'number' && ticket.slaMinutesRemaining < 30 && ticket.status !== 'resolved' ? 'text-[var(--danger)]' : 'text-[var(--success)]'
                     }`}>
                       {ticket.status === 'resolved' ? 'Resolved' : typeof ticket.slaMinutesRemaining === 'number' ? `${ticket.slaMinutesRemaining}m to respond` : (age(ticket.createdAt) || 'Open')}
                     </span>
-                    <span className="text-[10px] text-neutral-500 font-mono capitalize">
+                    <span className="text-[10px] text-[var(--text-subtle)] font-mono capitalize">
                       via {ticket.channel}
                     </span>
                   </div>
@@ -259,19 +259,19 @@ export const SupportTicketsWidget: React.FC<{ onNavigate?: (view: any) => void }
 
                 {/* Reply drawer inside ticket */}
                 {replyTicketId === ticket.id ? (
-                  <div className="mt-3 pt-3 border-t border-white/10 space-y-2 animate-in fade-in">
+                  <div className="mt-3 pt-3 border-t border-[var(--border)] space-y-2 animate-in fade-in">
                     <textarea
                       value={replyText}
                       onChange={(e) => setReplyText(e.target.value)}
                       placeholder={`Reply to ${ticket.customerName} via ${ticket.channel.toUpperCase()}...`}
                       rows={2}
-                      className="w-full bg-black/40 border border-white/10 rounded-lg p-2 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-indigo-500/50"
+                      className="w-full bg-[var(--surface)] border border-[var(--border)] rounded-lg p-2 text-xs text-[var(--text)] placeholder:text-[var(--text-subtle)] focus:outline-none focus:border-indigo-500/50"
                     />
                     <div className="flex items-center justify-end gap-2">
                       <button
                         type="button"
                         onClick={() => setReplyTicketId(null)}
-                        className="px-2.5 py-1 rounded-md text-[11px] text-neutral-400 hover:text-white"
+                        className="px-2.5 py-1 rounded-md text-[11px] text-[var(--text-muted)] hover:text-[var(--text)]"
                       >
                         Cancel
                       </button>
@@ -287,8 +287,8 @@ export const SupportTicketsWidget: React.FC<{ onNavigate?: (view: any) => void }
                     </div>
                   </div>
                 ) : (
-                  <div className="mt-2.5 pt-2 border-t border-white/5 flex items-center justify-between text-[11px]">
-                    <span className="text-[10px] text-neutral-500 font-mono">
+                  <div className="mt-2.5 pt-2 border-t border-[var(--border)] flex items-center justify-between text-[11px]">
+                    <span className="text-[10px] text-[var(--text-subtle)] font-mono">
                       ID: {ticket.id}
                     </span>
 
@@ -297,7 +297,7 @@ export const SupportTicketsWidget: React.FC<{ onNavigate?: (view: any) => void }
                         <button
                           type="button"
                           onClick={() => setReplyTicketId(ticket.id)}
-                          className="text-indigo-400 hover:text-indigo-300 font-medium flex items-center gap-1 cursor-pointer transition-colors"
+                          className="text-[var(--accent-text)] hover:text-[var(--accent-text)] font-medium flex items-center gap-1 cursor-pointer transition-colors"
                         >
                           <MessageSquare className="h-3 w-3" />
                           <span>Quick Reply</span>
@@ -305,7 +305,7 @@ export const SupportTicketsWidget: React.FC<{ onNavigate?: (view: any) => void }
                         <button
                           type="button"
                           onClick={() => resolveTicket(ticket.id)}
-                          className="text-emerald-400 hover:text-emerald-300 font-medium flex items-center gap-1 cursor-pointer transition-colors"
+                          className="text-[var(--success)] hover:text-[var(--success)] font-medium flex items-center gap-1 cursor-pointer transition-colors"
                         >
                           <CheckCircle2 className="h-3 w-3" />
                           <span>Mark Done</span>
@@ -321,12 +321,12 @@ export const SupportTicketsWidget: React.FC<{ onNavigate?: (view: any) => void }
       </div>
 
       {/* Footer */}
-      <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between text-xs text-neutral-400">
+      <div className="mt-3 pt-3 border-t border-[var(--border)] flex items-center justify-between text-xs text-[var(--text-muted)]">
         <span className="font-mono text-[10px]">{openTickets.length} open · {tickets.length} total</span>
         <button
           type="button"
           onClick={() => onNavigate && onNavigate('messages')}
-          className="text-indigo-400 hover:text-indigo-300 text-xs font-semibold flex items-center gap-1 cursor-pointer transition-colors"
+          className="text-[var(--accent-text)] hover:text-[var(--accent-text)] text-xs font-semibold flex items-center gap-1 cursor-pointer transition-colors"
         >
           <span>Open Inbox</span>
           <ArrowUpRight className="h-3.5 w-3.5" />

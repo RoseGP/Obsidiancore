@@ -142,7 +142,8 @@ const { listAudit } = await import('../audit/auditLog');
     '/api/v1/embed-tokens': 'embed key exchange: secret key required',
     '/api/v1': 'jwtAuthMiddleware after /health and the removed /auth/login',
   };
-  const unguarded = mounts.filter((m) => !/guard\(/.test(m.rest) && !(m.path === '/api' && /status\(404\)/.test(m.rest)));
+  // '/api' itself: the app-wide rate limit and the JSON 404 (no routes behind them).
+  const unguarded = mounts.filter((m) => !/guard\(/.test(m.rest) && !(m.path === '/api' && /^\s*(notFoundHandler|apiRateLimit)\(\)\s*$/.test(m.rest)));
   for (const m of unguarded) assert.ok(SELF_AUTH[m.path], `${m.path} is mounted without guard() and isn't a known self-authenticating router`);
   ok(`every /api mount uses guard() or is a documented self-authenticating router (${mounts.length} mounts checked)`);
 

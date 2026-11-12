@@ -7,7 +7,9 @@ import {
 } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { Badge } from '../ui/Badge';
-import { LocationItem, LocalPilotRoute } from '../types';
+import { LocationItem, LocalPilotRoute, AuditFinding } from '../types';
+import { ProfileAuditPanel } from '../audit/ProfileAuditPanel';
+import { HoursEditor } from '../audit/HoursEditor';
 
 export interface LocationDetailViewProps {
   location: LocationItem;
@@ -17,6 +19,10 @@ export interface LocationDetailViewProps {
   onOpenEditProfile?: () => void;
   /** Saves the fields Google lets owners change through the API (phone, website). */
   onSaveProfile?: (locId: string, patch: { phone: string; website: string }) => Promise<void> | void;
+  /** Saves regular hours to Google (Business Information API). Omit to hide the Edit hours button. */
+  onSaveHours?: (locId: string, hours: { day: string; open: string; close: string }[]) => Promise<void>;
+  /** Audit fixes that live elsewhere (reviews, services, posts). */
+  onAuditAction?: (finding: AuditFinding) => void;
 }
 
 export const LocationDetailView: React.FC<LocationDetailViewProps> = ({
@@ -24,14 +30,18 @@ export const LocationDetailView: React.FC<LocationDetailViewProps> = ({
   onBack,
   onRunAudit,
   onOpenEditProfile,
-  onSaveProfile
+  onSaveProfile,
+  onSaveHours,
+  onAuditAction,
+  onNavigateTab,
 }) => {
+  const [hoursOpen, setHoursOpen] = useState(false);
   const [phone, setPhone] = useState(location.phone);
   const [website, setWebsite] = useState(location.website);
   const [saving, setSaving] = useState(false);
   React.useEffect(() => { setPhone(location.phone); setWebsite(location.website); }, [location.id, location.phone, location.website]);
   const [activeTab, setActiveTab] = useState<
-    'Overview' | 'Profile' | 'Reviews' | 'Posts' | 'Analytics' | 'SEO' | 'Security'
+    'Overview' | 'Audit' | 'Profile' | 'Reviews' | 'Posts' | 'Analytics' | 'SEO' | 'Security'
   >('Overview');
 
   // Built from this app's profile checks (see the server audit). Nothing here is estimated.
@@ -121,7 +131,7 @@ export const LocationDetailView: React.FC<LocationDetailViewProps> = ({
 
       {/* Navigation Tabs */}
       <div className="flex items-center gap-1 border-b border-slate-200 overflow-x-auto text-xs font-semibold">
-        {(['Overview', 'Profile', 'Reviews', 'Posts', 'Analytics', 'SEO', 'Security'] as const).map((tab) => (
+        {(['Overview', 'Audit', 'Profile', 'Reviews', 'Posts', 'Analytics', 'SEO', 'Security'] as const).map((tab) => (
           <button
             key={tab}
             type="button"
@@ -290,7 +300,9 @@ export const LocationDetailView: React.FC<LocationDetailViewProps> = ({
                 <h3 className="text-sm font-semibold text-slate-900 tracking-tight">
                   Operating Hours
                 </h3>
-                <span className="text-[11px] text-slate-500">As listed on Google</span>
+                {onSaveHours && location.regularHoursRaw
+                  ? <Button size="xs" variant="outline" leftIcon={<Clock className="h-3 w-3" />} onClick={() => setHoursOpen(true)}>Edit hours</Button>
+                  : <span className="text-[11px] text-slate-500">As listed on Google</span>}
               </div>
 
               <div className="space-y-1.5 text-xs">
@@ -305,6 +317,21 @@ export const LocationDetailView: React.FC<LocationDetailViewProps> = ({
           </div>
 
         </div>
+      )}
+
+      {activeTab === 'Audit' && (
+        <ProfileAuditPanel location={location} onAction={(f) => {
+          const t = f.fix?.actionType;
+          if (t === 'update_attributes') setActiveTab('Profile');
+          else if (t === 'verify_hours' && f.id === 'hours' && onSaveHours && location.regularHoursRaw) setHoursOpen(true);
+          else if (onAuditAction) onAuditAction(f);
+          else onNavigateTab?.(t || '');
+        }} />
+      )}
+
+      {onSaveHours && location.regularHoursRaw && (
+        <HoursEditor isOpen={hoursOpen} onClose={() => setHoursOpen(false)} current={location.regularHoursRaw} locationName={location.name}
+          onSave={(h) => onSaveHours(location.id, h)} />
       )}
 
       {/* TAB 2: PROFILE EDITOR */}
@@ -375,7 +402,7 @@ export const LocationDetailView: React.FC<LocationDetailViewProps> = ({
       )}
 
       {/* Fallback for other tabs within location detail */}
-      {activeTab !== 'Overview' && activeTab !== 'Profile' && (
+      {activeTab !== 'Overview' && activeTab !== 'Profile' && activeTab !== 'Audit' && (
         <div className="bg-white rounded-xl border border-slate-200 p-10 text-center shadow-2xs">
           <p className="text-xs text-slate-500">
             {activeTab} for {location.name} isn't shown per location here yet. Use the {activeTab} section in the side menu.

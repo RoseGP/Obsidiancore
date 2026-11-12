@@ -7,6 +7,7 @@ export type LocalPilotRoute =
   | 'seo'
   | 'analytics'
   | 'security'
+  | 'forms'
   | 'reports'
   | 'ai'
   | 'settings'
@@ -59,6 +60,11 @@ export interface LocationItem {
   lastPhotoAdded: string;
   /** This app's profile checks (from the server audit), not a Google metric. */
   auditChecks?: { id: string; group: string; label: string; passed: boolean }[];
+  /** The full audit: state (pass/fail/unknown), section (profile quality vs listing status), evidence, action. */
+  auditFindings?: AuditFinding[];
+  /** Regular hours as Google returns them (for the hours editor). */
+  regularHoursRaw?: { day: string; open: string; close: string }[];
+  mapsUri?: string;
   /** Average rating is null when the location has no reviews yet. */
   hasRating?: boolean;
 }
@@ -127,7 +133,7 @@ export interface SeoOpportunity {
   estimatedTime: string;
   locationId?: string;
   locationName?: string;
-  actionType: 'fix_services' | 'add_photos' | 'reply_reviews' | 'create_post' | 'verify_hours' | 'update_attributes';
+  actionType: 'fix_services' | 'add_photos' | 'reply_reviews' | 'create_post' | 'verify_hours' | 'update_attributes' | 'open_in_google';
   actionLabel: string;
 }
 
@@ -219,4 +225,10 @@ export interface BillingPlan {
   monthlyPrice: number;
   locationsIncluded: string;
   nextBillingDate: string;
+}
+
+export interface AuditFinding {
+  id: string; label: string; group: string; section: 'profile' | 'listing'; state: 'pass' | 'fail' | 'unknown';
+  severity: 'high' | 'medium' | 'low' | 'info'; evidence: string;
+  fix?: { title: string; description: string; actionType: string; actionLabel: string };
 }

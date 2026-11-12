@@ -90,13 +90,13 @@ function WorkspaceSelector({ name, compact }: { name: string; compact?: boolean 
       <button type="button" aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen((o) => !o)} aria-label={`Workspace: ${name}`}
         className={cx('flex w-full items-center gap-2.5 rounded-xl text-left', compact ? 'justify-center p-1.5' : 'px-2.5 py-2')}
         style={{ background: 'var(--sp-surface)', border: '1px solid var(--sp-border-strong)', font: 'inherit', color: 'inherit', cursor: 'pointer' }}>
-        <span className="flex h-7 w-7 flex-none items-center justify-center rounded-full text-[12px] font-bold" style={{ background: '#2b2c55', color: '#c4bcff' }} aria-hidden>{initial}</span>
+        <span className="flex h-7 w-7 flex-none items-center justify-center rounded-full text-[12px] font-bold" style={{ background: 'var(--accent-soft)', color: 'var(--accent-text)' }} aria-hidden>{initial}</span>
         {!compact && <><span className="min-w-0 flex-1 truncate text-[13.5px] font-medium">{name}</span><ChevronsUpDown size={15} className="sp-faint" aria-hidden /></>}
       </button>
       {open && (
         <div role="listbox" aria-label="Workspaces" className="sp-pop absolute left-0 top-[calc(100%+6px)] z-40 w-[230px] p-1.5">
           <div role="option" aria-selected="true" className="flex items-center gap-2.5 rounded-lg p-2 text-[13.5px]" style={{ background: 'var(--sp-surface-2)' }}>
-            <span className="flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-bold" style={{ background: '#2b2c55', color: '#c4bcff' }}>{initial}</span>
+            <span className="flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-bold" style={{ background: 'var(--accent-soft)', color: 'var(--accent-text)' }}>{initial}</span>
             <span className="flex-1 truncate">{name}</span><Check size={15} style={{ color: 'var(--sp-accent-text)' }} />
           </div>
           <p className="sp-faint px-2 pb-1 pt-2 text-[12px]">Workspaces are managed in CRM settings.</p>
@@ -165,7 +165,7 @@ function SearchDialog({ open, onClose }: { open: boolean; onClose: () => void })
       </div>
       <div className="mt-3 min-h-[120px]" aria-live="polite">
         {range.status === 'loading' && term ? <div className="space-y-2">{[0, 1].map((i) => <Skeleton key={i} style={{ height: 48 }} />)}</div>
-          : range.status === 'error' ? <p className="text-[13px]" style={{ color: '#fca5a5' }}>{range.error}</p>
+          : range.status === 'error' ? <p className="text-[13px]" style={{ color: 'var(--danger)' }}>{range.error}</p>
           : !term ? <p className="sp-faint py-8 text-center text-[13px]">Type to search your posts.</p>
           : !results.length ? <p className="sp-muted py-8 text-center text-[13px]">No posts match “{q.trim()}”.</p>
           : (

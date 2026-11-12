@@ -2,6 +2,8 @@
 import 'dotenv/config';
 import './src/server/defaultNodeEnv';
 import './src/server/startupChecks';
+// Before any router is imported: makes async route handlers forward rejections to the error handler.
+import './src/server/http/installAsyncErrors';
 import express from 'express';
 import path from 'path';
 import cors from 'cors';
@@ -51,6 +53,13 @@ import fs from 'fs';
 import { requireUser } from './src/features/social-accounts/server/auth';
 import { guard, PUBLIC } from './src/server/routeGuards';
 import { isExplicitDevOrTest } from './src/server/runtimeEnv';
+import { apiRateLimit, errorHandler, installProcessErrorLogging, notFoundHandler, requestContext, requestLogger } from './src/server/http/middleware';
+import { logger } from './src/server/http/logger';
+import magicLinkRouter from './src/routes/magicLinkApi';
+import crmAgentRouter from './src/routes/crmAgentApi';
+import webFormsRouter from './src/routes/webFormsApi';
+
+installProcessErrorLogging();
 
 dotenv.config();
 
@@ -62,6 +71,9 @@ const PORT = Number(process.env.PORT) || 3000;
 // rate limits and sign-in monitoring rely on. Leave unset when clients connect directly.
 if (process.env.TRUST_PROXY) app.set('trust proxy', /^\d+$/.test(process.env.TRUST_PROXY) ? Number(process.env.TRUST_PROXY) : process.env.TRUST_PROXY);
 app.disable('x-powered-by');
+// Request id on every response (X-Request-Id) and one log line per API request.
+app.use(requestContext());
+app.use(requestLogger());
 // Security headers on every response; CSP is report-only unless CSP_ENFORCE=true (see docs/compliance/SECURITY_CONTROLS.md).
 const productionMode = !isExplicitDevOrTest();
 const builtIndex = path.join(process.cwd(), 'dist', 'index.html');
@@ -72,7 +84,8 @@ app.use(securityHeaders({ production: productionMode, scriptHashes: productionMo
 // (/api/v1/events) sets its own per-key CORS headers, so it's skipped here.
 const corsAllowed = new Set([process.env.APP_URL, ...(process.env.CORS_ALLOWED_ORIGINS || '').split(',')].map((o) => (o || '').trim().replace(/\/+$/, '')).filter(Boolean));
 const appCors = cors({ origin: (origin, cb) => cb(null, !origin || corsAllowed.has(origin)) });
-app.use((req, res, next) => (req.path.startsWith('/api/v1/events') || req.path.startsWith('/api/v1/embed-tokens') ? next() : appCors(req, res, next)));
+// Website form submissions (/api/web-forms/f/…) set per-organization CORS themselves (allowed websites).
+app.use((req, res, next) => (req.path.startsWith('/api/v1/events') || req.path.startsWith('/api/v1/embed-tokens') || req.path.startsWith('/api/web-forms/f/') ? next() : appCors(req, res, next)));
 app.use(express.json({ 
   limit: '10mb',
   verify: (req: any, _res, buf) => {
@@ -80,6 +93,8 @@ app.use(express.json({
   }
 }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+// Per-IP ceiling for the whole API; routers keep their own stricter limits.
+app.use('/api', apiRateLimit());
 
 // Health Check
 app.get('/api/health', (_req, res) => {
@@ -93,6 +108,13 @@ app.get('/api/health', (_req, res) => {
 // Mount Production Messaging & Live Chat Widget API
 app.use('/api/messaging', guard(PUBLIC.messaging), messagingPlatformRouter);
 app.use('/api/widget', guard(PUBLIC.messaging), messagingPlatformRouter);
+
+// Passwordless sign-in links (public: anyone may ask for a link; responses never reveal whether an account exists).
+app.use('/api/auth/magic-link', guard(PUBLIC.magicLink), magicLinkRouter);
+// Website forms → CRM: public submissions under /f/:formId, settings and delivery log for signed-in members.
+app.use('/api/web-forms', guard(PUBLIC.webForms), webFormsRouter);
+// CRM agent: questions answered from the caller's own organization's records (RAG).
+app.use('/api/crm-agent', guard(PUBLIC.none), crmAgentRouter);
 
 // Mount CRM API Routes
 app.use('/api/chat', guard(PUBLIC.none), chatRouter);
@@ -142,7 +164,9 @@ app.use('/api/sales-intelligence', guard(PUBLIC.salesIntel), salesIntelRouter);
 
 // Unknown API paths get a JSON 404 instead of falling through to the single-page app (which answered
 // removed routes like /api/postiz/status with index.html and HTTP 200).
-app.use('/api', (_req, res) => { res.status(404).json({ success: false, code: 'not_found', error: 'No such API route.' }); });
+app.use('/api', notFoundHandler());
+// Last: any error thrown or forwarded by a route becomes a safe JSON response (details only in the server log).
+app.use(errorHandler());
 
 // Start Server with Vite Middleware
 async function startServer() {
@@ -172,6 +196,7 @@ async function startServer() {
   // Deletes GREET cloud recordings past the organization's retention period.
   startRecordingRetentionSweeper();
   httpServer.listen(PORT, '0.0.0.0', () => {
+    logger.info('server.started', { port: PORT, mode: isExplicitDevOrTest() ? 'development' : 'production' });
     console.log(`[OmniChannel CRM Server] Running on http://0.0.0.0:${PORT} (WebSocket + HTTP)`);
   });
 }

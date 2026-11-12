@@ -111,14 +111,14 @@ export const ChatDetailsPanel: React.FC<ChatDetailsPanelProps> = ({
     conversation.participants[0];
 
   return (
-    <aside className={`w-80 lg:w-88 bg-neutral-900/60 backdrop-blur-xl border-l border-white/5 flex flex-col h-full overflow-hidden shrink-0 select-none divide-y divide-white/5 ${className}`}>
+    <aside className={`w-80 lg:w-88 bg-[var(--surface)] backdrop-blur-xl border-l border-[var(--border)] flex flex-col h-full overflow-hidden shrink-0 select-none divide-y divide-[var(--border)] ${className}`}>
       {/* 1. Profile & Entity Overview Header */}
-      <div className="p-5 flex flex-col items-center text-center relative bg-neutral-950/40 shrink-0">
+      <div className="p-5 flex flex-col items-center text-center relative bg-[var(--surface-sunken)] shrink-0">
         {onClosePanel && (
           <button
             onClick={onClosePanel}
             title="Close Panel"
-            className="absolute top-4 left-4 p-1.5 rounded-lg text-neutral-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+            className="absolute top-4 left-4 p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--border)] transition-colors cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
@@ -128,7 +128,7 @@ export const ChatDetailsPanel: React.FC<ChatDetailsPanelProps> = ({
           <button
             onClick={() => onRemoveConversation(conversation.id)}
             title="Archive Conversation"
-            className="absolute top-4 right-4 p-1.5 rounded-lg text-neutral-400 hover:text-rose-400 hover:bg-rose-500/15 transition-colors cursor-pointer"
+            className="absolute top-4 right-4 p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--danger)] hover:bg-rose-500/15 transition-colors cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
@@ -141,27 +141,27 @@ export const ChatDetailsPanel: React.FC<ChatDetailsPanelProps> = ({
               initialsAvatar(primaryContact?.name)
             }
             alt="Profile"
-            className="w-16 h-16 rounded-2xl object-cover ring-2 ring-white/10 shadow-lg"
+            className="w-16 h-16 rounded-2xl object-cover ring-2 ring-[var(--border)] shadow-lg"
           />
           <span className="absolute -bottom-1 -right-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-600 text-white shadow">
             {conversation.type.toUpperCase()}
           </span>
         </div>
 
-        <h3 className="text-sm font-semibold text-white tracking-tight">{conversation.title}</h3>
-        <p className="text-xs text-neutral-400 mt-0.5">
+        <h3 className="text-sm font-semibold text-[var(--text)] tracking-tight">{conversation.title}</h3>
+        <p className="text-xs text-[var(--text-muted)] mt-0.5">
           {primaryContact?.email || meta?.email || 'contact@client-enterprise.io'}
         </p>
 
         {/* Linked CRM Badge */}
         {crmRecord && (
-          <div className="mt-2.5 p-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300 w-full flex items-center justify-between">
+          <div className="mt-2.5 p-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-[var(--warning)] w-full flex items-center justify-between">
             <div className="flex items-center gap-1.5 truncate">
-              <Briefcase className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+              <Briefcase className="w-3.5 h-3.5 text-[var(--warning)] shrink-0" />
               <span className="font-semibold truncate">{crmRecord.title}</span>
             </div>
             {crmRecord.value && (
-              <span className="font-mono text-[10px] font-bold text-emerald-400 bg-emerald-500/15 px-1.5 py-0.5 rounded">
+              <span className="font-mono text-[10px] font-bold text-[var(--success)] bg-emerald-500/15 px-1.5 py-0.5 rounded">
                 {crmRecord.value}
               </span>
             )}
@@ -170,7 +170,7 @@ export const ChatDetailsPanel: React.FC<ChatDetailsPanelProps> = ({
       </div>
 
       {/* 2. Navigation Tabs */}
-      <div className="grid grid-cols-4 p-1.5 bg-neutral-950/60 border-b border-white/5 text-xs font-semibold shrink-0">
+      <div className="grid grid-cols-4 p-1.5 bg-[var(--surface-sunken)] border-b border-[var(--border)] text-xs font-semibold shrink-0">
         {[
           { id: 'overview', label: 'Details' },
           { id: 'tasks', label: `Tasks (${tasks.length})` },
@@ -183,7 +183,7 @@ export const ChatDetailsPanel: React.FC<ChatDetailsPanelProps> = ({
             className={`py-1.5 text-center rounded-lg transition cursor-pointer text-[11px] ${
               activeTab === tab.id
                 ? 'bg-blue-600 text-white shadow-sm'
-                : 'text-neutral-400 hover:text-white hover:bg-white/5'
+                : 'text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-sunken)]'
             }`}
           >
             {tab.label}
@@ -197,13 +197,13 @@ export const ChatDetailsPanel: React.FC<ChatDetailsPanelProps> = ({
         {activeTab === 'overview' && (
           <div className="space-y-4 text-xs">
             {/* Priority & Status Controls */}
-            <div className="p-3 rounded-xl bg-white/5 border border-white/5 space-y-2.5">
+            <div className="p-3 rounded-xl bg-[var(--surface-sunken)] border border-[var(--border)] space-y-2.5">
               <div className="flex items-center justify-between">
-                <span className="text-neutral-400">Room Priority</span>
+                <span className="text-[var(--text-muted)]">Room Priority</span>
                 <select
                   value={conversation.priority}
                   onChange={(e) => onUpdateConversation({ priority: e.target.value as any })}
-                  className="bg-neutral-950 border border-white/10 text-white rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-blue-500"
+                  className="bg-[var(--surface-sunken)] border border-[var(--border)] text-[var(--text)] rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-blue-500"
                 >
                   <option value="low">Low</option>
                   <option value="medium">Medium</option>
@@ -213,14 +213,14 @@ export const ChatDetailsPanel: React.FC<ChatDetailsPanelProps> = ({
               </div>
 
               <div className="flex items-center justify-between">
-                <span className="text-neutral-400">Assigned Agent</span>
-                <span className="font-medium text-white">{assignedAgentName || 'Unassigned'}</span>
+                <span className="text-[var(--text-muted)]">Assigned Agent</span>
+                <span className="font-medium text-[var(--text)]">{assignedAgentName || 'Unassigned'}</span>
               </div>
 
               {crmRecord?.companyName && (
                 <div className="flex items-center justify-between">
-                  <span className="text-neutral-400">Company</span>
-                  <span className="font-medium text-white">{crmRecord.companyName}</span>
+                  <span className="text-[var(--text-muted)]">Company</span>
+                  <span className="font-medium text-[var(--text)]">{crmRecord.companyName}</span>
                 </div>
               )}
             </div>
@@ -228,12 +228,12 @@ export const ChatDetailsPanel: React.FC<ChatDetailsPanelProps> = ({
             {/* Conversation Tags */}
             <div>
               <div className="flex items-center justify-between mb-2">
-                <span className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wider flex items-center gap-1">
+                <span className="text-[11px] font-semibold text-[var(--text-muted)] uppercase tracking-wider flex items-center gap-1">
                   <Tag className="w-3.5 h-3.5" /> Tags
                 </span>
                 <button
                   onClick={() => setShowAddTag(!showAddTag)}
-                  className="text-xs text-blue-400 hover:text-blue-300 font-medium flex items-center gap-0.5 cursor-pointer"
+                  className="text-xs text-[var(--accent-text)] hover:text-[var(--accent-text)] font-medium flex items-center gap-0.5 cursor-pointer"
                 >
                   <Plus className="w-3 h-3" /> Add
                 </button>
@@ -247,7 +247,7 @@ export const ChatDetailsPanel: React.FC<ChatDetailsPanelProps> = ({
                     onChange={(e) => setNewTagInput(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && handleAddTag()}
                     placeholder="New tag..."
-                    className="flex-1 bg-neutral-950 border border-white/10 rounded-lg px-2 py-1 text-xs text-white focus:outline-none focus:border-blue-500"
+                    className="flex-1 bg-[var(--surface-sunken)] border border-[var(--border)] rounded-lg px-2 py-1 text-xs text-[var(--text)] focus:outline-none focus:border-blue-500"
                   />
                   <button
                     onClick={handleAddTag}
@@ -262,12 +262,12 @@ export const ChatDetailsPanel: React.FC<ChatDetailsPanelProps> = ({
                 {conversation.tags.map((t) => (
                   <span
                     key={t}
-                    className="group inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs bg-white/5 border border-white/10 text-neutral-300 hover:border-white/20"
+                    className="group inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs bg-[var(--surface-sunken)] border border-[var(--border)] text-[var(--text-muted)] hover:border-[var(--border)]"
                   >
                     <span>{t}</span>
                     <button
                       onClick={() => handleRemoveTag(t)}
-                      className="text-neutral-500 hover:text-rose-400 opacity-60 group-hover:opacity-100"
+                      className="text-[var(--text-subtle)] hover:text-[var(--danger)] opacity-60 group-hover:opacity-100"
                     >
                       <X className="w-3 h-3" />
                     </button>
@@ -278,20 +278,20 @@ export const ChatDetailsPanel: React.FC<ChatDetailsPanelProps> = ({
 
             {/* Participants Stack */}
             <div>
-              <span className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wider flex items-center gap-1 mb-2">
+              <span className="text-[11px] font-semibold text-[var(--text-muted)] uppercase tracking-wider flex items-center gap-1 mb-2">
                 <Users className="w-3.5 h-3.5" /> Participants ({conversation.participants.length})
               </span>
               <div className="space-y-1.5">
                 {conversation.participants.map((p) => (
                   <div
                     key={p.id}
-                    className="flex items-center justify-between p-2 rounded-xl bg-white/5 border border-white/5"
+                    className="flex items-center justify-between p-2 rounded-xl bg-[var(--surface-sunken)] border border-[var(--border)]"
                   >
                     <div className="flex items-center gap-2">
                       <img src={p.avatar || initialsAvatar(p.name)} alt={p.name} className="w-6 h-6 rounded-lg object-cover" />
                       <div>
-                        <p className="font-semibold text-white text-xs">{p.name}</p>
-                        <p className="text-[10px] text-neutral-400">{p.department || p.role}</p>
+                        <p className="font-semibold text-[var(--text)] text-xs">{p.name}</p>
+                        <p className="text-[10px] text-[var(--text-muted)]">{p.department || p.role}</p>
                       </div>
                     </div>
                     <span
@@ -310,13 +310,13 @@ export const ChatDetailsPanel: React.FC<ChatDetailsPanelProps> = ({
         {activeTab === 'tasks' && (
           <div className="space-y-3 text-xs">
             <div className="flex items-center justify-between">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
                 Actionable Tasks
               </span>
               {onOpenConvertToTask && (
                 <button
                   onClick={onOpenConvertToTask}
-                  className="px-2.5 py-1 rounded-lg bg-blue-600/20 border border-blue-500/30 text-blue-400 text-xs font-semibold flex items-center gap-1 hover:bg-blue-600/30 cursor-pointer"
+                  className="px-2.5 py-1 rounded-lg bg-blue-600/20 border border-blue-500/30 text-[var(--accent-text)] text-xs font-semibold flex items-center gap-1 hover:bg-blue-600/30 cursor-pointer"
                 >
                   <Plus className="w-3 h-3" /> New Task
                 </button>
@@ -324,7 +324,7 @@ export const ChatDetailsPanel: React.FC<ChatDetailsPanelProps> = ({
             </div>
 
             {tasks.length === 0 ? (
-              <div className="p-6 text-center text-neutral-500">
+              <div className="p-6 text-center text-[var(--text-subtle)]">
                 <CheckSquare className="w-8 h-8 mx-auto mb-2 opacity-30" />
                 <p>No CRM tasks assigned to this room yet.</p>
                 <p className="text-[11px] mt-1">Hover over any message and click "Convert to Task".</p>
@@ -338,8 +338,8 @@ export const ChatDetailsPanel: React.FC<ChatDetailsPanelProps> = ({
                       key={task.id}
                       className={`p-3 rounded-xl border transition ${
                         isDone
-                          ? 'bg-neutral-950/40 border-white/5 opacity-60'
-                          : 'bg-white/5 border-white/10 hover:border-white/20'
+                          ? 'bg-[var(--surface-sunken)] border-[var(--border)] opacity-60'
+                          : 'bg-[var(--surface-sunken)] border-[var(--border)] hover:border-[var(--border)]'
                       }`}
                     >
                       <div className="flex items-start gap-2">
@@ -347,14 +347,14 @@ export const ChatDetailsPanel: React.FC<ChatDetailsPanelProps> = ({
                           type="checkbox"
                           checked={isDone}
                           onChange={() => onToggleTaskStatus && onToggleTaskStatus(task.id)}
-                          className="mt-0.5 rounded border-white/20 text-blue-600 focus:ring-0 cursor-pointer"
+                          className="mt-0.5 rounded border-[var(--border)] text-blue-600 focus:ring-0 cursor-pointer"
                         />
                         <div className="flex-1 min-w-0">
-                          <p className={`font-semibold text-white truncate ${isDone ? 'line-through' : ''}`}>
+                          <p className={`font-semibold text-[var(--text)] truncate ${isDone ? 'line-through' : ''}`}>
                             {task.title}
                           </p>
-                          <div className="flex items-center gap-2 mt-1 text-[10px] text-neutral-400">
-                            <span className="text-amber-400 font-medium capitalize">
+                          <div className="flex items-center gap-2 mt-1 text-[10px] text-[var(--text-muted)]">
+                            <span className="text-[var(--warning)] font-medium capitalize">
                               {task.priority} Priority
                             </span>
                             <span>•</span>
@@ -379,12 +379,12 @@ export const ChatDetailsPanel: React.FC<ChatDetailsPanelProps> = ({
         {/* Tab: Files */}
         {activeTab === 'files' && (
           <div className="space-y-3 text-xs">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400 block">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)] block">
               Shared Documents & Specifications
             </span>
 
             {sharedFiles.length === 0 ? (
-              <div className="p-6 text-center text-neutral-500">
+              <div className="p-6 text-center text-[var(--text-subtle)]">
                 <FileText className="w-8 h-8 mx-auto mb-2 opacity-30" />
                 <p>No documents uploaded yet.</p>
               </div>
@@ -393,17 +393,17 @@ export const ChatDetailsPanel: React.FC<ChatDetailsPanelProps> = ({
                 {sharedFiles.map((fileMsg) => (
                   <div
                     key={fileMsg.id}
-                    className="p-3 rounded-xl bg-white/5 border border-white/10 flex items-center justify-between gap-2.5 hover:border-white/20 transition"
+                    className="p-3 rounded-xl bg-[var(--surface-sunken)] border border-[var(--border)] flex items-center justify-between gap-2.5 hover:border-[var(--border)] transition"
                   >
                     <div className="flex items-center gap-2.5 min-w-0">
-                      <div className="p-2 rounded-lg bg-blue-500/20 text-blue-400 shrink-0">
+                      <div className="p-2 rounded-lg bg-blue-500/20 text-[var(--accent-text)] shrink-0">
                         <FileText className="w-4 h-4" />
                       </div>
                       <div className="min-w-0">
-                        <p className="font-semibold text-white truncate text-xs">
+                        <p className="font-semibold text-[var(--text)] truncate text-xs">
                           {fileMsg.attachmentName || 'Shared Document.pdf'}
                         </p>
-                        <p className="text-[10px] text-neutral-400">{fileMsg.attachmentSize || '1.8 MB'}</p>
+                        <p className="text-[10px] text-[var(--text-muted)]">{fileMsg.attachmentSize || '1.8 MB'}</p>
                       </div>
                     </div>
 
@@ -419,7 +419,7 @@ export const ChatDetailsPanel: React.FC<ChatDetailsPanelProps> = ({
                             timestamp: new Date(fileMsg.createdAt).toLocaleTimeString()
                           })
                         }
-                        className="p-1.5 rounded-lg text-neutral-400 hover:text-white hover:bg-white/10 transition cursor-pointer"
+                        className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--border)] transition cursor-pointer"
                         title="Preview"
                       >
                         <Eye className="w-3.5 h-3.5" />
@@ -430,7 +430,7 @@ export const ChatDetailsPanel: React.FC<ChatDetailsPanelProps> = ({
                           download={fileMsg.attachmentName}
                           target="_blank"
                           rel="noreferrer"
-                          className="p-1.5 rounded-lg text-neutral-400 hover:text-white hover:bg-white/10 transition cursor-pointer"
+                          className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--border)] transition cursor-pointer"
                           title="Download"
                         >
                           <Download className="w-3.5 h-3.5" />
@@ -447,25 +447,25 @@ export const ChatDetailsPanel: React.FC<ChatDetailsPanelProps> = ({
         {/* Tab: Activity Audit */}
         {activeTab === 'activity' && (
           <div className="space-y-3 text-xs">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400 block">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)] block">
               Audit & Activity Trail
             </span>
 
             {activities.length === 0 ? (
-              <div className="p-6 text-center text-neutral-500">
+              <div className="p-6 text-center text-[var(--text-subtle)]">
                 <Activity className="w-8 h-8 mx-auto mb-2 opacity-30" />
                 <p>No recent room activities.</p>
               </div>
             ) : (
               <div className="space-y-2">
                 {activities.map((act) => (
-                  <div key={act.id} className="p-2.5 rounded-xl bg-white/5 border border-white/5 space-y-1">
+                  <div key={act.id} className="p-2.5 rounded-xl bg-[var(--surface-sunken)] border border-[var(--border)] space-y-1">
                     <div className="flex items-center justify-between text-[11px]">
-                      <span className="font-semibold text-white">{act.title}</span>
-                      <span className="text-[10px] text-neutral-500">{act.timestamp}</span>
+                      <span className="font-semibold text-[var(--text)]">{act.title}</span>
+                      <span className="text-[10px] text-[var(--text-subtle)]">{act.timestamp}</span>
                     </div>
-                    <p className="text-[11px] text-neutral-400">{act.description}</p>
-                    <p className="text-[10px] text-blue-400 font-medium">Logged by {act.actorName}</p>
+                    <p className="text-[11px] text-[var(--text-muted)]">{act.description}</p>
+                    <p className="text-[10px] text-[var(--accent-text)] font-medium">Logged by {act.actorName}</p>
                   </div>
                 ))}
               </div>

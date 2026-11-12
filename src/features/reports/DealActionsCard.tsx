@@ -26,22 +26,22 @@ export default function DealActionsCard({ dealId }: { dealId: string }) {
 
   if (state.status === 'hidden') return null;
   return (
-    <section aria-label="Next best actions" className="rounded-xl border border-white/10 bg-slate-950 p-4 space-y-2">
-      <h4 className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-400"><Lightbulb className="h-3.5 w-3.5 text-amber-400" aria-hidden="true" />Next best actions</h4>
-      {state.status === 'loading' && <p className="text-[11px] text-slate-400">Checking this deal…</p>}
-      {state.status === 'error' && <p className="text-[11px] text-rose-300">Couldn’t load the suggested actions.</p>}
-      {state.status === 'ok' && !state.row && <p className="text-[11px] text-slate-300">Nothing to flag: the close date, follow-ups and stage age all look fine.</p>}
+    <section aria-label="Next best actions" className="rounded-xl border border-[var(--border)] bg-[var(--surface-sunken)] p-4 space-y-2">
+      <h4 className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)]"><Lightbulb className="h-3.5 w-3.5 text-[var(--warning)]" aria-hidden="true" />Next best actions</h4>
+      {state.status === 'loading' && <p className="text-[11px] text-[var(--text-muted)]">Checking this deal…</p>}
+      {state.status === 'error' && <p className="text-[11px] text-[var(--danger)]">Couldn’t load the suggested actions.</p>}
+      {state.status === 'ok' && !state.row && <p className="text-[11px] text-[var(--text-muted)]">Nothing to flag: the close date, follow-ups and stage age all look fine.</p>}
       {state.status === 'ok' && state.row && (
         <>
           <ul className="space-y-1.5">
             {state.row.actions.map((a) => (
-              <li key={a.type} className="rounded-lg border border-white/5 bg-slate-900 p-2.5">
-                <p className="text-[12px] font-semibold text-white">{a.label}</p>
-                <p className="text-[11px] leading-relaxed text-slate-300">{a.reason}</p>
+              <li key={a.type} className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-2.5">
+                <p className="text-[12px] font-semibold text-[var(--text)]">{a.label}</p>
+                <p className="text-[11px] leading-relaxed text-[var(--text-muted)]">{a.reason}</p>
               </li>
             ))}
           </ul>
-          <p className="text-[10px] text-slate-500">Ranked by expected value (${Math.round(state.row.expectedValue).toLocaleString('en-US')} = {Math.round(state.row.probability * 100)}% × value) × urgency. See Reports for how this is calculated.</p>
+          <p className="text-[10px] text-[var(--text-subtle)]">Ranked by expected value (${Math.round(state.row.expectedValue).toLocaleString('en-US')} = {Math.round(state.row.probability * 100)}% × value) × urgency. See Reports for how this is calculated.</p>
         </>
       )}
     </section>

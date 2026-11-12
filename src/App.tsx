@@ -17,6 +17,7 @@ import UnifiedCommandSearchBar from './components/UnifiedCommandSearchBar';
 import DashboardView from './components/DashboardView';
 import GreetHub from './components/greet/GreetHub';
 import MeetingRoom from './features/meeting-room/MeetingRoom';
+import MagicLinkLanding, { takeMagicLinkToken } from './components/auth/MagicLinkLanding';
 import GreetGuestPage from './components/greet/GreetGuestPage';
 import { announceMeetingsChanged, scheduleFromCalendarEvent, scheduleMeeting } from './lib/greetClient';
 import ProductionMessagingPlatform from './components/messaging/ProductionMessagingPlatform';
@@ -122,6 +123,8 @@ function AppMain() {
   const [notifications, setNotifications] = useState<AppNotification[]>(INITIAL_NOTIFICATIONS);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [meetingRoomCode, setMeetingRoomCode] = useState('');
+  // An emailed sign-in link (/auth/magic#token=…), read and removed from the URL once at startup.
+  const [magicToken, setMagicToken] = useState<string | null>(() => takeMagicLinkToken());
   const [showNotificationPreferencesModal, setShowNotificationPreferencesModal] = useState<boolean>(false);
   const [settingsDefaultTab, setSettingsDefaultTab] = useState<SettingsTab>('account');
   const [isQuickActionModalOpen, setIsQuickActionModalOpen] = useState(false);
@@ -387,11 +390,11 @@ function AppMain() {
       case 'analytics':
         return <div className="cc min-h-full shrink-0 w-full"><AnalyticsView onNavigate={(v) => setActiveView(v as SemanticView)} /></div>;
       case 'settings':
-        return <div className="obsidian min-h-full shrink-0 bg-[var(--obsidian-1)] text-neutral-200"><SettingsView key="settings" defaultTab={settingsDefaultTab} onNavigate={navigateTo} /></div>;
+        return <div className="min-h-full shrink-0 bg-[var(--app-bg)] text-[var(--text)]"><SettingsView key="settings" defaultTab={settingsDefaultTab} onNavigate={navigateTo} /></div>;
       case 'security_access':
-        return <div className="obsidian min-h-full shrink-0 bg-[var(--obsidian-1)] text-neutral-200"><SettingsView key="security_access" page="security_access" onNavigate={navigateTo} /></div>;
+        return <div className="min-h-full shrink-0 bg-[var(--app-bg)] text-[var(--text)]"><SettingsView key="security_access" page="security_access" onNavigate={navigateTo} /></div>;
       case 'billing':
-        return <div className="obsidian min-h-full shrink-0 bg-[var(--obsidian-1)] text-neutral-200"><BillingSubscriptionView onNavigate={navigateTo} /></div>;
+        return <div className="min-h-full shrink-0 bg-[var(--app-bg)] text-[var(--text)]"><BillingSubscriptionView onNavigate={navigateTo} /></div>;
       case 'calendar':
         return (
           <CalendarView
@@ -458,10 +461,11 @@ function AppMain() {
   // GREET guest invitations (/?greet_invite=<token>) are for external guests: no CRM account needed.
   const greetInvite = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('greet_invite') : null;
   if (greetInvite) return <GreetGuestPage token={greetInvite} />;
+  if (magicToken !== null) return <MagicLinkLanding token={magicToken} onDone={() => setMagicToken(null)} />;
 
   if (!isAuthenticated && !isAuthLoading) {
     return (
-      <div className="obsidian min-h-screen bg-[var(--obsidian-0)]">
+      <div className="min-h-screen bg-[var(--app-bg)]">
         <AuthFlowView onSuccess={() => showToast('Authenticated to Obsidian CRM workspace!')} />
         {toastMessage && (
           <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-xl bg-neutral-900/90 text-white text-xs font-medium border border-white/10 shadow-xl shadow-black/50 backdrop-blur-md animate-in fade-in slide-in-from-bottom-2 duration-150">

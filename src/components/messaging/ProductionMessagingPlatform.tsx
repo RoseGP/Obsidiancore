@@ -723,7 +723,7 @@ export const ProductionMessagingPlatform: React.FC = () => {
     conversations.find((c) => c.id === activeConversationId) || conversations[0];
 
   return (
-    <div className="h-full w-full flex bg-neutral-950 text-neutral-100 font-sans overflow-hidden relative selection:bg-blue-600 selection:text-white">
+    <div className="h-full w-full flex bg-[var(--surface-sunken)] text-[var(--text)] font-sans overflow-hidden relative selection:bg-blue-600 selection:text-white">
       {/* Background Ambient Glow */}
       <BackgroundOrbital />
 
@@ -752,15 +752,15 @@ export const ProductionMessagingPlatform: React.FC = () => {
         />
       ) : currentView === 'canned' ? (
         /* Canned Templates Manager View */
-        <div className="flex-1 p-4 sm:p-8 overflow-y-auto bg-neutral-950/60 backdrop-blur-xl space-y-6">
+        <div className="flex-1 p-4 sm:p-8 overflow-y-auto bg-[var(--surface-sunken)] backdrop-blur-xl space-y-6">
           <div className="flex items-center justify-between">
             <div>
               <div className="flex items-center gap-2 mb-1">
-                <BookOpen className="w-5 h-5 text-blue-400" />
-                <h2 className="text-xl font-bold text-white tracking-tight">Canned Response Library</h2>
+                <BookOpen className="w-5 h-5 text-[var(--accent-text)]" />
+                <h2 className="text-xl font-bold text-[var(--text)] tracking-tight">Canned Response Library</h2>
               </div>
-              <p className="text-xs text-neutral-400">
-                Type <code className="text-blue-400 font-mono">/shortcut</code> in any chat to instantly paste rapid support snippets.
+              <p className="text-xs text-[var(--text-muted)]">
+                Type <code className="text-[var(--accent-text)] font-mono">/shortcut</code> in any chat to instantly paste rapid support snippets.
               </p>
             </div>
           </div>
@@ -769,18 +769,18 @@ export const ProductionMessagingPlatform: React.FC = () => {
             {cannedResponses.map((cr) => (
               <div
                 key={cr.id}
-                className="p-5 rounded-2xl bg-neutral-900/80 border border-white/10 shadow-lg space-y-2 hover:border-blue-500/30 transition-all"
+                className="p-5 rounded-2xl bg-[var(--surface)] border border-[var(--border)] shadow-lg space-y-2 hover:border-blue-500/30 transition-all"
               >
                 <div className="flex items-center justify-between">
-                  <span className="font-mono text-xs font-bold text-blue-400 bg-blue-500/10 px-2.5 py-1 rounded-md border border-blue-500/20">
+                  <span className="font-mono text-xs font-bold text-[var(--accent-text)] bg-blue-500/10 px-2.5 py-1 rounded-md border border-blue-500/20">
                     {cr.shortcut}
                   </span>
-                  <span className="text-[11px] font-semibold text-neutral-400 px-2 py-0.5 rounded bg-white/5">
+                  <span className="text-[11px] font-semibold text-[var(--text-muted)] px-2 py-0.5 rounded bg-[var(--surface-sunken)]">
                     {cr.category}
                   </span>
                 </div>
-                <h4 className="text-sm font-semibold text-white">{cr.title}</h4>
-                <p className="text-xs text-neutral-300 leading-relaxed">{cr.content}</p>
+                <h4 className="text-sm font-semibold text-[var(--text)]">{cr.title}</h4>
+                <p className="text-xs text-[var(--text-muted)] leading-relaxed">{cr.content}</p>
               </div>
             ))}
           </div>
@@ -856,10 +856,10 @@ export const ProductionMessagingPlatform: React.FC = () => {
               />
             </div>
           ) : (
-            <div className={`flex-1 flex flex-col items-center justify-center p-8 text-center bg-neutral-950 ${isMobile && mobileView === 'list' ? 'hidden' : 'flex'}`}>
+            <div className={`flex-1 flex flex-col items-center justify-center p-8 text-center bg-[var(--surface-sunken)] ${isMobile && mobileView === 'list' ? 'hidden' : 'flex'}`}>
               <MessageSquare className="w-12 h-12 text-neutral-600 mb-3" />
-              <h3 className="text-base font-semibold text-white">No active conversation selected</h3>
-              <p className="text-xs text-neutral-400 mt-1 max-w-sm">
+              <h3 className="text-base font-semibold text-[var(--text)]">No active conversation selected</h3>
+              <p className="text-xs text-[var(--text-muted)] mt-1 max-w-sm">
                 Select a deal room or direct message from the inbox, or start a new conversation.
               </p>
             </div>
@@ -868,8 +868,8 @@ export const ProductionMessagingPlatform: React.FC = () => {
           {/* Column 3: 360° CRM Collaboration & Telemetry Sidebar (Overlay drawer on mobile/tablet, side-by-side on desktop) */}
           {isDetailsPanelOpen && activeConversation && (
             isTablet || isMobile ? (
-              <div className="fixed inset-0 z-50 flex justify-end bg-black/70 backdrop-blur-xs animate-in fade-in duration-200">
-                <div className="w-full max-w-sm sm:max-w-md h-full bg-neutral-900 border-l border-white/10 shadow-2xl relative animate-in slide-in-from-right duration-200">
+              <div className="fixed inset-0 z-50 flex justify-end bg-[var(--surface)] backdrop-blur-xs animate-in fade-in duration-200">
+                <div className="w-full max-w-sm sm:max-w-md h-full bg-[var(--surface)] border-l border-[var(--border)] shadow-2xl relative animate-in slide-in-from-right duration-200">
                   <ChatDetailsPanel
                     conversation={activeConversation}
                     messages={messages}
@@ -982,7 +982,7 @@ export const ProductionMessagingPlatform: React.FC = () => {
 
       {/* Floating System Toast */}
       {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 px-4 py-2.5 rounded-xl bg-neutral-900/90 text-white text-xs font-medium border border-white/10 shadow-2xl backdrop-blur-md animate-in fade-in slide-in-from-bottom-2 duration-150 flex items-center gap-2">
+        <div className="fixed bottom-6 right-6 z-50 px-4 py-2.5 rounded-xl bg-[var(--surface)] text-[var(--text)] text-xs font-medium border border-[var(--border)] shadow-2xl backdrop-blur-md animate-in fade-in slide-in-from-bottom-2 duration-150 flex items-center gap-2">
           <span>{toastMessage}</span>
         </div>
       )}

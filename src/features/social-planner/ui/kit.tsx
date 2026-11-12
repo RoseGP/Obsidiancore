@@ -143,7 +143,7 @@ export function ErrorState({ title = 'Something went wrong', message, onRetry }:
 }
 
 export function Banner({ tone, children, action }: { tone: 'info' | 'warning' | 'danger'; children: React.ReactNode; action?: React.ReactNode }) {
-  const c = { info: ['rgba(109,94,245,0.14)', '#c4bcff', Info], warning: ['rgba(251,191,36,0.12)', '#fcd34d', AlertTriangle], danger: ['rgba(239,68,68,0.13)', '#fca5a5', XCircle] }[tone] as [string, string, React.ElementType];
+  const c = { info: ['var(--accent-soft)', 'var(--accent-text)', Info], warning: ['var(--warning-soft)', 'var(--warning)', AlertTriangle], danger: ['var(--danger-soft)', 'var(--danger)', XCircle] }[tone] as [string, string, React.ElementType];
   const Icon = c[2];
   return (
     <div role={tone === 'danger' ? 'alert' : 'status'} className="flex items-start gap-3 rounded-xl px-3.5 py-3 text-[13px]" style={{ background: c[0] }}>

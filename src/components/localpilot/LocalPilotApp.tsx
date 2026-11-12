@@ -23,6 +23,7 @@ import { SeoView } from './seo/SeoView';
 import { SecurityView } from './security/SecurityView';
 import { ReportsView } from './reports/ReportsView';
 import { SettingsView } from './settings/SettingsView';
+import { WebFormsView } from './forms/WebFormsView';
 
 // Drawers & Modals
 import { AiAssistantDrawer } from './ai/AiAssistantDrawer';
@@ -154,6 +155,14 @@ const LocalPilotInner: React.FC = () => {
     } else if (targetOpp.actionType === 'fix_services') {
       setDetailLocationId(targetOpp.locationId || selectedLocationId);
       setCurrentRoute('location-detail');
+    } else if (targetOpp.actionType === 'open_in_google') {
+      // Listing status (verification, duplicates, Google's updates) can only be resolved in Google itself.
+      const loc = locations.find((l) => l.id === (targetOpp.locationId || selectedLocationId));
+      window.open(loc?.mapsUri || 'https://business.google.com/', '_blank', 'noopener,noreferrer');
+    } else if (targetOpp.actionType === 'verify_hours') {
+      setDetailLocationId(targetOpp.locationId || selectedLocationId);
+      setCurrentRoute('location-detail');
+      showToast('Use “Edit hours” on the Overview tab to change regular hours. Holiday hours are set in Google.', 'info');
     } else if (targetOpp.actionType === 'create_post') {
       setEditingPost(null);
       setIsPostEditorOpen(true);
@@ -261,6 +270,16 @@ const LocalPilotInner: React.FC = () => {
                 onBack={() => setCurrentRoute('locations')}
                 onRunAudit={(locId) => { void runCheck(locId); }}
                 onSaveProfile={(locId, patch) => handleUpdateLocation(locId, patch)}
+                onSaveHours={async (locId, hours) => {
+                  try { await seo.updateHours(locId, hours); showToast('Hours saved to Google. Google may review the change before it shows.', 'success'); }
+                  catch (e: any) { throw new Error(e?.message || 'Google didn’t accept the hours.'); }
+                }}
+                onAuditAction={(f) => {
+                  const t = f.fix?.actionType;
+                  if (t === 'reply_reviews') setCurrentRoute('reviews');
+                  else if (t === 'create_post') { setEditingPost(null); setIsPostEditorOpen(true); }
+                  else showToast('Make this change in Google Business Profile, then sync to re-check.', 'info');
+                }}
               />
             )}
 
@@ -317,6 +336,9 @@ const LocalPilotInner: React.FC = () => {
                 onScheduleReport={() => showToast('Scheduled reports aren’t available yet.', 'info')}
               />
             )}
+
+            {/* Website forms → CRM */}
+            {currentRoute === 'forms' && <WebFormsView />}
 
             {/* View 9: SETTINGS */}
             {currentRoute === 'settings' && (

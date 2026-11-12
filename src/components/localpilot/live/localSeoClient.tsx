@@ -18,6 +18,10 @@ async function call<T>(devUser: string, path: string, init: RequestInit = {}): P
   return body as T;
 }
 
+export type AccessReview =
+  | { available: true; checkedAt: string; admins: { who: string; role: string; pendingInvitation: boolean }[]; findings: { id: string; severity: 'medium' | 'low' | 'info'; title: string; evidence: string; action: string }[] }
+  | { available: false; checkedAt: string; reason: string };
+
 export interface Connection { configured: boolean; aiConfigured: boolean; connected: boolean; needsReconnect: boolean; email?: string; selectedCount: number; lastSync?: { at: string; reviews: number; errors: string[] }; settings?: { brandVoice?: 'friendly' | 'professional' | 'casual' | 'luxury'; signOff?: string } }
 
 const DAYS = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'];
@@ -41,7 +45,10 @@ function toLocation(o: any): LocationItem {
     services: [], missingServices: [],
     attributes: { wheelchairAccessible: false, outdoorSeating: false, freeWifi: false, curbsidePickup: false, delivery: false, creditCards: false },
     photosCount: 0, lastPhotoAdded: '',
-    auditChecks: a.checks.map((c: any) => ({ id: c.id, group: c.group, label: c.label, passed: !!c.passed })),
+    auditChecks: a.checks.filter((c: any) => c.section !== 'listing').map((c: any) => ({ id: c.id, group: c.group, label: c.label, passed: !!c.passed })),
+    auditFindings: a.checks.map((c: any) => ({ id: c.id, label: c.label, group: c.group, section: c.section || 'profile', state: c.state || (c.passed ? 'pass' : 'fail'), severity: c.severity || 'low', evidence: c.evidence || '', fix: c.fix })),
+    regularHoursRaw: l.regularHours || [],
+    mapsUri: l.mapsUri,
     hasRating: o.averageRating != null,
   } as LocationItem;
 }
@@ -107,6 +114,8 @@ function useLocalSeoState(devUser: string) {
       return r;
     },
     async updateProfile(location: string, patch: { phone?: string; website?: string; description?: string }) { await api('/locations/profile', { method: 'PATCH', body: JSON.stringify({ location, ...patch }) }); await reload(); },
+    async updateHours(location: string, hours: { day: string; open: string; close: string }[]) { await api('/locations/hours', { method: 'PUT', body: JSON.stringify({ location, hours }) }); await reload(); },
+    async accessReview(location: string) { return api<AccessReview>(`/locations/access?location=${encodeURIComponent(location)}`); },
     async createPost(location: string, p: { summary: string; topicType: string; ctaType: string; ctaUrl?: string; title?: string; startDate?: string; endDate?: string }) { return api<any>('/posts', { method: 'POST', body: JSON.stringify({ location, ...p }) }); },
     async listPosts(location: string): Promise<PostItem[]> {
       const raw = await api<any[]>(`/posts?location=${encodeURIComponent(location)}`);

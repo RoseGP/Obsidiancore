@@ -34,17 +34,17 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
-      <div className="bg-neutral-900 border border-white/10 rounded-2xl w-full max-w-4xl h-[85vh] flex flex-col shadow-2xl overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[var(--surface)] backdrop-blur-md animate-in fade-in duration-200">
+      <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl w-full max-w-4xl h-[85vh] flex flex-col shadow-2xl overflow-hidden">
         {/* Header Bar */}
-        <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between bg-neutral-950/60">
+        <div className="px-6 py-4 border-b border-[var(--border)] flex items-center justify-between bg-[var(--surface-sunken)]">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="p-2.5 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-400 shrink-0">
+            <div className="p-2.5 rounded-xl bg-blue-500/10 border border-blue-500/20 text-[var(--accent-text)] shrink-0">
               <FileText className="w-5 h-5" />
             </div>
             <div className="min-w-0">
-              <h3 className="text-sm font-semibold text-white truncate">{document.name}</h3>
-              <p className="text-xs text-neutral-400 flex items-center gap-2">
+              <h3 className="text-sm font-semibold text-[var(--text)] truncate">{document.name}</h3>
+              <p className="text-xs text-[var(--text-muted)] flex items-center gap-2">
                 <span>{document.size || '1.8 MB'}</span>
                 {document.senderName && (
                   <>
@@ -66,27 +66,27 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
             <button
               onClick={() => setZoomLevel((z) => Math.max(50, z - 20))}
               title="Zoom Out"
-              className="p-2 rounded-lg text-neutral-400 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
+              className="p-2 rounded-lg text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-sunken)] transition-colors cursor-pointer"
             >
               <ZoomOut className="w-4 h-4" />
             </button>
-            <span className="text-xs font-mono text-neutral-400 w-12 text-center">{zoomLevel}%</span>
+            <span className="text-xs font-mono text-[var(--text-muted)] w-12 text-center">{zoomLevel}%</span>
             <button
               onClick={() => setZoomLevel((z) => Math.min(200, z + 20))}
               title="Zoom In"
-              className="p-2 rounded-lg text-neutral-400 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
+              className="p-2 rounded-lg text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-sunken)] transition-colors cursor-pointer"
             >
               <ZoomIn className="w-4 h-4" />
             </button>
 
-            <div className="h-4 w-px bg-white/10 mx-1" />
+            <div className="h-4 w-px bg-[var(--border)] mx-1" />
 
             <button
               onClick={handleCopyLink}
               title="Copy Document Link"
-              className="p-2 rounded-lg text-neutral-400 hover:text-white hover:bg-white/5 transition-colors cursor-pointer flex items-center gap-1 text-xs"
+              className="p-2 rounded-lg text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-sunken)] transition-colors cursor-pointer flex items-center gap-1 text-xs"
             >
-              {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Share2 className="w-4 h-4" />}
+              {copied ? <Check className="w-4 h-4 text-[var(--success)]" /> : <Share2 className="w-4 h-4" />}
             </button>
 
             {document.url && (
@@ -104,7 +104,7 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
 
             <button
               onClick={onClose}
-              className="p-2 rounded-lg text-neutral-400 hover:text-white hover:bg-white/10 transition cursor-pointer ml-1"
+              className="p-2 rounded-lg text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--border)] transition cursor-pointer ml-1"
             >
               <X className="w-4 h-4" />
             </button>
@@ -112,7 +112,7 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
         </div>
 
         {/* Document Content Stage */}
-        <div className="flex-1 overflow-auto p-6 bg-neutral-950 flex items-center justify-center relative">
+        <div className="flex-1 overflow-auto p-6 bg-[var(--surface-sunken)] flex items-center justify-center relative">
           {isImage && document.url ? (
             <div
               style={{ transform: `scale(${zoomLevel / 100})`, transformOrigin: 'center center' }}
@@ -121,20 +121,20 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
               <img
                 src={document.url}
                 alt={document.name}
-                className="max-h-[60vh] max-w-full rounded-lg shadow-2xl border border-white/10 object-contain"
+                className="max-h-[60vh] max-w-full rounded-lg shadow-2xl border border-[var(--border)] object-contain"
               />
             </div>
           ) : isPdf && document.url && /^(https?:|blob:|\/)/.test(document.url) ? (
             <iframe
               title={document.name}
               src={document.url}
-              className="w-full h-full min-h-[60vh] rounded-xl bg-white border border-white/10"
+              className="w-full h-full min-h-[60vh] rounded-xl bg-white border border-[var(--border)]"
             />
           ) : (
-            <div className="text-center p-8 max-w-md bg-neutral-900 border border-white/5 rounded-2xl">
-              <FileText className="w-12 h-12 text-blue-400 mx-auto mb-3 opacity-80" />
-              <h4 className="text-sm font-semibold text-white mb-1">{document.name}</h4>
-              <p className="text-xs text-neutral-400 mb-4">
+            <div className="text-center p-8 max-w-md bg-[var(--surface)] border border-[var(--border)] rounded-2xl">
+              <FileText className="w-12 h-12 text-[var(--accent-text)] mx-auto mb-3 opacity-80" />
+              <h4 className="text-sm font-semibold text-[var(--text)] mb-1">{document.name}</h4>
+              <p className="text-xs text-[var(--text-muted)] mb-4">
                 {document.url ? `This file${document.size ? ` (${document.size})` : ''} can't be previewed here. Download it to open it.` : 'This file isn\'t available to preview or download.'}
               </p>
               {document.url && (

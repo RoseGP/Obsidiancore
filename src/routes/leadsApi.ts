@@ -10,6 +10,7 @@
  * client-chosen org id. LEGACY_LEAD_CAPTURE_ORG_ID routes key-less submissions to one org during migration.
  */
 import { refreshLeadIntelligence } from '../server/crm/leadIntelligence';
+import { upsertWebsiteLead } from '../server/crm/websiteLeads';
 import { Router, Request, Response } from 'express';
 import rateLimit from 'express-rate-limit';
 import { calculateLeadScore } from './dashboardApi';
@@ -86,53 +87,19 @@ router.post('/capture', captureLimiter, async (req: Request, res: Response) => {
     if (!name) return res.status(400).json({ success: false, error: 'Full name is required.' });
     if (!isValidEmail(b.email)) return res.status(400).json({ success: false, error: 'A valid work email is required.' });
 
-    const repo = await CrmRepository.forOrg(orgId);
     const cleanEmail = b.email.trim().toLowerCase();
-    const cleanPhone = str(b.phone, 40);
-    const inquiryText = str(b.message, 4000) || str(b.need, 4000) || 'Inbound website lead submission.';
     const sourceUrl = str(b.sourceUrl, 500);
-
     if (b.consent !== undefined) await recordFormConsent(orgId, cleanEmail, b.consent, sourceUrl, req.ip);
-    const existing = (await repo.listLeads()).find((l) =>
-      (l.email && String(l.email).toLowerCase() === cleanEmail) || (cleanPhone && digits(l.phone) && digits(l.phone) === digits(cleanPhone)));
-
-    if (existing) {
-      // Merge the new inquiry into the existing lead instead of creating a duplicate.
-      await repo.updateLead(existing.id, {
-        notes: `${existing.notes || ''}\n[${nowIso().split('T')[0]} Web Re-engagement]: ${inquiryText} (Source: ${sourceUrl || 'Website'})`,
-        score: Math.min(100, (Number(existing.score) || 60) + 10),
-        updatedAt: nowIso(),
-      });
-      await repo.addLeadActivity(existing.id, {
-        type: 'contacted', title: 'Website Lead Re-engagement', actor: 'Website Form',
-        description: `Prospect submitted the website form from ${sourceUrl || 'direct site'}: "${inquiryText.slice(0, 80)}"`,
-      });
-      await repo.logActivity({ type: 'lead_captured', title: `Website Re-engagement: ${existing.name}`, description: `Existing lead re-submitted an inquiry from ${sourceUrl || 'Website'}.`, actor: 'Website Form', targetId: existing.id, targetType: 'lead' });
-      return res.status(200).json({ success: true, leadId: existing.id, isExisting: true, message: 'Thank you for reaching out again! We have received your updated requirements.' });
-    }
-
-    const lead: any = {
-      id: newId('lead'),
-      name, email: cleanEmail, phone: cleanPhone,
-      company: str(b.company, 160) || 'Inbound Website Lead',
-      title: str(b.title, 120) || 'Prospective Buyer',
-      source: 'website', channel: 'website', status: 'new',
-      owner: '', ownerId: null, // unassigned until someone in the org picks it up
-      notes: `Inbound Website Submission from ${sourceUrl || 'Landing Page'}\nMessage: ${inquiryText}\nUTM: ${str(b.utmSource, 100) || 'direct'} / ${str(b.utmCampaign, 100) || 'organic'}`,
-      isConverted: false,
-      qualification: { budget: Number(b.budget) > 0 ? Number(b.budget) : 0, authority: 'unknown', need: inquiryText, timeline: str(b.timeline, 60) || 'unknown' },
-      createdAt: nowIso(), updatedAt: nowIso(),
-    };
-    lead.score = calculateLeadScore(lead);
-    const saved = await repo.saveLead(lead);
-    await repo.addLeadActivity(lead.id, { type: 'created', title: 'Inbound Website Lead Captured', description: `Captured from ${sourceUrl || 'Website'}. Score: ${lead.score}/100.`, actor: 'Website Form' });
-    await (await TaskService.forOrg(orgId)).create({ title: `Follow up with ${lead.name} regarding website inquiry`, type: 'follow_up', dueDate: new Date(Date.now() + 2 * 3600_000).toISOString(), priority: 'urgent', leadId: lead.id, assignedTo: lead.owner || '', assigneeId: null },
-      { userId: 'website-form', name: 'Website Form' }, { source: 'website' });
-    await repo.logActivity({ type: 'lead_created', title: `New Website Lead: ${lead.name}`, description: `Website form capture for ${lead.company}.`, actor: 'Website Form', targetId: lead.id, targetType: 'lead' });
-
-    // The public response doesn't echo the stored record back to an anonymous caller.
-    await refreshLeadIntelligence(orgId, saved.id); // classify incoming web leads immediately (never throws)
-    return res.status(201).json({ success: true, leadId: saved.id, isExisting: false, message: 'Thank you! Your request has been received. We will follow up shortly.' });
+    // Same lead handling as the website form pipeline (src/server/crm/websiteLeads.ts).
+    const { leadId, isExisting } = await upsertWebsiteLead(orgId, {
+      name, email: cleanEmail, phone: str(b.phone, 40), company: str(b.company, 160), title: str(b.title, 120),
+      message: str(b.message, 4000) || str(b.need, 4000), sourceUrl, utmSource: str(b.utmSource, 100), utmCampaign: str(b.utmCampaign, 100),
+      budget: Number(b.budget) > 0 ? Number(b.budget) : undefined, timeline: str(b.timeline, 60),
+    });
+    // Kept for existing forms: new forms should use /api/web-forms/f/:formKey, which doesn't reveal whether
+    // an address is already in the CRM.
+    if (isExisting) return res.status(200).json({ success: true, leadId, isExisting: true, message: 'Thank you for reaching out again! We have received your updated requirements.' });
+    return res.status(201).json({ success: true, leadId, isExisting: false, message: 'Thank you! Your request has been received. We will follow up shortly.' });
   } catch (err) {
     return sendError(res, err, 'leads.capture');
   }

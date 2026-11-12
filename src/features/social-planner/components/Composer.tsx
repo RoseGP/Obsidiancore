@@ -216,7 +216,7 @@ export function Composer({ open, target, defaultPlatforms, onClose }: {
             {draft.platforms.length === 0 && <span className="sp-faint">{text.length.toLocaleString()} characters</span>}
             {draft.platforms.map((p) => {
               const over = text.length > PLATFORMS[p].charLimit;
-              return <span key={p} style={{ color: over ? '#fca5a5' : 'var(--sp-faint)' }}>{PLATFORMS[p].label} {text.length.toLocaleString()}/{PLATFORMS[p].charLimit.toLocaleString()}</span>;
+              return <span key={p} style={{ color: over ? 'var(--danger)' : 'var(--sp-faint)' }}>{PLATFORMS[p].label} {text.length.toLocaleString()}/{PLATFORMS[p].charLimit.toLocaleString()}</span>;
             })}
           </div>
           {shownErrors.content && <p className="sp-error" role="alert">{shownErrors.content}</p>}
@@ -244,7 +244,7 @@ export function Composer({ open, target, defaultPlatforms, onClose }: {
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={uploading}
-                className="text-[11.5px] font-medium text-indigo-400 hover:text-indigo-300 flex items-center gap-1 cursor-pointer"
+                className="text-[11.5px] font-medium text-[var(--accent-text)] hover:text-[var(--accent-text)] flex items-center gap-1 cursor-pointer"
               >
                 {uploading ? <Loader2 size={13} className="sp-spin" /> : <Upload size={13} />}
                 <span>{uploading ? 'Uploading…' : 'Upload file'}</span>
@@ -266,7 +266,7 @@ export function Composer({ open, target, defaultPlatforms, onClose }: {
               return (
                 <li key={u} className="flex items-center gap-2.5 rounded-lg p-2 text-[12.5px]" style={{ background: 'var(--sp-surface-2)' }}>
                   {isImg ? (
-                    <img src={u} alt="Media thumbnail" className="h-9 w-9 object-cover rounded flex-none bg-neutral-900" onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }} />
+                    <img src={u} alt="Media thumbnail" className="h-9 w-9 object-cover rounded flex-none bg-[var(--surface)]" onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }} />
                   ) : (
                     <Link2 size={14} className="sp-faint flex-none" aria-hidden />
                   )}

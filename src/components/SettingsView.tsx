@@ -61,9 +61,9 @@ interface SettingsViewProps {
 /** Tabs that now live on their own pages (old links and bookmarks are sent there). */
 const MOVED_TABS: Partial<Record<SettingsTab, string>> = { security: 'security_access', roles: 'security_access', billing: 'billing' };
 
-const card = 'rounded-2xl p-6 bg-neutral-900/40 border border-white/5 backdrop-blur-md space-y-4';
-const input = 'w-full text-xs font-medium bg-neutral-950/80 border border-white/10 rounded-xl p-3 text-white outline-none focus:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-500';
-const label = 'block text-xs font-semibold text-neutral-300 mb-1.5';
+const card = 'rounded-2xl p-6 bg-[var(--surface)] border border-[var(--border)] backdrop-blur-md space-y-4';
+const input = 'w-full text-xs font-medium bg-[var(--surface-sunken)] border border-[var(--border)] rounded-xl p-3 text-[var(--text)] outline-none focus:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-500';
+const label = 'block text-xs font-semibold text-[var(--text-muted)] mb-1.5';
 const primaryBtn = 'px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs transition-all shadow-md cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed';
 
 /** Old tab names (links, bookmarks) map onto the tabs that exist now. */
@@ -199,20 +199,20 @@ export default function SettingsView({ defaultTab = 'account', page, onNavigate 
       {notice && (
         <div
           role={notice.kind === 'error' ? 'alert' : 'status'}
-          className="fixed bottom-6 right-6 left-6 sm:left-auto z-50 flex items-center gap-2.5 rounded-xl px-4 py-3 text-xs font-semibold text-white shadow-2xl"
+          className="fixed bottom-6 right-6 left-6 sm:left-auto z-50 flex items-center gap-2.5 rounded-xl px-4 py-3 text-xs font-semibold text-[var(--text)] shadow-2xl"
           style={{ background: '#12131c', border: `1px solid ${notice.kind === 'error' ? '#f43f5e' : '#10b981'}` }}
         >
-          {notice.kind === 'error' ? <AlertCircle size={16} className="text-rose-400" /> : <CheckCircle2 size={16} className="text-emerald-400" />}
+          {notice.kind === 'error' ? <AlertCircle size={16} className="text-[var(--danger)]" /> : <CheckCircle2 size={16} className="text-[var(--success)]" />}
           <span>{notice.text}</span>
         </div>
       )}
 
-      <div className="border-b border-white/5 pb-4">
-        <h2 className="font-sans font-bold text-xl text-white tracking-tight">{page ? 'Security & Access' : 'Settings'}</h2>
-        <p className="text-xs text-neutral-400 mt-0.5">{page ? 'How people sign in, where they’re signed in, and who can see and change what.' : 'Your account, your organization and notifications. Billing & Subscription and Security & Access have their own pages.'}</p>
+      <div className="border-b border-[var(--border)] pb-4">
+        <h2 className="font-sans font-bold text-xl text-[var(--text)] tracking-tight">{page ? 'Security & Access' : 'Settings'}</h2>
+        <p className="text-xs text-[var(--text-muted)] mt-0.5">{page ? 'How people sign in, where they’re signed in, and who can see and change what.' : 'Your account, your organization and notifications. Billing & Subscription and Security & Access have their own pages.'}</p>
       </div>
 
-      {!page && <div className="flex items-center gap-1.5 overflow-x-auto p-1.5 rounded-2xl bg-neutral-950/80 border border-white/10" id="settings-tab-bar" role="tablist">
+      {!page && <div className="flex items-center gap-1.5 overflow-x-auto p-1.5 rounded-2xl bg-[var(--surface-sunken)] border border-[var(--border)]" id="settings-tab-bar" role="tablist">
         {TABS.map((tab) => {
           const Icon = tab.icon;
           const active = activeTab === tab.id;
@@ -225,10 +225,10 @@ export default function SettingsView({ defaultTab = 'account', page, onNavigate 
               aria-selected={active}
               onClick={() => setActiveTab(tab.id)}
               className={`flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
-                active ? 'bg-indigo-600 text-white shadow-md' : 'text-neutral-400 hover:text-white hover:bg-white/5'
+                active ? 'bg-indigo-600 text-white shadow-md' : 'text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-sunken)]'
               }`}
             >
-              <Icon size={14} className={active ? 'text-white' : 'text-neutral-400'} />
+              <Icon size={14} className={active ? 'text-[var(--text)]' : 'text-[var(--text-muted)]'} />
               <span>{tab.label}</span>
             </button>
           );
@@ -237,19 +237,19 @@ export default function SettingsView({ defaultTab = 'account', page, onNavigate 
 
       {activeTab === 'account' && (
         <div className={card}>
-          <div className="border-b border-white/5 pb-4">
-            <h3 className="text-base font-bold text-white">Your profile</h3>
-            <p className="text-xs text-neutral-400 mt-0.5">How you appear to your team and in meetings.</p>
+          <div className="border-b border-[var(--border)] pb-4">
+            <h3 className="text-base font-bold text-[var(--text)]">Your profile</h3>
+            <p className="text-xs text-[var(--text-muted)] mt-0.5">How you appear to your team and in meetings.</p>
           </div>
 
-          <div className="flex flex-col sm:flex-row sm:items-center gap-5 p-4 rounded-xl bg-neutral-950/40 border border-white/5">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-5 p-4 rounded-xl bg-[var(--surface-sunken)] border border-[var(--border)]">
             {photoURL ? (
               <img src={photoURL} alt="" className="h-16 w-16 rounded-2xl object-cover border-2 border-indigo-500/40 shrink-0" referrerPolicy="no-referrer" />
             ) : (
-              <div className="h-16 w-16 rounded-2xl bg-slate-700 text-slate-100 flex items-center justify-center text-xl font-semibold shrink-0" aria-hidden="true">{initials(displayName || userProfile.email || '?')}</div>
+              <div className="h-16 w-16 rounded-2xl bg-[var(--border)] text-[var(--text)] flex items-center justify-center text-xl font-semibold shrink-0" aria-hidden="true">{initials(displayName || userProfile.email || '?')}</div>
             )}
             <div className="space-y-2 flex-1 min-w-0">
-              <span className="text-sm font-bold text-white block truncate">{displayName || 'Add your name'}</span>
+              <span className="text-sm font-bold text-[var(--text)] block truncate">{displayName || 'Add your name'}</span>
               <div className="flex flex-wrap gap-2" role="group" aria-label="Your status">
                 {(['online', 'busy', 'away'] as const).map((p) => (
                   <button
@@ -260,7 +260,7 @@ export default function SettingsView({ defaultTab = 'account', page, onNavigate 
                     className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                       userProfile.presence === p
                         ? p === 'online' ? 'bg-emerald-600 text-white' : p === 'busy' ? 'bg-rose-600 text-white' : 'bg-amber-600 text-white'
-                        : 'bg-white/5 text-neutral-400 hover:text-white'
+                        : 'bg-[var(--surface-sunken)] text-[var(--text-muted)] hover:text-[var(--text)]'
                     }`}
                   >
                     {p === 'online' ? 'Available' : p === 'busy' ? 'Busy' : 'Away'}
@@ -279,14 +279,14 @@ export default function SettingsView({ defaultTab = 'account', page, onNavigate 
               <div>
                 <label htmlFor="settings-email" className={label}>Email</label>
                 <input id="settings-email" type="email" value={userProfile.email || ''} readOnly className={`${input} opacity-70`} aria-describedby="settings-email-help" />
-                <p id="settings-email-help" className="text-[11px] text-neutral-500 mt-1">Your sign-in email. It can't be changed here.</p>
+                <p id="settings-email-help" className="text-[11px] text-[var(--text-subtle)] mt-1">Your sign-in email. It can't be changed here.</p>
               </div>
               <div className="sm:col-span-2">
                 <label htmlFor="settings-photo" className={label}>Photo link (optional)</label>
                 <input id="settings-photo" type="url" placeholder="https://…" value={photoURL} onChange={(e) => setPhotoURL(e.target.value)} className={input} />
               </div>
             </div>
-            <p className="text-[11px] text-neutral-500">Your role and permissions come from your organization (Organization &amp; team tab), not from this profile.</p>
+            <p className="text-[11px] text-[var(--text-subtle)]">Your role and permissions come from your organization (Organization &amp; team tab), not from this profile.</p>
             <div className="pt-2 flex justify-end">
               <button type="submit" disabled={savingProfile} className={primaryBtn}>{savingProfile ? 'Saving…' : 'Save profile'}</button>
             </div>
@@ -301,9 +301,9 @@ export default function SettingsView({ defaultTab = 'account', page, onNavigate 
       {activeTab === 'security' && (
         <div className="space-y-6">
           <div className={card}>
-            <div className="border-b border-white/5 pb-3">
-              <h3 className="text-base font-bold text-white">Password</h3>
-              <p className="text-xs text-neutral-400 mt-0.5">
+            <div className="border-b border-[var(--border)] pb-3">
+              <h3 className="text-base font-bold text-[var(--text)]">Password</h3>
+              <p className="text-xs text-[var(--text-muted)] mt-0.5">
                 {user ? `You sign in with ${providerNames.join(' and ') || 'your account'}.` : 'You are using a sandbox sign-in, which has no password.'}
               </p>
             </div>
@@ -324,7 +324,7 @@ export default function SettingsView({ defaultTab = 'account', page, onNavigate 
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <button type="button" onClick={() => setShowPassword(!showPassword)} className="text-xs text-neutral-400 hover:text-white flex items-center gap-1.5 cursor-pointer">
+                  <button type="button" onClick={() => setShowPassword(!showPassword)} className="text-xs text-[var(--text-muted)] hover:text-[var(--text)] flex items-center gap-1.5 cursor-pointer">
                     {showPassword ? <EyeOff size={13} /> : <Eye size={13} />}
                     <span>{showPassword ? 'Hide passwords' : 'Show passwords'}</span>
                   </button>
@@ -332,24 +332,24 @@ export default function SettingsView({ defaultTab = 'account', page, onNavigate 
                 </div>
               </form>
             ) : user ? (
-              <p className="text-xs text-neutral-400">Your password is managed by {providerNames[0] || 'your sign-in provider'}. Change it there.</p>
+              <p className="text-xs text-[var(--text-muted)]">Your password is managed by {providerNames[0] || 'your sign-in provider'}. Change it there.</p>
             ) : null}
           </div>
 
           <div className={card}>
-            <div className="border-b border-white/5 pb-3">
-              <h3 className="text-base font-bold text-white">Where you're signed in</h3>
-              <p className="text-xs text-neutral-400 mt-0.5">We can't list your other devices, but you can sign out of all of them at once.</p>
+            <div className="border-b border-[var(--border)] pb-3">
+              <h3 className="text-base font-bold text-[var(--text)]">Where you're signed in</h3>
+              <p className="text-xs text-[var(--text-muted)] mt-0.5">We can't list your other devices, but you can sign out of all of them at once.</p>
             </div>
-            <div className="flex items-center gap-3 p-3 rounded-xl bg-neutral-950/40 border border-white/5">
-              <Monitor size={18} className="text-indigo-400 shrink-0" />
+            <div className="flex items-center gap-3 p-3 rounded-xl bg-[var(--surface-sunken)] border border-[var(--border)]">
+              <Monitor size={18} className="text-[var(--accent-text)] shrink-0" />
               <div className="min-w-0">
-                <p className="text-xs font-semibold text-white">{describeDevice()} <span className="text-emerald-400">(this device)</span></p>
-                {lastSignIn && <p className="text-[11px] text-neutral-500">Last signed in {lastSignIn}</p>}
+                <p className="text-xs font-semibold text-[var(--text)]">{describeDevice()} <span className="text-[var(--success)]">(this device)</span></p>
+                {lastSignIn && <p className="text-[11px] text-[var(--text-subtle)]">Last signed in {lastSignIn}</p>}
               </div>
             </div>
             <div className="flex justify-end">
-              <button type="button" onClick={signOutEverywhere} disabled={revoking || !user} className="px-4 py-2 rounded-xl border border-rose-500/40 text-rose-300 hover:bg-rose-500/10 font-semibold text-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
+              <button type="button" onClick={signOutEverywhere} disabled={revoking || !user} className="px-4 py-2 rounded-xl border border-rose-500/40 text-[var(--danger)] hover:bg-rose-500/10 font-semibold text-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
                 <LogOut size={14} /> {revoking ? 'Signing out…' : 'Sign out on all devices'}
               </button>
             </div>
@@ -362,8 +362,8 @@ export default function SettingsView({ defaultTab = 'account', page, onNavigate 
 
       {activeTab === 'channels' && (
         <div className={card}>
-          <h3 className="text-base font-bold text-white">Connected social accounts</h3>
-          <p className="text-xs text-neutral-400">
+          <h3 className="text-base font-bold text-[var(--text)]">Connected social accounts</h3>
+          <p className="text-xs text-[var(--text-muted)]">
             Social accounts are connected and managed in Social Planner. Access tokens are stored encrypted on the server and are never shown in the browser.
           </p>
           <button type="button" onClick={() => setActiveView('social_planner' as any)} className={`${primaryBtn} inline-flex items-center gap-1.5`}>
@@ -374,41 +374,41 @@ export default function SettingsView({ defaultTab = 'account', page, onNavigate 
 
       {activeTab === 'realtime-sync' && (
         <div className={card}>
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/5 pb-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[var(--border)] pb-4">
             <div>
-              <h3 className="text-base font-bold text-white">Live updates</h3>
-              <p className="text-xs text-neutral-400">Changes made by your teammates appear here without reloading.</p>
+              <h3 className="text-base font-bold text-[var(--text)]">Live updates</h3>
+              <p className="text-xs text-[var(--text-muted)]">Changes made by your teammates appear here without reloading.</p>
             </div>
             <div className="flex items-center gap-2">
               {(import.meta as any).env?.DEV && (
-                <button type="button" onClick={() => realtimeSync.simulateConcurrentConflict()} className="px-3 py-1.5 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-semibold cursor-pointer">
+                <button type="button" onClick={() => realtimeSync.simulateConcurrentConflict()} className="px-3 py-1.5 rounded-lg bg-amber-500/15 border border-amber-500/30 text-[var(--warning)] text-xs font-semibold cursor-pointer">
                   Test a conflict (development only)
                 </button>
               )}
-              <button type="button" onClick={() => realtimeSync.triggerStateResync()} className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-neutral-200 text-xs font-semibold cursor-pointer flex items-center gap-1.5">
-                <RefreshCw className="w-3.5 h-3.5 text-blue-400" /> Refresh now
+              <button type="button" onClick={() => realtimeSync.triggerStateResync()} className="px-3 py-1.5 rounded-lg bg-[var(--surface-sunken)] hover:bg-[var(--border)] text-[var(--text)] text-xs font-semibold cursor-pointer flex items-center gap-1.5">
+                <RefreshCw className="w-3.5 h-3.5 text-[var(--accent-text)]" /> Refresh now
               </button>
             </div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div className="p-3.5 rounded-xl bg-neutral-950/60 border border-white/5 space-y-1">
-              <div className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">Response time</div>
-              <div className="text-lg font-mono font-bold text-emerald-400 flex items-center gap-1.5">
+            <div className="p-3.5 rounded-xl bg-[var(--surface-sunken)] border border-[var(--border)] space-y-1">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Response time</div>
+              <div className="text-lg font-mono font-bold text-[var(--success)] flex items-center gap-1.5">
                 <Activity className="w-4 h-4" />
                 <span>{realtimeSync.latencyMs == null ? 'Measuring…' : `${realtimeSync.latencyMs} ms`}</span>
               </div>
             </div>
-            <div className="p-3.5 rounded-xl bg-neutral-950/60 border border-white/5 space-y-1">
-              <div className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">Connected tabs</div>
-              <div className="text-lg font-mono font-bold text-blue-400 flex items-center gap-1.5">
+            <div className="p-3.5 rounded-xl bg-[var(--surface-sunken)] border border-[var(--border)] space-y-1">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Connected tabs</div>
+              <div className="text-lg font-mono font-bold text-[var(--accent-text)] flex items-center gap-1.5">
                 <Users className="w-4 h-4" />
                 <span>{realtimeSync.activeClients}</span>
               </div>
             </div>
-            <div className="p-3.5 rounded-xl bg-neutral-950/60 border border-white/5 space-y-1">
-              <div className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">Status</div>
-              <div className="text-lg font-bold text-white capitalize">{realtimeSync.syncStatus.replace('_', ' ')}</div>
-              <div className="text-[10px] text-neutral-500">Last update: {realtimeSync.lastSyncTime}</div>
+            <div className="p-3.5 rounded-xl bg-[var(--surface-sunken)] border border-[var(--border)] space-y-1">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Status</div>
+              <div className="text-lg font-bold text-[var(--text)] capitalize">{realtimeSync.syncStatus.replace('_', ' ')}</div>
+              <div className="text-[10px] text-[var(--text-subtle)]">Last update: {realtimeSync.lastSyncTime}</div>
             </div>
           </div>
         </div>
@@ -422,11 +422,11 @@ export default function SettingsView({ defaultTab = 'account', page, onNavigate 
         <div className={card}>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <h3 className="text-base font-bold text-white">Audit log</h3>
-              <p className="text-xs text-neutral-400 mt-0.5">Every change to members, roles, keys, security rules and data requests is recorded. Owners and admins can review and export it.</p>
+              <h3 className="text-base font-bold text-[var(--text)]">Audit log</h3>
+              <p className="text-xs text-[var(--text-muted)] mt-0.5">Every change to members, roles, keys, security rules and data requests is recorded. Owners and admins can review and export it.</p>
             </div>
             {isAdminRole(orgRole) && (
-              <button type="button" onClick={() => (onNavigate ? onNavigate('settings:compliance') : setActiveView('settings' as any))} className="px-4 py-2 rounded-xl border border-white/10 text-xs font-semibold text-neutral-200 hover:bg-white/5 cursor-pointer">Privacy &amp; compliance</button>
+              <button type="button" onClick={() => (onNavigate ? onNavigate('settings:compliance') : setActiveView('settings' as any))} className="px-4 py-2 rounded-xl border border-[var(--border)] text-xs font-semibold text-[var(--text)] hover:bg-[var(--surface-sunken)] cursor-pointer">Privacy &amp; compliance</button>
             )}
           </div>
         </div>

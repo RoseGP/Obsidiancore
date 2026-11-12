@@ -3,6 +3,7 @@
  *
  *   Welcome header      greeting, live clock, AI status, notifications, settings, profile
  *   AI Copilot          Claude or Gemini, voice commands, suggested commands, history, full screen (focal point)
+ *   Ask your CRM        CRM agent: answers grounded in the organization's records (RAG, /api/crm-agent), with sources
  *   Needs your attention priority cards from real records (meetings soon, unanswered messages, missed calls,
  *                        hot leads, overdue follow-ups, stalled deals, waiting proposals, critical tickets)
  *   Business performance five KPIs; click one to open the analytics (date range, trends, export)
@@ -20,6 +21,7 @@ import {
 } from 'lucide-react';
 import { CRMContact, CalendarEvent } from '../types';
 import UnifiedAssistant, { askCopilot } from './assistant/UnifiedAssistant';
+import CrmAgentPanel from './dashboard/CrmAgentPanel';
 import { SupportTicketsWidget } from './dashboard/SupportTicketsWidget';
 import { useOptionalAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
@@ -50,6 +52,7 @@ interface DashboardViewProps {
 
 const SECTIONS: SectionPref[] = [
   { id: 'copilot', label: 'AI Copilot', description: 'Ask, command, draft and act with Claude or Gemini' },
+  { id: 'crm_agent', label: 'Ask your CRM', description: 'Answers grounded in your own records, with sources' },
   { id: 'attention', label: 'Needs your attention', description: 'Priority items that need you today' },
   { id: 'performance', label: 'Business performance', description: 'Five key figures and detailed analytics' },
   { id: 'meetings', label: 'Upcoming meetings', description: 'Today and the next two weeks' },
@@ -64,7 +67,7 @@ const SECTIONS: SectionPref[] = [
 // opportunities) and Needs your attention / Lead Intelligence (recent leads). Its support tickets live on as 'tickets'.
 const DEFAULT_ORDER = SECTIONS.map((s) => s.id);
 const SPAN: Record<string, string> = {
-  copilot: 'lg:col-span-12', attention: 'lg:col-span-12', performance: 'lg:col-span-12',
+  copilot: 'lg:col-span-12', crm_agent: 'lg:col-span-12', attention: 'lg:col-span-12', performance: 'lg:col-span-12',
   meetings: 'lg:col-span-5', activity: 'lg:col-span-7', missions: 'lg:col-span-7', service: 'lg:col-span-5', insights: 'lg:col-span-7', tickets: 'lg:col-span-5',
 };
 
@@ -83,7 +86,8 @@ function usePrefs(userKey: string) {
       if (!raw) return DEFAULT_PREFS;
       const p = JSON.parse(raw);
       const order = Array.isArray(p.order) ? p.order.filter((id: string) => DEFAULT_ORDER.includes(id)) : [...DEFAULT_ORDER];
-      for (const id of DEFAULT_ORDER) if (!order.includes(id)) order.push(id);
+      // Sections added since this layout was saved go to their default position (not the very end).
+      DEFAULT_ORDER.forEach((id, i) => { if (!order.includes(id)) { const prev = DEFAULT_ORDER.slice(0, i).reverse().find((x) => order.includes(x)); order.splice(prev ? order.indexOf(prev) + 1 : 0, 0, id); } });
       return { ...DEFAULT_PREFS, ...p, order, hidden: Array.isArray(p.hidden) ? p.hidden : [], collapsed: Array.isArray(p.collapsed) ? p.collapsed : DEFAULT_PREFS.collapsed };
     } catch { return DEFAULT_PREFS; }
   };
@@ -244,6 +248,7 @@ export default function DashboardView({ contacts, onSelectContact, onNavigate, o
   const renderSection = (id: string) => {
     switch (id) {
       case 'copilot': return <UnifiedAssistant contacts={contacts} onNavigate={onNavigate} />;
+      case 'crm_agent': return <CrmAgentPanel onNavigate={open} collapsed={collapsed('crm_agent')} onToggle={() => toggle('crm_agent')} />;
       case 'attention': return (
         <CcSection id="attention" title="Needs Your Attention" subtitle="Important business activities that need your attention today." icon={<Bell className="h-4 w-4" />}
           badge={attention.length ? <span className="inline-flex items-center gap-1 rounded-full bg-[var(--danger-soft)] px-2 py-0.5 text-[11px] font-semibold text-[var(--danger)]">{attentionHigh ? `${attentionHigh} high priority` : `${attention.length} open`}</span> : undefined}

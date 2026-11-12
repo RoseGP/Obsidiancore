@@ -277,7 +277,7 @@ export function AccountsPage({ api, onOpenAdvanced }: { api: AccountsApi; onOpen
                 </div>
               </div>
 
-              {card.detail && problem && <p className="mt-3 text-[12.5px]" style={{ color: card.status === 'expired' ? '#fca5a5' : '#fcd34d' }}>{card.detail}</p>}
+              {card.detail && problem && <p className="mt-3 text-[12.5px]" style={{ color: card.status === 'expired' ? 'var(--danger)' : 'var(--warning)' }}>{card.detail}</p>}
               {!card.available && <p className="sp-faint mt-3 text-[12.5px]">{card.unavailableReason}</p>}
 
               {card.accounts.length > 0 && (
@@ -315,7 +315,7 @@ export function AccountsPage({ api, onOpenAdvanced }: { api: AccountsApi; onOpen
                   <p className="sp-muted flex items-center gap-2 text-[12.5px]"><Loader2 size={14} className="sp-spin" aria-hidden />Checking the connection…</p>
                 ) : (
                   <>
-                    {op.kind === 'error' && <p role="alert" className="mb-2 text-[12.5px]" style={{ color: '#fca5a5' }}>{op.message}</p>}
+                    {op.kind === 'error' && <p role="alert" className="mb-2 text-[12.5px]" style={{ color: 'var(--danger)' }}>{op.message}</p>}
                     {card.accounts.length === 0 ? (
                       <Button className="w-full" variant="primary" icon={<Plug size={15} />} disabled={!card.available} loading={op.kind === 'starting'} onClick={() => void connect(card)}>Connect {card.label}</Button>
                     ) : card.method === 'postiz' ? (

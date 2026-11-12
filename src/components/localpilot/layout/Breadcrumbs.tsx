@@ -27,7 +27,8 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
     'settings': 'Settings',
     'settings/team': 'Team & Access',
     'settings/integrations': 'Google Integrations',
-    'settings/billing': 'Billing & Plans'
+    'settings/billing': 'Billing & Plans',
+    forms: 'Website forms'
   };
 
   const isSubSettings = route.startsWith('settings/');

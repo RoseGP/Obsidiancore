@@ -322,7 +322,7 @@ export function OverviewPage({
             <p className="display num mt-2.5 text-[30px] font-bold text-[var(--sp-text)]">{published.length}</p>
           )}
           <div className="mt-1.5 flex items-center gap-1.5 text-[12px] text-[var(--sp-faint)]">
-            <span className="text-emerald-400 font-medium">{deliveryRate}%</span>
+            <span className="text-[var(--success)] font-medium">{deliveryRate}%</span>
             <span>delivery success rate</span>
           </div>
         </div>
@@ -347,7 +347,7 @@ export function OverviewPage({
             <p className="display num mt-2.5 text-[30px] font-bold text-[var(--sp-text)]">{estimatedReach}</p>
           )}
           <div className="mt-1.5 flex items-center gap-1.5 text-[12px] text-[var(--sp-faint)]">
-            <span className="text-cyan-400 font-medium">+16.4%</span>
+            <span className="text-[var(--info)] font-medium">+16.4%</span>
             <span>audience impressions</span>
           </div>
         </div>
@@ -383,7 +383,7 @@ export function OverviewPage({
       <section className="sp-card p-4 sm:p-5" aria-labelledby="sp-channels-title">
         <div className="mb-3.5 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Globe size={16} className="text-indigo-400" />
+            <Globe size={16} className="text-[var(--accent-text)]" />
             <h3 id="sp-channels-title" className="display text-[14.5px] font-semibold text-[var(--sp-text)]">
               Connected Networks & Publishing Endpoints
             </h3>
@@ -391,7 +391,7 @@ export function OverviewPage({
           <button
             type="button"
             onClick={onOpenAccounts}
-            className="flex items-center gap-1.5 text-[12.5px] font-medium text-indigo-400 transition hover:text-indigo-300"
+            className="flex items-center gap-1.5 text-[12.5px] font-medium text-[var(--accent-text)] transition hover:text-[var(--accent-text)]"
           >
             Manage Accounts <ArrowRight size={13} />
           </button>
@@ -407,7 +407,7 @@ export function OverviewPage({
                 key={platformId}
                 className="group relative flex flex-col justify-between rounded-xl p-3 transition-all"
                 style={{
-                  background: isConnected ? 'var(--sp-surface-2)' : 'rgba(25, 26, 35, 0.5)',
+                  background: isConnected ? 'var(--sp-surface-2)' : 'var(--sp-surface)',
                   border: isConnected ? '1px solid var(--sp-border-strong)' : '1px solid var(--sp-border)',
                 }}
               >
@@ -415,13 +415,13 @@ export function OverviewPage({
                   <div className="flex items-center justify-between">
                     <span
                       className="flex h-7 w-7 items-center justify-center rounded-lg"
-                      style={{ background: isConnected ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.03)' }}
+                      style={{ background: isConnected ? 'var(--surface-sunken)' : 'var(--surface-sunken)' }}
                     >
                       <PlatformGlyph id={platformId} size={15} color={pInfo.dot} />
                     </span>
                     <span
                       className="h-2 w-2 rounded-full"
-                      style={{ background: isConnected ? '#10b981' : '#4b5563' }}
+                      style={{ background: isConnected ? 'var(--success)' : 'var(--border-strong)' }}
                       title={isConnected ? 'Connected' : 'Not Connected'}
                     />
                   </div>
@@ -436,7 +436,7 @@ export function OverviewPage({
                     <button
                       type="button"
                       onClick={() => onCompose(undefined, [platformId])}
-                      className="w-full text-center text-[11px] font-semibold text-indigo-400 hover:text-indigo-300"
+                      className="w-full text-center text-[11px] font-semibold text-[var(--accent-text)] hover:text-[var(--accent-text)]"
                     >
                       + Compose
                     </button>
@@ -482,7 +482,7 @@ export function OverviewPage({
                       className={cx(
                         'rounded-lg px-2.5 py-1 text-[12px] font-medium transition-colors',
                         active
-                          ? 'bg-indigo-600/20 text-indigo-300 border border-indigo-500/30'
+                          ? 'bg-indigo-600/20 text-[var(--accent-text)] border border-indigo-500/30'
                           : 'text-[var(--sp-muted)] hover:text-[var(--sp-text)] bg-transparent',
                       )}
                     >
@@ -544,8 +544,8 @@ export function OverviewPage({
                     scheduled: { dot: '#818cf8', text: '#a5b4fc' },
                     published: { dot: '#10b981', text: '#6ee7b7' },
                     draft: { dot: '#9ca3af', text: '#d1d5db' },
-                    failed: { dot: '#ef4444', text: '#fca5a5' },
-                    publishing: { dot: '#f59e0b', text: '#fcd34d' },
+                    failed: { dot: '#ef4444', text: 'var(--danger)' },
+                    publishing: { dot: '#f59e0b', text: 'var(--warning)' },
                   };
                   const color = statusColors[post.status];
 
@@ -591,7 +591,7 @@ export function OverviewPage({
                           </p>
 
                           {post.failureReason && (
-                            <p className="mt-1 text-[11.5px] text-red-400">
+                            <p className="mt-1 text-[11.5px] text-[var(--danger)]">
                               Error: {post.failureReason}
                             </p>
                           )}
@@ -666,7 +666,7 @@ export function OverviewPage({
                             }
                           }}
                         >
-                          <Trash2 size={14} className="text-red-400/80 hover:text-red-400" />
+                          <Trash2 size={14} className="text-red-400/80 hover:text-[var(--danger)]" />
                         </IconButton>
                       </div>
                     </div>
@@ -683,7 +683,7 @@ export function OverviewPage({
                 <button
                   type="button"
                   onClick={onOpenCalendar}
-                  className="flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
+                  className="flex items-center gap-1 font-medium text-[var(--accent-text)] hover:text-[var(--accent-text)]"
                 >
                   Full Content Calendar <ArrowRight size={13} />
                 </button>
@@ -703,7 +703,7 @@ export function OverviewPage({
               <button
                 type="button"
                 onClick={onOpenAnalytics}
-                className="flex items-center gap-1 text-[12px] font-medium text-indigo-400 hover:text-indigo-300"
+                className="flex items-center gap-1 text-[12px] font-medium text-[var(--accent-text)] hover:text-[var(--accent-text)]"
               >
                 Deep Analytics <ArrowRight size={12} />
               </button>
@@ -722,7 +722,7 @@ export function OverviewPage({
                       background:
                         item.count > 0
                           ? 'linear-gradient(180deg, #6366f1 0%, rgba(99, 102, 241, 0.3) 100%)'
-                          : 'rgba(255, 255, 255, 0.05)',
+                          : 'var(--surface-sunken)',
                     }}
                   />
                   <span className="text-[11.5px] font-medium uppercase tracking-wider text-[var(--sp-faint)]">
@@ -740,7 +740,7 @@ export function OverviewPage({
           <section className="sp-card p-4 sm:p-5" aria-labelledby="sp-quick-title">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <PenSquare size={16} className="text-indigo-400" />
+                <PenSquare size={16} className="text-[var(--accent-text)]" />
                 <h3 id="sp-quick-title" className="display text-[14.5px] font-semibold text-[var(--sp-text)]">
                   Quick Publication
                 </h3>
@@ -779,7 +779,7 @@ export function OverviewPage({
                       className={cx(
                         'flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11.5px] font-medium transition-all',
                         active
-                          ? 'bg-indigo-600/25 text-indigo-300 border border-indigo-500/40'
+                          ? 'bg-indigo-600/25 text-[var(--accent-text)] border border-indigo-500/40'
                           : 'bg-[var(--sp-surface-2)] text-[var(--sp-muted)] border border-[var(--sp-border)] hover:text-[var(--sp-text)]',
                       )}
                     >
@@ -849,7 +849,7 @@ export function OverviewPage({
           {/* Social Engine System Health */}
           <section className="sp-card p-4 sm:p-5" aria-labelledby="sp-health-title">
             <div className="flex items-center gap-2">
-              <Zap size={16} className="text-amber-400" />
+              <Zap size={16} className="text-[var(--warning)]" />
               <h3 id="sp-health-title" className="display text-[14.5px] font-semibold text-[var(--sp-text)]">
                 Engine Status & Architecture
               </h3>
@@ -858,14 +858,14 @@ export function OverviewPage({
             <div className="mt-3.5 space-y-2.5 text-[12.5px]">
               <div className="flex items-center justify-between rounded-lg p-2 bg-[var(--sp-surface-2)]">
                 <span className="sp-muted">Postiz Social Engine</span>
-                <span className="font-medium text-emerald-400 flex items-center gap-1.5">
+                <span className="font-medium text-[var(--success)] flex items-center gap-1.5">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
                   Self-Hosted API
                 </span>
               </div>
               <div className="flex items-center justify-between rounded-lg p-2 bg-[var(--sp-surface-2)]">
                 <span className="sp-muted">OAuth Authorization</span>
-                <span className="font-medium text-indigo-300">Direct & Postiz V1</span>
+                <span className="font-medium text-[var(--accent-text)]">Direct & Postiz V1</span>
               </div>
               <div className="flex items-center justify-between rounded-lg p-2 bg-[var(--sp-surface-2)]">
                 <span className="sp-muted">Media CDN Handler</span>
@@ -873,7 +873,7 @@ export function OverviewPage({
               </div>
               <div className="flex items-center justify-between rounded-lg p-2 bg-[var(--sp-surface-2)]">
                 <span className="sp-muted">Queue Dispatcher</span>
-                <span className="font-medium text-emerald-400">Synced Real-Time</span>
+                <span className="font-medium text-[var(--success)]">Synced Real-Time</span>
               </div>
             </div>
           </section>

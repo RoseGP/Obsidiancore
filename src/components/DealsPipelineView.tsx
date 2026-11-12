@@ -56,13 +56,13 @@ export interface PipelineItem {
 }
 
 const STAGE_STYLE: Record<BoardColumn, { color: string; badge: string }> = {
-  new_leads: { color: 'border-t-blue-500 bg-blue-500/5', badge: 'bg-blue-500/10 text-blue-400 border-blue-500/20' },
-  qualified: { color: 'border-t-indigo-500 bg-indigo-500/5', badge: 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20' },
-  proposal_sent: { color: 'border-t-purple-500 bg-purple-500/5', badge: 'bg-purple-500/10 text-purple-400 border-purple-500/20' },
-  negotiation: { color: 'border-t-amber-500 bg-amber-500/5', badge: 'bg-amber-500/10 text-amber-400 border-amber-500/20' },
-  closed_won: { color: 'border-t-emerald-500 bg-emerald-500/5', badge: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' },
-  closed_lost: { color: 'border-t-rose-500 bg-rose-500/5', badge: 'bg-rose-500/10 text-rose-400 border-rose-500/20' },
-  unqualified: { color: 'border-t-slate-500 bg-slate-500/5', badge: 'bg-slate-500/10 text-slate-300 border-slate-500/20' },
+  new_leads: { color: 'border-t-blue-500 bg-blue-500/5', badge: 'bg-blue-500/10 text-[var(--accent-text)] border-blue-500/20' },
+  qualified: { color: 'border-t-indigo-500 bg-indigo-500/5', badge: 'bg-indigo-500/10 text-[var(--accent-text)] border-indigo-500/20' },
+  proposal_sent: { color: 'border-t-purple-500 bg-purple-500/5', badge: 'bg-purple-500/10 text-[var(--accent-text)] border-purple-500/20' },
+  negotiation: { color: 'border-t-amber-500 bg-amber-500/5', badge: 'bg-amber-500/10 text-[var(--warning)] border-amber-500/20' },
+  closed_won: { color: 'border-t-emerald-500 bg-emerald-500/5', badge: 'bg-emerald-500/10 text-[var(--success)] border-emerald-500/20' },
+  closed_lost: { color: 'border-t-rose-500 bg-rose-500/5', badge: 'bg-rose-500/10 text-[var(--danger)] border-rose-500/20' },
+  unqualified: { color: 'border-t-slate-500 bg-slate-500/5', badge: 'bg-slate-500/10 text-[var(--text-muted)] border-slate-500/20' },
 };
 /** Board columns (one vocabulary with the lead and deal APIs: src/lib/pipelineStages.ts). */
 const STAGES = BOARD_COLUMNS.map((id) => ({ id, ...BOARD_COLUMN_LABELS[id], ...STAGE_STYLE[id] }));
@@ -1015,13 +1015,13 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
   const getHealthBadgeStyle = (health: DealHealth) => {
     switch (health) {
       case 'HEALTHY':
-        return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30';
+        return 'bg-emerald-500/10 text-[var(--success)] border-emerald-500/30';
       case 'AT_RISK':
-        return 'bg-amber-500/10 text-amber-400 border-amber-500/30';
+        return 'bg-amber-500/10 text-[var(--warning)] border-amber-500/30';
       case 'STALE':
-        return 'bg-slate-500/10 text-slate-300 border-slate-500/30';
+        return 'bg-slate-500/10 text-[var(--text-muted)] border-slate-500/30';
       case 'BLOCKED':
-        return 'bg-rose-500/10 text-rose-400 border-rose-500/30';
+        return 'bg-rose-500/10 text-[var(--danger)] border-rose-500/30';
     }
   };
 
@@ -1034,63 +1034,63 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
       case 'MEDIUM':
         return 'bg-blue-600 text-white font-semibold';
       case 'LOW':
-        return 'bg-slate-700 text-slate-200 font-medium';
+        return 'bg-[var(--border)] text-[var(--text)] font-medium';
     }
   };
 
   const getSourceIcon = (source?: string) => {
     switch (source) {
       case 'whatsapp':
-        return <MessageSquare className="h-3 w-3 text-emerald-400" />;
+        return <MessageSquare className="h-3 w-3 text-[var(--success)]" />;
       case 'voice':
       case 'inbound_call':
-        return <Phone className="h-3 w-3 text-blue-400" />;
+        return <Phone className="h-3 w-3 text-[var(--accent-text)]" />;
       case 'email':
-        return <Mail className="h-3 w-3 text-indigo-400" />;
+        return <Mail className="h-3 w-3 text-[var(--accent-text)]" />;
       case 'linkedin':
-        return <Share2 className="h-3 w-3 text-cyan-400" />;
+        return <Share2 className="h-3 w-3 text-[var(--info)]" />;
       case 'gbp':
       case 'gbp_organic':
-        return <Globe className="h-3 w-3 text-amber-400" />;
+        return <Globe className="h-3 w-3 text-[var(--warning)]" />;
       default:
-        return <Tag className="h-3 w-3 text-slate-400" />;
+        return <Tag className="h-3 w-3 text-[var(--text-muted)]" />;
     }
   };
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-slate-950 text-slate-100 overflow-hidden select-none">
+    <div className="flex-1 flex flex-col h-full bg-[var(--surface-sunken)] text-[var(--text)] overflow-hidden select-none">
       
       {/* TOAST NOTIFICATION */}
       {toast && (
         <div className={`fixed bottom-6 right-6 z-50 px-4 py-3 rounded-xl border shadow-2xl backdrop-blur-md flex items-center gap-2.5 text-xs font-semibold animate-in fade-in slide-in-from-bottom-2 duration-200 ${
           toast.type === 'success' 
-            ? 'bg-emerald-950/90 border-emerald-500/40 text-emerald-200 shadow-emerald-950/50' 
+            ? 'bg-[var(--success-soft)] border-emerald-500/40 text-[var(--success)] shadow-emerald-950/50' 
             : toast.type === 'error'
-            ? 'bg-rose-950/90 border-rose-500/40 text-rose-200 shadow-rose-950/50'
-            : 'bg-slate-900/90 border-white/10 text-white'
+            ? 'bg-[var(--danger-soft)] border-rose-500/40 text-[var(--danger)] shadow-rose-950/50'
+            : 'bg-[var(--surface)] border-[var(--border)] text-[var(--text)]'
         }`}>
-          {toast.type === 'success' && <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />}
-          {toast.type === 'error' && <AlertTriangle className="h-4 w-4 text-rose-400 shrink-0" />}
+          {toast.type === 'success' && <CheckCircle2 className="h-4 w-4 text-[var(--success)] shrink-0" />}
+          {toast.type === 'error' && <AlertTriangle className="h-4 w-4 text-[var(--danger)] shrink-0" />}
           <span>{toast.message}</span>
         </div>
       )}
 
       {/* TOP HEADER & INTELLIGENCE HUD */}
-      <div className="px-6 py-4 bg-slate-900/80 border-b border-white/5 backdrop-blur-md shrink-0">
+      <div className="px-6 py-4 bg-[var(--surface)] border-b border-[var(--border)] backdrop-blur-md shrink-0">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2.5">
-              <div className="h-9 w-9 rounded-xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-400 shadow-md">
+              <div className="h-9 w-9 rounded-xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-[var(--accent-text)] shadow-md">
                 <Brain className="h-5 w-5" />
               </div>
               <div>
-                <h1 className="text-base font-black tracking-tight text-white flex items-center gap-2">
+                <h1 className="text-base font-black tracking-tight text-[var(--text)] flex items-center gap-2">
                   <span>Sales & Leads Revenue Pipeline</span>
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30 uppercase tracking-widest">
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-500/20 text-[var(--accent-text)] border border-blue-500/30 uppercase tracking-widest">
                     Unified CRM
                   </span>
                 </h1>
-                <p className="text-xs text-slate-400">
+                <p className="text-xs text-[var(--text-muted)]">
                   Combined Inbound Lead Qualification, BANT Scoring, Deal Stages, and AI Sales Intelligence
                 </p>
               </div>
@@ -1099,28 +1099,28 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
 
           {/* Quick HUD Metrics Bar */}
           <div className="flex items-center gap-3 overflow-x-auto pb-1 lg:pb-0">
-            <div className="px-3.5 py-2 rounded-xl bg-slate-800/80 border border-white/5 flex items-center gap-3">
-              <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Pipeline value</span>
-              <span className="text-sm font-black font-mono text-emerald-400">
+            <div className="px-3.5 py-2 rounded-xl bg-[var(--surface-sunken)] border border-[var(--border)] flex items-center gap-3">
+              <span className="text-[11px] font-semibold text-[var(--text-muted)] uppercase tracking-wider">Pipeline value</span>
+              <span className="text-sm font-black font-mono text-[var(--success)]">
                 ${grandTotalValue.toLocaleString()}
               </span>
             </div>
 
-            <div className="px-3.5 py-2 rounded-xl bg-slate-800/80 border border-white/5 flex items-center gap-2">
-              <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Health</span>
+            <div className="px-3.5 py-2 rounded-xl bg-[var(--surface-sunken)] border border-[var(--border)] flex items-center gap-2">
+              <span className="text-[11px] font-semibold text-[var(--text-muted)] uppercase tracking-wider">Health</span>
               <div className="flex items-center gap-1.5 text-xs font-mono font-bold">
-                <span className="text-emerald-400" title="Healthy">{healthCounts.HEALTHY}H</span>
+                <span className="text-[var(--success)]" title="Healthy">{healthCounts.HEALTHY}H</span>
                 <span className="text-slate-600">•</span>
-                <span className="text-amber-400" title="At Risk">{healthCounts.AT_RISK}R</span>
+                <span className="text-[var(--warning)]" title="At Risk">{healthCounts.AT_RISK}R</span>
                 <span className="text-slate-600">•</span>
-                <span className="text-slate-400" title="Stale">{healthCounts.STALE}S</span>
+                <span className="text-[var(--text-muted)]" title="Stale">{healthCounts.STALE}S</span>
                 <span className="text-slate-600">•</span>
-                <span className="text-rose-400" title="Blocked">{healthCounts.BLOCKED}B</span>
+                <span className="text-[var(--danger)]" title="Blocked">{healthCounts.BLOCKED}B</span>
               </div>
             </div>
 
             {urgentActionCount > 0 && (
-              <div className="px-3 py-2 rounded-xl bg-rose-500/20 border border-rose-500/30 flex items-center gap-1.5 text-rose-300 text-xs font-bold animate-pulse">
+              <div className="px-3 py-2 rounded-xl bg-rose-500/20 border border-rose-500/30 flex items-center gap-1.5 text-[var(--danger)] text-xs font-bold animate-pulse">
                 <AlertTriangle className="h-3.5 w-3.5" />
                 <span>{urgentActionCount} Urgent</span>
               </div>
@@ -1131,29 +1131,29 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
               <button
                 type="button"
                 onClick={() => setShowExportMenu(!showExportMenu)}
-                className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-white/5 text-slate-300 hover:text-white text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+                className="px-3 py-2 rounded-xl bg-[var(--surface-sunken)] hover:bg-[var(--border)] border border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text)] text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
                 title="Export Pipeline Records to CSV or JSON"
               >
-                <Download className="h-4 w-4 text-emerald-400" />
+                <Download className="h-4 w-4 text-[var(--success)]" />
                 <span>Export</span>
               </button>
               {showExportMenu && (
-                <div className="absolute right-0 mt-2 w-44 rounded-xl bg-slate-900 border border-slate-700 shadow-2xl p-1.5 z-50 animate-in fade-in zoom-in-95 duration-150">
+                <div className="absolute right-0 mt-2 w-44 rounded-xl bg-[var(--surface)] border border-[var(--border)] shadow-2xl p-1.5 z-50 animate-in fade-in zoom-in-95 duration-150">
                   <button
                     type="button"
                     onClick={() => handleExportPipeline('csv')}
-                    className="w-full text-left px-3 py-2 rounded-lg text-xs text-slate-200 hover:bg-white/5 hover:text-white flex items-center justify-between transition-colors cursor-pointer"
+                    className="w-full text-left px-3 py-2 rounded-lg text-xs text-[var(--text)] hover:bg-[var(--surface-sunken)] hover:text-[var(--text)] flex items-center justify-between transition-colors cursor-pointer"
                   >
                     <span>Export as CSV</span>
-                    <span className="text-[10px] font-mono font-bold text-emerald-400">.csv</span>
+                    <span className="text-[10px] font-mono font-bold text-[var(--success)]">.csv</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => handleExportPipeline('json')}
-                    className="w-full text-left px-3 py-2 rounded-lg text-xs text-slate-200 hover:bg-white/5 hover:text-white flex items-center justify-between transition-colors cursor-pointer"
+                    className="w-full text-left px-3 py-2 rounded-lg text-xs text-[var(--text)] hover:bg-[var(--surface-sunken)] hover:text-[var(--text)] flex items-center justify-between transition-colors cursor-pointer"
                   >
                     <span>Export as JSON</span>
-                    <span className="text-[10px] font-mono font-bold text-blue-400">.json</span>
+                    <span className="text-[10px] font-mono font-bold text-[var(--accent-text)]">.json</span>
                   </button>
                 </div>
               )}
@@ -1168,20 +1168,20 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
                 setImportFile(null);
                 setImportPreviewData([]);
               }}
-              className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-white/5 text-slate-300 hover:text-white text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+              className="px-3 py-2 rounded-xl bg-[var(--surface-sunken)] hover:bg-[var(--border)] border border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text)] text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
               title="Import Leads & Opportunities from CSV/JSON"
             >
-              <Upload className="h-4 w-4 text-indigo-400" />
+              <Upload className="h-4 w-4 text-[var(--accent-text)]" />
               <span>Import</span>
             </button>
 
             <button
               onClick={() => fetchData(true)}
               disabled={isRefreshing}
-              className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-white/5 text-slate-300 hover:text-white transition-all cursor-pointer"
+              className="p-2 rounded-xl bg-[var(--surface-sunken)] hover:bg-[var(--border)] border border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text)] transition-all cursor-pointer"
               title="Refresh Pipeline"
             >
-              <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin text-blue-400' : ''}`} />
+              <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin text-[var(--accent-text)]' : ''}`} />
             </button>
 
             <button
@@ -1195,20 +1195,20 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
         </div>
 
         {/* View Switcher Tabs & Filter Toolbar */}
-        <div className="mt-4 pt-3 border-t border-white/5 flex flex-wrap items-center justify-between gap-3">
+        <div className="mt-4 pt-3 border-t border-[var(--border)] flex flex-wrap items-center justify-between gap-3">
           {/* Subtab Toggle Buttons */}
-          <div className="flex items-center gap-1 bg-slate-800/80 p-1 rounded-xl border border-white/5">
+          <div className="flex items-center gap-1 bg-[var(--surface-sunken)] p-1 rounded-xl border border-[var(--border)]">
             <button
               onClick={() => setActiveTab('board')}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 activeTab === 'board'
                   ? 'bg-blue-600 text-white shadow-md'
-                  : 'text-slate-400 hover:text-white hover:bg-white/5'
+                  : 'text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-sunken)]'
               }`}
             >
               <Columns3 className="h-3.5 w-3.5" />
               <span>Pipeline Kanban</span>
-              <span className="text-[10px] ml-1 px-1.5 py-0.2 rounded-full bg-white/20 font-mono">
+              <span className="text-[10px] ml-1 px-1.5 py-0.2 rounded-full bg-[var(--border)] font-mono">
                 {filteredItems.length}
               </span>
             </button>
@@ -1218,12 +1218,12 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 activeTab === 'leads'
                   ? 'bg-blue-600 text-white shadow-md'
-                  : 'text-slate-400 hover:text-white hover:bg-white/5'
+                  : 'text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-sunken)]'
               }`}
             >
               <List className="h-3.5 w-3.5" />
               <span>Inbound Leads & Qualification</span>
-              <span className="text-[10px] ml-1 px-1.5 py-0.2 rounded-full bg-white/20 font-mono">
+              <span className="text-[10px] ml-1 px-1.5 py-0.2 rounded-full bg-[var(--border)] font-mono">
                 {leads.length}
               </span>
             </button>
@@ -1234,7 +1234,7 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 activeTab === 'contacts'
                   ? 'bg-blue-600 text-white shadow-md'
-                  : 'text-slate-400 hover:text-white hover:bg-white/5'
+                  : 'text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-sunken)]'
               }`}
             >
               <Users className="h-3.5 w-3.5" />
@@ -1247,7 +1247,7 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 activeTab === 'companies'
                   ? 'bg-blue-600 text-white shadow-md'
-                  : 'text-slate-400 hover:text-white hover:bg-white/5'
+                  : 'text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-sunken)]'
               }`}
             >
               <Building2 className="h-3.5 w-3.5" />
@@ -1259,7 +1259,7 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 activeTab === 'analytics'
                   ? 'bg-blue-600 text-white shadow-md'
-                  : 'text-slate-400 hover:text-white hover:bg-white/5'
+                  : 'text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-sunken)]'
               }`}
             >
               <BarChart3 className="h-3.5 w-3.5" />
@@ -1270,61 +1270,61 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
           {/* Search & Filter Dropdowns */}
           <div className={`flex flex-wrap items-center gap-2 flex-1 max-w-2xl justify-end ${peopleTab ? 'hidden' : ''}`}>
             <div className="relative flex-1 min-w-[180px]">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[var(--text-muted)]" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search company, prospect, needs..."
-                className="w-full bg-slate-800/90 border border-slate-700/80 rounded-xl pl-9 pr-3 py-1.5 text-xs text-slate-100 placeholder-slate-400 focus:outline-none focus:border-blue-500 font-medium"
+                className="w-full bg-[var(--surface-sunken)] border border-[var(--border)] rounded-xl pl-9 pr-3 py-1.5 text-xs text-[var(--text)] placeholder:text-[var(--text-subtle)] focus:outline-none focus:border-blue-500 font-medium"
               />
             </div>
 
             {/* Health Filter */}
-            <div className="flex items-center gap-1 border border-slate-700/80 rounded-xl bg-slate-800/90 px-2 py-1.5">
-              <Activity className="h-3 w-3 text-slate-400" />
+            <div className="flex items-center gap-1 border border-[var(--border)] rounded-xl bg-[var(--surface-sunken)] px-2 py-1.5">
+              <Activity className="h-3 w-3 text-[var(--text-muted)]" />
               <select
                 value={filterHealth}
                 onChange={(e) => setFilterHealth(e.target.value as any)}
-                className="bg-transparent border-0 text-[11px] font-semibold focus:outline-none cursor-pointer text-slate-200"
+                className="bg-transparent border-0 text-[11px] font-semibold focus:outline-none cursor-pointer text-[var(--text)]"
               >
-                <option value="all" className="bg-slate-900 text-slate-200">All Health</option>
-                <option value="HEALTHY" className="bg-slate-900 text-emerald-400">Healthy</option>
-                <option value="AT_RISK" className="bg-slate-900 text-amber-400">At Risk</option>
-                <option value="STALE" className="bg-slate-900 text-slate-400">Stale</option>
-                <option value="BLOCKED" className="bg-slate-900 text-rose-400">Blocked</option>
+                <option value="all" className="bg-[var(--surface)] text-[var(--text)]">All Health</option>
+                <option value="HEALTHY" className="bg-[var(--surface)] text-[var(--success)]">Healthy</option>
+                <option value="AT_RISK" className="bg-[var(--surface)] text-[var(--warning)]">At Risk</option>
+                <option value="STALE" className="bg-[var(--surface)] text-[var(--text-muted)]">Stale</option>
+                <option value="BLOCKED" className="bg-[var(--surface)] text-[var(--danger)]">Blocked</option>
               </select>
             </div>
 
             {/* Source Channel Filter */}
-            <div className="flex items-center gap-1 border border-slate-700/80 rounded-xl bg-slate-800/90 px-2 py-1.5">
-              <Filter className="h-3 w-3 text-slate-400" />
+            <div className="flex items-center gap-1 border border-[var(--border)] rounded-xl bg-[var(--surface-sunken)] px-2 py-1.5">
+              <Filter className="h-3 w-3 text-[var(--text-muted)]" />
               <select
                 value={filterSource}
                 onChange={(e) => setFilterSource(e.target.value)}
-                className="bg-transparent border-0 text-[11px] font-semibold focus:outline-none cursor-pointer text-slate-200"
+                className="bg-transparent border-0 text-[11px] font-semibold focus:outline-none cursor-pointer text-[var(--text)]"
               >
-                <option value="all" className="bg-slate-900 text-slate-200">All Channels</option>
-                <option value="whatsapp" className="bg-slate-900 text-slate-200">WhatsApp</option>
-                <option value="voice" className="bg-slate-900 text-slate-200">Voice Dialer</option>
-                <option value="email" className="bg-slate-900 text-slate-200">Email</option>
-                <option value="linkedin" className="bg-slate-900 text-slate-200">LinkedIn</option>
-                <option value="gbp" className="bg-slate-900 text-slate-200">Google Business</option>
-                <option value="website" className="bg-slate-900 text-slate-200">Website</option>
+                <option value="all" className="bg-[var(--surface)] text-[var(--text)]">All Channels</option>
+                <option value="whatsapp" className="bg-[var(--surface)] text-[var(--text)]">WhatsApp</option>
+                <option value="voice" className="bg-[var(--surface)] text-[var(--text)]">Voice Dialer</option>
+                <option value="email" className="bg-[var(--surface)] text-[var(--text)]">Email</option>
+                <option value="linkedin" className="bg-[var(--surface)] text-[var(--text)]">LinkedIn</option>
+                <option value="gbp" className="bg-[var(--surface)] text-[var(--text)]">Google Business</option>
+                <option value="website" className="bg-[var(--surface)] text-[var(--text)]">Website</option>
               </select>
             </div>
 
             {/* Priority Filter */}
-            <div className="flex items-center gap-1 border border-slate-700/80 rounded-xl bg-slate-800/90 px-2 py-1.5">
+            <div className="flex items-center gap-1 border border-[var(--border)] rounded-xl bg-[var(--surface-sunken)] px-2 py-1.5">
               <select
                 value={filterPriority}
                 onChange={(e) => setFilterPriority(e.target.value as any)}
-                className="bg-transparent border-0 text-[11px] font-semibold focus:outline-none cursor-pointer text-slate-200"
+                className="bg-transparent border-0 text-[11px] font-semibold focus:outline-none cursor-pointer text-[var(--text)]"
               >
-                <option value="all" className="bg-slate-900 text-slate-200">All Priority</option>
-                <option value="high" className="bg-slate-900 text-slate-200">High</option>
-                <option value="medium" className="bg-slate-900 text-slate-200">Medium</option>
-                <option value="low" className="bg-slate-900 text-slate-200">Low</option>
+                <option value="all" className="bg-[var(--surface)] text-[var(--text)]">All Priority</option>
+                <option value="high" className="bg-[var(--surface)] text-[var(--text)]">High</option>
+                <option value="medium" className="bg-[var(--surface)] text-[var(--text)]">Medium</option>
+                <option value="low" className="bg-[var(--surface)] text-[var(--text)]">Low</option>
               </select>
             </div>
           </div>
@@ -1338,8 +1338,8 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
         ) : activeTab === 'companies' ? (
           <div className="h-full overflow-y-auto bg-[var(--app-bg)] p-3 sm:p-4"><CompaniesView onNavigate={onNavigate} initialCompanyId={openCompanyId} onOpenContact={(id) => { setOpenContactId(id); setActiveTab('contacts'); }} /></div>
         ) : isLoading ? (
-          <div className="h-full flex flex-col items-center justify-center gap-3 text-slate-400">
-            <RefreshCw className="h-7 w-7 animate-spin text-blue-400" />
+          <div className="h-full flex flex-col items-center justify-center gap-3 text-[var(--text-muted)]">
+            <RefreshCw className="h-7 w-7 animate-spin text-[var(--accent-text)]" />
             <p className="text-xs font-semibold">Synchronizing unified revenue pipeline from database...</p>
           </div>
         ) : activeTab === 'board' ? (
@@ -1354,19 +1354,19 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
               return (
                 <div 
                   key={stage.id}
-                  className="w-80 shrink-0 bg-slate-900/60 border border-white/5 rounded-2xl flex flex-col max-h-full overflow-hidden shadow-xl"
+                  className="w-80 shrink-0 bg-[var(--surface)] border border-[var(--border)] rounded-2xl flex flex-col max-h-full overflow-hidden shadow-xl"
                 >
                   {/* Column Header */}
-                  <div className={`p-4 border-t-4 ${stage.color} border-b border-white/5 flex flex-col gap-1 shrink-0 bg-slate-900/90`}>
+                  <div className={`p-4 border-t-4 ${stage.color} border-b border-[var(--border)] flex flex-col gap-1 shrink-0 bg-[var(--surface)]`}>
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-black text-white tracking-wide">{stage.label}</span>
-                      <span className="bg-slate-800 border border-white/10 text-slate-300 px-2 py-0.5 rounded-md text-[10px] font-bold font-mono">
+                      <span className="text-xs font-black text-[var(--text)] tracking-wide">{stage.label}</span>
+                      <span className="bg-[var(--surface-sunken)] border border-[var(--border)] text-[var(--text-muted)] px-2 py-0.5 rounded-md text-[10px] font-bold font-mono">
                         {stageItems.length}
                       </span>
                     </div>
-                    <div className="flex items-center justify-between text-[11px] font-mono text-slate-400">
+                    <div className="flex items-center justify-between text-[11px] font-mono text-[var(--text-muted)]">
                       <span>${stats.totalValue.toLocaleString()}</span>
-                      <span className="text-[10px] text-slate-500">{stage.sublabel}</span>
+                      <span className="text-[10px] text-[var(--text-subtle)]">{stage.sublabel}</span>
                     </div>
                   </div>
 
@@ -1380,8 +1380,8 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
                     className="flex-1 overflow-y-auto p-3 space-y-3 min-h-[350px]"
                   >
                     {stageItems.length === 0 ? (
-                      <div className="h-32 border border-dashed border-slate-800 rounded-xl flex items-center justify-center text-center p-4">
-                        <p className="text-[11px] text-slate-500 font-medium">No items in {stage.label}.</p>
+                      <div className="h-32 border border-dashed border-[var(--border)] rounded-xl flex items-center justify-center text-center p-4">
+                        <p className="text-[11px] text-[var(--text-subtle)] font-medium">No items in {stage.label}.</p>
                       </div>
                     ) : (
                       stageItems.map((item) => {
@@ -1393,10 +1393,10 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
                             draggable
                             onDragStart={(e) => e.dataTransfer.setData('text/plain', item.id)}
                             onClick={() => setSelectedItem(item)}
-                            className={`bg-slate-900/90 border rounded-xl p-3.5 space-y-3 transition-all cursor-pointer relative shadow-sm hover:shadow-lg ${
+                            className={`bg-[var(--surface)] border rounded-xl p-3.5 space-y-3 transition-all cursor-pointer relative shadow-sm hover:shadow-lg ${
                               isSelected 
                                 ? 'border-blue-500 ring-2 ring-blue-500/20 shadow-blue-500/10' 
-                                : 'border-slate-800/80 hover:border-slate-700 hover:bg-slate-850'
+                                : 'border-[var(--border)] hover:border-[var(--border)] hover:bg-slate-850'
                             }`}
                           >
                             {/* Card Top: Health, Channel, and Priority */}
@@ -1411,7 +1411,7 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
                                 </span>
 
                                 {item.source && (
-                                  <span className="p-1 rounded bg-slate-800 border border-white/5 flex items-center" title={`Channel: ${item.source}`}>
+                                  <span className="p-1 rounded bg-[var(--surface-sunken)] border border-[var(--border)] flex items-center" title={`Channel: ${item.source}`}>
                                     {getSourceIcon(item.source)}
                                   </span>
                                 )}
@@ -1421,10 +1421,10 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
                                 {item.score !== undefined && (
                                   <span className={`text-[9px] font-black font-mono px-1.5 py-0.5 rounded border ${
                                     item.score >= 80 
-                                      ? 'bg-rose-500/20 text-rose-300 border-rose-500/30' 
+                                      ? 'bg-rose-500/20 text-[var(--danger)] border-rose-500/30' 
                                       : item.score >= 60 
-                                      ? 'bg-amber-500/20 text-amber-300 border-amber-500/30' 
-                                      : 'bg-slate-800 text-slate-400 border-slate-700'
+                                      ? 'bg-amber-500/20 text-[var(--warning)] border-amber-500/30' 
+                                      : 'bg-[var(--surface-sunken)] text-[var(--text-muted)] border-[var(--border)]'
                                   }`} title="BANT Lead Score">
                                     {item.score}
                                   </span>
@@ -1432,10 +1432,10 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
 
                                 <span className={`text-[8px] font-extrabold uppercase px-1.5 py-0.5 rounded border ${
                                   item.priority === 'high' 
-                                    ? 'bg-rose-500/10 text-rose-400 border-rose-500/20' 
+                                    ? 'bg-rose-500/10 text-[var(--danger)] border-rose-500/20' 
                                     : item.priority === 'medium'
-                                    ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
-                                    : 'bg-slate-800 text-slate-400 border-slate-700'
+                                    ? 'bg-amber-500/10 text-[var(--warning)] border-amber-500/20'
+                                    : 'bg-[var(--surface-sunken)] text-[var(--text-muted)] border-[var(--border)]'
                                 }`}>
                                   {item.priority}
                                 </span>
@@ -1444,18 +1444,18 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
 
                             {/* Company & Contact Header */}
                             <div>
-                              <h4 className="text-xs font-black text-white leading-tight flex items-center justify-between">
+                              <h4 className="text-xs font-black text-[var(--text)] leading-tight flex items-center justify-between">
                                 <span className="truncate">{item.company || item.name}</span>
                               </h4>
                               {item.dealName && item.type === 'lead' && (
-                                <p className="text-[10px] text-emerald-400 font-semibold truncate mt-0.5">Deal: {item.dealName}</p>
+                                <p className="text-[10px] text-[var(--success)] font-semibold truncate mt-0.5">Deal: {item.dealName}</p>
                               )}
-                              <p className="text-[11px] text-slate-400 font-semibold flex items-center gap-1 mt-0.5">
-                                <Building2 className="h-3 w-3 shrink-0 text-blue-400" />
+                              <p className="text-[11px] text-[var(--text-muted)] font-semibold flex items-center gap-1 mt-0.5">
+                                <Building2 className="h-3 w-3 shrink-0 text-[var(--accent-text)]" />
                                 <span className="truncate">{item.name}</span>
                               </p>
                               {item.title && (
-                                <p className="text-[10px] text-slate-500 truncate mt-0.5">
+                                <p className="text-[10px] text-[var(--text-subtle)] truncate mt-0.5">
                                   {item.title}
                                 </p>
                               )}
@@ -1463,17 +1463,17 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
 
                             {/* Stated Need or Problem */}
                             {item.statedProblems && item.statedProblems.length > 0 && (
-                              <div className="bg-slate-950/80 p-2 rounded-lg border border-white/5 space-y-1">
-                                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Requirement / Need</span>
-                                <p className="text-[10px] text-slate-300 leading-snug line-clamp-2">
+                              <div className="bg-[var(--surface-sunken)] p-2 rounded-lg border border-[var(--border)] space-y-1">
+                                <span className="text-[9px] font-bold text-[var(--text-muted)] uppercase tracking-wider block">Requirement / Need</span>
+                                <p className="text-[10px] text-[var(--text-muted)] leading-snug line-clamp-2">
                                   {item.statedProblems[0]}
                                 </p>
                               </div>
                             )}
 
                             {/* AI Recommended Next Action */}
-                            <div className="bg-blue-950/30 border border-blue-900/40 rounded-lg p-2 flex items-center justify-between">
-                              <div className="flex items-center gap-1 text-[9px] font-extrabold text-blue-400 uppercase tracking-wider">
+                            <div className="bg-[var(--accent-soft)] border border-blue-900/40 rounded-lg p-2 flex items-center justify-between">
+                              <div className="flex items-center gap-1 text-[9px] font-extrabold text-[var(--accent-text)] uppercase tracking-wider">
                                 <Target className="h-3 w-3" />
                                 <span>Next Action</span>
                               </div>
@@ -1483,11 +1483,11 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
                             </div>
 
                             {/* Value & Activity Date */}
-                            <div className="flex items-baseline justify-between pt-1 border-t border-white/5 text-[11px]">
-                              <span className="text-emerald-400 font-mono font-bold">
+                            <div className="flex items-baseline justify-between pt-1 border-t border-[var(--border)] text-[11px]">
+                              <span className="text-[var(--success)] font-mono font-bold">
                                 {money(item)}
                               </span>
-                              <span className="text-[10px] text-slate-500 flex items-center gap-1">
+                              <span className="text-[10px] text-[var(--text-subtle)] flex items-center gap-1">
                                 <Clock className="h-2.5 w-2.5" />
                                 <span>{item.daysSinceLastActivity === 0 ? 'Today' : `${item.daysSinceLastActivity}d ago`}</span>
                               </span>
@@ -1501,14 +1501,14 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
                                     e.stopPropagation();
                                     initiateConversion(item);
                                   }}
-                                  className="px-2 py-1 rounded bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-300 border border-indigo-500/30 text-[10px] font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                                  className="px-2 py-1 rounded bg-indigo-600/30 hover:bg-indigo-600/50 text-[var(--accent-text)] border border-indigo-500/30 text-[10px] font-bold flex items-center gap-1 transition-colors cursor-pointer"
                                   title="Convert Lead to Active Deal"
                                 >
                                   <ArrowUpRight className="h-3 w-3" />
                                   <span>Convert</span>
                                 </button>
                               ) : (
-                                <span className="text-[10px] text-slate-500 font-medium">
+                                <span className="text-[10px] text-[var(--text-subtle)] font-medium">
                                   Deal Active
                                 </span>
                               )}
@@ -1520,7 +1520,7 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
                                     e.stopPropagation();
                                     handleMoveStage(item.id, 'left');
                                   }}
-                                  className="p-1 rounded border border-white/5 bg-slate-800 hover:bg-slate-700 disabled:opacity-30 disabled:hover:bg-slate-800 text-slate-400 hover:text-white cursor-pointer"
+                                  className="p-1 rounded border border-[var(--border)] bg-[var(--surface-sunken)] hover:bg-[var(--border)] disabled:opacity-30 disabled:hover:bg-[var(--surface-sunken)] text-[var(--text-muted)] hover:text-[var(--text)] cursor-pointer"
                                   title="Previous Stage"
                                 >
                                   <ChevronLeft className="h-3.5 w-3.5" />
@@ -1531,7 +1531,7 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
                                     e.stopPropagation();
                                     handleMoveStage(item.id, 'right');
                                   }}
-                                  className="p-1 rounded border border-white/5 bg-slate-800 hover:bg-slate-700 disabled:opacity-30 disabled:hover:bg-slate-800 text-slate-400 hover:text-white cursor-pointer"
+                                  className="p-1 rounded border border-[var(--border)] bg-[var(--surface-sunken)] hover:bg-[var(--border)] disabled:opacity-30 disabled:hover:bg-[var(--surface-sunken)] text-[var(--text-muted)] hover:text-[var(--text)] cursor-pointer"
                                   title="Next Stage"
                                 >
                                   <ChevronRight className="h-3.5 w-3.5" />
@@ -1555,9 +1555,9 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
             
             {/* Bulk Action Bar */}
             {selectedLeadIds.length > 0 && (
-              <div className="p-3 bg-blue-950/60 border border-blue-500/40 rounded-xl flex items-center justify-between shrink-0 animate-in fade-in duration-150">
-                <div className="flex items-center gap-2 text-xs text-blue-200">
-                  <CheckSquare className="h-4 w-4 text-blue-400" />
+              <div className="p-3 bg-[var(--accent-soft)] border border-blue-500/40 rounded-xl flex items-center justify-between shrink-0 animate-in fade-in duration-150">
+                <div className="flex items-center gap-2 text-xs text-[var(--accent-text)]">
+                  <CheckSquare className="h-4 w-4 text-[var(--accent-text)]" />
                   <span className="font-bold">{selectedLeadIds.length} lead(s) selected</span>
                 </div>
                 <div className="flex items-center gap-2">
@@ -1571,14 +1571,14 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
                   <button
                     disabled={isBulkProcessing}
                     onClick={() => handleBulkAction('assign', team.me)}
-                    className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white border border-white/10 rounded-lg text-xs font-bold transition-all cursor-pointer"
+                    className="px-3 py-1.5 bg-[var(--surface-sunken)] hover:bg-[var(--border)] text-[var(--text)] border border-[var(--border)] rounded-lg text-xs font-bold transition-all cursor-pointer"
                   >
                     Assign to me
                   </button>
                   <button
                     disabled={isBulkProcessing}
                     onClick={() => handleBulkAction('delete')}
-                    className="px-3 py-1.5 bg-rose-600/30 hover:bg-rose-600 text-rose-300 hover:text-white border border-rose-500/30 rounded-lg text-xs font-bold transition-all cursor-pointer"
+                    className="px-3 py-1.5 bg-rose-600/30 hover:bg-rose-600 text-[var(--danger)] hover:text-white border border-rose-500/30 rounded-lg text-xs font-bold transition-all cursor-pointer"
                   >
                     Delete Selected
                   </button>
@@ -1587,21 +1587,21 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
             )}
 
             {/* Table Container */}
-            <div className="flex-1 bg-slate-900/60 border border-white/5 rounded-2xl overflow-hidden shadow-xl flex flex-col">
+            <div className="flex-1 bg-[var(--surface)] border border-[var(--border)] rounded-2xl overflow-hidden shadow-xl flex flex-col">
               <div className="overflow-x-auto flex-1">
                 <table className="w-full text-left text-xs border-collapse">
                   <thead>
-                    <tr className="bg-slate-900/90 border-b border-white/5 text-slate-400 text-[11px] uppercase tracking-wider font-bold">
+                    <tr className="bg-[var(--surface)] border-b border-[var(--border)] text-[var(--text-muted)] text-[11px] uppercase tracking-wider font-bold">
                       <th className="p-3.5 w-10 text-center">
                         <button
                           onClick={() => {
                             if (selectedLeadIds.length === leads.length) setSelectedLeadIds([]);
                             else setSelectedLeadIds(leads.map(l => l.id));
                           }}
-                          className="text-slate-400 hover:text-white cursor-pointer"
+                          className="text-[var(--text-muted)] hover:text-[var(--text)] cursor-pointer"
                         >
                           {selectedLeadIds.length === leads.length && leads.length > 0 ? (
-                            <CheckSquare className="h-4 w-4 text-blue-400" />
+                            <CheckSquare className="h-4 w-4 text-[var(--accent-text)]" />
                           ) : (
                             <Square className="h-4 w-4" />
                           )}
@@ -1617,10 +1617,10 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
                       <th className="p-3.5 text-right">Actions</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-white/5">
+                  <tbody className="divide-y divide-[var(--border)]">
                     {leads.length === 0 ? (
                       <tr>
-                        <td colSpan={9} className="p-8 text-center text-slate-500">
+                        <td colSpan={9} className="p-8 text-center text-[var(--text-subtle)]">
                           No leads in the CRM database yet. Click "+ Add Lead / Deal" to create one.
                         </td>
                       </tr>
@@ -1636,7 +1636,7 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
                               if (pipelineItem) setSelectedItem(pipelineItem);
                             }}
                             className={`hover:bg-slate-850/60 transition-colors cursor-pointer ${
-                              isSelected ? 'bg-blue-950/20' : ''
+                              isSelected ? 'bg-[var(--accent-soft)]' : ''
                             }`}
                           >
                             <td className="p-3.5 text-center" onClick={(e) => e.stopPropagation()}>
@@ -1646,10 +1646,10 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
                                     prev.includes(lead.id) ? prev.filter(id => id !== lead.id) : [...prev, lead.id]
                                   );
                                 }}
-                                className="text-slate-500 hover:text-white cursor-pointer"
+                                className="text-[var(--text-subtle)] hover:text-[var(--text)] cursor-pointer"
                               >
                                 {isSelected ? (
-                                  <CheckSquare className="h-4 w-4 text-blue-400" />
+                                  <CheckSquare className="h-4 w-4 text-[var(--accent-text)]" />
                                 ) : (
                                   <Square className="h-4 w-4" />
                                 )}
@@ -1657,27 +1657,27 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
                             </td>
 
                             <td className="p-3.5">
-                              <div className="font-bold text-white flex items-center gap-1.5">
+                              <div className="font-bold text-[var(--text)] flex items-center gap-1.5">
                                 <span>{lead.name}</span>
                                 {lead.isConverted && (
-                                  <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                                  <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/20 text-[var(--success)] border border-emerald-500/30">
                                     Converted
                                   </span>
                                 )}
                               </div>
-                              <div className="text-[11px] text-slate-400 flex items-center gap-2 mt-0.5">
+                              <div className="text-[11px] text-[var(--text-muted)] flex items-center gap-2 mt-0.5">
                                 {lead.email && <span className="truncate max-w-[160px]">{lead.email}</span>}
                                 {lead.phone && <span>• {lead.phone}</span>}
                               </div>
                             </td>
 
                             <td className="p-3.5">
-                              <div className="font-semibold text-slate-200">{lead.company || '—'}</div>
-                              <div className="text-[10px] text-slate-500">{lead.title || '—'}</div>
+                              <div className="font-semibold text-[var(--text)]">{lead.company || '—'}</div>
+                              <div className="text-[10px] text-[var(--text-subtle)]">{lead.title || '—'}</div>
                             </td>
 
                             <td className="p-3.5">
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-800 border border-white/5 text-[10px] font-semibold text-slate-300">
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[var(--surface-sunken)] border border-[var(--border)] text-[10px] font-semibold text-[var(--text-muted)]">
                                 {getSourceIcon(lead.source)}
                                 <span className="capitalize">{lead.source?.replace('_', ' ') || 'Web'}</span>
                               </span>
@@ -1687,38 +1687,38 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
                               <div className="flex items-center gap-2">
                                 <span className={`text-xs font-mono font-black px-2 py-0.5 rounded-md border ${
                                   lead.score >= 80 
-                                    ? 'bg-rose-500/20 text-rose-300 border-rose-500/30' 
+                                    ? 'bg-rose-500/20 text-[var(--danger)] border-rose-500/30' 
                                     : lead.score >= 60 
-                                    ? 'bg-amber-500/20 text-amber-300 border-amber-500/30' 
-                                    : 'bg-slate-800 text-slate-400 border-slate-700'
+                                    ? 'bg-amber-500/20 text-[var(--warning)] border-amber-500/30' 
+                                    : 'bg-[var(--surface-sunken)] text-[var(--text-muted)] border-[var(--border)]'
                                 }`}>
                                   {lead.score}
                                 </span>
-                                <span className="text-[10px] text-slate-400">
+                                <span className="text-[10px] text-[var(--text-muted)]">
                                   {lead.score >= 80 ? '🔥 Hot' : lead.score >= 60 ? '⚡ Warm' : '❄️ Cold'}
                                 </span>
                               </div>
                             </td>
 
-                            <td className="p-3.5 font-mono text-emerald-400 font-bold">
+                            <td className="p-3.5 font-mono text-[var(--success)] font-bold">
                               {Number(lead.qualification?.budget) ? `$${Number(lead.qualification?.budget).toLocaleString()}` : 'Not set'}
                             </td>
 
                             <td className="p-3.5">
                               <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-md border ${
                                 lead.status === 'qualified'
-                                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                                  ? 'bg-emerald-500/10 text-[var(--success)] border-emerald-500/30'
                                   : lead.status === 'converted'
-                                  ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/30'
+                                  ? 'bg-indigo-500/10 text-[var(--accent-text)] border-indigo-500/30'
                                   : lead.status === 'contacted'
-                                  ? 'bg-blue-500/10 text-blue-400 border-blue-500/30'
-                                  : 'bg-slate-800 text-slate-400 border-slate-700'
+                                  ? 'bg-blue-500/10 text-[var(--accent-text)] border-blue-500/30'
+                                  : 'bg-[var(--surface-sunken)] text-[var(--text-muted)] border-[var(--border)]'
                               }`}>
                                 {lead.status}
                               </span>
                             </td>
 
-                            <td className="p-3.5 text-slate-300 text-[11px]">
+                            <td className="p-3.5 text-[var(--text-muted)] text-[11px]">
                               {lead.owner || 'Unassigned'}
                             </td>
 
@@ -1739,7 +1739,7 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
                                 onClick={() => {
                                   if (pipelineItem) setSelectedItem(pipelineItem);
                                 }}
-                                className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-white/5 rounded-lg text-[10px] font-bold inline-flex items-center gap-1 transition-all cursor-pointer"
+                                className="px-2.5 py-1 bg-[var(--surface-sunken)] hover:bg-[var(--border)] text-[var(--text)] border border-[var(--border)] rounded-lg text-[10px] font-bold inline-flex items-center gap-1 transition-all cursor-pointer"
                               >
                                 <span>Inspect</span>
                               </button>
@@ -1759,44 +1759,44 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
           /* ========================================================================= */
           <div className="h-full overflow-y-auto p-6 space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div className="p-5 rounded-2xl bg-slate-900/80 border border-white/5 space-y-2">
-                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Lead Conversion Rate</span>
-                <div className="text-3xl font-black font-mono text-emerald-400">
+              <div className="p-5 rounded-2xl bg-[var(--surface)] border border-[var(--border)] space-y-2">
+                <span className="text-[11px] font-bold text-[var(--text-muted)] uppercase tracking-wider block">Lead Conversion Rate</span>
+                <div className="text-3xl font-black font-mono text-[var(--success)]">
                   {analyticsData?.conversionRate !== undefined ? `${analyticsData.conversionRate}%` : '28.5%'}
                 </div>
-                <p className="text-[10px] text-slate-500">Atomic conversion into contact, company & deal</p>
+                <p className="text-[10px] text-[var(--text-subtle)]">Atomic conversion into contact, company & deal</p>
               </div>
 
-              <div className="p-5 rounded-2xl bg-slate-900/80 border border-white/5 space-y-2">
-                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Total Pipeline value</span>
-                <div className="text-3xl font-black font-mono text-blue-400">
+              <div className="p-5 rounded-2xl bg-[var(--surface)] border border-[var(--border)] space-y-2">
+                <span className="text-[11px] font-bold text-[var(--text-muted)] uppercase tracking-wider block">Total Pipeline value</span>
+                <div className="text-3xl font-black font-mono text-[var(--accent-text)]">
                   ${grandTotalValue.toLocaleString()}
                 </div>
-                <p className="text-[10px] text-slate-500">Across {filteredItems.length} active opportunities</p>
+                <p className="text-[10px] text-[var(--text-subtle)]">Across {filteredItems.length} active opportunities</p>
               </div>
 
-              <div className="p-5 rounded-2xl bg-slate-900/80 border border-white/5 space-y-2">
-                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Avg Time to Convert</span>
-                <div className="text-3xl font-black font-mono text-purple-400">
+              <div className="p-5 rounded-2xl bg-[var(--surface)] border border-[var(--border)] space-y-2">
+                <span className="text-[11px] font-bold text-[var(--text-muted)] uppercase tracking-wider block">Avg Time to Convert</span>
+                <div className="text-3xl font-black font-mono text-[var(--accent-text)]">
                   {analyticsData?.avgTimeToConvertHours ? `${Math.round(analyticsData.avgTimeToConvertHours)}h` : '36h'}
                 </div>
-                <p className="text-[10px] text-slate-500">Inbound trigger to qualification agreement</p>
+                <p className="text-[10px] text-[var(--text-subtle)]">Inbound trigger to qualification agreement</p>
               </div>
 
-              <div className="p-5 rounded-2xl bg-slate-900/80 border border-white/5 space-y-2">
-                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Converted Deal Value</span>
-                <div className="text-3xl font-black font-mono text-amber-400">
+              <div className="p-5 rounded-2xl bg-[var(--surface)] border border-[var(--border)] space-y-2">
+                <span className="text-[11px] font-bold text-[var(--text-muted)] uppercase tracking-wider block">Converted Deal Value</span>
+                <div className="text-3xl font-black font-mono text-[var(--warning)]">
                   ${(analyticsData?.totalConvertedValue || 365000).toLocaleString()}
                 </div>
-                <p className="text-[10px] text-slate-500">Value of won deals</p>
+                <p className="text-[10px] text-[var(--text-subtle)]">Value of won deals</p>
               </div>
             </div>
 
             {/* Funnel Breakdown & Channel Attribution */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="p-5 rounded-2xl bg-slate-900/80 border border-white/5 space-y-4">
-                <h3 className="text-sm font-black text-white flex items-center gap-2">
-                  <TrendingUp className="h-4 w-4 text-blue-400" />
+              <div className="p-5 rounded-2xl bg-[var(--surface)] border border-[var(--border)] space-y-4">
+                <h3 className="text-sm font-black text-[var(--text)] flex items-center gap-2">
+                  <TrendingUp className="h-4 w-4 text-[var(--accent-text)]" />
                   <span>Pipeline Funnel Velocity</span>
                 </h3>
 
@@ -1808,10 +1808,10 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
                     return (
                       <div key={stage.id} className="space-y-1">
                         <div className="flex items-center justify-between text-xs">
-                          <span className="font-bold text-white">{stage.label} ({stats.count})</span>
-                          <span className="font-mono text-slate-400">${stats.totalValue.toLocaleString()} ({percent}%)</span>
+                          <span className="font-bold text-[var(--text)]">{stage.label} ({stats.count})</span>
+                          <span className="font-mono text-[var(--text-muted)]">${stats.totalValue.toLocaleString()} ({percent}%)</span>
                         </div>
-                        <div className="h-2 rounded-full bg-slate-800 overflow-hidden">
+                        <div className="h-2 rounded-full bg-[var(--surface-sunken)] overflow-hidden">
                           <div 
                             className="h-full bg-blue-500 rounded-full transition-all duration-300"
                             style={{ width: `${Math.max(percent, 4)}%` }}
@@ -1823,9 +1823,9 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
                 </div>
               </div>
 
-              <div className="p-5 rounded-2xl bg-slate-900/80 border border-white/5 space-y-4">
-                <h3 className="text-sm font-black text-white flex items-center gap-2">
-                  <Globe className="h-4 w-4 text-emerald-400" />
+              <div className="p-5 rounded-2xl bg-[var(--surface)] border border-[var(--border)] space-y-4">
+                <h3 className="text-sm font-black text-[var(--text)] flex items-center gap-2">
+                  <Globe className="h-4 w-4 text-[var(--success)]" />
                   <span>Inbound Channel Attribution</span>
                 </h3>
 
@@ -1837,12 +1837,12 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
                     { name: 'Google Business Profile (GBP)', source: 'gbp', count: 2, color: 'bg-amber-500' },
                     { name: 'LinkedIn Executive Outreach', source: 'linkedin', count: leads.filter(l => l.source === 'linkedin').length + 1, color: 'bg-cyan-500' }
                   ].map((chan) => (
-                    <div key={chan.name} className="flex items-center justify-between p-3 rounded-xl bg-slate-950/60 border border-white/5">
-                      <div className="flex items-center gap-2 text-xs font-semibold text-slate-200">
+                    <div key={chan.name} className="flex items-center justify-between p-3 rounded-xl bg-[var(--surface-sunken)] border border-[var(--border)]">
+                      <div className="flex items-center gap-2 text-xs font-semibold text-[var(--text)]">
                         {getSourceIcon(chan.source)}
                         <span>{chan.name}</span>
                       </div>
-                      <span className="px-2 py-0.5 rounded-md bg-slate-800 text-xs font-mono font-bold text-white">
+                      <span className="px-2 py-0.5 rounded-md bg-[var(--surface-sunken)] text-xs font-mono font-bold text-[var(--text)]">
                         {chan.count} Opportunities
                       </span>
                     </div>
@@ -1858,24 +1858,24 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
       {/* UNIFIED AI SALES INTELLIGENCE & LEAD DETAIL DRAWER                        */}
       {/* ========================================================================= */}
       {selectedItem && (
-        <div className="fixed inset-y-0 right-0 z-50 w-full sm:w-[580px] bg-slate-900 border-l border-white/10 shadow-2xl flex flex-col justify-between overflow-hidden animate-in slide-in-from-right duration-200 select-none">
+        <div className="fixed inset-y-0 right-0 z-50 w-full sm:w-[580px] bg-[var(--surface)] border-l border-[var(--border)] shadow-2xl flex flex-col justify-between overflow-hidden animate-in slide-in-from-right duration-200 select-none">
           
           {/* Drawer Header */}
-          <div className="p-4 border-b border-white/10 bg-slate-950 flex items-center justify-between shrink-0">
+          <div className="p-4 border-b border-[var(--border)] bg-[var(--surface-sunken)] flex items-center justify-between shrink-0">
             <div className="flex items-center gap-2.5">
-              <div className="h-9 w-9 rounded-xl bg-blue-500/20 border border-blue-500/30 flex items-center justify-center text-blue-400">
+              <div className="h-9 w-9 rounded-xl bg-blue-500/20 border border-blue-500/30 flex items-center justify-center text-[var(--accent-text)]">
                 <Brain className="h-5 w-5" />
               </div>
               <div className="text-left">
-                <h3 className="text-sm font-black text-white flex items-center gap-1.5">
+                <h3 className="text-sm font-black text-[var(--text)] flex items-center gap-1.5">
                   <span>{selectedItem.company}</span>
                   <span className={`text-[9px] uppercase px-1.5 py-0.2 rounded border ${
-                    selectedItem.type === 'lead' ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30' : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                    selectedItem.type === 'lead' ? 'bg-indigo-500/20 text-[var(--accent-text)] border-indigo-500/30' : 'bg-emerald-500/20 text-[var(--success)] border-emerald-500/30'
                   }`}>
                     {selectedItem.type === 'lead' ? 'Inbound Lead' : 'Active Deal'}
                   </span>
                 </h3>
-                <p className="text-[10px] text-slate-400 flex items-center gap-2 mt-0.5">
+                <p className="text-[10px] text-[var(--text-muted)] flex items-center gap-2 mt-0.5">
                   <span>{selectedItem.name}</span>
                   <span>• Stage: {BOARD_COLUMN_LABELS[selectedItem.stage].label}</span>
                   <span>• {money(selectedItem)}</span>
@@ -1885,18 +1885,18 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
 
             <button
               onClick={() => setSelectedItem(null)}
-              className="p-1.5 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white transition-colors cursor-pointer"
+              className="p-1.5 rounded-lg hover:bg-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text)] transition-colors cursor-pointer"
             >
               <X className="h-4 w-4" />
             </button>
           </div>
 
           {/* Drawer Subtab Switcher */}
-          <div className="px-4 py-2 border-b border-white/5 bg-slate-900 flex items-center gap-2 text-xs font-bold shrink-0">
+          <div className="px-4 py-2 border-b border-[var(--border)] bg-[var(--surface)] flex items-center gap-2 text-xs font-bold shrink-0">
             <button
               onClick={() => setDrawerSubtab('intel')}
               className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 ${
-                drawerSubtab === 'intel' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
+                drawerSubtab === 'intel' ? 'bg-blue-600 text-white shadow-sm' : 'text-[var(--text-muted)] hover:text-[var(--text)]'
               }`}
             >
               <Brain className="h-3.5 w-3.5" />
@@ -1906,7 +1906,7 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
             <button
               onClick={() => setDrawerSubtab('bant')}
               className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 ${
-                drawerSubtab === 'bant' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
+                drawerSubtab === 'bant' ? 'bg-blue-600 text-white shadow-sm' : 'text-[var(--text-muted)] hover:text-[var(--text)]'
               }`}
             >
               <Target className="h-3.5 w-3.5" />
@@ -1916,7 +1916,7 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
             <button
               onClick={() => setDrawerSubtab('tasks')}
               className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 ${
-                drawerSubtab === 'tasks' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
+                drawerSubtab === 'tasks' ? 'bg-blue-600 text-white shadow-sm' : 'text-[var(--text-muted)] hover:text-[var(--text)]'
               }`}
             >
               <ListTodo className="h-3.5 w-3.5" />
@@ -1926,7 +1926,7 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
             <button
               onClick={() => setDrawerSubtab('activities')}
               className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 ${
-                drawerSubtab === 'activities' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
+                drawerSubtab === 'activities' ? 'bg-blue-600 text-white shadow-sm' : 'text-[var(--text-muted)] hover:text-[var(--text)]'
               }`}
             >
               <Activity className="h-3.5 w-3.5" />
@@ -1944,8 +1944,8 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
               /* TAB 1: AI SALES INTELLIGENCE & TALK TRACK */
               <>
                 {isLoadingIntel ? (
-                  <div className="py-20 flex flex-col items-center justify-center gap-3 text-slate-400">
-                    <RefreshCw className="h-6 w-6 animate-spin text-blue-400" />
+                  <div className="py-20 flex flex-col items-center justify-center gap-3 text-[var(--text-muted)]">
+                    <RefreshCw className="h-6 w-6 animate-spin text-[var(--accent-text)]" />
                     <span className="text-xs font-semibold">Running Sales Intelligence Analysis...</span>
                   </div>
                 ) : intelReport ? (
@@ -1953,19 +1953,19 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
                     {/* Deal Health Banner */}
                     <div className={`p-4 rounded-xl border space-y-2 ${
                       intelReport.dealHealth.classification === 'HEALTHY'
-                        ? 'bg-emerald-950/30 border-emerald-500/30 text-emerald-200'
+                        ? 'bg-[var(--success-soft)] border-emerald-500/30 text-[var(--success)]'
                         : intelReport.dealHealth.classification === 'AT_RISK'
-                        ? 'bg-amber-950/30 border-amber-500/30 text-amber-200'
+                        ? 'bg-[var(--warning-soft)] border-amber-500/30 text-[var(--warning)]'
                         : intelReport.dealHealth.classification === 'STALE'
-                        ? 'bg-slate-800/80 border-slate-700 text-slate-200'
-                        : 'bg-rose-950/30 border-rose-500/30 text-rose-200'
+                        ? 'bg-[var(--surface-sunken)] border-[var(--border)] text-[var(--text)]'
+                        : 'bg-[var(--danger-soft)] border-rose-500/30 text-[var(--danger)]'
                     }`}>
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2 font-black text-sm tracking-wide">
-                          {intelReport.dealHealth.classification === 'HEALTHY' && <CheckCircle2 className="h-4 w-4 text-emerald-400" />}
-                          {intelReport.dealHealth.classification === 'AT_RISK' && <AlertTriangle className="h-4 w-4 text-amber-400" />}
-                          {intelReport.dealHealth.classification === 'STALE' && <Clock className="h-4 w-4 text-slate-400" />}
-                          {intelReport.dealHealth.classification === 'BLOCKED' && <Ban className="h-4 w-4 text-rose-400" />}
+                          {intelReport.dealHealth.classification === 'HEALTHY' && <CheckCircle2 className="h-4 w-4 text-[var(--success)]" />}
+                          {intelReport.dealHealth.classification === 'AT_RISK' && <AlertTriangle className="h-4 w-4 text-[var(--warning)]" />}
+                          {intelReport.dealHealth.classification === 'STALE' && <Clock className="h-4 w-4 text-[var(--text-muted)]" />}
+                          {intelReport.dealHealth.classification === 'BLOCKED' && <Ban className="h-4 w-4 text-[var(--danger)]" />}
                           <span>HEALTH: {intelReport.dealHealth.classification}</span>
                         </div>
                         <span className="text-[10px] font-bold uppercase opacity-80">
@@ -1978,10 +1978,10 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
                     </div>
 
                     {/* Primary Next Action */}
-                    <div className="bg-slate-950 p-4 rounded-xl border border-white/10 space-y-3">
+                    <div className="bg-[var(--surface-sunken)] p-4 rounded-xl border border-[var(--border)] space-y-3">
                       <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
-                          <Target className="h-3.5 w-3.5 text-blue-400" />
+                        <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest flex items-center gap-1.5">
+                          <Target className="h-3.5 w-3.5 text-[var(--accent-text)]" />
                           <span>Recommended Action</span>
                         </span>
                         <span className={`text-[10px] px-2 py-0.5 rounded-full ${getActionBadgeStyle(intelReport.nextAction.priority)}`}>
@@ -1989,23 +1989,23 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
                         </span>
                       </div>
 
-                      <div className="p-3 bg-blue-950/40 border border-blue-900/50 rounded-lg space-y-1.5">
-                        <div className="flex items-center gap-2 font-black text-sm text-blue-300">
+                      <div className="p-3 bg-[var(--accent-soft)] border border-blue-900/50 rounded-lg space-y-1.5">
+                        <div className="flex items-center gap-2 font-black text-sm text-[var(--accent-text)]">
                           <span>{intelReport.nextAction.action}</span>
-                          <ArrowRight className="h-3.5 w-3.5 text-blue-400" />
-                          <span className="text-xs font-semibold text-white truncate">{intelReport.nextAction.actionDetail}</span>
+                          <ArrowRight className="h-3.5 w-3.5 text-[var(--accent-text)]" />
+                          <span className="text-xs font-semibold text-[var(--text)] truncate">{intelReport.nextAction.actionDetail}</span>
                         </div>
-                        <p className="text-[11px] text-slate-300 leading-normal">
+                        <p className="text-[11px] text-[var(--text-muted)] leading-normal">
                           <strong>Rationale:</strong> {intelReport.nextAction.priorityReason}
                         </p>
                       </div>
                     </div>
 
                     {/* Sales Talk Track with 1-Click Copy */}
-                    <div className="bg-slate-950 p-4 rounded-xl border border-white/10 space-y-3">
+                    <div className="bg-[var(--surface-sunken)] p-4 rounded-xl border border-[var(--border)] space-y-3">
                       <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
-                          <MessageSquare className="h-3.5 w-3.5 text-purple-400" />
+                        <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest flex items-center gap-1.5">
+                          <MessageSquare className="h-3.5 w-3.5 text-[var(--accent-text)]" />
                           <span>Grounded Sales Talk Track</span>
                         </span>
                         <button
@@ -2014,22 +2014,22 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
                             setCopiedScript(true);
                             setTimeout(() => setCopiedScript(false), 2000);
                           }}
-                          className="text-[10px] text-purple-300 hover:text-white flex items-center gap-1 bg-purple-900/30 px-2 py-1 rounded border border-purple-800/40 cursor-pointer transition-all"
+                          className="text-[10px] text-[var(--accent-text)] hover:text-[var(--text)] flex items-center gap-1 bg-purple-900/30 px-2 py-1 rounded border border-purple-800/40 cursor-pointer transition-all"
                         >
-                          {copiedScript ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
+                          {copiedScript ? <Check className="h-3 w-3 text-[var(--success)]" /> : <Copy className="h-3 w-3" />}
                           <span>{copiedScript ? 'Copied!' : 'Copy Script'}</span>
                         </button>
                       </div>
 
-                      <div className="p-3 bg-purple-950/20 border border-purple-900/30 rounded-lg">
-                        <p className="italic text-slate-200 leading-relaxed text-[11px]">
+                      <div className="p-3 bg-[var(--accent-soft)] border border-purple-900/30 rounded-lg">
+                        <p className="italic text-[var(--text)] leading-relaxed text-[11px]">
                           "{intelReport.salesTalkTrack.script}"
                         </p>
                       </div>
 
                       <div className="space-y-1">
-                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Key Call Points:</span>
-                        <ul className="list-disc list-inside space-y-0.5 text-[10px] text-slate-400">
+                        <span className="text-[9px] font-bold text-[var(--text-muted)] uppercase tracking-wider block">Key Call Points:</span>
+                        <ul className="list-disc list-inside space-y-0.5 text-[10px] text-[var(--text-muted)]">
                           {intelReport.salesTalkTrack.keyPoints.map((pt, idx) => (
                             <li key={idx}>{pt}</li>
                           ))}
@@ -2038,44 +2038,44 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
                     </div>
 
                     {/* 12 Primary Questions Analysis */}
-                    <div className="bg-slate-950 p-4 rounded-xl border border-white/10 space-y-2.5">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5 pb-2 border-b border-white/5">
-                        <Compass className="h-3.5 w-3.5 text-blue-400" />
+                    <div className="bg-[var(--surface-sunken)] p-4 rounded-xl border border-[var(--border)] space-y-2.5">
+                      <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest flex items-center gap-1.5 pb-2 border-b border-[var(--border)]">
+                        <Compass className="h-3.5 w-3.5 text-[var(--accent-text)]" />
                         <span>Executive Discovery Answers (12 Pillars)</span>
                       </span>
 
                       <div className="space-y-2 text-[11px]">
-                        <div className="bg-slate-900/60 p-2.5 rounded-lg border border-white/5">
-                          <span className="text-[10px] font-bold text-slate-400 block">Problem being solved:</span>
-                          <p className="text-slate-200 mt-0.5">{intelReport.primaryQuestions.whatProblemSolving}</p>
+                        <div className="bg-[var(--surface)] p-2.5 rounded-lg border border-[var(--border)]">
+                          <span className="text-[10px] font-bold text-[var(--text-muted)] block">Problem being solved:</span>
+                          <p className="text-[var(--text)] mt-0.5">{intelReport.primaryQuestions.whatProblemSolving}</p>
                         </div>
-                        <div className="bg-slate-900/60 p-2.5 rounded-lg border border-white/5">
-                          <span className="text-[10px] font-bold text-slate-400 block">Why they need our product:</span>
-                          <p className="text-slate-200 mt-0.5">{intelReport.primaryQuestions.whyNeedProduct}</p>
+                        <div className="bg-[var(--surface)] p-2.5 rounded-lg border border-[var(--border)]">
+                          <span className="text-[10px] font-bold text-[var(--text-muted)] block">Why they need our product:</span>
+                          <p className="text-[var(--text)] mt-0.5">{intelReport.primaryQuestions.whyNeedProduct}</p>
                         </div>
-                        <div className="bg-slate-900/60 p-2.5 rounded-lg border border-white/5">
-                          <span className="text-[10px] font-bold text-slate-400 block">What salesperson should do next:</span>
-                          <p className="text-slate-200 mt-0.5">{intelReport.primaryQuestions.whatShouldSalespersonDoNext}</p>
+                        <div className="bg-[var(--surface)] p-2.5 rounded-lg border border-[var(--border)]">
+                          <span className="text-[10px] font-bold text-[var(--text-muted)] block">What salesperson should do next:</span>
+                          <p className="text-[var(--text)] mt-0.5">{intelReport.primaryQuestions.whatShouldSalespersonDoNext}</p>
                         </div>
                       </div>
                     </div>
 
                     {/* Interactive Rep Assistant Q&A */}
-                    <div className="bg-slate-950 p-4 rounded-xl border border-white/10 space-y-3">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
-                        <Brain className="h-3.5 w-3.5 text-blue-400" />
+                    <div className="bg-[var(--surface-sunken)] p-4 rounded-xl border border-[var(--border)] space-y-3">
+                      <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest flex items-center gap-1.5">
+                        <Brain className="h-3.5 w-3.5 text-[var(--accent-text)]" />
                         <span>Ask Intelligence Assistant</span>
                       </span>
 
                       {chatReplies.length > 0 && (
                         <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
                           {chatReplies.map((item, idx) => (
-                            <div key={idx} className="bg-slate-900 p-2 rounded-lg border border-white/5 space-y-1">
-                              <div className="flex items-center justify-between text-[10px] text-slate-400 font-bold">
-                                <span className="text-blue-300">Q: {item.q}</span>
+                            <div key={idx} className="bg-[var(--surface)] p-2 rounded-lg border border-[var(--border)] space-y-1">
+                              <div className="flex items-center justify-between text-[10px] text-[var(--text-muted)] font-bold">
+                                <span className="text-[var(--accent-text)]">Q: {item.q}</span>
                                 <span>{item.time}</span>
                               </div>
-                              <p className="text-[11px] text-slate-200 leading-normal">{item.a}</p>
+                              <p className="text-[11px] text-[var(--text)] leading-normal">{item.a}</p>
                             </div>
                           ))}
                         </div>
@@ -2088,7 +2088,7 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
                           onChange={(e) => setChatQuestion(e.target.value)}
                           placeholder="Ask advice on objection handling, pricing..."
                           disabled={isAskingQuestion}
-                          className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
+                          className="flex-1 bg-[var(--surface)] border border-[var(--border)] rounded-xl px-3 py-1.5 text-xs text-[var(--text)] placeholder:text-[var(--text-subtle)] focus:outline-none focus:border-blue-500"
                         />
                         <button
                           type="submit"
@@ -2107,18 +2107,18 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
             {drawerSubtab === 'bant' && (
               /* TAB 2: BANT QUALIFICATION & DETAILS */
               <div className="space-y-4">
-                <div className="bg-slate-950 p-4 rounded-xl border border-white/10 space-y-3">
+                <div className="bg-[var(--surface-sunken)] p-4 rounded-xl border border-[var(--border)] space-y-3">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-1.5">
-                      <Target className="h-4 w-4 text-emerald-400" />
+                    <span className="text-xs font-black text-[var(--text)] uppercase tracking-wider flex items-center gap-1.5">
+                      <Target className="h-4 w-4 text-[var(--success)]" />
                       <span>BANT Scoring Analysis</span>
                     </span>
-                    <span className="font-mono text-xs font-bold text-emerald-400">
+                    <span className="font-mono text-xs font-bold text-[var(--success)]">
                       Score: {selectedItem.score || 75}/100
                     </span>
                   </div>
 
-                  <div className="h-2 rounded-full bg-slate-800 overflow-hidden">
+                  <div className="h-2 rounded-full bg-[var(--surface-sunken)] overflow-hidden">
                     <div 
                       className={`h-full rounded-full transition-all duration-300 ${
                         (selectedItem.score || 75) >= 80 ? 'bg-rose-500' : (selectedItem.score || 75) >= 60 ? 'bg-amber-500' : 'bg-blue-500'
@@ -2129,55 +2129,55 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="bg-slate-950 p-3.5 rounded-xl border border-white/10 space-y-1">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Budget (B)</span>
-                    <p className="text-sm font-black font-mono text-emerald-400">
+                  <div className="bg-[var(--surface-sunken)] p-3.5 rounded-xl border border-[var(--border)] space-y-1">
+                    <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider block">Budget (B)</span>
+                    <p className="text-sm font-black font-mono text-[var(--success)]">
                       ${(Number(selectedItem.qualification?.budget) || selectedItem.value).toLocaleString()}
                     </p>
-                    <span className="text-[10px] text-slate-500">Confirmed allocation</span>
+                    <span className="text-[10px] text-[var(--text-subtle)]">Confirmed allocation</span>
                   </div>
 
-                  <div className="bg-slate-950 p-3.5 rounded-xl border border-white/10 space-y-1">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Authority (A)</span>
-                    <p className="text-xs font-bold text-slate-200 capitalize">
+                  <div className="bg-[var(--surface-sunken)] p-3.5 rounded-xl border border-[var(--border)] space-y-1">
+                    <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider block">Authority (A)</span>
+                    <p className="text-xs font-bold text-[var(--text)] capitalize">
                       {selectedItem.qualification?.authority?.replace('_', ' ') || 'Not recorded'}
                     </p>
-                    <span className="text-[10px] text-slate-500">{selectedItem.title || 'Executive'}</span>
+                    <span className="text-[10px] text-[var(--text-subtle)]">{selectedItem.title || 'Executive'}</span>
                   </div>
 
-                  <div className="bg-slate-950 p-3.5 rounded-xl border border-white/10 space-y-1 col-span-2">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Need (N)</span>
-                    <p className="text-xs text-slate-200 leading-relaxed">
+                  <div className="bg-[var(--surface-sunken)] p-3.5 rounded-xl border border-[var(--border)] space-y-1 col-span-2">
+                    <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider block">Need (N)</span>
+                    <p className="text-xs text-[var(--text)] leading-relaxed">
                       {selectedItem.qualification?.need || selectedItem.statedProblems?.[0] || 'Not recorded'}
                     </p>
                   </div>
 
-                  <div className="bg-slate-950 p-3.5 rounded-xl border border-white/10 space-y-1 col-span-2">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Timeline (T)</span>
-                    <p className="text-xs font-semibold text-slate-200 capitalize">
+                  <div className="bg-[var(--surface-sunken)] p-3.5 rounded-xl border border-[var(--border)] space-y-1 col-span-2">
+                    <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider block">Timeline (T)</span>
+                    <p className="text-xs font-semibold text-[var(--text)] capitalize">
                       {selectedItem.qualification?.timeline || '1-3 months'}
                     </p>
                   </div>
                 </div>
 
                 {/* Contact Information */}
-                <div className="bg-slate-950 p-4 rounded-xl border border-white/10 space-y-2">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Contact Information</span>
+                <div className="bg-[var(--surface-sunken)] p-4 rounded-xl border border-[var(--border)] space-y-2">
+                  <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider block">Contact Information</span>
                   <div className="space-y-1.5 text-xs">
                     {selectedItem.email && (
-                      <div className="flex items-center gap-2 text-slate-300">
-                        <Mail className="h-3.5 w-3.5 text-blue-400" />
+                      <div className="flex items-center gap-2 text-[var(--text-muted)]">
+                        <Mail className="h-3.5 w-3.5 text-[var(--accent-text)]" />
                         <span>{selectedItem.email}</span>
                       </div>
                     )}
                     {selectedItem.phone && (
-                      <div className="flex items-center gap-2 text-slate-300">
-                        <Phone className="h-3.5 w-3.5 text-emerald-400" />
+                      <div className="flex items-center gap-2 text-[var(--text-muted)]">
+                        <Phone className="h-3.5 w-3.5 text-[var(--success)]" />
                         <span>{selectedItem.phone}</span>
                       </div>
                     )}
                     {selectedItem.source && (
-                      <div className="flex items-center gap-2 text-slate-300">
+                      <div className="flex items-center gap-2 text-[var(--text-muted)]">
                         {getSourceIcon(selectedItem.source)}
                         <span className="capitalize">{selectedItem.source}</span>
                       </div>
@@ -2190,15 +2190,15 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
             {drawerSubtab === 'tasks' && (
               /* TAB 3: FOLLOW-UP TASKS */
               <div className="space-y-4">
-                <form onSubmit={handleCreateTask} className="bg-slate-950 p-3.5 rounded-xl border border-white/10 space-y-2">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Schedule Follow-up Task</span>
+                <form onSubmit={handleCreateTask} className="bg-[var(--surface-sunken)] p-3.5 rounded-xl border border-[var(--border)] space-y-2">
+                  <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider block">Schedule Follow-up Task</span>
                   <input
                     type="text"
                     required
                     value={newTaskTitle}
                     onChange={(e) => setNewTaskTitle(e.target.value)}
                     placeholder="e.g. Call prospect to confirm SLA requirements..."
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
+                    className="w-full bg-[var(--surface)] border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs text-[var(--text)] placeholder:text-[var(--text-subtle)] focus:outline-none focus:border-blue-500"
                   />
                   <div className="flex items-center gap-2">
                     <input
@@ -2206,12 +2206,12 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
                       value={newTaskDueDate}
                       onChange={(e) => setNewTaskDueDate(e.target.value)}
                       placeholder="Due (e.g. Tomorrow 2pm)"
-                      className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-1 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
+                      className="flex-1 bg-[var(--surface)] border border-[var(--border)] rounded-lg px-3 py-1 text-xs text-[var(--text)] placeholder:text-[var(--text-subtle)] focus:outline-none focus:border-blue-500"
                     />
                     <select
                       value={newTaskPriority}
                       onChange={(e) => setNewTaskPriority(e.target.value as any)}
-                      className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-xs text-white focus:outline-none"
+                      className="bg-[var(--surface)] border border-[var(--border)] rounded-lg px-2 py-1 text-xs text-[var(--text)] focus:outline-none"
                     >
                       <option value="urgent">Urgent</option>
                       <option value="high">High</option>
@@ -2229,7 +2229,7 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
 
                 <div className="space-y-2">
                   {drawerTasks.length === 0 ? (
-                    <div className="p-8 border border-dashed border-slate-800 rounded-xl text-center text-slate-500 text-xs">
+                    <div className="p-8 border border-dashed border-[var(--border)] rounded-xl text-center text-[var(--text-subtle)] text-xs">
                       No follow-up tasks currently pending.
                     </div>
                   ) : (
@@ -2237,26 +2237,26 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
                       <div 
                         key={t.id} 
                         className={`p-3 rounded-xl border flex items-center justify-between gap-2 ${
-                          t.completed ? 'bg-slate-950/40 border-white/5 opacity-60' : 'bg-slate-950 border-white/10'
+                          t.completed ? 'bg-[var(--surface-sunken)] border-[var(--border)] opacity-60' : 'bg-[var(--surface-sunken)] border-[var(--border)]'
                         }`}
                       >
                         <div className="flex items-center gap-2.5">
                           <button
                             onClick={() => handleToggleTask(t.id, t.completed)}
-                            className="text-slate-400 hover:text-white cursor-pointer"
+                            className="text-[var(--text-muted)] hover:text-[var(--text)] cursor-pointer"
                           >
-                            {t.completed ? <CheckCircle2 className="h-4 w-4 text-emerald-400" /> : <Square className="h-4 w-4" />}
+                            {t.completed ? <CheckCircle2 className="h-4 w-4 text-[var(--success)]" /> : <Square className="h-4 w-4" />}
                           </button>
                           <div>
-                            <p className={`text-xs font-semibold ${t.completed ? 'line-through text-slate-500' : 'text-slate-200'}`}>
+                            <p className={`text-xs font-semibold ${t.completed ? 'line-through text-[var(--text-subtle)]' : 'text-[var(--text)]'}`}>
                               {t.title}
                             </p>
-                            <span className="text-[10px] text-slate-500">Due: {t.dueDate || 'Soon'}</span>
+                            <span className="text-[10px] text-[var(--text-subtle)]">Due: {t.dueDate || 'Soon'}</span>
                           </div>
                         </div>
 
                         <span className={`text-[9px] uppercase px-1.5 py-0.2 rounded border font-bold ${
-                          t.priority === 'urgent' ? 'bg-rose-500/20 text-rose-300 border-rose-500/30' : 'bg-slate-800 text-slate-400 border-slate-700'
+                          t.priority === 'urgent' ? 'bg-rose-500/20 text-[var(--danger)] border-rose-500/30' : 'bg-[var(--surface-sunken)] text-[var(--text-muted)] border-[var(--border)]'
                         }`}>
                           {t.priority}
                         </span>
@@ -2270,23 +2270,23 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
             {drawerSubtab === 'activities' && (
               /* TAB 4: AUDIT TRAIL & ACTIVITY LOGS */
               <div className="space-y-3">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block pb-1 border-b border-white/5">
+                <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest block pb-1 border-b border-[var(--border)]">
                   CRM Audit History
                 </span>
                 {drawerActivities.length === 0 ? (
-                  <div className="p-8 border border-dashed border-slate-800 rounded-xl text-center text-slate-500 text-xs">
+                  <div className="p-8 border border-dashed border-[var(--border)] rounded-xl text-center text-[var(--text-subtle)] text-xs">
                     No activity logs recorded yet.
                   </div>
                 ) : (
                   <div className="space-y-2.5">
                     {drawerActivities.map((act) => (
-                      <div key={act.id} className="p-3 bg-slate-950 rounded-xl border border-white/5 space-y-1">
-                        <div className="flex items-center justify-between text-[10px] text-slate-400">
-                          <span className="font-bold text-blue-300">{act.title}</span>
+                      <div key={act.id} className="p-3 bg-[var(--surface-sunken)] rounded-xl border border-[var(--border)] space-y-1">
+                        <div className="flex items-center justify-between text-[10px] text-[var(--text-muted)]">
+                          <span className="font-bold text-[var(--accent-text)]">{act.title}</span>
                           <span>{new Date(act.timestamp).toLocaleDateString()}</span>
                         </div>
-                        <p className="text-[11px] text-slate-300 leading-normal">{act.description}</p>
-                        <span className="text-[9px] text-slate-500 block">Actor: {act.actor}</span>
+                        <p className="text-[11px] text-[var(--text-muted)] leading-normal">{act.description}</p>
+                        <span className="text-[9px] text-[var(--text-subtle)] block">Actor: {act.actor}</span>
                       </div>
                     ))}
                   </div>
@@ -2297,7 +2297,7 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
           </div>
 
           {/* Drawer Footer Actions */}
-          <div className="p-4 bg-slate-950 border-t border-white/10 flex items-center justify-between shrink-0">
+          <div className="p-4 bg-[var(--surface-sunken)] border-t border-[var(--border)] flex items-center justify-between shrink-0">
             {selectedItem.type === 'lead' && !selectedItem.isConverted ? (
               <button
                 onClick={() => initiateConversion(selectedItem)}
@@ -2307,7 +2307,7 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
                 <span>Convert Lead to Active Deal</span>
               </button>
             ) : (
-              <span className="text-[10px] text-slate-500 font-mono">
+              <span className="text-[10px] text-[var(--text-subtle)] font-mono">
                 Opportunity Managed in Realtime
               </span>
             )}
@@ -2315,7 +2315,7 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setSelectedItem(null)}
-                className="px-3.5 py-1.5 rounded-xl border border-slate-700 hover:bg-slate-800 text-slate-300 text-xs font-semibold cursor-pointer"
+                className="px-3.5 py-1.5 rounded-xl border border-[var(--border)] hover:bg-[var(--surface-sunken)] text-[var(--text-muted)] text-xs font-semibold cursor-pointer"
               >
                 Close Drawer
               </button>
@@ -2328,16 +2328,16 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
       {/* CREATE NEW LEAD / OPPORTUNITY MODAL (ZERO MOCK DATA, DUPLICATE CHECKED)   */}
       {/* ========================================================================= */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs select-none">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl max-w-xl w-full overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-            <div className="px-5 py-4 border-b border-slate-800 bg-slate-950 flex items-center justify-between">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[var(--surface)] backdrop-blur-xs select-none">
+          <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl shadow-2xl max-w-xl w-full overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="px-5 py-4 border-b border-[var(--border)] bg-[var(--surface-sunken)] flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Building2 className="h-4.5 w-4.5 text-blue-400" />
-                <h3 className="text-sm font-black text-white">Create Inbound Lead or Opportunity</h3>
+                <Building2 className="h-4.5 w-4.5 text-[var(--accent-text)]" />
+                <h3 className="text-sm font-black text-[var(--text)]">Create Inbound Lead or Opportunity</h3>
               </div>
               <button
                 onClick={() => setShowAddModal(false)}
-                className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors cursor-pointer"
+                className="p-1 rounded-lg hover:bg-[var(--surface-sunken)] text-[var(--text-muted)] hover:text-[var(--text)] transition-colors cursor-pointer"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -2347,73 +2347,73 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
               
               {/* Duplicate Detection Alert */}
               {isCheckingDuplicate && (
-                <div className="p-2.5 rounded-xl bg-blue-950/40 border border-blue-500/30 flex items-center gap-2 text-blue-300 text-[11px]">
+                <div className="p-2.5 rounded-xl bg-[var(--accent-soft)] border border-blue-500/30 flex items-center gap-2 text-[var(--accent-text)] text-[11px]">
                   <RefreshCw className="h-3.5 w-3.5 animate-spin" />
                   <span>Checking CRM database for duplicates...</span>
                 </div>
               )}
               {duplicateWarning && (
-                <div className="p-3 rounded-xl bg-amber-950/40 border border-amber-500/40 flex items-start gap-2 text-amber-300 text-[11px]">
-                  <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
+                <div className="p-3 rounded-xl bg-[var(--warning-soft)] border border-amber-500/40 flex items-start gap-2 text-[var(--warning)] text-[11px]">
+                  <AlertTriangle className="h-4 w-4 text-[var(--warning)] shrink-0 mt-0.5" />
                   <span>{duplicateWarning}</span>
                 </div>
               )}
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Prospect Contact Name *</label>
+                  <label className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider">Prospect Contact Name *</label>
                   <input
                     type="text"
                     required
                     value={newForm.name}
                     onChange={(e) => setNewForm({ ...newForm, name: e.target.value })}
                     placeholder="e.g. Dr. Laura Vance"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white placeholder-slate-600 focus:outline-none focus:border-blue-500"
+                    className="w-full bg-[var(--surface-sunken)] border border-[var(--border)] rounded-xl px-3 py-2 text-[var(--text)] placeholder:text-[var(--text-subtle)] focus:outline-none focus:border-blue-500"
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Company / Business Name *</label>
+                  <label className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider">Company / Business Name *</label>
                   <input
                     type="text"
                     required
                     value={newForm.company}
                     onChange={(e) => setNewForm({ ...newForm, company: e.target.value })}
                     placeholder="e.g. Vanguard Logistics"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white placeholder-slate-600 focus:outline-none focus:border-blue-500"
+                    className="w-full bg-[var(--surface-sunken)] border border-[var(--border)] rounded-xl px-3 py-2 text-[var(--text)] placeholder:text-[var(--text-subtle)] focus:outline-none focus:border-blue-500"
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Email Address</label>
+                  <label className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider">Email Address</label>
                   <input
                     type="email"
                     value={newForm.email}
                     onChange={(e) => setNewForm({ ...newForm, email: e.target.value })}
                     placeholder="laura@vanguard.com"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white placeholder-slate-600 focus:outline-none focus:border-blue-500"
+                    className="w-full bg-[var(--surface-sunken)] border border-[var(--border)] rounded-xl px-3 py-2 text-[var(--text)] placeholder:text-[var(--text-subtle)] focus:outline-none focus:border-blue-500"
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Phone / WhatsApp</label>
+                  <label className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider">Phone / WhatsApp</label>
                   <input
                     type="tel"
                     value={newForm.phone}
                     onChange={(e) => setNewForm({ ...newForm, phone: e.target.value })}
                     placeholder="+1 (555) 349-2041"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white placeholder-slate-600 focus:outline-none focus:border-blue-500"
+                    className="w-full bg-[var(--surface-sunken)] border border-[var(--border)] rounded-xl px-3 py-2 text-[var(--text)] placeholder:text-[var(--text-subtle)] focus:outline-none focus:border-blue-500"
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Channel Source</label>
+                  <label className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider">Channel Source</label>
                   <select
                     value={newForm.source}
                     onChange={(e) => setNewForm({ ...newForm, source: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-blue-500"
+                    className="w-full bg-[var(--surface-sunken)] border border-[var(--border)] rounded-xl px-3 py-2 text-[var(--text)] focus:outline-none focus:border-blue-500"
                   >
                     <option value="whatsapp">WhatsApp Business</option>
                     <option value="voice">Voice Dialer Softphone</option>
@@ -2424,30 +2424,30 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
                   </select>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Estimated value ($)</label>
+                  <label className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider">Estimated value ($)</label>
                   <input
                     type="text"
                     value={newForm.value}
                     onChange={(e) => setNewForm({ ...newForm, value: e.target.value })}
                     placeholder="e.g. 5000"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white placeholder-slate-600 focus:outline-none focus:border-blue-500 font-mono"
+                    className="w-full bg-[var(--surface-sunken)] border border-[var(--border)] rounded-xl px-3 py-2 text-[var(--text)] placeholder:text-[var(--text-subtle)] focus:outline-none focus:border-blue-500 font-mono"
                   />
                 </div>
               </div>
 
               {/* BANT Qualification Section */}
-              <div className="p-3 bg-slate-950 rounded-xl border border-white/5 space-y-3">
-                <span className="text-[10px] font-bold text-blue-400 uppercase tracking-wider block">
+              <div className="p-3 bg-[var(--surface-sunken)] rounded-xl border border-[var(--border)] space-y-3">
+                <span className="text-[10px] font-bold text-[var(--accent-text)] uppercase tracking-wider block">
                   BANT Qualification Details
                 </span>
 
                 <div className="grid grid-cols-2 gap-2.5">
                   <div className="space-y-1">
-                    <label className="text-[10px] font-medium text-slate-400">Authority</label>
+                    <label className="text-[10px] font-medium text-[var(--text-muted)]">Authority</label>
                     <select
                       value={newForm.authority}
                       onChange={(e) => setNewForm({ ...newForm, authority: e.target.value })}
-                      className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-white focus:outline-none"
+                      className="w-full bg-[var(--surface)] border border-[var(--border)] rounded-lg px-2.5 py-1.5 text-[var(--text)] focus:outline-none"
                     >
                       <option value="decision_maker">Decision Maker</option>
                       <option value="influencer">Influencer</option>
@@ -2457,11 +2457,11 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
                   </div>
 
                   <div className="space-y-1">
-                    <label className="text-[10px] font-medium text-slate-400">Decision Timeline</label>
+                    <label className="text-[10px] font-medium text-[var(--text-muted)]">Decision Timeline</label>
                     <select
                       value={newForm.timeline}
                       onChange={(e) => setNewForm({ ...newForm, timeline: e.target.value })}
-                      className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-white focus:outline-none"
+                      className="w-full bg-[var(--surface)] border border-[var(--border)] rounded-lg px-2.5 py-1.5 text-[var(--text)] focus:outline-none"
                     >
                       <option value="immediate">Immediate (&lt; 1 month)</option>
                       <option value="1-3 months">1 - 3 months</option>
@@ -2471,22 +2471,22 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-[10px] font-medium text-slate-400">Prospect Stated Need / Challenge</label>
+                  <label className="text-[10px] font-medium text-[var(--text-muted)]">Prospect Stated Need / Challenge</label>
                   <input
                     type="text"
                     value={newForm.need}
                     onChange={(e) => setNewForm({ ...newForm, need: e.target.value })}
                     placeholder="What do they need?"
-                    className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-white placeholder-slate-600 focus:outline-none"
+                    className="w-full bg-[var(--surface)] border border-[var(--border)] rounded-lg px-2.5 py-1.5 text-[var(--text)] placeholder:text-[var(--text-subtle)] focus:outline-none"
                   />
                 </div>
               </div>
 
-              <div className="pt-3 border-t border-slate-800 flex items-center justify-end gap-2">
+              <div className="pt-3 border-t border-[var(--border)] flex items-center justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => setShowAddModal(false)}
-                  className="px-4 py-2 border border-slate-700 hover:bg-slate-800 text-slate-300 rounded-xl text-xs font-semibold cursor-pointer"
+                  className="px-4 py-2 border border-[var(--border)] hover:bg-[var(--surface-sunken)] text-[var(--text-muted)] rounded-xl text-xs font-semibold cursor-pointer"
                 >
                   Cancel
                 </button>
@@ -2506,14 +2506,14 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
       {/* CONVERT LEAD TRANSACTION MODAL (ATOMIC DEAL + CONTACT + COMPANY)          */}
       {/* ========================================================================= */}
       {showConvertModal && convertingItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs select-none">
-          <div className="bg-slate-900 border border-indigo-500/40 rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-            <div className="px-5 py-4 border-b border-slate-800 bg-slate-950 flex items-center justify-between">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[var(--surface)] backdrop-blur-xs select-none">
+          <div className="bg-[var(--surface)] border border-indigo-500/40 rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="px-5 py-4 border-b border-[var(--border)] bg-[var(--surface-sunken)] flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <ArrowUpRight className="h-5 w-5 text-indigo-400" />
+                <ArrowUpRight className="h-5 w-5 text-[var(--accent-text)]" />
                 <div>
-                  <h3 className="text-sm font-black text-white">Convert Lead to Active Deal</h3>
-                  <p className="text-[10px] text-slate-400">
+                  <h3 className="text-sm font-black text-[var(--text)]">Convert Lead to Active Deal</h3>
+                  <p className="text-[10px] text-[var(--text-muted)]">
                     Atomically creates Contact, Company & Deal records with transaction safety
                   </p>
                 </div>
@@ -2523,47 +2523,47 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
                   setShowConvertModal(false);
                   setConvertingItem(null);
                 }}
-                className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors cursor-pointer"
+                className="p-1 rounded-lg hover:bg-[var(--surface-sunken)] text-[var(--text-muted)] hover:text-[var(--text)] transition-colors cursor-pointer"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
 
             <form onSubmit={handleExecuteConversion} className="p-5 space-y-4 text-left text-xs">
-              <div className="p-3 rounded-xl bg-indigo-950/30 border border-indigo-500/20 space-y-1">
-                <span className="text-[10px] font-bold text-indigo-300 uppercase tracking-wider block">Lead Record to Convert:</span>
-                <p className="text-xs font-bold text-white">{convertingItem.name} — {convertingItem.company}</p>
-                <p className="text-[10px] text-slate-400">BANT Score: {convertingItem.score || 80}/100 • Source: {convertingItem.source || 'Inbound'}</p>
+              <div className="p-3 rounded-xl bg-[var(--accent-soft)] border border-indigo-500/20 space-y-1">
+                <span className="text-[10px] font-bold text-[var(--accent-text)] uppercase tracking-wider block">Lead Record to Convert:</span>
+                <p className="text-xs font-bold text-[var(--text)]">{convertingItem.name} — {convertingItem.company}</p>
+                <p className="text-[10px] text-[var(--text-muted)]">BANT Score: {convertingItem.score || 80}/100 • Source: {convertingItem.source || 'Inbound'}</p>
               </div>
 
               <div className="space-y-1">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Deal Opportunity Title *</label>
+                <label className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider">Deal Opportunity Title *</label>
                 <input
                   type="text"
                   required
                   value={convertForm.dealTitle}
                   onChange={(e) => setConvertForm({ ...convertForm, dealTitle: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-[var(--surface-sunken)] border border-[var(--border)] rounded-xl px-3 py-2 text-[var(--text)] focus:outline-none focus:border-indigo-500"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Deal value ($)</label>
+                  <label className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider">Deal value ($)</label>
                   <input
                     type="text"
                     required
                     value={convertForm.dealValue}
                     onChange={(e) => setConvertForm({ ...convertForm, dealValue: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono focus:outline-none focus:border-indigo-500"
+                    className="w-full bg-[var(--surface-sunken)] border border-[var(--border)] rounded-xl px-3 py-2 text-[var(--text)] font-mono focus:outline-none focus:border-indigo-500"
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Target Stage</label>
+                  <label className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider">Target Stage</label>
                   <select
                     value={convertForm.dealStage}
                     onChange={(e) => setConvertForm({ ...convertForm, dealStage: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
+                    className="w-full bg-[var(--surface-sunken)] border border-[var(--border)] rounded-xl px-3 py-2 text-[var(--text)] focus:outline-none focus:border-indigo-500"
                   >
                     <option value="qualified">Qualified</option>
                     <option value="proposal">Proposal Sent</option>
@@ -2573,14 +2573,14 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
                 </div>
               </div>
 
-              <div className="pt-3 border-t border-slate-800 flex items-center justify-end gap-2">
+              <div className="pt-3 border-t border-[var(--border)] flex items-center justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => {
                     setShowConvertModal(false);
                     setConvertingItem(null);
                   }}
-                  className="px-4 py-2 border border-slate-700 hover:bg-slate-800 text-slate-300 rounded-xl text-xs font-semibold cursor-pointer"
+                  className="px-4 py-2 border border-[var(--border)] hover:bg-[var(--surface-sunken)] text-[var(--text-muted)] rounded-xl text-xs font-semibold cursor-pointer"
                 >
                   Cancel
                 </button>
@@ -2600,17 +2600,17 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
       {/* IMPORT PIPELINE MODAL (CSV & JSON INGESTION ENGINE)                      */}
       {/* ========================================================================= */}
       {showImportModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs select-none">
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl max-w-2xl w-full overflow-hidden animate-in fade-in zoom-in-95 duration-150 flex flex-col max-h-[90vh]">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[var(--surface)] backdrop-blur-xs select-none">
+          <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl shadow-2xl max-w-2xl w-full overflow-hidden animate-in fade-in zoom-in-95 duration-150 flex flex-col max-h-[90vh]">
             {/* Header */}
-            <div className="px-5 py-4 border-b border-slate-800 bg-slate-950 flex items-center justify-between shrink-0">
+            <div className="px-5 py-4 border-b border-[var(--border)] bg-[var(--surface-sunken)] flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2.5">
-                <div className="h-8 w-8 rounded-xl bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
+                <div className="h-8 w-8 rounded-xl bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-[var(--accent-text)]">
                   <FileUp className="h-4 w-4" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-black text-white">Import Sales Pipeline Records</h3>
-                  <p className="text-[10px] text-slate-400">
+                  <h3 className="text-sm font-black text-[var(--text)]">Import Sales Pipeline Records</h3>
+                  <p className="text-[10px] text-[var(--text-muted)]">
                     Upload leads and deals via standard CSV spreadsheet or JSON export
                   </p>
                 </div>
@@ -2623,7 +2623,7 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
                   setImportPreviewData([]);
                   setImportError(null);
                 }}
-                className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors cursor-pointer"
+                className="p-1 rounded-lg hover:bg-[var(--surface-sunken)] text-[var(--text-muted)] hover:text-[var(--text)] transition-colors cursor-pointer"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -2632,7 +2632,7 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
             {/* Modal Body */}
             <div className="p-6 space-y-4 overflow-y-auto flex-1 text-xs text-left">
               {/* File Upload Zone */}
-              <div className="border-2 border-dashed border-slate-700 hover:border-indigo-500/70 bg-slate-950/60 rounded-2xl p-6 text-center transition-colors">
+              <div className="border-2 border-dashed border-[var(--border)] hover:border-indigo-500/70 bg-[var(--surface-sunken)] rounded-2xl p-6 text-center transition-colors">
                 <input
                   type="file"
                   id="pipeline-file-input"
@@ -2644,19 +2644,19 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
                   htmlFor="pipeline-file-input"
                   className="cursor-pointer flex flex-col items-center justify-center gap-2"
                 >
-                  <div className="h-10 w-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
+                  <div className="h-10 w-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-[var(--accent-text)]">
                     <Upload className="h-5 w-5" />
                   </div>
                   <div>
-                    <span className="text-xs font-bold text-white hover:text-indigo-400 transition-colors">
+                    <span className="text-xs font-bold text-[var(--text)] hover:text-[var(--accent-text)] transition-colors">
                       {importFile ? importFile.name : 'Click to select CSV or JSON file'}
                     </span>
-                    <p className="text-[11px] text-slate-400 mt-0.5">
+                    <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
                       Supports columns: Name, Company, Email, Phone, Stage, Value, Source, Notes
                     </p>
                   </div>
                   {importFile && (
-                    <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 rounded-full mt-1">
+                    <span className="text-[10px] font-mono text-[var(--success)] bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 rounded-full mt-1">
                       File loaded: {(importFile.size / 1024).toFixed(1)} KB
                     </span>
                   )}
@@ -2665,22 +2665,22 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
 
               {/* Error Message */}
               {importError && (
-                <div className="p-3 rounded-xl bg-rose-950/50 border border-rose-500/40 text-rose-300 text-xs flex items-center gap-2">
-                  <AlertTriangle className="h-4 w-4 shrink-0 text-rose-400" />
+                <div className="p-3 rounded-xl bg-[var(--danger-soft)] border border-rose-500/40 text-[var(--danger)] text-xs flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4 shrink-0 text-[var(--danger)]" />
                   <span>{importError}</span>
                 </div>
               )}
 
               {/* Target Stage Override */}
               {importPreviewData.length > 0 && (
-                <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 space-y-2">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                <div className="p-4 rounded-xl bg-[var(--surface-sunken)] border border-[var(--border)] space-y-2">
+                  <label className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider block">
                     Target Pipeline Stage Assignment
                   </label>
                   <select
                     value={importTargetStage}
                     onChange={(e) => setImportTargetStage(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-indigo-500 cursor-pointer"
+                    className="w-full bg-[var(--surface)] border border-[var(--border)] rounded-xl px-3 py-2 text-[var(--text)] text-xs focus:outline-none focus:border-indigo-500 cursor-pointer"
                   >
                     <option value="auto">Auto-detect from file (or default to Inbound Leads)</option>
                     <option value="new_leads">Stage: Inbound Leads (New)</option>
@@ -2698,19 +2698,19 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
               {importPreviewData.length > 0 && (
                 <div className="space-y-2">
                   <div className="flex items-center justify-between text-xs">
-                    <span className="font-bold text-white flex items-center gap-1.5">
-                      <Table className="h-3.5 w-3.5 text-indigo-400" />
+                    <span className="font-bold text-[var(--text)] flex items-center gap-1.5">
+                      <Table className="h-3.5 w-3.5 text-[var(--accent-text)]" />
                       <span>Preview ({importPreviewData.length} total records detected)</span>
                     </span>
-                    <span className="text-[10px] font-mono text-slate-400">
+                    <span className="text-[10px] font-mono text-[var(--text-muted)]">
                       Showing first {Math.min(4, importPreviewData.length)} rows
                     </span>
                   </div>
 
-                  <div className="border border-slate-800 rounded-xl overflow-hidden bg-slate-950/80">
+                  <div className="border border-[var(--border)] rounded-xl overflow-hidden bg-[var(--surface-sunken)]">
                     <div className="overflow-x-auto">
                       <table className="w-full text-left text-[11px]">
-                        <thead className="bg-slate-900/90 text-slate-400 uppercase font-mono text-[9px] border-b border-slate-800">
+                        <thead className="bg-[var(--surface)] text-[var(--text-muted)] uppercase font-mono text-[9px] border-b border-[var(--border)]">
                           <tr>
                             <th className="px-3 py-2">Name</th>
                             <th className="px-3 py-2">Company</th>
@@ -2719,14 +2719,14 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
                             <th className="px-3 py-2">Stage</th>
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-800/60 text-slate-200">
+                        <tbody className="divide-y divide-[var(--border)] text-[var(--text)]">
                           {importPreviewData.slice(0, 4).map((row, idx) => (
                             <tr key={idx} className="hover:bg-white/[0.02]">
-                              <td className="px-3 py-2 font-medium text-white">{row.name}</td>
-                              <td className="px-3 py-2 text-slate-300">{row.company}</td>
-                              <td className="px-3 py-2 text-slate-400 font-mono text-[10px]">{row.email || '—'}</td>
-                              <td className="px-3 py-2 text-emerald-400 font-mono font-bold">${Number(row.value).toLocaleString()}</td>
-                              <td className="px-3 py-2 font-mono text-[10px] capitalize text-slate-400">{row.stage.replace('_', ' ')}</td>
+                              <td className="px-3 py-2 font-medium text-[var(--text)]">{row.name}</td>
+                              <td className="px-3 py-2 text-[var(--text-muted)]">{row.company}</td>
+                              <td className="px-3 py-2 text-[var(--text-muted)] font-mono text-[10px]">{row.email || '—'}</td>
+                              <td className="px-3 py-2 text-[var(--success)] font-mono font-bold">${Number(row.value).toLocaleString()}</td>
+                              <td className="px-3 py-2 font-mono text-[10px] capitalize text-[var(--text-muted)]">{row.stage.replace('_', ' ')}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -2738,7 +2738,7 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
             </div>
 
             {/* Footer Buttons */}
-            <div className="px-6 py-4 border-t border-slate-800 bg-slate-950 flex items-center justify-between shrink-0">
+            <div className="px-6 py-4 border-t border-[var(--border)] bg-[var(--surface-sunken)] flex items-center justify-between shrink-0">
               <button
                 type="button"
                 onClick={() => {
@@ -2747,7 +2747,7 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
                   setImportPreviewData([]);
                   setImportError(null);
                 }}
-                className="px-4 py-2 border border-slate-700 hover:bg-slate-800 text-slate-300 rounded-xl text-xs font-semibold cursor-pointer transition-colors"
+                className="px-4 py-2 border border-[var(--border)] hover:bg-[var(--surface-sunken)] text-[var(--text-muted)] rounded-xl text-xs font-semibold cursor-pointer transition-colors"
               >
                 Cancel
               </button>

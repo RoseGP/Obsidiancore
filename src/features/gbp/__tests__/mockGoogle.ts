@@ -7,7 +7,7 @@ export async function startMockGoogle(opts: { clientId: string; clientSecret: st
   const s = {
     codes: new Map<string, { challenge: string; redirect: string; scope: string }>(),
     access: new Map<string, number>(), refresh: new Set<string>(), revoked: [] as string[], refreshCalls: 0, accessTtl: 3600, refreshFails: false,
-    replies: new Map<string, any>(), lastPatch: null as any, posts: [] as any[], grantScope: 'https://www.googleapis.com/auth/business.manage openid email',
+    replies: new Map<string, any>(), lastPatch: null as any, adminsForbidden: false, posts: [] as any[], grantScope: 'https://www.googleapis.com/auth/business.manage openid email',
   };
   const reviews = (loc: string) => [5, 2, 4].map((stars, i) => ({
     name: `accounts/111/${loc}/reviews/r${loc.split('/')[1]}${i}`, reviewId: `r${i}`, reviewer: { displayName: ['Maria Lopez', 'Tom Hale', 'Ana Ruiz'][i], profilePhotoUrl: 'https://lh3.example/p.png' },
@@ -45,8 +45,16 @@ export async function startMockGoogle(opts: { clientId: string; clientSecret: st
     if (!authed(req)) return res.status(401).json({ error: { message: 'unauthenticated' } });
     if (!req.query.readMask) return res.status(400).json({ error: { message: 'readMask is required' } });
     res.json({ locations: [
-      { name: 'locations/1001', title: 'Acme Dental Downtown', categories: { primaryCategory: { displayName: 'Dentist' }, additionalCategories: [] }, storefrontAddress: { addressLines: ['1 Main St'], locality: 'Austin', administrativeArea: 'TX', postalCode: '78701' }, phoneNumbers: { primaryPhone: '+1 512 555 0100' }, websiteUri: 'https://acme.example', profile: { description: 'Family dentist.' }, regularHours: { periods: [{ openDay: 'MONDAY', openTime: { hours: 9 }, closeDay: 'MONDAY', closeTime: { hours: 17 } }] }, metadata: { mapsUri: 'https://maps.example/1001' } },
+      { name: 'locations/1001', title: 'Acme Dental Downtown', categories: { primaryCategory: { displayName: 'Dentist' }, additionalCategories: [] }, storefrontAddress: { addressLines: ['1 Main St'], locality: 'Austin', administrativeArea: 'TX', postalCode: '78701' }, phoneNumbers: { primaryPhone: '+1 512 555 0100' }, websiteUri: 'https://acme.example', profile: { description: 'Family dentist.' }, regularHours: { periods: [{ openDay: 'MONDAY', openTime: { hours: 9 }, closeDay: 'MONDAY', closeTime: { hours: 17 } }] }, metadata: { mapsUri: 'https://maps.example/1001', hasVoiceOfMerchant: true, hasPendingEdits: true, hasGoogleUpdated: false, placeId: 'ChIJtest' }, openInfo: { status: 'OPEN' } },
       { name: 'locations/1002', title: 'Acme Dental North', categories: { primaryCategory: { displayName: 'Dentist' } }, storefrontAddress: { addressLines: ['9 North Ave'], locality: 'Austin' } },
+    ] });
+  });
+  app.get('/v1/locations/:id/admins', (req, res) => {
+    if (!authed(req)) return res.status(401).end();
+    if (s.adminsForbidden) return res.status(403).json({ error: { message: 'The caller does not have permission' } });
+    res.json({ admins: [
+      { name: `locations/${req.params.id}/admins/1`, admin: 'Pat Owner', role: 'PRIMARY_OWNER' },
+      { name: `locations/${req.params.id}/admins/2`, admin: 'new.manager@example.com', role: 'MANAGER', pendingInvitation: true },
     ] });
   });
   app.patch('/v1/locations/:id', (req, res) => { if (!authed(req)) return res.status(401).end(); s.lastPatch = { id: req.params.id, mask: req.query.updateMask, body: req.body }; res.json({ name: `locations/${req.params.id}` }); });

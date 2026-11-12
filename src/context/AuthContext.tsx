@@ -4,6 +4,7 @@ import {
   GoogleAuthProvider, 
   signInWithPopup, 
   signInWithEmailAndPassword,
+  signInWithCustomToken,
   createUserWithEmailAndPassword,
   sendPasswordResetEmail,
   updateProfile,
@@ -165,6 +166,10 @@ interface AuthContextType {
   loginAsDemo: (role?: string, name?: string, email?: string) => void;
   loginWithSocial: (platform: string) => Promise<void>;
   loginWithEnterpriseSSO: (email: string, code?: string) => Promise<void>;
+  /** Asks the server to email a single-use sign-in link. Resolves with the server's (account-neutral) message. */
+  requestMagicLink: (email: string) => Promise<string>;
+  /** Redeems a sign-in link token (from /auth/magic#token=…) and signs in. */
+  signInWithMagicLink: (token: string) => Promise<void>;
   logout: () => Promise<void>;
 
   // Two-step sign-in: set when the password/Google step succeeded and a code is still needed.
@@ -516,6 +521,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } else if (err.message) {
         message = err.message;
       }
+      setAuthError(message);
+      throw new Error(message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Passwordless sign-in: the server emails a single-use link; redeeming it returns a Firebase custom token.
+  const requestMagicLink = async (email: string): Promise<string> => {
+    let res: Response;
+    try {
+      res = await fetch('/api/auth/magic-link/request', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: email.trim() }) });
+    } catch {
+      throw new Error('Couldn\u2019t reach the server. Check your connection and try again.');
+    }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data?.success === false) throw new Error(data?.error || 'Couldn\u2019t send a sign-in link. Try again.');
+    return String(data.message || 'If an account exists for that address, a sign-in link is on its way.');
+  };
+
+  const signInWithMagicLink = async (token: string) => {
+    setIsLoading(true);
+    setAuthError(null);
+    try {
+      if (!auth) throw new Error('Firebase Authentication is not initialized.');
+      let res: Response;
+      try {
+        res = await fetch('/api/auth/magic-link/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) });
+      } catch {
+        throw new Error('Couldn\u2019t reach the server. Check your connection and try again.');
+      }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.customToken) throw new Error(data?.error || 'This sign-in link couldn\u2019t be used. Ask for a new one.');
+      await signInWithCustomToken(auth, data.customToken);
+      setIsDemoSession(false);
+      setIsSessionLocked(false);
+      lastActivityRef.current = Date.now();
+    } catch (err: any) {
+      const message = err?.message || 'This sign-in link couldn\u2019t be used. Ask for a new one.';
       setAuthError(message);
       throw new Error(message);
     } finally {
@@ -900,6 +944,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       loginAsDemo,
       loginWithSocial,
       loginWithEnterpriseSSO,
+      requestMagicLink,
+      signInWithMagicLink,
       logout,
       mfaPending,
       completeMfaSignIn,

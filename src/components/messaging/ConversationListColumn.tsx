@@ -76,7 +76,7 @@ export const ConversationListColumn: React.FC<ConversationListColumnProps> = ({
   const getChannelBadge = (conv: MessagingConversation) => {
     if (conv.crmRecord) {
       return (
-        <span className="flex items-center gap-1 text-[10px] font-semibold text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
+        <span className="flex items-center gap-1 text-[10px] font-semibold text-[var(--warning)] bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
           <Briefcase className="w-2.5 h-2.5" /> {conv.crmRecord.type.toUpperCase()}
         </span>
       );
@@ -84,25 +84,25 @@ export const ConversationListColumn: React.FC<ConversationListColumnProps> = ({
     switch (conv.type) {
       case 'group':
         return (
-          <span className="flex items-center gap-1 text-[10px] font-semibold text-purple-400 bg-purple-500/10 px-1.5 py-0.5 rounded border border-purple-500/20">
+          <span className="flex items-center gap-1 text-[10px] font-semibold text-[var(--accent-text)] bg-purple-500/10 px-1.5 py-0.5 rounded border border-purple-500/20">
             <Users className="w-2.5 h-2.5" /> Group
           </span>
         );
       case 'widget':
         return (
-          <span className="flex items-center gap-1 text-[10px] font-semibold text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
+          <span className="flex items-center gap-1 text-[10px] font-semibold text-[var(--success)] bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
             <Globe className="w-2.5 h-2.5" /> Web Chat
           </span>
         );
       case 'direct':
         return (
-          <span className="flex items-center gap-1 text-[10px] font-semibold text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded border border-blue-500/20">
+          <span className="flex items-center gap-1 text-[10px] font-semibold text-[var(--accent-text)] bg-blue-500/10 px-1.5 py-0.5 rounded border border-blue-500/20">
             <MessageSquare className="w-2.5 h-2.5" /> Direct
           </span>
         );
       default:
         return (
-          <span className="flex items-center gap-1 text-[10px] font-semibold text-neutral-400 bg-white/5 px-1.5 py-0.5 rounded border border-white/10">
+          <span className="flex items-center gap-1 text-[10px] font-semibold text-[var(--text-muted)] bg-[var(--surface-sunken)] px-1.5 py-0.5 rounded border border-[var(--border)]">
             <Layers className="w-2.5 h-2.5" /> Channel
           </span>
         );
@@ -112,8 +112,8 @@ export const ConversationListColumn: React.FC<ConversationListColumnProps> = ({
   const getPriorityDot = (priority: ConversationPriority) => {
     if (priority === 'urgent' || priority === 'high') {
       return (
-        <span className="flex items-center gap-0.5 text-[10px] font-bold text-rose-400 bg-rose-500/10 px-1.5 py-0.5 rounded">
-          <Flame className="w-2.5 h-2.5 text-rose-400" />
+        <span className="flex items-center gap-0.5 text-[10px] font-bold text-[var(--danger)] bg-rose-500/10 px-1.5 py-0.5 rounded">
+          <Flame className="w-2.5 h-2.5 text-[var(--danger)]" />
           {priority}
         </span>
       );
@@ -168,7 +168,7 @@ export const ConversationListColumn: React.FC<ConversationListColumnProps> = ({
           onSelectConversation(conv.id);
           setActiveMenuConvId(null);
         }}
-        className={`group relative px-4 py-3 border-b border-white/5 cursor-pointer transition-all duration-150 select-none ${
+        className={`group relative px-4 py-3 border-b border-[var(--border)] cursor-pointer transition-all duration-150 select-none ${
           isActive
             ? 'bg-blue-600/15 border-blue-500/20'
             : 'hover:bg-white/[0.04]'
@@ -180,11 +180,11 @@ export const ConversationListColumn: React.FC<ConversationListColumnProps> = ({
             <img
               src={avatarUrl}
               alt={conv.title}
-              className="w-10 h-10 rounded-xl object-cover ring-1 ring-white/10"
+              className="w-10 h-10 rounded-xl object-cover ring-1 ring-[var(--border)]"
             />
             {/* Status dot */}
             <span
-              className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-neutral-900 ${
+              className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-[var(--border)] ${
                 firstParticipant?.status === 'busy'
                   ? 'bg-amber-400'
                   : firstParticipant?.status === 'away'
@@ -193,7 +193,7 @@ export const ConversationListColumn: React.FC<ConversationListColumnProps> = ({
               }`}
             />
             {conv.isPinned && (
-              <span className="absolute -top-1.5 -left-1.5 p-0.5 rounded-full bg-neutral-900 text-amber-400 border border-amber-400/30">
+              <span className="absolute -top-1.5 -left-1.5 p-0.5 rounded-full bg-[var(--surface)] text-[var(--warning)] border border-amber-400/30">
                 <Pin className="w-2.5 h-2.5 fill-amber-400" />
               </span>
             )}
@@ -204,12 +204,12 @@ export const ConversationListColumn: React.FC<ConversationListColumnProps> = ({
             <div className="flex items-center justify-between gap-1 mb-0.5">
               <h4
                 className={`text-xs font-semibold truncate ${
-                  isActive ? 'text-white' : 'text-neutral-200'
+                  isActive ? 'text-[var(--text)]' : 'text-[var(--text)]'
                 }`}
               >
                 {conv.title}
               </h4>
-              <span className="text-[10px] text-neutral-500 shrink-0 font-mono">
+              <span className="text-[10px] text-[var(--text-subtle)] shrink-0 font-mono">
                 {formatTimestamp(conv.lastMessage?.createdAt || conv.updatedAt)}
               </span>
             </div>
@@ -219,7 +219,7 @@ export const ConversationListColumn: React.FC<ConversationListColumnProps> = ({
               {getChannelBadge(conv)}
               {getPriorityDot(conv.priority)}
               {conv.crmRecord?.value && (
-                <span className="text-[10px] font-mono font-medium text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
+                <span className="text-[10px] font-mono font-medium text-[var(--success)] bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
                   {conv.crmRecord.value}
                 </span>
               )}
@@ -227,7 +227,7 @@ export const ConversationListColumn: React.FC<ConversationListColumnProps> = ({
 
             {/* Last message preview */}
             <div className="flex items-center justify-between gap-2">
-              <p className="text-[11px] text-neutral-400 truncate leading-snug">
+              <p className="text-[11px] text-[var(--text-muted)] truncate leading-snug">
                 {conv.lastMessage ? (
                   <span>
                     {conv.lastMessage.senderName.split(' ')[0]}:{' '}
@@ -261,7 +261,7 @@ export const ConversationListColumn: React.FC<ConversationListColumnProps> = ({
                 e.stopPropagation();
                 setActiveMenuConvId(isMenuOpen ? null : conv.id);
               }}
-              className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-white/10 text-neutral-400 hover:text-white transition cursor-pointer"
+              className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text)] transition cursor-pointer"
             >
               <MoreVertical className="w-3.5 h-3.5" />
             </button>
@@ -270,7 +270,7 @@ export const ConversationListColumn: React.FC<ConversationListColumnProps> = ({
             {isMenuOpen && (
               <div
                 onClick={(e) => e.stopPropagation()}
-                className="absolute right-0 top-6 z-30 w-44 bg-neutral-900 border border-white/15 rounded-xl shadow-2xl p-1 text-xs text-neutral-300 animate-in fade-in zoom-in-95 duration-100"
+                className="absolute right-0 top-6 z-30 w-44 bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-2xl p-1 text-xs text-[var(--text-muted)] animate-in fade-in zoom-in-95 duration-100"
               >
                 {onTogglePinConversation && (
                   <button
@@ -278,9 +278,9 @@ export const ConversationListColumn: React.FC<ConversationListColumnProps> = ({
                       onTogglePinConversation(conv.id);
                       setActiveMenuConvId(null);
                     }}
-                    className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-white/10 flex items-center gap-2 cursor-pointer"
+                    className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-[var(--border)] flex items-center gap-2 cursor-pointer"
                   >
-                    <Pin className="w-3.5 h-3.5 text-amber-400" />
+                    <Pin className="w-3.5 h-3.5 text-[var(--warning)]" />
                     <span>{conv.isPinned ? 'Unpin Conversation' : 'Pin to Top'}</span>
                   </button>
                 )}
@@ -290,16 +290,16 @@ export const ConversationListColumn: React.FC<ConversationListColumnProps> = ({
                       onToggleReadConversation(conv.id);
                       setActiveMenuConvId(null);
                     }}
-                    className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-white/10 flex items-center gap-2 cursor-pointer"
+                    className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-[var(--border)] flex items-center gap-2 cursor-pointer"
                   >
                     {conv.unreadCount > 0 ? (
                       <>
-                        <MailCheck className="w-3.5 h-3.5 text-emerald-400" />
+                        <MailCheck className="w-3.5 h-3.5 text-[var(--success)]" />
                         <span>Mark as Read</span>
                       </>
                     ) : (
                       <>
-                        <Mail className="w-3.5 h-3.5 text-blue-400" />
+                        <Mail className="w-3.5 h-3.5 text-[var(--accent-text)]" />
                         <span>Mark as Unread</span>
                       </>
                     )}
@@ -311,7 +311,7 @@ export const ConversationListColumn: React.FC<ConversationListColumnProps> = ({
                       onRemoveConversation(conv.id);
                       setActiveMenuConvId(null);
                     }}
-                    className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-rose-500/15 text-rose-400 flex items-center gap-2 cursor-pointer"
+                    className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-rose-500/15 text-[var(--danger)] flex items-center gap-2 cursor-pointer"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                     <span>Archive / Delete</span>
@@ -327,13 +327,13 @@ export const ConversationListColumn: React.FC<ConversationListColumnProps> = ({
 
   return (
     <div
-      className={`border-r border-white/5 bg-neutral-900/40 backdrop-blur-xl flex flex-col h-full shrink-0 transition-all duration-200 select-none ${
+      className={`border-r border-[var(--border)] bg-[var(--surface)] backdrop-blur-xl flex flex-col h-full shrink-0 transition-all duration-200 select-none ${
         isCollapsed ? 'w-0 overflow-hidden border-none' : 'w-80 md:w-88'
       } ${className}`}
     >
       {/* Mobile Channel Navigation Bar (Visible on Mobile Only) */}
       {onSelectView && (
-        <div className="flex md:hidden items-center justify-around px-2 py-2 border-b border-white/10 bg-neutral-950/70 text-xs shrink-0">
+        <div className="flex md:hidden items-center justify-around px-2 py-2 border-b border-[var(--border)] bg-[var(--surface-sunken)] text-xs shrink-0">
           {[
             { id: 'inbox' as MessagingPlatformView, label: 'Inbox', badge: unreadCounts?.inbox },
             { id: 'visitors' as MessagingPlatformView, label: 'Visitors', badge: unreadCounts?.visitors },
@@ -347,7 +347,7 @@ export const ConversationListColumn: React.FC<ConversationListColumnProps> = ({
               className={`relative px-2.5 py-1.5 rounded-lg font-medium text-xs transition cursor-pointer flex items-center gap-1 ${
                 currentView === item.id
                   ? 'bg-blue-600 text-white font-semibold shadow-xs'
-                  : 'text-neutral-400 hover:text-white hover:bg-white/5'
+                  : 'text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-sunken)]'
               }`}
             >
               <span>{item.label}</span>
@@ -362,11 +362,11 @@ export const ConversationListColumn: React.FC<ConversationListColumnProps> = ({
       )}
 
       {/* Top Header */}
-      <div className="p-4 border-b border-white/5 space-y-3">
+      <div className="p-4 border-b border-[var(--border)] space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <h2 className="text-base font-bold text-white tracking-tight">Conversations</h2>
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/10 text-blue-400 border border-blue-500/20">
+            <h2 className="text-base font-bold text-[var(--text)] tracking-tight">Conversations</h2>
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/10 text-[var(--accent-text)] border border-blue-500/20">
               {conversations.length}
             </span>
           </div>
@@ -383,18 +383,18 @@ export const ConversationListColumn: React.FC<ConversationListColumnProps> = ({
 
         {/* Search Bar */}
         <div className="relative">
-          <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
+          <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
           <input
             type="text"
             placeholder="Search conversations, deals, emails..."
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
-            className="w-full bg-neutral-950/60 border border-white/10 rounded-xl pl-9 pr-8 py-2 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-blue-500 transition"
+            className="w-full bg-[var(--surface-sunken)] border border-[var(--border)] rounded-xl pl-9 pr-8 py-2 text-xs text-[var(--text)] placeholder:text-[var(--text-subtle)] focus:outline-none focus:border-blue-500 transition"
           />
           {searchQuery && (
             <button
               onClick={() => onSearchChange('')}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-white"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text)]"
             >
               <X className="w-3 h-3" />
             </button>
@@ -417,7 +417,7 @@ export const ConversationListColumn: React.FC<ConversationListColumnProps> = ({
               className={`px-2.5 py-1 rounded-lg text-[11px] font-medium whitespace-nowrap transition cursor-pointer ${
                 filterTab === tab.id
                   ? 'bg-blue-600 text-white font-semibold'
-                  : 'bg-white/5 text-neutral-400 hover:text-white hover:bg-white/10'
+                  : 'bg-[var(--surface-sunken)] text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--border)]'
               }`}
             >
               {tab.label}
@@ -427,11 +427,11 @@ export const ConversationListColumn: React.FC<ConversationListColumnProps> = ({
       </div>
 
       {/* Conversation List */}
-      <div className="flex-1 overflow-y-auto divide-y divide-white/5">
+      <div className="flex-1 overflow-y-auto divide-y divide-[var(--border)]">
         {/* Pinned Section if any */}
         {pinnedConversations.length > 0 && filterTab !== 'pinned' && (
           <div>
-            <div className="px-4 py-1.5 bg-neutral-950/40 flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-amber-400/90">
+            <div className="px-4 py-1.5 bg-[var(--surface-sunken)] flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-amber-400/90">
               <span className="flex items-center gap-1">
                 <Pin className="w-2.5 h-2.5 fill-amber-400" /> Pinned Conversations ({pinnedConversations.length})
               </span>
@@ -444,9 +444,9 @@ export const ConversationListColumn: React.FC<ConversationListColumnProps> = ({
         {otherConversations.length > 0 ? (
           otherConversations.map(renderConversationItem)
         ) : pinnedConversations.length === 0 ? (
-          <div className="p-8 text-center text-neutral-500 text-xs">
+          <div className="p-8 text-center text-[var(--text-subtle)] text-xs">
             <MessageSquare className="w-8 h-8 mx-auto mb-2 opacity-30" />
-            <p className="font-semibold text-neutral-400">No conversations found</p>
+            <p className="font-semibold text-[var(--text-muted)]">No conversations found</p>
             <p className="mt-1 text-[11px]">Create a new message or adjust search filters.</p>
           </div>
         ) : null}
