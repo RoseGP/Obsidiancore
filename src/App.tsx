@@ -358,6 +358,7 @@ function AppMain() {
           <GreetHub
             contacts={contacts}
             onNavigate={(v) => setActiveView(v as SemanticView)}
+            onAddCalendarEvent={handleAddCalendarEvent}
             onStart={async (roomCode, contact, title, options) => {
               // The server starts the meeting on the organization's plan; if it refuses, say why and stay here.
               const r = await meetingSession.startInstantMeeting(roomCode, contact, title, options);
