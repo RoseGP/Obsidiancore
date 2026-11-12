@@ -26,6 +26,7 @@ import { requirePermission, requireTenant, sendError, tenantOf } from '../server
 import { rateLimit } from '../features/social-accounts/server/http';
 import { billingInvoiceExists } from '../features/invoicing/server/providerPayments';
 import { assertId } from '../server/data/docStore';
+import { isExplicitDevOrTest } from '../server/runtimeEnv';
 
 const router = Router();
 const PROVIDERS: PaymentProviderType[] = ['stripe', 'square'];
@@ -52,9 +53,15 @@ export function sendPaymentError(res: Response, err: unknown, tag: string) {
   return sendError(res, err, tag);
 }
 
-function hostUrl(req: Request): string {
-  const host = req.get('host') || 'localhost:3000';
-  return (process.env.APP_URL || `${req.protocol}://${host}`).replace(/\/+$/, '');
+/**
+ * The public base URL for OAuth redirect URIs. Production requires APP_URL: the request's Host header is
+ * client-controlled, so it is only used as a fallback in explicit development/test mode.
+ */
+export function hostUrl(req: Request): string {
+  const configured = (process.env.APP_URL || '').trim();
+  if (configured) return configured.replace(/\/+$/, '');
+  if (!isExplicitDevOrTest()) throw new PaymentProviderError('PROVIDER_NOT_CONFIGURED', 'APP_URL must be set to connect payment providers.', undefined, undefined, 503);
+  return `${req.protocol}://${req.get('host') || 'localhost:3000'}`;
 }
 
 export const connectLimiter = rateLimit({ name: 'payments-connect', windowMs: 60_000, max: 15, key: (req) => tenantOf(req).orgId });

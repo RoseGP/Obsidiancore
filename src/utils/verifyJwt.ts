@@ -111,14 +111,15 @@ export async function verifyJwt(token: string, secret: string): Promise<JWTPaylo
 
     if (!isValid) return null;
 
-    // 3. Verify Expiration
+    // 3. Time claims. `exp` is REQUIRED: a token without one used to be valid forever.
+    //    `nbf` / `iat` in the future are rejected; 30 s of clock skew is allowed.
     const payload: JWTPayload = JSON.parse(base64UrlDecode(encodedPayload));
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
     const now = Math.floor(Date.now() / 1000);
-
-    if (payload.exp && payload.exp < now) {
-      console.warn('JWT has expired');
-      return null;
-    }
+    const SKEW = 30;
+    if (typeof payload.exp !== 'number' || !Number.isFinite(payload.exp) || payload.exp + SKEW < now) return null;
+    if (payload.nbf !== undefined && (typeof payload.nbf !== 'number' || payload.nbf - SKEW > now)) return null;
+    if (payload.iat !== undefined && (typeof payload.iat !== 'number' || payload.iat - SKEW > now)) return null;
 
     return payload;
   } catch (err) {

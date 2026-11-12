@@ -1,5 +1,6 @@
 /** Security regression tests for the hardening pass. Run: npx tsx src/server/__tests__/security.test.ts */
 import assert from 'node:assert/strict';
+import { createHmac } from 'node:crypto';
 import express from 'express';
 import request from 'supertest';
 import jwt from 'jsonwebtoken';
@@ -16,7 +17,7 @@ const secrets = await import('../../utils/secrets');
 // ---- Route guard ----
 const app = express(); app.use(express.json());
 const echo = (req: any, res: any) => res.json({ userId: req.body?.userId ?? req.query.userId ?? null, user: req.user?.id ?? null });
-app.use('/api/mail', guard(PUBLIC.mail), express.Router().post('/send', echo).post('/inbound-webhook', echo).post('/simulate/x', echo));
+app.use('/api/mail', guard([/^\/inbound-webhook$/]) /* fixture: one public path */, express.Router().post('/send', echo).post('/inbound-webhook', echo).post('/simulate/x', echo));
 app.use('/api/messaging', guard(PUBLIC.messaging), express.Router().post('/visitor-init', echo).get('/conversations', echo));
 assert.equal((await request(app).post('/api/mail/send').send({})).status, 401); ok('protected route rejects anonymous requests');
 assert.equal((await request(app).post('/api/mail/inbound-webhook').send({})).status, 200); ok('provider webhook path stays public');
@@ -32,13 +33,26 @@ assert.equal((await request(app).post('/api/mail/send').set('X-Dev-User-Id', 'al
 process.env.NODE_ENV = 'test';
 
 // ---- Bypass tokens are gone ----
-assert.equal(await identifyToken('admin-jwt-token-2026'), null);
-assert.equal(await identifyToken('dev-mock-token'), null); ok('former bypass tokens are rejected');
-const good = jwt.sign({ id: 'u_42', role: 'ADMIN', name: 'Ada' }, process.env.JWT_SECRET!);
+assert.equal(await identifyToken('admin-jwt-token-2026'), null); // lint-guards: allow (negative test)
+assert.equal(await identifyToken('dev-mock-token'), null); ok('former bypass tokens are rejected'); // lint-guards: allow (negative test)
+const good = jwt.sign({ id: 'u_42', role: 'ADMIN', name: 'Ada' }, process.env.JWT_SECRET!, { expiresIn: '1h' });
 assert.equal((await identifyToken(good))?.id, 'u_42'); ok('JWT signed with JWT_SECRET is accepted');
-assert.equal(await identifyToken(jwt.sign({ id: 'u_42' }, 'wrong-secret')), null); ok('JWT signed with another secret is rejected');
+assert.equal(await identifyToken(jwt.sign({ id: 'u_42' }, 'wrong-secret', { expiresIn: '1h' })), null); ok('JWT signed with another secret is rejected');
+// Time claims: exp is required (tokens without one used to be valid forever); expired / not-yet-valid → rejected.
+const nowS = Math.floor(Date.now() / 1000);
+assert.equal(await identifyToken(jwt.sign({ id: 'u_42' }, process.env.JWT_SECRET!)), null, 'no exp');
+assert.equal(await identifyToken(jwt.sign({ id: 'u_42', exp: nowS - 120 }, process.env.JWT_SECRET!)), null, 'expired');
+assert.equal(await identifyToken(jwt.sign({ id: 'u_42', exp: nowS + 3600, nbf: nowS + 600 }, process.env.JWT_SECRET!)), null, 'nbf in the future');
+assert.equal(await identifyToken(jwt.sign({ id: 'u_42', exp: nowS + 3600, iat: nowS + 600 }, process.env.JWT_SECRET!)), null, 'issued in the future');
+const hs256 = (payload: object) => { const h = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url'), p = Buffer.from(JSON.stringify(payload)).toString('base64url'); return `${h}.${p}.${createHmac('sha256', process.env.JWT_SECRET!).update(`${h}.${p}`).digest('base64url')}`; };
+assert.equal((await identifyToken(hs256({ id: 'u_42', exp: nowS + 3600 })))?.id, 'u_42', 'hand-signed control token');
+assert.equal(await identifyToken(hs256({ id: 'u_42', exp: String(nowS + 3600) })), null, 'non-numeric exp');
+assert.equal(await identifyToken(jwt.sign({ id: 'u_42' }, process.env.JWT_SECRET!, { algorithm: 'HS512', expiresIn: '1h' })), null, 'other algorithm');
+const unsigned = Buffer.from(JSON.stringify({ alg: 'none', typ: 'JWT' })).toString('base64url') + '.' + Buffer.from(JSON.stringify({ id: 'u_42', exp: nowS + 3600 })).toString('base64url') + '.';
+assert.equal(await identifyToken(unsigned), null, 'alg none');
+ok('session JWTs: exp required; expired, not-yet-valid, alg=none and other algorithms are rejected');
 const gw = express(); gw.get('/v1/me', jwtAuthMiddleware as any, (req: any, res) => res.json(req.user));
-assert.equal((await request(gw).get('/v1/me').set('Authorization', 'Bearer admin-jwt-token-2026')).status, 401); ok('API gateway rejects the old admin token');
+assert.equal((await request(gw).get('/v1/me').set('Authorization', 'Bearer admin-jwt-token-2026')).status, 401); ok('API gateway rejects the old admin token'); // lint-guards: allow (negative test)
 assert.equal((await request(gw).get('/v1/me?token=' + good)).status, 401); ok('API gateway ignores tokens in the query string');
 r = await request(gw).get('/v1/me').set('Authorization', 'Bearer ' + good);
 assert.equal(r.body.id, 'u_42'); assert.equal(r.body.role, 'ADMIN'); ok('API gateway accepts a valid signed token with its claims');

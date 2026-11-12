@@ -57,7 +57,7 @@ assert.equal((await request(app).get('/api/accounts')).status, 401);
 assert.equal((await request(app).get('/api/posts').query({ from: future(-1), to: future(1) })).status, 401);
 assert.equal((await request(app).get('/api/analytics')).status, 401);
 assert.notEqual((await request(app).get('/api/posts/queue').set('X-Dev-User-Id', 'alice')).status, 200); ok('every endpoint rejects unauthenticated calls; the legacy /api/posts/queue route is gone');
-assert.equal((await request(app).get('/api/accounts').set('Authorization', 'Bearer admin-jwt-token-2026')).status, 401); ok('hardcoded dev bearer token rejected');
+assert.equal((await request(app).get('/api/accounts').set('Authorization', 'Bearer admin-jwt-token-2026')).status, 401); ok('hardcoded dev bearer token rejected'); // lint-guards: allow (negative test)
 assert.equal((await request(app).post('/api/accounts/connect').set('X-Dev-User-Id', 'alice').send({ platform: 'x' })).status, 403);
 assert.equal((await request(app).post('/api/accounts/connect').set({ 'X-Dev-User-Id': 'alice', Origin: 'https://evil.example' }).send({ platform: 'x' })).status, 403); ok('CSRF: writes without the app’s Origin are refused');
 assert.equal((await request(app).post('/api/accounts/connect').set(A).type('form').send('platform=x')).status, 415); ok('CSRF: non-JSON bodies refused');

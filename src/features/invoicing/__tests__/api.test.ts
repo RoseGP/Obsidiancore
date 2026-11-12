@@ -28,7 +28,7 @@ const ok = (n: string) => { passed++; console.log('  ✓', n); };
 
 let r = await request(app).get('/api/billing/session');
 assert.equal(r.status, 401); ok('rejects missing token');
-r = await request(app).get('/api/billing/session').set('Authorization', 'Bearer admin-jwt-token-2026');
+r = await request(app).get('/api/billing/session').set('Authorization', 'Bearer admin-jwt-token-2026'); // lint-guards: allow (negative test)
 assert.equal(r.status, 401); ok('rejects dev bypass token');
 
 r = await request(app).get('/api/billing/session').set('Authorization', owner);

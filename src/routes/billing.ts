@@ -1,10 +1,11 @@
 /**
  * Billing API — /api/billing
  *
- * - Authentication: HS256 JWT in `Authorization: Bearer`, verified with
- *   BILLING_JWT_SECRET (or JWT_SECRET). No secret configured → 503, and the
- *   client falls back to its labelled prototype mode. Dev bypass tokens used
- *   elsewhere in this codebase are NOT accepted here.
+ * - Authentication: CRM sign-in (Firebase) → the caller's organization and role from the server-side
+ *   membership. Standalone billing tokens (HS256, `businessId` + `role` claims, `exp` required) are accepted
+ *   ONLY with a dedicated BILLING_JWT_SECRET: they choose their own business, so they must not be mintable
+ *   with the shared JWT_SECRET (which also backs session tokens and other features).
+ *   Dev bypass tokens used elsewhere in this codebase are NOT accepted here.
  * - Authorization: every query is scoped to the token's businessId; the
  *   "viewer" role is read-only (enforced in domain/operations).
  * - All financial values are recomputed on the server; client totals are
@@ -57,7 +58,8 @@ async function importPersonalWorkspace(orgId: string, uid: string) {
 }
 
 async function requireAuth(req: AuthedRequest, res: Response, next: NextFunction) {
-  const secret = process.env.BILLING_JWT_SECRET || process.env.JWT_SECRET;
+  // Dedicated secret only (no JWT_SECRET fallback): these tokens carry their own businessId and role.
+  const secret = (process.env.BILLING_JWT_SECRET || '').trim();
   const header = req.headers.authorization ?? '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : '';
   const payload = token && secret ? await verifyJwt(token, secret) : null;

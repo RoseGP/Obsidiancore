@@ -34,4 +34,7 @@ binding = "AI"
 [vars]
 DOMAIN_NAME = "devdesk.webmail.edge"
 # JWT_SECRET is a secret: set it with `npx wrangler secret put JWT_SECRET` (never in this file).
+# Required secrets (the worker fails closed without them; never put values in this file):
+#   npx wrangler secret put MASTER_API_KEY          # API key for /api/* and /connect (MASTER_API_KEY_PREVIOUS during a rotation)
+#   npx wrangler secret put ATTACHMENT_URL_SECRET   # signs attachment download links (≥ 32 chars; falls back to JWT_SECRET)
 LOG_LEVEL = "info"

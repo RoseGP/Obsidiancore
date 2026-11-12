@@ -3,17 +3,16 @@ import * as admin from 'firebase-admin';
 import * as crypto from 'crypto';
 import axios from 'axios';
 
-// Get encryption key from environment configurations or a fallback for testing
-const ENCRYPTION_KEY = process.env.OAUTH_TOKEN_ENCRYPTION_KEY || 'f8b7921a2386927902dcb112c3f843f5'; // 32-byte key fallback
+import { CALLBACK_MESSAGES, OAuthConfigError, requiredEnv, tokenEncryptionKey, verifyOAuthState } from './oauthSecurity';
+
 const IV_LENGTH = 16;
 
 /**
  * Utility to securely encrypt sensitive API access tokens before storing them in Firestore.
  */
 function encryptToken(token: string): string {
-  // Key must be exactly 32 bytes (256 bits) for aes-256-cbc.
-  const key = Buffer.alloc(32);
-  Buffer.from(ENCRYPTION_KEY).copy(key);
+  // Required setting (no built-in fallback key); see oauthSecurity.ts.
+  const key = tokenEncryptionKey();
   
   const iv = crypto.randomBytes(IV_LENGTH);
   const cipher = crypto.createCipheriv('aes-256-cbc', key, iv);
@@ -27,31 +26,37 @@ function encryptToken(token: string): string {
  * Endpoint: GET /linkedinCallback
  */
 export const linkedinCallback = functions.onRequest(async (req, res) => {
-  const { code, state, error, error_description } = req.query;
+  const { code, state, error } = req.query;
 
-  // Handle access denied or user cancellation
+  res.type('text/plain');
+  // Never echo provider-supplied text (error_description): fixed messages only.
   if (error) {
-    console.error('[OAuth Callback] LinkedIn Authorization Error:', error, error_description);
-    res.status(400).send(`LinkedIn Authorization Failed: ${error_description || error}`);
+    console.warn('[OAuth Callback] LinkedIn authorization refused:', String(error).slice(0, 64));
+    res.status(400).send(CALLBACK_MESSAGES.cancelled('LinkedIn'));
     return;
   }
 
-  if (!code || !state) {
-    res.status(400).send('LinkedIn callback is missing authorization code or state validation parameters.');
+  let clientId: string, clientSecret: string, redirectUri: string, userId: string | null;
+  try {
+    clientId = requiredEnv('LINKEDIN_CLIENT_ID');
+    clientSecret = requiredEnv('LINKEDIN_CLIENT_SECRET');
+    redirectUri = requiredEnv('LINKEDIN_REDIRECT_URI');
+    requiredEnv('APP_DASHBOARD_URL');
+    tokenEncryptionKey();
+    // Signed, expiring state issued for the signed-in user (not a raw user id).
+    userId = verifyOAuthState(state);
+  } catch (e) {
+    if (e instanceof OAuthConfigError) { console.error('[OAuth Callback] LinkedIn not configured:', e.message); res.status(503).send(CALLBACK_MESSAGES.notConfigured('LinkedIn')); return; }
+    throw e;
+  }
+  if (typeof code !== 'string' || !code || code.length > 2048 || !userId) {
+    res.status(400).send(CALLBACK_MESSAGES.badRequest('LinkedIn'));
     return;
   }
-
-  // The state parameter contains the user ID to associate the token with
-  const userId = state.toString();
 
   console.log(`[OAuth Callback] LinkedIn code received for user: ${userId}. Initiating Access Token Exchange.`);
 
   try {
-    const clientId = process.env.LINKEDIN_CLIENT_ID || 'MOCK_LINKEDIN_CLIENT_ID';
-    const clientSecret = process.env.LINKEDIN_CLIENT_SECRET || 'MOCK_LINKEDIN_CLIENT_SECRET';
-    const redirectUri = process.env.LINKEDIN_REDIRECT_URI || 'https://us-central1-my-project.cloudfunctions.net/linkedinCallback';
-
-    console.log(`[OAuth Callback] Dispatching LinkedIn token exchange token URL with code: ${code.toString().substring(0, 5)}...`);
 
     // 1. Perform authorization code exchange with LinkedIn's OAuth v2 token endpoint
     const tokenUrl = 'https://www.linkedin.com/oauth/v2/accessToken';
@@ -152,12 +157,12 @@ export const linkedinCallback = functions.onRequest(async (req, res) => {
     console.log(`[OAuth Callback] LinkedIn channel successfully linked and encrypted for User: ${userId}`);
 
     // Redirect the user back to the planner application dashboard
-    const appUrl = process.env.APP_DASHBOARD_URL || 'https://ai.studio/build';
+    const appUrl = requiredEnv('APP_DASHBOARD_URL');
     res.redirect(`${appUrl}?channelConnected=linkedin&status=success`);
 
   } catch (err: any) {
-    console.error('[OAuth Callback] LinkedIn Handshake Exception:', err);
-    res.status(500).send(`Internal LinkedIn OAuth Handshake Error: ${err.message || err}`);
+    console.error('[OAuth Callback] LinkedIn handshake failed:', err?.response?.status || err?.name || 'error');
+    res.status(500).send(CALLBACK_MESSAGES.failed('LinkedIn'));
   }
 });
 
@@ -166,28 +171,38 @@ export const linkedinCallback = functions.onRequest(async (req, res) => {
  * Endpoint: GET /facebookCallback
  */
 export const facebookCallback = functions.onRequest(async (req, res) => {
-  const { code, state, error, error_description } = req.query;
+  const { code, state, error } = req.query;
 
   // Handle authorization issues or cancellations
+  res.type('text/plain');
+  // Never echo provider-supplied text (error_description): fixed messages only.
   if (error) {
-    console.error('[OAuth Callback] Facebook Authorization Error:', error, error_description);
-    res.status(400).send(`Facebook Authorization Failed: ${error_description || error}`);
+    console.warn('[OAuth Callback] Facebook authorization refused:', String(error).slice(0, 64));
+    res.status(400).send(CALLBACK_MESSAGES.cancelled('Facebook'));
     return;
   }
 
-  if (!code || !state) {
-    res.status(400).send('Facebook callback is missing authorization code or state validation parameters.');
+  let clientId: string, clientSecret: string, redirectUri: string, userId: string | null;
+  try {
+    clientId = requiredEnv('FACEBOOK_CLIENT_ID');
+    clientSecret = requiredEnv('FACEBOOK_CLIENT_SECRET');
+    redirectUri = requiredEnv('FACEBOOK_REDIRECT_URI');
+    requiredEnv('APP_DASHBOARD_URL');
+    tokenEncryptionKey();
+    // Signed, expiring state issued for the signed-in user (not a raw user id).
+    userId = verifyOAuthState(state);
+  } catch (e) {
+    if (e instanceof OAuthConfigError) { console.error('[OAuth Callback] Facebook not configured:', e.message); res.status(503).send(CALLBACK_MESSAGES.notConfigured('Facebook')); return; }
+    throw e;
+  }
+  if (typeof code !== 'string' || !code || code.length > 2048 || !userId) {
+    res.status(400).send(CALLBACK_MESSAGES.badRequest('Facebook'));
     return;
   }
-
-  const userId = state.toString();
 
   console.log(`[OAuth Callback] Facebook code received for user: ${userId}. Initiating Permanent Token Exchange.`);
 
   try {
-    const clientId = process.env.FACEBOOK_CLIENT_ID || 'MOCK_FB_CLIENT_ID';
-    const clientSecret = process.env.FACEBOOK_CLIENT_SECRET || 'MOCK_FB_CLIENT_SECRET';
-    const redirectUri = process.env.FACEBOOK_REDIRECT_URI || 'https://us-central1-my-project.cloudfunctions.net/facebookCallback';
 
     // 1. Exchange temporary authorization code for user access token
     let userToken = '';
@@ -296,11 +311,11 @@ export const facebookCallback = functions.onRequest(async (req, res) => {
     console.log(`[OAuth Callback] Facebook channel successfully linked and encrypted for User: ${userId}`);
 
     // Redirect user back to the application planner dashboard
-    const appUrl = process.env.APP_DASHBOARD_URL || 'https://ai.studio/build';
+    const appUrl = requiredEnv('APP_DASHBOARD_URL');
     res.redirect(`${appUrl}?channelConnected=facebook&status=success`);
 
   } catch (err: any) {
-    console.error('[OAuth Callback] Facebook Handshake Exception:', err);
-    res.status(500).send(`Internal Facebook OAuth Handshake Error: ${err.message || err}`);
+    console.error('[OAuth Callback] Facebook handshake failed:', err?.response?.status || err?.name || 'error');
+    res.status(500).send(CALLBACK_MESSAGES.failed('Facebook'));
   }
 });

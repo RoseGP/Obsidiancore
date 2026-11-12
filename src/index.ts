@@ -10,6 +10,8 @@
 
 import PostalMime, { Email as PostalMimeEmail } from "postal-mime";
 import { CRMVoiceAssistant } from "./agent";
+import { validateApiAuth as requireApiKey, type AuthEnv } from "./workers/authMiddleware";
+import { attachmentUrlSecret, validateOutboundEmail } from "./workers/outboundEmail";
 
 export { CRMVoiceAssistant };
 
@@ -73,7 +75,7 @@ export interface ExecutionContext {
   passThroughOnException(): void;
 }
 
-export interface Env {
+export interface Env extends AuthEnv {
   DB: D1Database;
   EMAIL_BUCKET: R2Bucket;
   ATTACHMENTS_BUCKET?: R2Bucket;
@@ -81,6 +83,8 @@ export interface Env {
   EMAIL?: any;
   API_KEY?: string;
   JWT_SECRET?: string;
+  /** Signs attachment download links (falls back to JWT_SECRET); at least 32 characters. */
+  ATTACHMENT_URL_SECRET?: string;
   CRM_VOICE_ASSISTANT?: any;
   REALTIME_INFRA?: any;
   FLAGSHIP?: any;
@@ -139,92 +143,28 @@ export function jsonResponse(data: any, status: number = 200, extraHeaders: Reco
 // PHASE 3: SECURING THE API (ZERO-TRUST & API KEY AUTHENTICATION)
 // ============================================================================
 
+/**
+ * API authentication for this worker. Every /api route (except the signed attachment download and health) and
+ * the /connect WebSocket need the API key: MASTER_API_KEY (or legacy API_KEY), with MASTER_API_KEY_PREVIOUS
+ * during a rotation, compared in constant time; no key configured → 503 (src/workers/authMiddleware.ts).
+ *
+ * This replaced checks that accepted ANY non-empty Authorization value, two hard-coded tokens, any non-JWT
+ * string, and unsigned JWTs with whatever claims they carried.
+ */
 export class ZeroTrustGuard {
   static async verifyAssertion(request: Request, env?: Env): Promise<{ authenticated: boolean; claims?: any; error?: string }> {
-    const rawAssertion = request.headers.get("cf-access-jwt-assertion") || 
-                         request.headers.get("x-zero-trust-token");
-    const authHeader = request.headers.get("Authorization") || "";
-    const xApiKey = request.headers.get("X-API-Key") || request.headers.get("x-api-key") || "";
-
-    const expectedKey = env?.API_KEY || "demo_webmail_jwt_token_2026";
-
-    let token = "";
-    if (rawAssertion) {
-      token = rawAssertion;
-    } else if (authHeader.toLowerCase().startsWith("bearer ")) {
-      token = authHeader.substring(7).trim();
-    } else if (authHeader) {
-      token = authHeader.trim();
-    } else if (xApiKey) {
-      token = xApiKey.trim();
-    }
-
-    if (!token) {
-      return { authenticated: false, error: "Missing identity token, API key, or Cloudflare Access assertion header." };
-    }
-
-    // Direct API Key check
-    if (token === expectedKey || token === "demo_webmail_jwt_token_2026" || token === "enterprise_sandbox_token_default_sha512") {
-      return { authenticated: true, claims: { email: "admin@enterprise.org", role: "admin" } };
-    }
-
-    try {
-      // Decode JWT structure (header.payload.signature)
-      const parts = token.split(".");
-      if (parts.length !== 3) {
-        // If not a standard JWT but provided a non-empty token string in dev mode
-        return { authenticated: true, claims: { email: "operator@edge.cloudflare.com", role: "operator" } };
-      }
-
-      const decodedPayload = atob(parts[1].replace(/-/g, "+").replace(/_/g, "/"));
-      const claims = JSON.parse(decodedPayload);
-
-      const skewToleranceSeconds = 60;
-      const currentEpoch = Math.floor(Date.now() / 1000);
-
-      if (claims.exp && currentEpoch > (claims.exp + skewToleranceSeconds)) {
-        return { authenticated: false, error: "Zero-Trust session has expired.", claims };
-      }
-
-      return { authenticated: true, claims };
-    } catch (err: any) {
-      return { authenticated: false, error: `Token parse failure: ${err.message}` };
-    }
+    const denied = await requireApiKey(request, env ?? ({} as Env));
+    if (denied) return { authenticated: false, error: denied.status === 503 ? "The API is not configured yet." : "A valid API key is required." };
+    return { authenticated: true, claims: { role: "service" } };
   }
 }
 
-export function validateApiAuth(request: Request, env: Env): { authenticated: boolean; response?: Response } {
-  if (request.method === "OPTIONS") {
-    return { authenticated: true };
-  }
-
-  const expectedKey = env.API_KEY || "demo_webmail_jwt_token_2026";
-  const authHeader = request.headers.get("Authorization") || "";
-  const xApiKey = request.headers.get("X-API-Key") || request.headers.get("x-api-key") || "";
-
-  let token = "";
-  if (authHeader.toLowerCase().startsWith("bearer ")) {
-    token = authHeader.substring(7).trim();
-  } else if (authHeader) {
-    token = authHeader.trim();
-  } else if (xApiKey) {
-    token = xApiKey.trim();
-  }
-
-  if (!token) {
-    return {
-      authenticated: false,
-      response: jsonResponse(
-        {
-          success: false,
-          error: "401 Unauthorized: Invalid or missing API key. Provide a valid Bearer token in Authorization header or X-API-Key header."
-        },
-        401
-      ),
-    };
-  }
-
-  return { authenticated: true };
+/** null when the request carries a valid API key, otherwise the 401/503 response (with this worker's CORS headers). */
+export async function validateApiAuth(request: Request, env: Env): Promise<{ authenticated: boolean; response?: Response }> {
+  if (request.method === "OPTIONS") return { authenticated: true };
+  const denied = await requireApiKey(request, env);
+  if (!denied) return { authenticated: true };
+  return { authenticated: false, response: jsonResponse(await denied.json(), denied.status, { "WWW-Authenticate": 'Bearer realm="api"' }) };
 }
 
 // ============================================================================
@@ -655,7 +595,14 @@ async function handleAttachmentDownloadRequest(request: Request, env: Env): Prom
   }
 
   const expiresAt = parseInt(expiresStr, 10);
-  const secretKey = env.JWT_SECRET || "cloudflare_r2_attachment_secret_key_2026";
+  // No built-in fallback: without a configured secret, links can't be verified (they were forgeable before).
+  const secretKey = attachmentUrlSecret(env);
+  if (!secretKey) {
+    return jsonResponse({ success: false, error: "Attachment downloads are not configured." }, 503);
+  }
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(attachmentId) || !/^\d{1,12}$/.test(expiresStr) || !/^[A-Za-z0-9_\-+/=]{20,128}$/.test(signature)) {
+    return jsonResponse({ success: false, error: "Invalid or expired attachment download presigned URL" }, 403);
+  }
 
   const isValidSig = await verifyPresignedDownloadSignature(attachmentId, expiresAt, signature, secretKey);
   if (!isValidSig) {
@@ -719,9 +666,9 @@ export default {
 
       // 2. Validate API Security Middleware on protected /api routes (except presigned downloads)
       if (pathname.startsWith("/api/") && pathname !== "/api/attachments/download" && pathname !== "/api/health") {
-        const auth = validateApiAuth(request, env);
-        if (!auth.authenticated && auth.response) {
-          return auth.response;
+        const auth = await validateApiAuth(request, env);
+        if (!auth.authenticated) {
+          return auth.response ?? jsonResponse({ success: false, error: "Unauthorized" }, 401);
         }
       }
 
@@ -752,14 +699,13 @@ export default {
       // 7. Route: POST /api/send (Secure Outbound Email Dispatch)
       if (pathname === "/api/send" && request.method === "POST") {
         try {
-          const body: any = await request.json();
-          const { userId = "usr_101", from = "achmadhakim@gmail.com", to, recipient, subject, text, html, threadId } = body;
-          const targetRecipient = to || recipient;
-          if (!targetRecipient) {
-            return jsonResponse({ success: false, error: "Recipient ('to') is required" }, 400);
-          }
-
-          const recipientList = Array.isArray(targetRecipient) ? targetRecipient : [targetRecipient];
+          let body: unknown;
+          try { body = await request.json(); } catch { return jsonResponse({ success: false, error: "Send a JSON body." }, 400); }
+          // Strict allowlist validation: sender on our own domain, plain recipient addresses, one-line subject,
+          // size limits. Values are never pasted into MIME headers unchecked (header injection).
+          const checked = validateOutboundEmail(body, env.DOMAIN_NAME);
+          if (!checked.ok) return jsonResponse({ success: false, error: checked.error }, 400);
+          const { userId, from, to: recipientList, subject, text, html, threadId } = checked.value;
           const activeThreadId = threadId || (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `thread_${Date.now()}`);
           const emailId = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `email_${Date.now()}`;
           const messageId = `msg_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
@@ -846,15 +792,8 @@ export default {
         }
 
         if (!env.REALTIME_INFRA) {
-          const mockIceServers = [
-            { urls: "stun:stun.cloudflare.com:3478" },
-            { 
-              urls: "turn:turn.cloudflare.com:3478?transport=udp",
-              username: `lead-sec-tunnel-${Date.now()}`,
-              credential: "mock_sha256_anycast_key_signature" 
-            }
-          ];
-          return jsonResponse({ iceServers: mockIceServers, debug: true });
+          // No placeholder credentials: say it isn't configured.
+          return jsonResponse({ success: false, code: "turn_not_configured", error: "TURN relay isn't configured (REALTIME_INFRA binding)." }, 503);
         }
 
         try {
@@ -867,13 +806,15 @@ export default {
 
       // 9. WebRTC WebSocket Connect route
       if (pathname === "/connect") {
+        const denied = await validateApiAuth(request, env);
+        if (!denied.authenticated) return denied.response ?? jsonResponse({ error: "Unauthorized" }, 401);
         const upgradeHeader = request.headers.get("Upgrade");
         if (!upgradeHeader || upgradeHeader.toLowerCase() !== "websocket") {
           return jsonResponse({ error: "Bad Gateway Upgrade Request", info: "Requires active WebSocket stream." }, 426);
         }
 
         const leadId = url.searchParams.get("leadId")?.trim();
-        if (!leadId) {
+        if (!leadId || !/^[A-Za-z0-9_.-]{1,128}$/.test(leadId)) {
           return jsonResponse({ error: "Bad Request", info: "Missing 'leadId' query parameter." }, 400);
         }
 
@@ -1066,7 +1007,8 @@ export default {
 
       // 7. Process extracted attachments and store into ATTACHMENTS_BUCKET
       const targetAttachmentsBucket = env.ATTACHMENTS_BUCKET || env.EMAIL_BUCKET;
-      const secretKey = env.JWT_SECRET || "cloudflare_r2_attachment_secret_key_2026";
+      // Links are only signed with a configured secret (no built-in fallback); without one, download_url stays empty.
+      const secretKey = attachmentUrlSecret(env);
       const baseUrl = env.DOMAIN_NAME ? `https://${env.DOMAIN_NAME}` : "https://devdesk.webmail.edge";
 
       if (parsedEmail && parsedEmail.attachments && parsedEmail.attachments.length > 0) {
@@ -1097,12 +1039,12 @@ export default {
             },
           });
 
-          const presignedDownloadUrl = await generatePresignedDownloadUrl(
+          const presignedDownloadUrl = secretKey ? await generatePresignedDownloadUrl(
             attId,
             secretKey,
             baseUrl,
             86400
-          );
+          ) : "";
 
           await env.DB.prepare(`
             INSERT INTO attachments (

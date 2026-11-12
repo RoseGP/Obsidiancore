@@ -5,6 +5,7 @@
  * generates required DNS records (SPF, DKIM, DMARC, bounce MX), and persists domain status
  * as 'Pending' in D1 database and KV namespace.
  */
+import { withApiKey, type AuthEnv } from './authMiddleware';
 
 export interface D1PreparedStatement {
   bind(...values: unknown[]): D1PreparedStatement;
@@ -24,7 +25,7 @@ export interface KVNamespace {
   list(options?: { prefix?: string; limit?: number; cursor?: string }): Promise<{ keys: Array<{ name: string; expiration?: number; metadata?: any }>; list_complete: boolean; cursor?: string }>;
 }
 
-export interface Env {
+export interface Env extends AuthEnv {
   DB?: D1Database;
   KV?: KVNamespace;
   CUSTOM_DOMAINS_KV?: KVNamespace;
@@ -304,11 +305,9 @@ async function initiateCloudflareDomainOnboarding(
  * Main Cloudflare Worker Fetch Handler
  */
 export default {
-  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-    // Handle CORS Preflight
-    if (request.method === 'OPTIONS') {
-      return new Response(null, { headers: CORS_HEADERS });
-    }
+  // Provisions domains with the account's Cloudflare token, so every request needs the API key
+  // (MASTER_API_KEY, constant-time, fails closed; CORS only for ALLOWED_ORIGINS): src/workers/authMiddleware.ts.
+  fetch: withApiKey<Env>(async (request: Request, env: Env): Promise<Response> => {
 
     const url = new URL(request.url);
     const path = url.pathname;
@@ -443,5 +442,5 @@ export default {
     }
 
     return jsonResponse({ error: 'Route not found' }, 404);
-  },
+  }),
 };

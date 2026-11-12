@@ -51,8 +51,6 @@ export const PUBLIC = {
   magicLink: [/^\/(status|request|verify)$/],
   // Website form submissions from customers' websites (form id checked, rate limited, validated in the handler).
   webForms: [/^\/f\/[^/]+$/],
-  // Inbound mail webhook from the mail provider. TO COMPLETE: verify the provider's signature in the handler.
-  mail: [/^\/inbound-webhook$/],
   // Public booking page (PublicSchedulingPage): read event types and book a slot.
   availability: [/^\/event-types$/, /^\/[A-Za-z0-9_-]+$/, /^\/book$/],
   salesIntel: [/^\/health$/],
@@ -60,7 +58,7 @@ export const PUBLIC = {
   leads: [/^\/capture$/],
   paymentIntegrations: [/^\/(stripe|square)\/callback$/],
   payments: [/^\/stripe\/callback$/],
-  // Google push notifications: TO COMPLETE: validate X-Goog-Channel-Token in the handler.
+  // Google OAuth return (single-use state) and push notifications (per-channel X-Goog-Channel-Token, checked in the handler).
   gcal: [/^\/oauth2callback$/, /^\/webhook$/],
   // Website chat widget used by anonymous site visitors.
   messaging: [/^\/widgets\/[^/]+$/, /^\/visitor-init$/, /^\/visitor-message$/, /^\/visitor-messages\/[^/]+$/, /^\/embed(\/.*)?$/],

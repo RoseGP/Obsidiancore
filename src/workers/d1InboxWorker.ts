@@ -11,6 +11,7 @@
  *  - threads (id, subject, updated_at)
  *  - user_emails (user_id, email_id, folder, is_read, created_at)
  */
+import { withApiKey, type AuthEnv } from './authMiddleware';
 
 export interface D1PreparedStatement {
   bind(...values: any[]): D1PreparedStatement;
@@ -23,7 +24,7 @@ export interface D1Database {
   prepare(query: string): D1PreparedStatement;
 }
 
-export interface Env {
+export interface Env extends AuthEnv {
   DB: D1Database;
   DATABASE_NAME?: string;
   DATABASE_ID?: string;
@@ -203,11 +204,12 @@ export async function handleInboxRequest(
  * Standard Worker Default Export
  */
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  // Every request needs the API key (MASTER_API_KEY, constant-time check, fails closed: src/workers/authMiddleware.ts).
+  fetch: withApiKey<Env>(async (request: Request, env: Env): Promise<Response> => {
     const url = new URL(request.url);
     if (url.pathname === '/api/inbox' && request.method === 'GET') {
       return handleInboxRequest(request, env);
     }
     return new Response('Not Found', { status: 404 });
-  },
+  }),
 };

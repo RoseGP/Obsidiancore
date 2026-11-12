@@ -11,6 +11,10 @@ import request from 'supertest';
 let passed = 0; const ok = (n: string) => { passed++; console.log('  ✓', n); };
 Object.assign(process.env, { NODE_ENV: 'test', SOCIAL_ACCOUNTS_DEV_AUTH: 'true', CRM_STORE: 'memory' });
 const win = new Window({ url: 'http://localhost/', width: 1280, height: 800 });
+// happy-dom ≥ 20 implements Web Animations: when `motion` cancels an exit animation, the animation's `finished`
+// promise rejects with AbortError (spec behavior) and nothing awaits it. Browsers only report that; Node would
+// crash the test. Ignore exactly that rejection; anything else still fails the run.
+process.on('unhandledRejection', (e: any) => { if (e?.name === 'AbortError' && /animation was canceled/i.test(String(e?.message))) return; throw e; });
 const g = globalThis as any;
 for (const [k, v] of Object.entries({
   window: win, document: win.document, navigator: win.navigator, HTMLElement: win.HTMLElement, Node: win.Node, Element: win.Element,

@@ -35,7 +35,7 @@ automatically when `/api/billing/session` succeeds.
 
 | Variable | Purpose |
 |---|---|
-| `BILLING_JWT_SECRET` (or `JWT_SECRET`) | Required for the backend. HS256 secret used to verify session tokens. Without it the API returns 503 and the UI stays in prototype mode. |
+| `BILLING_JWT_SECRET` | Optional. Dedicated HS256 secret for standalone billing tokens (`businessId` + `role` claims, `exp` required). Not taken from `JWT_SECRET`: those tokens pick their own business. Without it, billing uses CRM sign-in (organization and role from the membership). |
 | `BILLING_SMTP_HOST`, `_PORT`, `_USER`, `_PASS`, `_SECURE`, `_FROM` | Outbound email (falls back to `SMTP_*`). Without `HOST` and `FROM`, sends are recorded as "not configured". |
 | `BILLING_DATA_DIR` | Where the per-business JSON files live (default `data/billing/`). |
 | `BILLING_SEED_DEMO=true` | Seed new businesses with sample data. Ignored when `NODE_ENV=production`. |
