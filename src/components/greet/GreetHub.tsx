@@ -37,6 +37,8 @@ interface Props {
   onNavigate?: (view: string) => void;
   /** Lets the Call Canvas Studio dialer book follow-ups on the calendar. */
   onAddCalendarEvent?: (event: any) => void;
+  /** Opens the LiveKit meeting room (camera/microphone check first, then join) with this code pre-filled. */
+  onOpenRoom?: (roomCode?: string) => void;
 }
 
 const inputCls = cx('w-full rounded-[var(--radius-control)] border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-[14px] text-[var(--text)] placeholder:text-[var(--text-subtle)]', focusRing);
@@ -664,7 +666,7 @@ function ActionCard({ icon, tag, title, body, children }: { icon: React.ReactNod
   );
 }
 
-export default function GreetHub({ contacts = [], onStart, onJoin, onNavigate, onAddCalendarEvent }: Props) {
+export default function GreetHub({ contacts = [], onStart, onJoin, onNavigate, onAddCalendarEvent, onOpenRoom }: Props) {
   const {
     meetingHistory, deleteMeetingHistoryItem, saveCurrentMeetingTranscript, isCallActive, returnToMeeting, activeMeeting,
     meetingLimits, meetingFeatures, meetingPlanLabel, subscription, refreshSubscription,
@@ -970,6 +972,7 @@ export default function GreetHub({ contacts = [], onStart, onJoin, onNavigate, o
                     <Button type="submit" variant="secondary" className="h-[38px]" icon={<LogIn className="h-4 w-4" />} disabled={busy || !joinCode.trim()}>Join</Button>
                   </div>
                   {joinError && <p role="alert" className="text-[12px] text-[var(--danger)]">{joinError}</p>}
+                  {onOpenRoom && <button type="button" id="btn-open-meeting-room" onClick={() => onOpenRoom(joinCode.trim())} className={cx('text-[12px] font-medium text-[var(--accent-text)] hover:underline', focusRing)}>Check camera & mic, then join</button>}
                 </form>
               </ActionCard>
               <ActionCard icon={<CalendarDays className="h-6 w-6" />} tag="SCHEDULE" title="Schedule a meeting" body="Book a meeting, invite teammates, and send customers secure invitation links. It's saved for your whole organization.">

@@ -16,6 +16,7 @@ import { LuxuryNotificationToasts } from './components/notifications/LuxuryNotif
 import UnifiedCommandSearchBar from './components/UnifiedCommandSearchBar';
 import DashboardView from './components/DashboardView';
 import GreetHub from './components/greet/GreetHub';
+import MeetingRoom from './features/meeting-room/MeetingRoom';
 import GreetGuestPage from './components/greet/GreetGuestPage';
 import { announceMeetingsChanged, scheduleFromCalendarEvent, scheduleMeeting } from './lib/greetClient';
 import ProductionMessagingPlatform from './components/messaging/ProductionMessagingPlatform';
@@ -48,6 +49,12 @@ import { useTaskReminders } from './features/crm-records/useTaskReminders';
 
 // Contacts are the organization's leads (/api/leads, stored per organization on the server); loaded after sign-in.
 const INITIAL_CONTACTS: CRMContact[] = [];
+
+
+/** A meeting code from the address bar (?room=abc-defg-hij) to pre-fill the meeting room's pre-join screen. */
+function initialRoomParam(): string {
+  try { return typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('room') || '' : ''; } catch { return ''; }
+}
 
 function contactFromLead(lead: CRMLead): CRMContact {
   return {
@@ -114,6 +121,7 @@ function AppMain() {
   const [messages, setMessages] = useState<{ [contactId: string]: CRMMessage[] }>(INITIAL_MESSAGES);
   const [notifications, setNotifications] = useState<AppNotification[]>(INITIAL_NOTIFICATIONS);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [meetingRoomCode, setMeetingRoomCode] = useState('');
   const [showNotificationPreferencesModal, setShowNotificationPreferencesModal] = useState<boolean>(false);
   const [settingsDefaultTab, setSettingsDefaultTab] = useState<SettingsTab>('account');
   const [isQuickActionModalOpen, setIsQuickActionModalOpen] = useState(false);
@@ -295,7 +303,7 @@ function AppMain() {
 
   // Map semantic active view to sidebar id
   const sidebarActiveId = (() => {
-    if (['greet', 'welcome', 'meet_and_greet'].includes(activeView)) return 'greet';
+    if (['greet', 'welcome', 'meet_and_greet', 'meeting_room'].includes(activeView)) return 'greet';
     if (['messages', 'email_assistant'].includes(activeView)) return 'messages';
     if (['voice_dialer', 'voice_hub'].includes(activeView)) return 'voice_dialer';
     if (['proposals', 'enterprise_proposals'].includes(activeView)) return 'proposals';
@@ -359,6 +367,7 @@ function AppMain() {
             contacts={contacts}
             onNavigate={(v) => setActiveView(v as SemanticView)}
             onAddCalendarEvent={handleAddCalendarEvent}
+            onOpenRoom={(code) => { setMeetingRoomCode(code || ''); setActiveView('meeting_room'); }}
             onStart={async (roomCode, contact, title, options) => {
               // The server starts the meeting on the organization's plan; if it refuses, say why and stay here.
               const r = await meetingSession.startInstantMeeting(roomCode, contact, title, options);
@@ -372,6 +381,9 @@ function AppMain() {
             }}
           />
         );
+      case 'meeting_room':
+        // Pre-fills the code only; joining always waits for the user's click (device check first).
+        return <MeetingRoom key="meeting-room" initialRoomCode={meetingRoomCode || initialRoomParam()} onExit={() => setActiveView('greet')} />;
       case 'analytics':
         return <div className="cc min-h-full shrink-0 w-full"><AnalyticsView onNavigate={(v) => setActiveView(v as SemanticView)} /></div>;
       case 'settings':

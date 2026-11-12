@@ -32,7 +32,8 @@ export type SemanticView =
   | 'contacts'
   | 'companies'
   | 'billing'           // Settings → Billing & Subscription
-  | 'security_access';  // Settings → Security & Access
+  | 'security_access'   // Settings → Security & Access
+  | 'meeting_room';     // GREET → LiveKit meeting room (pre-join, meeting, leave)
 
 export interface EmailDraft {
   recipient?: string;
@@ -94,7 +95,7 @@ export function mapSemanticToView(view: SemanticView): string {
 export function CommandProvider({ children }: { children: ReactNode }) {
   const [activeView, setActiveViewState] = useState<SemanticView>(() => {
     const hash = typeof window !== 'undefined' ? window.location.hash.replace('#', '') as SemanticView : '';
-    if (hash && ['greet', 'dashboard', 'messages', 'calendar', 'analytics', 'settings', 'gbp', 'proposals', 'social_planner', 'deals', 'sales_pipelines', 'voice_dialer', 'call_canvas', 'public_scheduling', 'tasks', 'lead_intelligence', 'contacts', 'companies', 'voice_messages'].includes(hash)) {
+    if (hash && ['greet', 'dashboard', 'messages', 'calendar', 'analytics', 'settings', 'gbp', 'proposals', 'social_planner', 'deals', 'sales_pipelines', 'voice_dialer', 'call_canvas', 'public_scheduling', 'tasks', 'lead_intelligence', 'contacts', 'companies', 'voice_messages', 'meeting_room'].includes(hash)) {
       return hash;
     }
     return 'dashboard'; // the Command Center dashboard is the homepage
