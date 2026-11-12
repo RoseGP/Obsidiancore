@@ -3,7 +3,8 @@
  *
  * Public (no sign-in; mounted with guard(PUBLIC.webForms); CORS handled here, per organization):
  *   OPTIONS /f/:formId   CORS preflight; only websites in the organization's allowed list get CORS headers
- *   POST    /f/:formId   a submission, as JSON (fetch) or a normal HTML form post (urlencoded)
+ *   POST    /f/:formId   a submission, as JSON (fetch) or a normal HTML form post (urlencoded); with Turnstile on,
+ *                        `cf-turnstile-response` must verify with Cloudflare (400 captcha_failed / 503 captcha_unavailable)
  *     200 { success, message }   accepted (also for spam and duplicates, which aren't sent on)
  *     400 { code: invalid_input, fields: [{ field, message }] }   (visitor input is never echoed back)
  *     403 origin_not_allowed · 404 form_not_found · 429 rate_limited · 503 crm_unavailable
@@ -117,13 +118,14 @@ const ConfigPatch = z.object({
   redirectUrl: z.string().max(500).nullable().optional(),
   destinations: z.object({ obsidian: z.boolean().optional(), webhook: z.boolean().optional() }).strict().optional(),
   webhookUrl: z.string().max(500).nullable().optional(),
+  turnstile: z.object({ siteKey: z.string().max(200), secretKey: z.string().max(200).optional() }).strict().nullable().optional(),
   userId: z.unknown().optional(), // set by guard() from the verified session; ignored
 }).strict().transform(({ userId: _ignored, ...rest }) => rest);
 
 admin.put('/config', requireAccess('settings', 'manage'), validateBody(ConfigPatch), asyncHandler(async (req, res) => {
   const t = tenantOf(req);
   const r = await wf.updateConfig(t.orgId, req.body);
-  await recordAudit(t.orgId, { actorId: t.userId, action: 'web_forms.config_updated', target: 'web_forms', meta: { origins: r.config.allowedOrigins.length, destinations: r.config.destinations, webhook: !!r.config.webhook } });
+  await recordAudit(t.orgId, { actorId: t.userId, action: 'web_forms.config_updated', target: 'web_forms', meta: { origins: r.config.allowedOrigins.length, destinations: r.config.destinations, webhook: !!r.config.webhook, captcha: !!r.config.captcha } });
   res.json({ success: true, config: r.config, endpoint: endpointFor(r.config.formId), ...(r.webhookSecret ? { webhookSecret: r.webhookSecret } : {}) });
 }));
 

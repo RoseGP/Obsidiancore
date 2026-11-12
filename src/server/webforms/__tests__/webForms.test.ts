@@ -20,6 +20,7 @@ const wf = await import('../service');
 const { verifySignature } = await import('../adapters');
 const { isPrivateAddress, safePostJson } = await import('../safeHttp');
 const { SubmissionSchema, spamVerdict, clean } = await import('../submission');
+const { setTurnstileVerifierForTests } = await import('../turnstile');
 const { makeOrg, addMember, as } = await import('../../__tests__/fixtures');
 await import('../../http/installAsyncErrors');
 const logs: string[] = [];
@@ -237,6 +238,76 @@ const logOf = (org: string) => store.list(`organizations/${org}/web_form_submiss
   assert.ok((await wf.recentSubmissions(B.id)).length >= 0);
   ok('the submission log is deleted after 30 days');
   void cfgB;
+}
+
+{
+  // Cloudflare Turnstile: optional, verified on the server, secret never returned
+  const calls: Array<{ secret: string; token: string; ip?: string }> = [];
+  let mode: 'pass' | 'reject' | 'down' | 'other-host' = 'pass';
+  setTurnstileVerifierForTests(async (secret, token, ip) => {
+    calls.push({ secret, token, ip });
+    if (mode === 'down') throw new Error('network');
+    if (mode === 'reject') return { success: false, 'error-codes': ['invalid-input-response'] };
+    return { success: true, hostname: mode === 'other-host' ? 'evil.example' : 'shop.example' };
+  });
+  const SITE = '0x4AAAAAAAtestSiteKey00'; const SECRET = '0x4AAAAAAAtestSecretKey_abcdEFGH';
+  const put = (body: object, who = 'owner_b') => request(app).put('/api/web-forms/config').set(as(who, B.id)).send(body);
+  assert.equal((await put({ turnstile: { siteKey: SITE } })).body.code, 'turnstile_secret_missing');
+  assert.equal((await put({ turnstile: { siteKey: 'bad key!', secretKey: SECRET } })).status, 400);
+  const on = await put({ turnstile: { siteKey: SITE, secretKey: SECRET }, allowedOrigins: ['https://shop.example'] });
+  assert.equal(on.status, 200);
+  assert.equal(on.body.config.captcha.siteKey, SITE);
+  assert.ok(!JSON.stringify(on.body).includes(SECRET), 'secret key never returned');
+  assert.ok(!JSON.stringify((await request(app).get('/api/web-forms/config').set(as('owner_b', B.id))).body).includes(SECRET));
+  assert.ok(!JSON.stringify(await store.get(`organizations/${B.id}/settings/web_forms`)).includes(SECRET), 'stored encrypted');
+  ok('Turnstile keys: secret required, validated, encrypted at rest and never returned');
+
+  const o = { Origin: 'https://shop.example' };
+  const r1 = await submit(cfgB.formId, { name: 'No Token', email: 'nt@b.test', _ts: old() }, o);
+  assert.equal(r1.status, 400); assert.equal(r1.body.code, 'captcha_failed');
+  assert.equal(calls.length, 0, 'no token → no call to Cloudflare');
+  mode = 'reject';
+  assert.equal((await submit(cfgB.formId, { name: 'Bad Token', email: 'bt@b.test', _ts: old(), 'cf-turnstile-response': 'tok-bad' }, o)).body.code, 'captcha_failed');
+  mode = 'other-host';
+  assert.equal((await submit(cfgB.formId, { name: 'Other Host', email: 'oh@b.test', _ts: old(), 'cf-turnstile-response': 'tok-x' }, o)).body.code, 'captcha_failed', 'token solved on another site');
+  mode = 'down';
+  const r4 = await submit(cfgB.formId, { name: 'Cf Down', email: 'cd@b.test', _ts: old(), 'cf-turnstile-response': 'tok-y' }, o);
+  assert.equal(r4.status, 503); assert.equal(r4.body.code, 'captcha_unavailable');
+  mode = 'pass';
+  const r5 = await submit(cfgB.formId, { name: 'Good Token', email: 'gt@b.test', _ts: old(), 'cf-turnstile-response': 'tok-good' }, o);
+  assert.equal(r5.status, 200);
+  assert.equal(calls.at(-1)!.secret, SECRET, 'the decrypted secret is sent to Cloudflare');
+  assert.ok((await leadsOf(B.id)).some((l: any) => l.email === 'gt@b.test'));
+  assert.ok(!(await leadsOf(B.id)).some((l: any) => l.email === 'bt@b.test' || l.email === 'nt@b.test'));
+  assert.ok(!logs.join('\n').includes('tok-good') && !logs.join('\n').includes(SECRET), 'tokens and secrets never logged');
+  ok('Turnstile: missing, rejected or other-site tokens → 400; Cloudflare down → 503 (fails closed); valid → lead');
+
+  assert.equal((await put({ turnstile: null })).body.config.captcha, null);
+  assert.equal((await submit(cfgB.formId, { name: 'After Off', email: 'ao@b.test', _ts: old() }, o)).status, 200);
+  await addMember(B.id, 'mgr_b', 'MANAGER');
+  assert.equal((await put({ turnstile: { siteKey: SITE, secretKey: SECRET } }, 'mgr_b')).status, 403, 'a manager of this organization');
+  setTurnstileVerifierForTests(null);
+  ok('Turnstile can be turned off; only owners/admins change it');
+}
+
+{
+  // The form code shown to owners stays in sync with what the endpoint accepts
+  const { htmlSnippet, fetchSnippet, reactSnippet } = await import('../../../components/localpilot/forms/snippets');
+  const ts = (await import('typescript')).default;
+  const fields = Object.keys(SubmissionSchema.shape);
+  const ep = 'https://crm.example.test/api/web-forms/f/wf_AAAAAAAAAAAAAAAA';
+  for (const [kind, make] of [['html', htmlSnippet], ['js', fetchSnippet], ['react', reactSnippet]] as const) {
+    for (const key of [null, '0x4AAAAAAAtestSiteKey00']) {
+      const code = make(ep, key);
+      for (const f of fields) assert.ok(code.includes(`name="${f}"`), `${kind} snippet has ${f}`);
+      assert.ok(code.includes(ep));
+      assert.equal(code.includes('cf-turnstile'), !!key, `${kind}: Turnstile widget only when configured`);
+      assert.ok(!/secret/i.test(code), 'no secret in browser code');
+    }
+  }
+  const out = ts.transpileModule(reactSnippet(ep, '0x4AAAAAAAtestSiteKey00'), { reportDiagnostics: true, compilerOptions: { jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2020 }, fileName: 'ContactForm.tsx' });
+  assert.equal(out.diagnostics?.length ?? 0, 0, 'React example is valid TSX');
+  ok('form code: every accepted field, Turnstile only when on, no secrets, React example compiles');
 }
 
 setLogSinkForTests(null);

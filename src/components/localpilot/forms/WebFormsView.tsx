@@ -5,16 +5,18 @@
  * validation, spam and duplicate handling, delivery). No form contents are shown here: they live in the CRM.
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, Copy, Globe, Inbox, KeyRound, Plus, RefreshCw, Send, ShieldCheck, Trash2, Webhook, AlertTriangle, Code2, ExternalLink } from 'lucide-react';
+import { CheckCircle2, Copy, Globe, Inbox, KeyRound, Plus, RefreshCw, Send, ShieldCheck, Trash2, Webhook, AlertTriangle, Code2 } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { Badge } from '../ui/Badge';
 import { Dialog } from '../ui/Dialog';
+import { htmlSnippet, fetchSnippet, reactSnippet } from './snippets';
 
 interface Delivery { adapter: 'obsidian' | 'webhook'; status: 'delivered' | 'failed' | 'pending'; attempts: number; httpStatus?: number; detail?: string; at: string }
 interface Submission { id: string; at: string; status: 'accepted' | 'duplicate' | 'spam'; reason: string | null; formName: string; originHost: string | null; deliveries: Delivery[] }
 interface Config {
   formId: string; allowedOrigins: string[]; redirectUrl: string | null; destinations: { obsidian: boolean; webhook: boolean };
-  webhook: { url: string; secretHint: string; updatedAt: string } | null; updatedAt: string;
+  webhook: { url: string; secretHint: string; updatedAt: string } | null;
+  captcha: { provider: 'turnstile'; siteKey: string; secretHint: string; updatedAt: string } | null; updatedAt: string;
 }
 
 class ApiError extends Error { constructor(message: string, public status: number, public fields?: { field: string; message: string }[]) { super(message); } }
@@ -38,78 +40,6 @@ function CopyButton({ text, label }: { text: string; label: string }) {
   );
 }
 
-function htmlSnippet(endpoint: string) {
-  return `<form action="${endpoint}" method="POST">
-  <label>Name <input name="name" required maxlength="120"></label>
-  <label>Email <input name="email" type="email" required maxlength="254"></label>
-  <label>Phone <input name="phone" type="tel" maxlength="40"></label>
-  <label>Message <textarea name="message" maxlength="4000"></textarea></label>
-  <label><input type="checkbox" name="consent" value="true" required> I agree to be contacted about my request.</label>
-  <input type="hidden" name="formName" value="Contact page">
-  <!-- Spam trap: keep hidden and empty -->
-  <input type="text" name="_hp" tabindex="-1" autocomplete="off" style="position:absolute;left:-9999px" aria-hidden="true">
-  <button type="submit">Send</button>
-</form>`;
-}
-
-function fetchSnippet(endpoint: string) {
-  return `<form id="contact-form">…same fields as the HTML version…</form>
-<script>
-  const form = document.getElementById('contact-form');
-  const shownAt = Date.now();
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const data = Object.fromEntries(new FormData(form));
-    data._ts = shownAt; data.pageUrl = location.href;
-    const res = await fetch('${endpoint}', {
-      method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify(data),
-    });
-    const out = await res.json();
-    alert(res.ok ? out.message : (out.fields || []).map((f) => f.message).join('\\n') || out.error);
-  });
-</script>`;
-}
-
-function reactSnippet(endpoint: string) {
-  return `// React (any framework that renders React: Vite, Next.js, Remix…)
-import { useRef, useState } from 'react';
-
-export function ContactForm() {
-  const shownAt = useRef(Date.now());
-  const [status, setStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
-  const [errors, setErrors] = useState<string[]>([]);
-
-  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    setStatus('sending'); setErrors([]);
-    const data = { ...Object.fromEntries(new FormData(e.currentTarget)), _ts: shownAt.current, pageUrl: location.href };
-    try {
-      const res = await fetch('${endpoint}', {
-        method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify(data),
-      });
-      const out = await res.json();
-      if (res.ok) { setStatus('sent'); e.currentTarget.reset(); }
-      else { setErrors(out.fields?.map((f: { message: string }) => f.message) ?? [out.error]); setStatus('error'); }
-    } catch { setErrors(['Network error. Please try again.']); setStatus('error'); }
-  }
-
-  if (status === 'sent') return <p role="status">Thanks! We'll be in touch soon.</p>;
-  return (
-    <form onSubmit={onSubmit}>
-      <label>Name <input name="name" required maxLength={120} /></label>
-      <label>Email <input name="email" type="email" required /></label>
-      <label>Message <textarea name="message" maxLength={4000} /></label>
-      <label><input type="checkbox" name="consent" value="true" required /> I agree to be contacted about my request.</label>
-      <input type="text" name="_hp" tabIndex={-1} autoComplete="off" aria-hidden="true" style={{ position: 'absolute', left: -9999 }} />
-      {errors.length > 0 && <ul role="alert">{errors.map((m) => <li key={m}>{m}</li>)}</ul>}
-      <button type="submit" disabled={status === 'sending'}>{status === 'sending' ? 'Sending…' : 'Send'}</button>
-    </form>
-  );
-}`;
-}
-
 const SNIPPETS = { html: { label: 'Simple HTML form', make: htmlSnippet }, js: { label: 'JavaScript (no page reload)', make: fetchSnippet }, react: { label: 'React', make: reactSnippet } } as const;
 
 export const WebFormsView: React.FC = () => {
@@ -128,12 +58,14 @@ export const WebFormsView: React.FC = () => {
   const [snippet, setSnippet] = useState<keyof typeof SNIPPETS>('html');
   const [confirmRotate, setConfirmRotate] = useState(false);
   const [readOnly, setReadOnly] = useState(false);
+  const [siteKeyInput, setSiteKeyInput] = useState('');
+  const [secretKeyInput, setSecretKeyInput] = useState('');
 
   const load = useCallback(async () => {
     try {
       const c = await api<{ config: Config; endpoint: string; appUrlConfigured: boolean }>('/config');
       setConfig(c.config); setEndpoint(c.endpoint); setAppUrlConfigured(c.appUrlConfigured);
-      setWebhookInput(c.config.webhook?.url || ''); setRedirectInput(c.config.redirectUrl || '');
+      setWebhookInput(c.config.webhook?.url || ''); setRedirectInput(c.config.redirectUrl || ''); setSiteKeyInput(c.config.captcha?.siteKey || '');
       const s = await api<{ submissions: Submission[] }>('/submissions');
       setSubs(s.submissions); setState('ready');
     } catch (e) {
@@ -212,8 +144,8 @@ export const WebFormsView: React.FC = () => {
           </div>
         </div>
         <div className="relative">
-          <pre className="max-h-72 overflow-auto rounded-lg bg-slate-900 p-4 text-[12px] leading-relaxed text-slate-100" tabIndex={0} aria-label="Form code"><code>{SNIPPETS[snippet].make(endpoint)}</code></pre>
-          <div className="absolute right-2 top-2"><CopyButton text={SNIPPETS[snippet].make(endpoint)} label="Copy form code" /></div>
+          <pre className="max-h-72 overflow-auto rounded-lg bg-slate-900 p-4 text-[12px] leading-relaxed text-slate-100" tabIndex={0} aria-label="Form code"><code>{SNIPPETS[snippet].make(endpoint, config.captcha?.siteKey ?? null)}</code></pre>
+          <div className="absolute right-2 top-2"><CopyButton text={SNIPPETS[snippet].make(endpoint, config.captcha?.siteKey ?? null)} label="Copy form code" /></div>
         </div>
         <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
           <span>Form address:</span><code className="rounded bg-slate-100 px-1.5 py-0.5 text-slate-900 break-all">{endpoint}</code><CopyButton text={endpoint} label="Copy form address" />
@@ -247,6 +179,40 @@ export const WebFormsView: React.FC = () => {
           </div>
           <p className="text-xs text-slate-500">Without one, visitors see a simple confirmation page.</p>
         </form>
+      </section>
+
+      {/* Spam protection: Cloudflare Turnstile (optional) */}
+      <section aria-labelledby="wf-captcha" className="bg-white rounded-xl border border-slate-200 p-5 shadow-2xs space-y-3">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <h2 id="wf-captcha" className="text-sm font-semibold text-slate-900 flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-slate-500" />Extra spam protection (optional)</h2>
+            <p className="text-xs text-slate-500 max-w-2xl">Every form already has a hidden spam trap, speed and link checks, and limits per visitor. If spam still gets through, turn on Cloudflare Turnstile: a free "verify you are human" check that's usually invisible to real people.</p>
+          </div>
+          {config.captcha ? <Badge variant="success" size="sm">Turnstile on</Badge> : <Badge variant="neutral" size="sm">Off</Badge>}
+        </div>
+        <ol className="list-decimal pl-5 text-xs text-slate-600 space-y-0.5">
+          <li>In Cloudflare, open <span className="font-medium">Turnstile → Add widget</span>, enter your website's domain and choose <span className="font-medium">Managed</span>.</li>
+          <li>Paste the site key and secret key below and save. The secret key stays encrypted on this server.</li>
+          <li>Copy the form code again from step 1: it now includes the check.</li>
+        </ol>
+        <form className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]" onSubmit={(e) => {
+          e.preventDefault();
+          void save('captcha', { turnstile: { siteKey: siteKeyInput.trim(), ...(secretKeyInput.trim() ? { secretKey: secretKeyInput.trim() } : {}) } }, 'Turnstile is on. Copy the updated form code to your website.').then(() => setSecretKeyInput(''));
+        }}>
+          <div>
+            <label htmlFor="wf-sitekey" className="block text-xs font-medium text-slate-700">Site key</label>
+            <input id="wf-sitekey" value={siteKeyInput} onChange={(e) => setSiteKeyInput(e.target.value)} placeholder="0x4AAAAAAA…" disabled={readOnly} autoComplete="off" spellCheck={false} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400" />
+          </div>
+          <div>
+            <label htmlFor="wf-secretkey" className="block text-xs font-medium text-slate-700">Secret key {config.captcha && <span className="font-normal text-slate-500">(saved {config.captcha.secretHint}; leave empty to keep)</span>}</label>
+            <input id="wf-secretkey" type="password" value={secretKeyInput} onChange={(e) => setSecretKeyInput(e.target.value)} placeholder={config.captcha ? '••••••••' : '0x4AAAAAAA…'} disabled={readOnly} autoComplete="new-password" spellCheck={false} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400" />
+          </div>
+          <div className="flex items-end gap-2">
+            <Button type="submit" size="sm" variant="outline" disabled={readOnly || !siteKeyInput.trim() || (!config.captcha && !secretKeyInput.trim())} isLoading={busy === 'captcha'}>Save</Button>
+            {config.captcha && <Button type="button" size="sm" variant="ghost" disabled={readOnly} isLoading={busy === 'captcha-off'} onClick={() => save('captcha-off', { turnstile: null }, 'Turnstile is off. Remove the check from your form code.')}>Turn off</Button>}
+          </div>
+        </form>
+        {config.captcha && <p className="flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800"><AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />While Turnstile is on, forms without the check are refused. Update the code on your website now.</p>}
       </section>
 
       {/* Step 3: destinations */}
@@ -336,7 +302,7 @@ export const WebFormsView: React.FC = () => {
         <div className="mt-3 space-y-2 text-xs text-slate-600">
           <p>If your form is being abused, create a new form address. The old address stops working immediately, so update your website right after.</p>
           <Button size="sm" variant="danger" disabled={readOnly} onClick={() => setConfirmRotate(true)}>Create a new form address…</Button>
-          <p className="pt-2"><a className="inline-flex items-center gap-1 font-semibold text-blue-600 hover:underline" href="https://developers.google.com/my-business" target="_blank" rel="noreferrer noopener">How Google Business Profile links to your website <ExternalLink className="h-3 w-3" /></a></p>
+          <p className="pt-2">Setup details, the webhook payload and Cloudflare notes: docs/local-seo/WEB_FORMS.md.</p>
         </div>
       </details>
 

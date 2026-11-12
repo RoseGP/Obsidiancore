@@ -8,6 +8,7 @@
  *   organizations/{org}/web_form_submissions/{id}  delivery log: time, status, delivery results, a fingerprint
  *                                            for duplicate detection, the page host. NO name, email, phone or
  *                                            message (those live only in the CRM). expireAt = +30 days.
+ * Optional Cloudflare Turnstile: site key (public) + secret key (encrypted); tokens verified server-side.
  */
 import crypto from 'node:crypto';
 import { assertId, getDocStore, newId, type DocStore } from '../data/docStore';
@@ -18,6 +19,7 @@ import { hashIp } from '../audit/auditLog';
 import { coreSecret } from '../../utils/secrets';
 import { ADAPTERS, PAYLOAD_VERSION, type DeliveryResult, type WebFormPayload } from './adapters';
 import { OutboundError, validateWebhookUrl } from './safeHttp';
+import { TOKEN_FIELD, verifyTurnstile } from './turnstile';
 import { SubmissionSchema, fieldErrors, fingerprint, spamVerdict, type Submission } from './submission';
 
 const DAY = 86_400_000;
@@ -52,11 +54,14 @@ export interface WebFormConfig {
   redirectUrl: string | null;
   destinations: { obsidian: boolean; webhook: boolean };
   webhook: { url: string; secret: string; secretHint: string; updatedAt: string } | null;
+  /** Optional CAPTCHA. Absent on configs created before it existed (treated as off). */
+  captcha?: { provider: 'turnstile'; siteKey: string; secret: string; secretHint: string; updatedAt: string } | null;
   updatedAt: string;
 }
 
 const cfgPath = (orgId: string) => `organizations/${assertId(orgId)}/settings/web_forms`;
 const newFormId = () => `wf_${crypto.randomBytes(12).toString('base64url')}`;
+const TURNSTILE_KEY = /^[0-9A-Za-z_-]{10,120}$/;
 const allowPrivateWebhooks = () => process.env.NODE_ENV !== 'production' && (process.env.WEBFORM_ALLOW_PRIVATE_WEBHOOKS || '').toLowerCase() === 'true';
 
 export async function getConfig(orgId: string, st?: DocStore): Promise<WebFormConfig> {
@@ -77,6 +82,7 @@ export function publicConfig(cfg: WebFormConfig) {
   return {
     formId: cfg.formId, allowedOrigins: cfg.allowedOrigins, redirectUrl: cfg.redirectUrl, destinations: cfg.destinations,
     webhook: cfg.webhook ? { url: cfg.webhook.url, secretHint: cfg.webhook.secretHint, updatedAt: cfg.webhook.updatedAt } : null,
+    captcha: cfg.captcha ? { provider: cfg.captcha.provider, siteKey: cfg.captcha.siteKey, secretHint: cfg.captcha.secretHint, updatedAt: cfg.captcha.updatedAt } : null,
     updatedAt: cfg.updatedAt,
   };
 }
@@ -88,7 +94,7 @@ export function normalizeOrigin(raw: string): string {
   return u.origin;
 }
 
-export async function updateConfig(orgId: string, patch: { allowedOrigins?: string[]; redirectUrl?: string | null; destinations?: { obsidian?: boolean; webhook?: boolean }; webhookUrl?: string | null }) {
+export async function updateConfig(orgId: string, patch: { allowedOrigins?: string[]; redirectUrl?: string | null; destinations?: { obsidian?: boolean; webhook?: boolean }; webhookUrl?: string | null; turnstile?: { siteKey: string; secretKey?: string } | null }) {
   const store = await getDocStore();
   const cfg = await getConfig(orgId, store);
   const next: WebFormConfig = { ...cfg, destinations: { ...cfg.destinations } };
@@ -109,6 +115,18 @@ export async function updateConfig(orgId: string, patch: { allowedOrigins?: stri
         next.webhook = { url: patch.webhookUrl, secret: sealSecret(newSecret), secretHint: `${newSecret.slice(0, 10)}…`, updatedAt: new Date().toISOString() };
       } else next.webhook = { ...cfg.webhook, url: patch.webhookUrl, updatedAt: new Date().toISOString() };
     } else { next.webhook = null; next.destinations.webhook = false; }
+  }
+  if (patch.turnstile !== undefined) {
+    if (patch.turnstile) {
+      const siteKey = patch.turnstile.siteKey.trim();
+      const secretKey = patch.turnstile.secretKey?.trim();
+      if (!TURNSTILE_KEY.test(siteKey)) throw badRequest('That doesn\'t look like a Turnstile site key. Copy it from Cloudflare → Turnstile → your widget.', 'invalid_turnstile_key');
+      if (secretKey !== undefined && secretKey !== '' && !TURNSTILE_KEY.test(secretKey)) throw badRequest('That doesn\'t look like a Turnstile secret key.', 'invalid_turnstile_key');
+      if (!secretKey && !cfg.captcha) throw badRequest('Add the Turnstile secret key too. It stays on the server.', 'turnstile_secret_missing');
+      next.captcha = secretKey
+        ? { provider: 'turnstile', siteKey, secret: sealSecret(secretKey), secretHint: `…${secretKey.slice(-4)}`, updatedAt: new Date().toISOString() }
+        : { ...cfg.captcha!, siteKey, updatedAt: new Date().toISOString() };
+    } else next.captcha = null;
   }
   if (patch.destinations) {
     if (patch.destinations.obsidian !== undefined) next.destinations.obsidian = patch.destinations.obsidian;
@@ -189,6 +207,19 @@ export async function submit(formId: string, raw: Record<string, unknown>, meta:
   const parsed = SubmissionSchema.safeParse(raw ?? {});
   if (!parsed.success) throw badRequest('Please check the highlighted fields.', 'invalid_input', { fields: fieldErrors(parsed.error) });
   const s = parsed.data;
+  if (cfg.captcha) {
+    const v = await verifyTurnstile(unsealSecret(cfg.captcha.secret), (raw ?? {})[TOKEN_FIELD], meta.ip);
+    if (!v.ok) {
+      logger.warn('webforms.captcha_failed', { org: orgId, reason: v.reason, codes: v.codes });
+      if (v.reason === 'unavailable') throw new HttpError(503, 'captcha_unavailable', 'We couldn\'t check that you\'re human just now. Please try again in a minute.');
+      throw badRequest('Please complete the "verify you are human" check and send the form again.', 'captcha_failed');
+    }
+    const hosts = cfg.allowedOrigins.map((o) => new URL(o).hostname);
+    if (v.hostname && hosts.length && !hosts.includes(v.hostname)) {
+      logger.warn('webforms.captcha_failed', { org: orgId, reason: 'hostname_mismatch' });
+      throw badRequest('Please complete the "verify you are human" check and send the form again.', 'captcha_failed');
+    }
+  }
   const now = meta.now ?? Date.now();
   const at = new Date(now).toISOString();
   const expireAt = new Date(now + LOG_RETENTION_DAYS * DAY).toISOString();

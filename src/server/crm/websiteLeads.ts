@@ -21,7 +21,10 @@ export interface WebsiteLeadInput {
   message?: string;
   sourceUrl?: string;
   utmSource?: string;
+  utmMedium?: string;
   utmCampaign?: string;
+  /** Visitor ticked the marketing box on the form (consent itself is recorded in Privacy & Compliance). */
+  marketingOptIn?: boolean;
   budget?: number;
   timeline?: string;
   /** Shown in activity entries ("Website Form", "Contact form"…). */
@@ -63,7 +66,7 @@ export async function upsertWebsiteLead(orgId: string, input: WebsiteLeadInput):
     title: input.title || 'Prospective Buyer',
     source: 'website', channel: 'website', status: 'new',
     owner: '', ownerId: null, // unassigned until someone in the org picks it up
-    notes: `Inbound Website Submission from ${sourceUrl || 'Landing Page'}\nMessage: ${inquiry}\nUTM: ${input.utmSource || 'direct'} / ${input.utmCampaign || 'organic'}`,
+    notes: `Inbound Website Submission from ${sourceUrl || 'Landing Page'}\nMessage: ${inquiry}\nUTM: ${input.utmSource || 'direct'} / ${input.utmMedium || 'none'} / ${input.utmCampaign || 'organic'}${input.marketingOptIn ? '\nMarketing emails: opted in' : ''}`,
     isConverted: false,
     qualification: { budget: Number(input.budget) > 0 ? Number(input.budget) : 0, authority: 'unknown', need: inquiry, timeline: input.timeline || 'unknown' },
     createdAt: nowIso(), updatedAt: nowIso(),

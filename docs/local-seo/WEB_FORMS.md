@@ -158,15 +158,54 @@ The endpoint is plain HTTP, so the website's framework doesn't matter:
   endpoint (send JSON with the same field names), or Zapier/Make in between.
 - **React, Vue, Svelte, Next.js, etc.**: post JSON with `fetch` (the UI has a React example). No server code is
   needed on the website: secrets stay in this server.
-- **If you'd rather run the endpoint on your own hosting** (serverless function, Cloudflare Worker), the logic to
-  port is `submission.ts` (validation + spam checks), the duplicate check, and an adapter; keep CRM keys in that
+- **If you'd rather run the endpoint on your own hosting** (serverless function, Worker), the logic to port is `submission.ts` (validation + spam checks), the duplicate check, and an adapter; keep CRM keys in that
   platform's secret store, and replace the in-memory rate limiter with the platform's (e.g. Cloudflare rate limiting
   rules) because serverless instances don't share memory.
 
-## CAPTCHA (optional, not built in)
+## CAPTCHA: Cloudflare Turnstile (optional, built in)
 
-The honeypot, timing check, link/markup checks and rate limits stop most automated spam without bothering
-visitors. If a form is still targeted, a CAPTCHA such as Cloudflare Turnstile or hCaptcha can be added: the widget
-goes on the website, and the server must verify its token with the provider's verify endpoint (secret key in an
-environment variable) before `submit()`. This isn't implemented yet; don't add a widget without the server check,
-because a client-only CAPTCHA protects nothing.
+The hidden trap field, the timing, link and markup checks, and the rate limits stop most automated spam without
+bothering visitors. If a form is still targeted, turn on Turnstile on the Website forms page:
+
+1. Cloudflare dashboard → **Turnstile → Add widget**: add your website's hostname(s), widget mode **Managed**.
+2. Paste the **site key** (public) and **secret key** on the Website forms page. The secret is encrypted
+   (AES-256-GCM) and never returned to the browser or written to logs.
+3. Copy the form code again: it now loads `https://challenges.cloudflare.com/turnstile/v0/api.js` and adds
+   `<div class="cf-turnstile" data-sitekey="…">`, which puts a one-time `cf-turnstile-response` field in the form.
+
+The server checks every token with Cloudflare's Siteverify API (`POST https://challenges.cloudflare.com/turnstile/v0/siteverify`,
+`secret` + `response` + `remoteip`) before anything is saved (`src/server/webforms/turnstile.ts`):
+
+| Result | Response |
+|---|---|
+| no token, rejected or expired token (tokens are single-use, valid 5 minutes) | 400 `captcha_failed` |
+| token solved on a hostname that isn't in Allowed websites | 400 `captcha_failed` |
+| Cloudflare unreachable, or the secret key is wrong | 503 `captcha_unavailable` (fails closed; logged with Cloudflare's error codes, never the token) |
+
+While Turnstile is on, forms without the widget are refused, so update the website right after turning it on.
+For local testing, Cloudflare publishes test keys (site key `1x00000000000000000000AA` with secret
+`1x0000000000000000000000000000000AA` always passes).
+
+## Cloudflare hosting (your setup)
+
+**Your website on Cloudflare Pages (or any site behind Cloudflare):** nothing runs on the website's side. Paste the
+form code into the page; the browser posts straight to Obsidian. Add every address the form is served from to
+Allowed websites: `https://www.yourdomain.com`, `https://yourdomain.com`, and your `https://<project>.pages.dev`
+address if you test there (preview deployments get their own hostnames; add the ones you use).
+
+If Obsidian itself is behind Cloudflare's proxy (orange cloud):
+- Set `TRUST_PROXY` so rate limits see the visitor's IP, not Cloudflare's: `1` when Cloudflare connects straight to
+  the Obsidian server, `2` if there's also a platform load balancer in between (Cloud Run, Render, a Kubernetes
+  ingress). Without it, all visitors share one limit. Only trust the proxy if the origin accepts traffic from
+  Cloudflare alone (firewall to Cloudflare's IP ranges, or a Cloudflare Tunnel); otherwise anyone can fake
+  `X-Forwarded-For`.
+- **Bot Fight Mode / Super Bot Fight Mode** can challenge `fetch` posts, which then fail silently in the browser.
+  Use Turnstile on the form instead, or add a WAF skip rule for `/api/web-forms/f/*`.
+- Optional: a Cloudflare rate-limiting rule on `/api/web-forms/f/*` (e.g. 20 requests per minute per IP) stops floods
+  before they reach the server, in addition to the server's own limits.
+- Don't cache `/api/*` (responses already send `Cache-Control: no-store`).
+
+**Moving the endpoint itself onto a Cloudflare Worker** isn't needed for this setup and isn't built: the existing
+`wrangler.api.toml` Worker serves health checks only, and the endpoint needs the CRM's Firestore data. If you want it
+later, port `submission.ts` + `turnstile.ts` to the Worker and have it forward accepted submissions to this
+server's endpoint, keeping secrets in Worker secrets (`wrangler secret put`).

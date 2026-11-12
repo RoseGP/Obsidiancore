@@ -50,7 +50,7 @@ export const obsidianAdapter: CrmAdapter = {
     try {
       const r = await upsertWebsiteLead(ctx.orgId, {
         name: p.contact.name, email: p.contact.email, phone: p.contact.phone || '', company: p.contact.company || '',
-        message: p.message || '', sourceUrl: p.source.pageUrl || '', utmSource: p.source.utm.source || '', utmCampaign: p.source.utm.campaign || '',
+        message: p.message || '', sourceUrl: p.source.pageUrl || '', utmSource: p.source.utm.source || '', utmMedium: p.source.utm.medium || '', utmCampaign: p.source.utm.campaign || '', marketingOptIn: p.consent.marketing === true,
         formLabel: `Website form${p.form.name ? `: ${p.form.name}` : ''}`,
       });
       return { ok: true, externalId: r.leadId, detail: r.isExisting ? 'Added to an existing lead.' : 'New lead created.' };
