@@ -19,14 +19,23 @@ import { newId } from '../server/data/docStore';
 import { TaskService } from '../server/crm/tasks';
 import { existingForLead } from '../server/crm/contacts';
 import { requirePermission, requireReadOrWrite, requireTenant, sendError, tenantOf } from '../server/tenancy/middleware';
-import { TenancyError } from '../server/tenancy/orgs';
-import { canAccess, requireAccess } from '../server/security/permissions';
+import { assignableOwner, can, TenancyError } from '../server/tenancy/orgs';
+import { canAccess, requireAccess, methodPermission, requireAccessFor } from '../server/security/permissions';
 import { auditFromRequest, hashIp } from '../server/audit/auditLog';
 import { CONSENT_PURPOSES, recordConsent } from '../server/compliance/records';
 
 const router = Router();
 
 import { LEAD_STATUSES } from '../lib/pipelineStages';
+/** Budget: a finite number in 0 … 1,000,000,000,000 (negative, NaN and Infinity used to be stored as sent). */
+export const MAX_BUDGET = 1_000_000_000_000;
+export function budgetOf(v: unknown): number {
+  if (v === undefined || v === null || v === '') return 0;
+  const n = typeof v === 'number' ? v : typeof v === 'string' ? Number(v.trim()) : NaN;
+  if (!Number.isFinite(n) || n < 0 || n > MAX_BUDGET) throw new TenancyError(400, 'invalid_input', 'Budget must be a number between 0 and 1,000,000,000,000.');
+  return Math.round(n * 100) / 100;
+}
+
 const BULK_MAX = 200;
 
 function isValidEmail(email: unknown): email is string {
@@ -108,7 +117,15 @@ router.post('/capture', captureLimiter, async (req: Request, res: Response) => {
 // ---------------------------------------------------------------------------
 // Everything below: signed-in member of the organization
 // ---------------------------------------------------------------------------
-router.use(requireTenant, requireReadOrWrite);
+// Role matrix on top of the rank check. Lead tasks need the tasks permission; converting a lead creates a
+// contact and a deal, so it needs all three. Export and delete keep their own explicit checks too.
+router.use(requireTenant, requireReadOrWrite, requireAccessFor((req) => {
+  const p = req.path, m = req.method;
+  if (/^\/[^/]+\/tasks(\/.*)?$/.test(p)) return [['leads', 'view'], ['tasks', m === 'POST' ? 'create' : 'edit']];
+  if (m === 'POST' && /^\/[^/]+\/convert$/.test(p)) return [['leads', 'edit'], ['contacts', 'create'], ['deals', 'create']];
+  if (m === 'POST' && p.startsWith('/bulk')) return [['leads', 'edit']];
+  return [['leads', methodPermission(m)]];
+}));
 
 // GET /api/leads/export: CSV of the organization's leads (leads › export; managers and admins). Audited.
 const csvCell = (v: unknown) => {
@@ -232,7 +249,7 @@ router.post('/', async (req: Request, res: Response) => {
       source, status, channel: str(b.channel, 40) || source,
       owner: str(b.owner, 120) || t.name || t.email, ownerId: t.userId,
       notes: str(b.notes, 10_000),
-      qualification: { budget: Number(q.budget) || 0, authority: str(q.authority, 40) || 'evaluator', need: str(q.need, 2000), timeline: str(q.timeline, 60) || '1-3 months' },
+      qualification: { budget: budgetOf(q.budget), authority: str(q.authority, 40) || 'evaluator', need: str(q.need, 2000), timeline: str(q.timeline, 60) || '1-3 months' },
       isConverted: false, createdAt: nowIso(), updatedAt: nowIso(),
     };
     lead.score = calculateLeadScore(lead);
@@ -273,9 +290,12 @@ router.post('/bulk/status', requirePermission('manage_records'), async (req, res
 
 router.post('/bulk/assign', requirePermission('manage_records'), async (req, res) => {
   try {
-    const owner = str(req.body?.owner, 120);
+    // Same rule as single assignment: ownerId must be a member; the name then comes from the membership.
+    const rawOwnerId = req.body?.ownerId;
+    const o = rawOwnerId !== undefined && rawOwnerId !== null && rawOwnerId !== '' ? await assignableOwner(tenantOf(req).orgId, rawOwnerId) : null;
+    const owner = o ? o.name : str(req.body?.owner, 120);
     if (!owner) return res.status(400).json({ success: false, error: 'Owner name is required.' });
-    const ownerId = str(req.body?.ownerId, 128) || null;
+    const ownerId = o ? o.id : null;
     const r = await bulkApply(req, req.body?.ids, (repo, id) => repo.updateLead(id, { owner, ownerId, updatedAt: nowIso() }));
     if (r.updated.length) await r.repo.logActivity({ type: 'assigned', title: 'Bulk Lead Reassignment', description: `Reassigned ${r.updated.length} leads to ${owner}.`, actor: actorOf(req) });
     res.json({ success: true, count: r.updated.length, skipped: r.skipped, owner });
@@ -330,9 +350,11 @@ router.patch('/:id', async (req, res) => {
     const lead = await repo.getLead(req.params.id);
     if (!lead) return res.status(404).json({ success: false, error: 'Lead not found.' });
     const b = req.body || {};
-    if (lead.isConverted && !b.allowConvertedEdit) {
-      return res.status(400).json({ success: false, error: 'This lead has been converted. Core lifecycle edits are locked to preserve audit history.' });
+    // The lock on converted leads can be lifted only by roles that manage records (a client flag alone used to do it).
+    if (lead.isConverted && !(b.allowConvertedEdit === true && can(tenantOf(req).role, 'manage_records'))) {
+      return res.status(b.allowConvertedEdit ? 403 : 400).json({ success: false, code: b.allowConvertedEdit ? 'forbidden' : 'converted_locked', error: 'This lead has been converted. Core lifecycle edits are locked to preserve audit history.' });
     }
+    if (lead.isConverted) await auditFromRequest(req, 'record.updated', { type: 'lead', id: lead.id }, { convertedEditOverride: true });
     const updates: any = { updatedAt: nowIso() };
     if (b.name !== undefined) { updates.name = str(b.name, 120); if (!updates.name) return res.status(400).json({ success: false, error: 'Name can’t be empty.' }); }
     if (b.email !== undefined) { if (!isValidEmail(b.email)) return res.status(400).json({ success: false, error: 'Invalid email address.' }); updates.email = b.email.trim().toLowerCase(); }
@@ -342,7 +364,7 @@ router.patch('/:id', async (req, res) => {
     if (b.qualification && typeof b.qualification === 'object') {
       const q = b.qualification;
       updates.qualification = { ...lead.qualification,
-        ...(q.budget !== undefined ? { budget: Number(q.budget) || 0 } : {}),
+        ...(q.budget !== undefined ? { budget: budgetOf(q.budget) } : {}),
         ...(q.authority !== undefined ? { authority: str(q.authority, 40) } : {}),
         ...(q.need !== undefined ? { need: str(q.need, 2000) } : {}),
         ...(q.timeline !== undefined ? { timeline: str(q.timeline, 60) } : {}) };
@@ -374,12 +396,19 @@ router.patch('/:id/status', async (req, res) => {
 // PATCH /api/leads/:id/assign
 router.patch('/:id/assign', async (req, res) => {
   try {
-    const owner = str(req.body?.owner, 120);
+    // ownerId must be a member of this organization (it used to be stored as sent); the display name then comes
+    // from the membership record, not the request.
+    const rawOwnerId = req.body?.ownerId;
+    let ownerId: string | null = null, owner = str(req.body?.owner, 120);
+    if (rawOwnerId !== undefined && rawOwnerId !== null && rawOwnerId !== '') {
+      const o = await assignableOwner(tenantOf(req).orgId, rawOwnerId);
+      ownerId = o.id; owner = o.name;
+    }
     if (!owner) return res.status(400).json({ success: false, error: 'Owner name is required.' });
     const repo = await repoFor(req);
     const lead = await repo.getLead(req.params.id);
     if (!lead) return res.status(404).json({ success: false, error: 'Lead not found.' });
-    await repo.updateLead(lead.id, { owner, ownerId: str(req.body?.ownerId, 128) || null, updatedAt: nowIso() });
+    await repo.updateLead(lead.id, { owner, ownerId, updatedAt: nowIso() });
     await repo.addLeadActivity(lead.id, { type: 'assigned', title: 'Lead Reassigned', description: `Assigned from ${lead.owner || 'Unassigned'} to ${owner}.`, actor: actorOf(req) });
     res.json({ success: true, id: lead.id, owner });
   } catch (err) { sendError(res, err, 'leads.assign'); }

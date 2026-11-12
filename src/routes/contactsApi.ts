@@ -23,6 +23,7 @@
 import { Router, type Request, type Response } from 'express';
 import { ContactService } from '../server/crm/contacts';
 import { requirePermission, requireReadOrWrite, requireTenant, sendError, tenantOf } from '../server/tenancy/middleware';
+import { methodPermission, requireAccessFor } from '../server/security/permissions';
 import { TenancyError } from '../server/tenancy/orgs';
 
 const actor = (req: Request) => { const t = tenantOf(req); return { userId: t.userId, name: t.name || t.email || t.userId }; };
@@ -38,7 +39,15 @@ function fail(res: Response, err: unknown, tag: string) {
 
 // ---------------------------------------------------------------- contacts
 export const contactsRouter = Router();
-contactsRouter.use(requireTenant, requireReadOrWrite);
+// Role matrix (Settings › Roles & permissions) on top of the rank check. /match is a lookup; notes are edits;
+// merge and restore act like deletions (merge tombstones the other records).
+contactsRouter.use(requireTenant, requireReadOrWrite, requireAccessFor((req) => {
+  if (req.method === 'POST' && req.path === '/match') return [['contacts', 'view']];
+  if (req.method === 'POST' && req.path === '/merge') return [['contacts', 'edit'], ['contacts', 'delete']];
+  if (req.method === 'POST' && /^\/[^/]+\/notes$/.test(req.path)) return [['contacts', 'edit']];
+  if (req.method === 'POST' && /^\/[^/]+\/restore$/.test(req.path)) return [['contacts', 'delete']];
+  return [['contacts', methodPermission(req.method)]];
+}));
 
 contactsRouter.get('/', async (req, res) => {
   try {
@@ -116,7 +125,8 @@ contactsRouter.post('/:id/restore', requirePermission('manage_records'), async (
 
 // ---------------------------------------------------------------- companies
 export const companiesRouter = Router();
-companiesRouter.use(requireTenant, requireReadOrWrite);
+companiesRouter.use(requireTenant, requireReadOrWrite, requireAccessFor((req) =>
+  req.method === 'POST' && /^\/[^/]+\/notes$/.test(req.path) ? [['companies', 'edit']] : [['companies', methodPermission(req.method)]]));
 
 companiesRouter.get('/', async (req, res) => {
   try {

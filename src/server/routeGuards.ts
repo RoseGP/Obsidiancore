@@ -24,7 +24,10 @@ export function bindVerifiedUser(req: Request) {
   (req as any).userId = id;
   if (req.body && typeof req.body === 'object' && !Array.isArray(req.body)) {
     req.body.userId = id;
-    for (const k of ['user_id', 'ownerId', 'createdById']) if (k in req.body) req.body[k] = id;
+    // Actor fields are always the verified user. `ownerId` (who a CRM record is assigned to) is NOT rewritten:
+    // the CRM routes that accept it check it is a member of the organization (assignableOwner). Rewriting it
+    // made every assignment silently point at the caller while keeping the chosen person's name.
+    for (const k of ['user_id', 'createdById']) if (k in req.body) req.body[k] = id;
   }
   if (req.query && typeof req.query === 'object') for (const k of ['userId', 'user_id']) if (k in req.query) (req.query as any)[k] = id;
 }

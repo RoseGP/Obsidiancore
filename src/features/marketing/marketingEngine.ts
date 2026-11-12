@@ -25,7 +25,7 @@ class MarketingEngine {
   private startTime: number = Date.now();
 
   constructor() {
-    this.seedDefaults();
+    // No seeded workspace or sample subscribers: the CRM shows only real data (CLAUDE.md rule 1).
   }
 
   private seedDefaults() {
@@ -165,9 +165,22 @@ class MarketingEngine {
     return inv;
   }
 
-  public acceptInvitation(token: string, userId: string): { success: boolean; workspace?: Workspace; error?: string } {
+  /** The caller's role in a workspace ('owner' | 'admin' | 'member'), or null when not a member. */
+  public roleIn(workspaceId: string, userId: string): 'owner' | 'admin' | 'member' | null {
+    const ws = this.workspaces.get(workspaceId);
+    if (!ws) return null;
+    if (ws.ownerId === userId) return 'owner';
+    for (const wu of this.workspaceUsers.values()) if (wu.workspaceId === workspaceId && wu.userId === userId) return wu.role as 'owner' | 'admin' | 'member';
+    return null;
+  }
+
+  /**
+   * Accepts an invitation for the signed-in user. The invitation is bound to the invited address: `verifiedEmail`
+   * must match it (a leaked link alone isn't enough). Unknown, used, expired and mismatched tokens get one message.
+   */
+  public acceptInvitation(token: string, userId: string, verifiedEmail?: string): { success: boolean; workspace?: Workspace; error?: string } {
     const inv = Array.from(this.invitations.values()).find(i => i.token === token);
-    if (!inv) return { success: false, error: 'Invalid or expired invitation token.' };
+    if (!inv || !verifiedEmail || inv.email !== verifiedEmail.trim().toLowerCase()) return { success: false, error: 'Invalid or expired invitation token.' };
     if (inv.status !== 'pending') return { success: false, error: `Invitation has already been ${inv.status}.` };
     if (new Date(inv.expiresAt).getTime() < Date.now()) {
       inv.status = 'declined';

@@ -15,7 +15,7 @@
  * and leaves the other one as a tombstone (mergedInto) with all of its data.
  */
 import { assertId, getDocStore, newId, type DocStore } from '../data/docStore';
-import { TenancyError } from '../tenancy/orgs';
+import { TenancyError, assignableOwner } from '../tenancy/orgs';
 import { recordAudit } from '../audit/auditLog';
 import { inboxMessagesByEmail } from '../../routes/messagingPlatform';
 import { LIKELY, POSSIBLE, buildIndex, clusterMatches, findMatchingPairs, levelOf, matchAgainst, matchLeadsToContacts, matchScore, type MatchLevel } from './analytics/entityMatch';
@@ -143,6 +143,7 @@ export class ContactService {
     if (!fields.name && !fields.email) throw new TenancyError(400, 'invalid_input', 'Add a name or an email.');
     if (!validEmail(fields.email)) throw new TenancyError(400, 'invalid_input', 'That email address isn’t valid.');
     if (fields.companyId && !(await this.st.get(companyPath(this.orgId, fields.companyId)))) throw new TenancyError(400, 'invalid_input', 'That company wasn’t found.');
+    if (fields.ownerId) { const o = await assignableOwner(this.orgId, fields.ownerId, this.st); fields.owner = o.name; }
     if (!opts.force) {
       const dups = await this.findDuplicates(fields);
       if (dups.length) {
@@ -165,6 +166,7 @@ export class ContactService {
     if (fields.email !== undefined && !validEmail(fields.email)) throw new TenancyError(400, 'invalid_input', 'That email address isn’t valid.');
     if (fields.name !== undefined && !fields.name && !(fields.email ?? cur.email)) throw new TenancyError(400, 'invalid_input', 'A contact needs a name or an email.');
     if (fields.companyId && !(await this.st.get(companyPath(this.orgId, fields.companyId)))) throw new TenancyError(400, 'invalid_input', 'That company wasn’t found.');
+    if (fields.ownerId) { const o = await assignableOwner(this.orgId, fields.ownerId, this.st); fields.owner = o.name; }
     const patch = { ...fields, updatedAt: nowIso() };
     await this.st.update(contactPath(this.orgId, id), patch);
     const changed = Object.keys(fields).filter((k) => JSON.stringify(fields[k]) !== JSON.stringify(cur[k]));
@@ -325,6 +327,7 @@ export class ContactService {
 
   async createCompany(b: any, actor: { userId: string; name: string }, opts: { force?: boolean } = {}) {
     const fields = this.companyFields(b || {}, false);
+    if (fields.ownerId) await assignableOwner(this.orgId, fields.ownerId, this.st);
     if (!fields.name) throw new TenancyError(400, 'invalid_input', 'Add the company name.');
     if (!opts.force) {
       const dup = await this.findCompanyByName(fields.name);
@@ -341,6 +344,7 @@ export class ContactService {
     const cur = await this.st.get(companyPath(this.orgId, id));
     if (!live(cur)) throw new TenancyError(404, 'not_found', 'Company not found.');
     const fields = this.companyFields(b || {}, true);
+    if (fields.ownerId) await assignableOwner(this.orgId, fields.ownerId, this.st);
     if (fields.name !== undefined && !fields.name) throw new TenancyError(400, 'invalid_input', 'A company needs a name.');
     if (fields.parentCompanyId === id) throw new TenancyError(400, 'invalid_input', 'A company can’t be its own parent.');
     const patch = { ...fields, updatedAt: nowIso() };

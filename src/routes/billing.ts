@@ -90,7 +90,7 @@ async function requireAuth(req: AuthedRequest, res: Response, next: NextFunction
       id: userId,
       email: String(payload.email ?? ''),
       name: String(payload.name ?? payload.email ?? 'User'),
-      role: ROLE_MAP[String(payload.role ?? '').toLowerCase()] ?? 'viewer',
+      role: Object.prototype.hasOwnProperty.call(ROLE_MAP, String(payload.role ?? '').toLowerCase()) ? ROLE_MAP[String(payload.role ?? '').toLowerCase()] : 'viewer',
     },
   };
   next();

@@ -73,6 +73,34 @@ export function permissionTable() {
   };
 }
 
+export type AccessNeed = [Module, Permission];
+
+/** The usual permission for an HTTP method: GET/HEAD view, POST create, PUT/PATCH edit, DELETE delete. */
+export function methodPermission(method: string): Permission {
+  const m = method.toUpperCase();
+  return m === 'GET' || m === 'HEAD' ? 'view' : m === 'POST' ? 'create' : m === 'DELETE' ? 'delete' : 'edit';
+}
+
+/**
+ * Router-level matrix check (use after requireTenant). `resolve` names what the request needs, e.g.
+ * [['leads', 'edit']] or several needs for actions that touch more than one module (lead → deal conversion);
+ * null skips the check for that route (public or separately checked). Every need must be granted.
+ * This makes the role matrix shown in Settings › Roles & permissions the one the server enforces; the older
+ * rank checks (requireReadOrWrite / requirePermission) stay in place as well.
+ */
+export function requireAccessFor(resolve: (req: Request) => AccessNeed[] | null) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const t = (req as any).tenant as { role: Role } | undefined;
+    if (!t) return res.status(401).json({ success: false, code: 'unauthorized', error: 'Sign in to continue.' });
+    const needs = resolve(req);
+    const missing = needs?.find(([m, p]) => !canAccess(t.role, m, p));
+    if (missing) {
+      return res.status(403).json({ success: false, code: 'forbidden', error: 'Your role doesn’t allow this action. Ask an admin for access.', required: { module: missing[0], permission: missing[1] } });
+    }
+    next();
+  };
+}
+
 /** Use after requireTenant. */
 export function requireAccess(module: Module, permission: Permission) {
   return (req: Request, res: Response, next: NextFunction) => {

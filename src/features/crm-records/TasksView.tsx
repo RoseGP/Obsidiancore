@@ -10,6 +10,7 @@ import { onCrmChanged } from '../../lib/crmEvents';
 import { useTeamMembers } from '../../hooks/useTeamMembers';
 import { useOptionalAuth } from '../../context/AuthContext';
 import { Badge, Button, Card, Empty, ErrorNote, Field, Loading, Modal, Page, fmtDate, inputCls } from './ui';
+import { useCan } from '../../lib/myPermissions';
 
 const VIEWS: Array<{ id: TaskView; label: string }> = [
   { id: 'mine', label: 'My tasks' }, { id: 'team', label: 'Team' }, { id: 'overdue', label: 'Overdue' },
@@ -89,6 +90,7 @@ export function TaskForm({ task, fixed, onClose, onSaved }: { task?: CrmTask | n
 
 /** A list of tasks with complete / edit / delete. Used by the Tasks view and the contact/company profiles. */
 export function TaskList({ tasks, onChanged, onNavigate, compact }: { tasks: CrmTask[]; onChanged: () => void; onNavigate?: (view: string) => void; compact?: boolean }) {
+  const can = useCan();
   const [editing, setEditing] = useState<CrmTask | null>(null);
   const [confirm, setConfirm] = useState<CrmTask | null>(null);
   const [err, setErr] = useState('');
@@ -123,7 +125,7 @@ export function TaskList({ tasks, onChanged, onNavigate, compact }: { tasks: Crm
               </div>
               <div className="flex shrink-0 items-center">
                 <Button variant="ghost" className="!px-2" aria-label={`Edit “${t.title}”`} onClick={() => setEditing(t)}><Pencil className="h-4 w-4" /></Button>
-                <Button variant="ghost" className="!px-2" aria-label={`Delete “${t.title}”`} onClick={() => setConfirm(t)}><Trash2 className="h-4 w-4" /></Button>
+                {can('tasks', 'delete') && <Button variant="ghost" className="!px-2" aria-label={`Delete “${t.title}”`} onClick={() => setConfirm(t)}><Trash2 className="h-4 w-4" /></Button>}
               </div>
             </li>
           );
@@ -141,6 +143,7 @@ export function TaskList({ tasks, onChanged, onNavigate, compact }: { tasks: Crm
 }
 
 export default function TasksView({ onNavigate }: { onNavigate?: (view: string) => void }) {
+  const can = useCan();
   const [view, setView] = useState<TaskView>('mine');
   const [q, setQ] = useState('');
   const [tasks, setTasks] = useState<CrmTask[] | null>(null);
@@ -165,7 +168,7 @@ export default function TasksView({ onNavigate }: { onNavigate?: (view: string) 
   const subtitle = useMemo(() => counts ? [counts.overdue ? `${counts.overdue} overdue` : 'Nothing overdue', `${counts.today} due today`].join(' · ') : 'Calls, meetings and follow-ups for you and your team.', [counts]);
 
   return (
-    <Page title="Tasks" subtitle={subtitle} actions={<Button variant="primary" onClick={() => setAdding(true)}><Plus className="h-4 w-4" />New task</Button>}>
+    <Page title="Tasks" subtitle={subtitle} actions={can('tasks', 'create') ? <Button variant="primary" onClick={() => setAdding(true)}><Plus className="h-4 w-4" />New task</Button> : undefined}>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div role="tablist" aria-label="Task lists" className="flex gap-1 overflow-x-auto rounded-[var(--radius-control)] bg-[var(--surface-sunken)] p-1">
           {VIEWS.map((v) => (
@@ -187,7 +190,7 @@ export default function TasksView({ onNavigate }: { onNavigate?: (view: string) 
           : tasks.length === 0 ? (
             <Empty icon={<ClipboardList className="h-8 w-8" />} title={q ? 'No tasks match your search.' : view === 'overdue' ? 'Nothing overdue.' : view === 'done' ? 'No finished tasks yet.' : 'No tasks here.'}
               text={view === 'mine' && !q ? 'Tasks you add, and follow-ups from leads, the inbox and meetings, show up here.' : undefined}
-              action={!q && view !== 'done' ? <Button variant="primary" onClick={() => setAdding(true)}><Plus className="h-4 w-4" />New task</Button> : undefined} />
+              action={!q && view !== 'done' && can('tasks', 'create') ? <Button variant="primary" onClick={() => setAdding(true)}><Plus className="h-4 w-4" />New task</Button> : undefined} />
           ) : <TaskList tasks={tasks} onChanged={load} onNavigate={onNavigate} />}
       </Card>
       {adding && <TaskForm onClose={() => setAdding(false)} onSaved={() => load()} />}

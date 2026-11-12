@@ -79,7 +79,9 @@ assert.equal(bulk.body.count, 2);
 ok('only managers and admins can delete leads (one by one or in bulk)');
 
 await expect('ro', 'post', '/api/leads', 403, { name: 'X', email: 'x@example.com' });
-for (const uid of ['rep', 'mkt', 'sup']) await expect(uid, 'post', '/api/leads', 201, { name: `New ${uid}`, email: `${uid}-new@example.com` });
+for (const uid of ['rep', 'mkt']) await expect(uid, 'post', '/api/leads', 201, { name: `New ${uid}`, email: `${uid}-new@example.com` });
+// The role matrix (leads: view only for support agents) is now enforced on the API, not just the rank check.
+await expect('sup', 'post', '/api/leads', 403, { name: 'New sup', email: 'sup-new@example.com' });
 ok('read-only members can’t create records; the other working roles can');
 
 for (const uid of ['own', 'adm']) { await expect(uid, 'get', '/api/compliance/requests', 200); await expect(uid, 'get', '/api/admin/audit-log', 200); await expect(uid, 'get', '/api/security/overview', 200); }

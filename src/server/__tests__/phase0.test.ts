@@ -62,7 +62,10 @@ r = await request(crm).post('/api/marketing/api-tokens').set('X-Dev-User-Id', 'm
 assert.equal(r.status, 403); ok('marketing: cannot mint API tokens in another workspace');
 r = await request(crm).post('/api/marketing/workspaces/ws_default_obsidian/invitations').set('X-Dev-User-Id', 'mallory').send({ email: 'm@evil.test', role: 'admin' });
 assert.equal(r.status, 403); ok('marketing: cannot invite yourself into another workspace');
-r = await request(crm).get('/api/marketing/subscribers').set('X-Dev-User-Id', 'exec-director-45');
+// (No seeded demo workspace any more: the owner creates a real one, then has access to it.)
+r = await request(crm).post('/api/marketing/workspaces').set('X-Dev-User-Id', 'exec-director-45').send({ name: 'Spring launch' });
+assert.equal(r.status, 201);
+r = await request(crm).get('/api/marketing/subscribers').set('X-Dev-User-Id', 'exec-director-45').set('x-workspace-id', r.body.workspace.id);
 assert.equal(r.status, 200); ok('marketing: the workspace owner still has access');
 
 // ---- BFF gateway: password-less login removed ----

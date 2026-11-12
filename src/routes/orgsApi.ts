@@ -20,7 +20,7 @@ import { assertId, getDocStore } from '../server/data/docStore';
 import { requirePermission, requireTenant, sendError, tenantOf } from '../server/tenancy/middleware';
 import { acceptInvitation, createInvitation, createOrg, getMember, getMembershipIndex, isRole, listMembers, listMyOrgs, removeMember, setMemberRole, TenancyError } from '../server/tenancy/orgs';
 import { auditFromRequest, recordAudit } from '../server/audit/auditLog';
-import { requireAccess } from '../server/security/permissions';
+import { requireAccess, ROLE_MATRIX } from '../server/security/permissions';
 
 const router = Router();
 const appUrl = () => (process.env.APP_URL || '').replace(/\/+$/, '');
@@ -29,7 +29,8 @@ const user = (req: any) => req.accountUser as { id: string; email?: string; emai
 router.get('/me', requireTenant, async (req, res) => {
   try {
     const t = tenantOf(req);
-    res.json({ success: true, current: { orgId: t.orgId, role: t.role }, organizations: await listMyOrgs(t.userId) });
+    // `permissions`: the caller's grants from the role matrix, so screens can hide actions the server would refuse.
+    res.json({ success: true, current: { orgId: t.orgId, role: t.role, permissions: ROLE_MATRIX[t.role] || {} }, organizations: await listMyOrgs(t.userId) });
   } catch (err) { sendError(res, err, 'orgs.me'); }
 });
 

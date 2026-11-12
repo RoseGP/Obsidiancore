@@ -15,9 +15,12 @@ import { TaskService } from '../server/crm/tasks';
 import { CrmRepository } from '../server/crm/crmRepository';
 import { recordLinkedActivity } from '../server/crm/timeline';
 import { requireReadOrWrite, requireTenant, sendError, tenantOf } from '../server/tenancy/middleware';
+import { methodPermission, requireAccessFor } from '../server/security/permissions';
 
 const router = Router();
-router.use(requireTenant, requireReadOrWrite);
+// Role matrix on top of the rank check; completing a task is an edit.
+router.use(requireTenant, requireReadOrWrite, requireAccessFor((req) =>
+  req.method === 'POST' && /^\/[^/]+\/complete$/.test(req.path) ? [['tasks', 'edit']] : [['tasks', methodPermission(req.method)]]));
 
 const actor = (req: Request) => { const t = tenantOf(req); return { userId: t.userId, name: t.name || t.email || t.userId }; };
 const svc = (req: Request) => TaskService.forOrg(tenantOf(req).orgId);

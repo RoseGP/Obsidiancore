@@ -12,6 +12,7 @@ import { Router, Request, Response } from 'express';
 import { CrmRepository } from '../server/crm/crmRepository';
 import { DEAL_STAGE_PROBABILITY } from '../lib/pipelineStages';
 import { requireReadOrWrite, requireTenant, sendError, tenantOf } from '../server/tenancy/middleware';
+import { methodPermission, requireAccessFor } from '../server/security/permissions';
 import { MissionInputError, loadMissions, parseDay } from '../server/crm/missions';
 import { loadServiceStatus } from '../server/crm/serviceStatus';
 
@@ -36,11 +37,22 @@ export async function logCrmActivity(orgId: string, activity: { type: string; ti
 
 // One pipeline vocabulary (shared with the Sales Pipeline board): see src/lib/pipelineStages.ts.
 const PROBABILITY: Record<string, number> = DEAL_STAGE_PROBABILITY;
+/** Own keys only: `PROBABILITY['constructor']` is inherited from Object.prototype and used to pass the old check. */
+export const isDealStage = (v: unknown): v is string => typeof v === 'string' && Object.prototype.hasOwnProperty.call(PROBABILITY, v);
+export const MAX_DEAL_VALUE = 1_000_000_000_000;
 const str = (v: unknown, max = 200) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
 const repoFor = (req: Request) => CrmRepository.forOrg(tenantOf(req).orgId);
 const actorOf = (req: Request) => { const t = tenantOf(req); return t.name || t.email || t.userId; };
 
-router.use(requireTenant, requireReadOrWrite);
+// Role matrix on top of the rank check: deals use the deals module, support tickets the communication module,
+// the rest of this router is dashboard reads.
+router.use(requireTenant, requireReadOrWrite, requireAccessFor((req) => {
+  const p = req.path, m = req.method;
+  if (p === '/deals' || p.startsWith('/deals/')) return [['deals', methodPermission(m)]];
+  if (p === '/leads') return [['leads', 'view']];
+  if (p === '/tickets' || p.startsWith('/tickets/')) return [['communication', m === 'GET' ? 'view' : /\/reply$/.test(p) ? 'create' : 'edit']];
+  return [['dashboard', 'view']];
+}));
 
 router.get('/stats', async (req: Request, res: Response) => {
   try {
@@ -76,11 +88,15 @@ router.get('/deals', async (req, res) => {
 router.post('/deals', async (req, res) => {
   try {
     const b = req.body || {};
-    const name = str(b.name, 200), client = str(b.client, 160), value = Number(b.value);
-    if (!name || !client || !Number.isFinite(value) || value < 0) {
-      return res.status(400).json({ success: false, error: 'Name, client, and a non-negative value are required.' });
+    const name = str(b.name, 200), client = str(b.client, 160);
+    const value = typeof b.value === 'number' || (typeof b.value === 'string' && b.value.trim() !== '') ? Number(b.value) : NaN;
+    if (!name || !client || !Number.isFinite(value) || value < 0 || value > MAX_DEAL_VALUE) {
+      return res.status(400).json({ success: false, code: 'invalid_input', error: 'Name, client, and a value between 0 and 1,000,000,000,000 are required.' });
     }
-    const stage = PROBABILITY[b.stage] !== undefined ? b.stage : 'discovery';
+    if (b.stage !== undefined && !isDealStage(b.stage)) {
+      return res.status(400).json({ success: false, code: 'invalid_input', error: `Stage must be one of: ${Object.keys(PROBABILITY).join(', ')}.` });
+    }
+    const stage = isDealStage(b.stage) ? b.stage : 'discovery';
     const repo = await repoFor(req);
     const deal = await repo.createDeal({
       name, client, value, stage, probability: PROBABILITY[stage],
@@ -95,7 +111,7 @@ router.post('/deals', async (req, res) => {
 router.patch('/deals/:id/stage', async (req, res) => {
   try {
     const stage = req.body?.stage;
-    if (PROBABILITY[stage] === undefined) return res.status(400).json({ success: false, error: `Stage must be one of: ${Object.keys(PROBABILITY).join(', ')}.` });
+    if (!isDealStage(stage)) return res.status(400).json({ success: false, error: `Stage must be one of: ${Object.keys(PROBABILITY).join(', ')}.` });
     const repo = await repoFor(req);
     const deal = await repo.getDeal(req.params.id);
     if (!deal) return res.status(404).json({ success: false, error: 'Deal not found' });

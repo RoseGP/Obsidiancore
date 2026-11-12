@@ -8,6 +8,7 @@ import { Building2, Globe, Pencil, Phone, Plus, Search, Trash2 } from 'lucide-re
 import { notifyCrmChanged, onCrmChanged } from '../../lib/crmEvents';
 import { TaskForm, TaskList } from './TasksView';
 import { Avatar, Badge, Button, Card, Drawer, Empty, ErrorNote, Field, Loading, Modal, NoteBox, Section, Timeline, api, inputCls, money } from './ui';
+import { useCan } from '../../lib/myPermissions';
 
 export interface Company { id: string; name: string; industry: string; website: string; domain?: string; phone: string; address: string; size: string; tier: string; notes: string; tags: string[]; parentCompanyId: string | null; createdAt: string }
 
@@ -61,6 +62,7 @@ function CompanyForm({ company, onClose, onSaved, onOpenExisting }: { company?: 
 }
 
 function CompanyProfile({ id, onClose, onOpen, onOpenContact, onNavigate, onChanged }: { id: string; onClose: () => void; onOpen: (id: string) => void; onOpenContact?: (id: string) => void; onNavigate?: (v: string) => void; onChanged: () => void }) {
+  const can = useCan();
   const [p, setP] = useState<any | null>(null);
   const [err, setErr] = useState('');
   const [editing, setEditing] = useState(false);
@@ -73,8 +75,8 @@ function CompanyProfile({ id, onClose, onOpen, onOpenContact, onNavigate, onChan
   return (
     <Drawer labelId="company-profile-title" onClose={onClose} title={c?.name || 'Company'} subtitle={c && [c.industry !== 'Unspecified' ? c.industry : '', c.size].filter(Boolean).join(' · ')}
       actions={c && <div className="flex gap-1">
-        <Button variant="ghost" className="!px-2" aria-label="Edit company" onClick={() => setEditing(true)}><Pencil className="h-4 w-4" /></Button>
-        <Button variant="ghost" className="!px-2" aria-label="Delete company" onClick={() => setConfirmDelete(true)}><Trash2 className="h-4 w-4" /></Button>
+        {can('companies', 'edit') && <Button variant="ghost" className="!px-2" aria-label="Edit company" onClick={() => setEditing(true)}><Pencil className="h-4 w-4" /></Button>}
+        {can('companies', 'delete') && <Button variant="ghost" className="!px-2" aria-label="Delete company" onClick={() => setConfirmDelete(true)}><Trash2 className="h-4 w-4" /></Button>}
       </div>}>
       {err && <ErrorNote text={err} onRetry={load} />}
       {!p && !err ? <Loading /> : c && (
@@ -131,6 +133,7 @@ function CompanyProfile({ id, onClose, onOpen, onOpenContact, onNavigate, onChan
 }
 
 export default function CompaniesView({ onNavigate, onOpenContact, initialCompanyId }: CompaniesViewProps) {
+  const can = useCan();
   const [q, setQ] = useState('');
   const [rows, setRows] = useState<Company[] | null>(null);
   const [err, setErr] = useState('');
@@ -153,14 +156,14 @@ export default function CompaniesView({ onNavigate, onOpenContact, initialCompan
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-subtle)]" aria-hidden="true" />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, industry or website" className={`${inputCls} pl-8`} />
         </label>
-        <Button variant="primary" onClick={() => setAdding(true)}><Plus className="h-4 w-4" />New company</Button>
+        {can('companies', 'create') && <Button variant="primary" onClick={() => setAdding(true)}><Plus className="h-4 w-4" />New company</Button>}
       </div>
       {err && <ErrorNote text={err} onRetry={load} />}
       <Card>
         {rows === null ? <Loading label="Loading companies…" /> : rows.length === 0 ? (
           <Empty icon={<Building2 className="h-8 w-8" />} title={q ? 'No companies match.' : 'No companies yet.'}
             text={q ? undefined : 'Add a company, or convert a lead with a company name: it’s created and linked for you.'}
-            action={!q ? <Button variant="primary" onClick={() => setAdding(true)}><Plus className="h-4 w-4" />New company</Button> : undefined} />
+            action={!q && can('companies', 'create') ? <Button variant="primary" onClick={() => setAdding(true)}><Plus className="h-4 w-4" />New company</Button> : undefined} />
         ) : (
           <ul className="divide-y divide-[var(--border)]">
             {rows.map((c) => (

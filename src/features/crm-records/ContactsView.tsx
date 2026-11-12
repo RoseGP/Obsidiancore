@@ -10,6 +10,7 @@ import { onCrmChanged, notifyCrmChanged } from '../../lib/crmEvents';
 import { useTeamMembers } from '../../hooks/useTeamMembers';
 import { TaskForm, TaskList } from './TasksView';
 import { Avatar, Badge, Button, Card, Drawer, Empty, ErrorNote, Field, Loading, Modal, NoteBox, Section, Timeline, api, fmtDate, inputCls, money } from './ui';
+import { useCan } from '../../lib/myPermissions';
 
 export interface Contact {
   id: string; name: string; email: string; phone: string; title: string; company: string; companyId: string | null;
@@ -177,6 +178,7 @@ function DuplicatesPanel({ onDone, onOpen }: { onDone: () => void; onOpen: (id: 
 }
 
 function ContactProfile({ id, onClose, onNavigate, onOpenCompany, onChanged, onOpen }: { id: string; onClose: () => void; onNavigate?: (v: string) => void; onOpenCompany?: (id: string) => void; onChanged: () => void; onOpen: (id: string) => void }) {
+  const can = useCan();
   const [p, setP] = useState<any | null>(null);
   const [err, setErr] = useState('');
   const [editing, setEditing] = useState(false);
@@ -200,8 +202,8 @@ function ContactProfile({ id, onClose, onNavigate, onOpenCompany, onChanged, onO
     <Drawer labelId="contact-profile-title" onClose={onClose} title={c ? c.name || c.email : 'Contact'}
       subtitle={c && [c.title, c.company].filter(Boolean).join(' · ')}
       actions={c && <div className="flex gap-1">
-        <Button variant="ghost" className="!px-2" aria-label="Edit contact" onClick={() => setEditing(true)}><Pencil className="h-4 w-4" /></Button>
-        <Button variant="ghost" className="!px-2" aria-label="Delete contact" onClick={() => setConfirmDelete(true)}><Trash2 className="h-4 w-4" /></Button>
+        {can('contacts', 'edit') && <Button variant="ghost" className="!px-2" aria-label="Edit contact" onClick={() => setEditing(true)}><Pencil className="h-4 w-4" /></Button>}
+        {can('contacts', 'delete') && <Button variant="ghost" className="!px-2" aria-label="Delete contact" onClick={() => setConfirmDelete(true)}><Trash2 className="h-4 w-4" /></Button>}
       </div>}>
       {err && <ErrorNote text={err} onRetry={load} />}
       {!p && !err ? <Loading /> : c && (
@@ -268,6 +270,7 @@ function ContactProfile({ id, onClose, onNavigate, onOpenCompany, onChanged, onO
 }
 
 export default function ContactsView({ onNavigate, onOpenCompany, initialContactId }: ContactsViewProps) {
+  const can = useCan();
   const [q, setQ] = useState('');
   const [tag, setTag] = useState('');
   const [rows, setRows] = useState<Contact[] | null>(null);
@@ -305,14 +308,14 @@ export default function ContactsView({ onNavigate, onOpenCompany, initialContact
           </label>
         )}
         {dupCount > 0 && <Button onClick={() => setShowDups(true)}><AlertTriangle className="h-4 w-4 text-[var(--warning)]" />{dupCount} possible duplicate{dupCount === 1 ? '' : 's'}</Button>}
-        <Button variant="primary" onClick={() => setAdding(true)}><Plus className="h-4 w-4" />New contact</Button>
+        {can('contacts', 'create') && <Button variant="primary" onClick={() => setAdding(true)}><Plus className="h-4 w-4" />New contact</Button>}
       </div>
       {err && <ErrorNote text={err} onRetry={load} />}
       <Card>
         {rows === null ? <Loading label="Loading contacts…" /> : rows.length === 0 ? (
           <Empty icon={<Users className="h-8 w-8" />} title={q || tag ? 'No contacts match.' : 'No contacts yet.'}
             text={q || tag ? undefined : 'Add a contact, or convert a lead: the person becomes a contact with their history attached.'}
-            action={!q && !tag ? <Button variant="primary" onClick={() => setAdding(true)}><Plus className="h-4 w-4" />New contact</Button> : undefined} />
+            action={!q && !tag && can('contacts', 'create') ? <Button variant="primary" onClick={() => setAdding(true)}><Plus className="h-4 w-4" />New contact</Button> : undefined} />
         ) : (
           <ul className="divide-y divide-[var(--border)]">
             {rows.map((c) => (

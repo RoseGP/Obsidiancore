@@ -56,6 +56,18 @@ export async function getMember(orgId: string, uid: string, s?: DocStore): Promi
   return (await store(s)).get(memberPath(orgId, uid));
 }
 
+/**
+ * The member a record may be assigned to: a non-guest member of `orgId`. Returns the id and the display name
+ * from the membership record (never from the request); anything else → 400 invalid_owner.
+ */
+export async function assignableOwner(orgId: string, uid: unknown, s?: DocStore): Promise<{ id: string; name: string }> {
+  const bad = () => new TenancyError(400, 'invalid_owner', 'The owner must be a member of this organization.');
+  if (typeof uid !== 'string' || !/^[A-Za-z0-9_.@-]{1,128}$/.test(uid)) throw bad();
+  const m = await getMember(orgId, uid, s);
+  if (!m || m.role === 'GUEST') throw bad();
+  return { id: uid, name: String(m.name || m.email || uid).slice(0, 120) };
+}
+
 export async function getOrg(orgId: string, s?: DocStore): Promise<Org | null> {
   return (await store(s)).get(orgPath(orgId));
 }

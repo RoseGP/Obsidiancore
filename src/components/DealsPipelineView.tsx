@@ -20,6 +20,7 @@ import {
 import { CRMLead, CRMLeadTask, CRMLeadActivity, LeadQualification } from '../types';
 import { ContactsView, CompaniesView } from '../features/crm-records';
 import DealActionsCard from '../features/reports/DealActionsCard';
+import { useCan } from '../lib/myPermissions';
 import { BOARD_COLUMNS, BOARD_COLUMN_LABELS, DEAL_STAGE_PROBABILITY, columnForDealStage, columnForLeadStatus, dealStageForColumn, isBoardColumn, leadStatusForColumn, type BoardColumn } from '../lib/pipelineStages';
 
 export interface PipelineItem {
@@ -81,6 +82,11 @@ interface DealsPipelineViewProps {
  */
 export default function DealsPipelineView({ initialTab = 'board', onNavigate }: DealsPipelineViewProps) {
   const team = useTeamMembers();
+  // Role matrix grants (presentation only; the server enforces the same rules on every request).
+  const can = useCan();
+  const canCreateRecords = can('leads', 'create') || can('deals', 'create');
+  const canMoveCards = can('leads', 'edit') || can('deals', 'edit');
+  const canConvert = can('leads', 'edit') && can('contacts', 'create') && can('deals', 'create');
   // Navigation / View state
   const [activeTab, setActiveTab] = useState<PipelineTab>(initialTab);
   const [openContactId, setOpenContactId] = useState<string | null>(null);
@@ -556,6 +562,7 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
   // Transactional Lead Conversion
   // --------------------------------------------------------------------------
   const initiateConversion = (item: PipelineItem, suggestedStage: PipelineItem['stage'] = 'proposal_sent') => {
+    if (!canConvert) { showToast('Your role can’t convert leads into deals. Ask an admin for access.', 'error'); return; }
     setConvertingItem(item);
     setConvertForm({
       dealTitle: `${item.company || item.name} opportunity`,
@@ -1184,13 +1191,13 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
               <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin text-[var(--accent-text)]' : ''}`} />
             </button>
 
-            <button
+            {canCreateRecords && <button
               onClick={() => setShowAddModal(true)}
               className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-blue-600/20 transition-all cursor-pointer shrink-0"
             >
               <Plus className="h-4 w-4" />
               <span>Add Lead / Deal</span>
-            </button>
+            </button>}
           </div>
         </div>
 
@@ -1390,8 +1397,8 @@ export default function DealsPipelineView({ initialTab = 'board', onNavigate }: 
                         return (
                           <div
                             key={item.id}
-                            draggable
-                            onDragStart={(e) => e.dataTransfer.setData('text/plain', item.id)}
+                            draggable={canMoveCards}
+                            onDragStart={(e) => { if (canMoveCards) e.dataTransfer.setData('text/plain', item.id); }}
                             onClick={() => setSelectedItem(item)}
                             className={`bg-[var(--surface)] border rounded-xl p-3.5 space-y-3 transition-all cursor-pointer relative shadow-sm hover:shadow-lg ${
                               isSelected 

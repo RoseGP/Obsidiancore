@@ -1,14 +1,27 @@
+/**
+ * Real-time Socket.IO server: presence, schedule updates, WebRTC signaling and CRM sync on one connection.
+ *
+ * Security model (every event is scoped to ONE organization):
+ *   - Handshake: the same identity check as HTTP (`identify`: Firebase ID token, signed session JWT, or the
+ *     dev identity only in explicit dev/test). The organization comes from the server-side membership
+ *     (`resolveTenant`; `auth.orgId` is honoured only for members) and the org's security policy applies
+ *     (`tenantAccessViolation`: two-step, session age). Guests can't connect.
+ *   - Broadcasts go to `org:<orgId>` only; meeting rooms are `org:<orgId>:room:<roomId>`; direct messages to a
+ *     socket id are delivered only when that socket belongs to the same organization.
+ *   - Identity fields (userId, name, author, updatedBy, bookedBy, sender) always come from the verified user,
+ *     never from the payload.
+ *   - CRM sync writes need the role-matrix permission for the record type (`canAccess`), and patches are
+ *     validated (plain object, size and key limits, no prototype keys).
+ *   - Message text and SDP bodies are never logged.
+ * Event names and payload shapes are unchanged for same-organization clients.
+ */
 import { Server as SocketIOServer, Socket } from 'socket.io';
 import { Server as HttpServer } from 'http';
-import jwt from 'jsonwebtoken';
-import { JWT_SECRET } from '../middleware/apiGatewayMiddleware';
-import { identifyToken } from '../features/social-accounts/server/auth';
+import { identify } from '../features/social-accounts/server/auth';
+import { resolveTenant, tenantAccessViolation } from '../server/tenancy/middleware';
+import { canAccess, type Module } from '../server/security/permissions';
 
-interface UserConnection {
-  socketId: string;
-  userId: string;
-  roomId: string;
-}
+interface UserConnection { socketId: string; userId: string; roomId: string; orgId: string }
 
 export interface UserPresence {
   userId: string;
@@ -18,18 +31,73 @@ export interface UserPresence {
   currentMeetingId?: string;
 }
 
-// Global mappings for WebRTC handshakes and presence multiplexing
+interface SocketUser { id: string; name: string; email: string; role: string; orgId: string }
+interface CrmEntry { version: number; lastModified: number; data: Record<string, unknown>; updatedBy: string }
+
 const socketToUserMap = new Map<string, UserConnection>();
 const roomToSocketsMap = new Map<string, Set<string>>();
-const userPresenceMap = new Map<string, UserPresence>();
+/** orgId → (userId → presence) */
+const presenceByOrg = new Map<string, Map<string, UserPresence>>();
+/** orgId → ("type:id" → entry) */
+const crmStateByOrg = new Map<string, Map<string, CrmEntry>>();
+
+const MAX_CRM_ENTRIES_PER_ORG = 5000;
+const MAX_PATCH_KEYS = 50;
+const MAX_PATCH_BYTES = 32 * 1024;
+const MAX_SIGNAL_BYTES = 64 * 1024;
+const MAX_BATCH = 100;
+
+export const ENTITY_MODULE: Record<string, Module> = { contact: 'contacts', lead: 'leads', deal: 'deals', event: 'calendar', task: 'tasks' };
+
+const orgRoom = (orgId: string) => `org:${orgId}`;
+const meetingRoom = (orgId: string, roomId: string) => `org:${orgId}:room:${roomId}`;
+const ID_RE = /^[A-Za-z0-9_.:-]{1,128}$/;
+const isId = (v: unknown): v is string => typeof v === 'string' && ID_RE.test(v);
+const text = (v: unknown, max: number) => (typeof v === 'string' ? v.replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, max) : '');
+const jsonSize = (v: unknown) => { try { return Buffer.byteLength(JSON.stringify(v ?? null)); } catch { return Infinity; } };
+const isPlainObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v) && Object.getPrototypeOf(v) === Object.prototype;
+const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
+/** A CRM patch: a plain object with at most 50 own keys, ≤ 32 KB, no prototype keys at any depth. */
+export function validPatch(p: unknown): p is Record<string, unknown> {
+  if (!isPlainObject(p)) return false;
+  const keys = Object.keys(p);
+  if (keys.length === 0 || keys.length > MAX_PATCH_KEYS || jsonSize(p) > MAX_PATCH_BYTES) return false;
+  const walk = (v: unknown, depth: number): boolean => {
+    if (depth > 6) return false;
+    if (Array.isArray(v)) return v.every((x) => walk(x, depth + 1));
+    if (v && typeof v === 'object') return Object.keys(v).every((k) => !FORBIDDEN_KEYS.has(k) && walk((v as any)[k], depth + 1));
+    return true;
+  };
+  return walk(p, 0);
+}
 
 let ioInstance: SocketIOServer | null = null;
 
-/**
- * Returns the active Socket.io server instance.
- */
+/** Returns the active Socket.io server instance. */
 export function getSocketIO(): SocketIOServer | null {
   return ioInstance;
+}
+
+/** Resolves who is connecting and in which organization (same rules as HTTP requests). */
+async function authenticateHandshake(socket: Socket): Promise<SocketUser | null> {
+  const authObj: any = socket.handshake.auth || {};
+  const header = socket.handshake.headers?.authorization;
+  const token = authObj.token ? String(authObj.token) : typeof header === 'string' && header.startsWith('Bearer ') ? header.substring(7) : '';
+  const fakeReq: any = {
+    headers: {
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+      ...(typeof authObj.devUserId === 'string' ? { 'x-dev-user-id': authObj.devUserId } : {}),
+      ...(typeof authObj.orgId === 'string' && authObj.orgId ? { 'x-org-id': authObj.orgId } : {}),
+    },
+  };
+  const who = await identify(fakeReq);
+  if (!who) return null;
+  fakeReq.accountUser = who;
+  const tenant = await resolveTenant(fakeReq);
+  if (await tenantAccessViolation(fakeReq, tenant)) return null;
+  const displayName = String(tenant.name || who.name || authObj.userName || 'CRM User').replace(/[^\p{L}\p{N} .'@-]/gu, '').slice(0, 60) || 'CRM User';
+  return { id: who.id, name: displayName, email: tenant.email || '', role: tenant.role, orgId: tenant.orgId };
 }
 
 /**
@@ -37,782 +105,242 @@ export function getSocketIO(): SocketIOServer | null {
  * Handles WebRTC Signaling, Calendar & Schedule Updates, and User Presence over a single connection.
  */
 export function initializeSignalingServer(server: HttpServer): SocketIOServer {
-  console.log('[Signaling Server] Initializing Unified Socket.io Multiplexed Real-Time Engine...');
+  console.log('[Signaling Server] Initializing real-time server (organization-scoped).');
 
   const io = new SocketIOServer(server, {
-    cors: {
-      origin: '*',
-      methods: ['GET', 'POST'],
-      credentials: true
-    },
-    transports: ['websocket', 'polling']
+    // Credentials travel in the handshake `auth` payload (not cookies), so cross-origin pages can't ride a session.
+    cors: { origin: '*', methods: ['GET', 'POST'] },
+    transports: ['websocket', 'polling'],
+    maxHttpBufferSize: 256 * 1024,
   });
 
   ioInstance = io;
 
-  // ---------------------------------------------------------------------------
-  // 1. HANDSHAKE JWT AUTHENTICATION MIDDLEWARE (io.use)
-  // ---------------------------------------------------------------------------
   io.use((socket: Socket, next) => {
-    // Identity comes only from a verified token (Firebase ID token or JWT_SECRET-signed JWT),
-    // or the dev identity when SOCIAL_ACCOUNTS_DEV_AUTH=true outside production. Failures are rejected.
-    const authObj: any = socket.handshake.auth || {};
-    const header = socket.handshake.headers?.authorization;
-    const token = authObj.token ? String(authObj.token) : header && header.startsWith('Bearer ') ? header.substring(7) : '';
-    identifyToken(token, authObj.devUserId).then((who) => {
-      if (!who) return next(new Error('unauthorized'));
-      const c = who.claims || {};
-      const displayName = String(c.name || authObj.userName || 'CRM User').replace(/[^\p{L}\p{N} .'-]/gu, '').slice(0, 60) || 'CRM User';
-      socket.data.user = { id: who.id, name: displayName, email: String(c.email || ''), role: String(c.role || 'AGENT') };
-      next();
-    }).catch(() => next(new Error('unauthorized')));
+    authenticateHandshake(socket)
+      .then((u) => { if (!u) return next(new Error('unauthorized')); socket.data.user = u; next(); })
+      .catch(() => next(new Error('unauthorized')));
   });
 
   io.on('connection', (socket: Socket) => {
-    const user = socket.data.user;
-    console.log(`[Unified Socket] Multiplexed Connection Established: ${socket.id} (User: ${user?.name || user?.id})`);
+    const user = socket.data.user as SocketUser;
+    const orgId = user.orgId;
+    const ORG = orgRoom(orgId);
+    socket.join(ORG);
 
-    // Register initial presence as online
-    if (user?.id) {
+    const presenceMap = presenceByOrg.get(orgId) ?? new Map<string, UserPresence>();
+    presenceByOrg.set(orgId, presenceMap);
+    const crmStateStore = crmStateByOrg.get(orgId) ?? new Map<string, CrmEntry>();
+    crmStateByOrg.set(orgId, crmStateStore);
+
+    /** A socket id the client named, only if it belongs to the same organization. */
+    const sameOrgSocket = (id: unknown): string | null => {
+      if (typeof id !== 'string' || !id) return null;
+      const s = io.sockets.sockets.get(id);
+      return s && (s.data.user as SocketUser | undefined)?.orgId === orgId ? id : null;
+    };
+    /** The caller's current meeting room (namespaced), or one they name that they have joined. */
+    const myRoom = (requested?: unknown): string | null => {
+      const conn = socketToUserMap.get(socket.id);
+      if (!conn) return null;
+      if (requested !== undefined && requested !== conn.roomId) return null;
+      return meetingRoom(orgId, conn.roomId);
+    };
+    const setPresence = (status: UserPresence['status'], currentMeetingId?: unknown) => {
       const presence: UserPresence = {
-        userId: user.id,
-        name: user.name || 'CRM User',
-        status: 'online',
-        lastActive: new Date().toISOString()
+        userId: user.id, name: user.name, status, lastActive: new Date().toISOString(),
+        ...(status === 'busy' && isId(currentMeetingId) ? { currentMeetingId } : {}),
       };
-      userPresenceMap.set(user.id, presence);
+      presenceMap.set(user.id, presence);
+      io.to(ORG).emit(status === 'busy' ? 'user:busy' : 'user:online', presence);
+      io.to(ORG).emit('presence:sync', Array.from(presenceMap.values()));
+    };
 
-      // Broadcast presence state update to all clients
-      io.emit('user:online', presence);
-      io.emit('presence:sync', Array.from(userPresenceMap.values()));
-    }
+    console.log(`[Unified Socket] connected ${socket.id} (user ${user.id}, org ${orgId})`);
+    setPresence('online');
+    socket.emit('presence:sync', Array.from(presenceMap.values()));
 
-    // Send initial presence roster to newly connected client
-    socket.emit('presence:sync', Array.from(userPresenceMap.values()));
+    // ---------------------------------------------------------------- presence (verified user only)
+    socket.on('user:online', () => setPresence('online'));
+    socket.on('user:busy', (data: { currentMeetingId?: string } = {}) => setPresence('busy', data?.currentMeetingId));
 
-    // =========================================================================
-    // FEATURE MODULE 1: PRESENCE / USER STATUS MULTIPLEXING
-    // =========================================================================
-
-    /**
-     * user:online
-     * Multiplexed presence status update to mark user active
-     */
-    socket.on('user:online', (data: Partial<UserPresence>) => {
-      const userId = data?.userId || user?.id;
-      const userName = data?.name || user?.name || 'CRM User';
-
-      if (!userId) return;
-
-      const presence: UserPresence = {
-        userId,
-        name: userName,
-        status: 'online',
-        lastActive: new Date().toISOString()
-      };
-
-      userPresenceMap.set(userId, presence);
-      console.log(`[Presence Module] User marked ONLINE: ${userName} (${userId})`);
-
-      io.emit('user:online', presence);
-      io.emit('presence:sync', Array.from(userPresenceMap.values()));
+    // ---------------------------------------------------------------- calendar / schedule (organization only)
+    socket.on('schedule:updated', (data: { meetingId?: string; event?: unknown; changes?: unknown } = {}) => {
+      if (!isId(data?.meetingId)) return;
+      const event = isPlainObject(data.event) && jsonSize(data.event) <= 8192 ? data.event : undefined;
+      const changes = isPlainObject(data.changes) && jsonSize(data.changes) <= 8192 ? data.changes : undefined;
+      io.to(ORG).emit('schedule:updated', { meetingId: data.meetingId, event, changes, updatedBy: user.name, timestamp: new Date().toISOString() });
     });
 
-    /**
-     * user:busy
-     * Multiplexed presence status update to mark user in a meeting or on a call
-     */
-    socket.on('user:busy', (data: { userId?: string; name?: string; currentMeetingId?: string }) => {
-      const userId = data?.userId || user?.id;
-      const userName = data?.name || user?.name || 'CRM User';
-
-      if (!userId) return;
-
-      const presence: UserPresence = {
-        userId,
-        name: userName,
-        status: 'busy',
-        currentMeetingId: data?.currentMeetingId,
-        lastActive: new Date().toISOString()
-      };
-
-      userPresenceMap.set(userId, presence);
-      console.log(`[Presence Module] User marked BUSY: ${userName} (${userId}) [Meeting: ${data?.currentMeetingId || 'Active Call'}]`);
-
-      io.emit('user:busy', presence);
-      io.emit('presence:sync', Array.from(userPresenceMap.values()));
+    socket.on('slot:booked', (data: { slotId?: string; date?: string; time?: string } = {}) => {
+      if (!isId(data?.slotId)) return;
+      const date = text(data.date, 32), time = text(data.time, 32);
+      io.to(ORG).emit('slot:booked', { slotId: data.slotId, date, time, bookedBy: user.name, timestamp: new Date().toISOString() });
     });
 
-    // =========================================================================
-    // FEATURE MODULE 2: CALENDAR & SCHEDULE UPDATES MULTIPLEXING
-    // =========================================================================
+    // ---------------------------------------------------------------- WebRTC signaling (same org, same room)
+    const relay = (events: string[], data: any, body: Record<string, unknown>, opts: { allowRoom: boolean }) => {
+      if (jsonSize(body) > MAX_SIGNAL_BYTES) return;
+      const conn = socketToUserMap.get(socket.id);
+      const payload = { senderSocketId: socket.id, senderUserId: user.id, ...body, ...(conn ? { roomId: conn.roomId } : {}), timestamp: new Date().toISOString() };
+      const target = data?.targetSocketId !== undefined ? sameOrgSocket(data.targetSocketId) : null;
+      if (data?.targetSocketId !== undefined) { if (target) for (const e of events) socket.to(target).emit(e, payload); return; }
+      const room = opts.allowRoom ? myRoom(data?.roomId) : null;
+      if (room) for (const e of events) socket.to(room).emit(e, payload);
+      // No target and no joined room: nothing is broadcast (it used to go to every connected client).
+    };
 
-    /**
-     * schedule:updated
-     * Broadcasts calendar event, rescheduling, or itinerary changes to all connected clients
-     */
-    socket.on('schedule:updated', (data: { meetingId: string; event?: any; updatedBy?: string; changes?: any; timestamp?: string }) => {
-      console.log(`[Schedule Module] Schedule updated for meeting: ${data.meetingId} by ${data.updatedBy || user?.name}`);
+    socket.on('rtc:offer', (d: any = {}) => { if (d?.offer) relay(['rtc:offer', 'offer'], d, { offer: d.offer }, { allowRoom: true }); });
+    socket.on('rtc:answer', (d: any = {}) => { if (d?.answer) relay(['rtc:answer', 'answer'], d, { answer: d.answer }, { allowRoom: true }); });
+    socket.on('rtc:ice-candidate', (d: any = {}) => { if (d?.candidate) relay(['rtc:ice-candidate', 'ice-candidate'], d, { candidate: d.candidate }, { allowRoom: true }); });
 
-      const payload = {
-        ...data,
-        updatedBy: data.updatedBy || user?.name || 'System',
-        timestamp: data.timestamp || new Date().toISOString()
-      };
+    // Direct peer-to-peer relays used by older components (target socket required).
+    const direct = (events: string[], field: 'offer' | 'answer' | 'candidate') => (d: any = {}) => {
+      if (!d?.[field] || d?.targetSocketId === undefined) return;
+      relay(events, d, { [field]: d[field] }, { allowRoom: false });
+    };
+    socket.on('offer', direct(['offer', 'sdp-offer'], 'offer'));
+    socket.on('sdp-offer', direct(['offer', 'sdp-offer'], 'offer'));
+    socket.on('answer', direct(['answer', 'sdp-answer'], 'answer'));
+    socket.on('sdp-answer', direct(['answer', 'sdp-answer'], 'answer'));
+    socket.on('ice-candidate', direct(['ice-candidate'], 'candidate'));
 
-      // Broadcast real-time schedule update event across all connected clients
-      io.emit('schedule:updated', payload);
+    socket.on('track-replaced', (d: any = {}) => {
+      const kind = (v: unknown, allowed: string[], dflt: string) => (typeof v === 'string' && allowed.includes(v) ? v : dflt);
+      relay(['track-replaced'], d, {
+        trackType: kind(d?.trackType, ['video', 'audio', 'screen'], 'video'),
+        streamType: kind(d?.streamType, ['camera', 'screen'], 'screen'),
+        label: text(d?.label, 80) || 'Screen Share Stream',
+        offer: d?.offer ?? null,
+      }, { allowRoom: true });
     });
+    socket.on('renegotiate', (d: any = {}) => relay(['renegotiate'], d, { offer: d?.offer }, { allowRoom: true }));
 
-    /**
-     * slot:booked
-     * Broadcasts real-time slot booking event for calendar synchronization
-     */
-    socket.on('slot:booked', (data: { slotId: string; date: string; time: string; bookedBy?: string; attendeeEmail?: string; timestamp?: string }) => {
-      console.log(`[Schedule Module] Slot booked: ${data.slotId} on ${data.date} at ${data.time} by ${data.bookedBy || user?.name}`);
-
-      const payload = {
-        ...data,
-        bookedBy: data.bookedBy || user?.name || 'CRM Contact',
-        timestamp: data.timestamp || new Date().toISOString()
-      };
-
-      // Broadcast slot booking to update calendar views globally in real-time
-      io.emit('slot:booked', payload);
-    });
-
-    // =========================================================================
-    // FEATURE MODULE 3: WEBRTC SIGNALING MULTIPLEXING
-    // =========================================================================
-
-    /**
-     * rtc:offer
-     * Multiplexed WebRTC SDP Offer event
-     */
-    socket.on('rtc:offer', (data: { targetSocketId?: string; roomId?: string; offer: any; senderUserId?: string }) => {
-      const senderConn = socketToUserMap.get(socket.id);
-      const roomId = data.roomId || senderConn?.roomId;
-      const senderUserId = String(user?.id || socket.id);
-
-      console.log(`[WebRTC Module] rtc:offer relayed from ${senderUserId} (${socket.id}) -> Target: ${data.targetSocketId || roomId || 'room'}`);
-
-      const payload = {
-        senderSocketId: socket.id,
-        senderUserId,
-        offer: data.offer,
-        roomId,
-        timestamp: new Date().toISOString()
-      };
-
-      if (data.targetSocketId) {
-        socket.to(data.targetSocketId).emit('rtc:offer', payload);
-        socket.to(data.targetSocketId).emit('offer', payload);
-      } else if (roomId) {
-        socket.to(roomId).emit('rtc:offer', payload);
-        socket.to(roomId).emit('offer', payload);
-      } else {
-        socket.broadcast.emit('rtc:offer', payload);
-        socket.broadcast.emit('offer', payload);
-      }
-    });
-
-    /**
-     * rtc:answer
-     * Multiplexed WebRTC SDP Answer event
-     */
-    socket.on('rtc:answer', (data: { targetSocketId?: string; roomId?: string; answer: any; senderUserId?: string }) => {
-      const senderConn = socketToUserMap.get(socket.id);
-      const roomId = data.roomId || senderConn?.roomId;
-      const senderUserId = String(user?.id || socket.id);
-
-      console.log(`[WebRTC Module] rtc:answer relayed from ${senderUserId} (${socket.id}) -> Target: ${data.targetSocketId || roomId || 'room'}`);
-
-      const payload = {
-        senderSocketId: socket.id,
-        senderUserId,
-        answer: data.answer,
-        roomId,
-        timestamp: new Date().toISOString()
-      };
-
-      if (data.targetSocketId) {
-        socket.to(data.targetSocketId).emit('rtc:answer', payload);
-        socket.to(data.targetSocketId).emit('answer', payload);
-      } else if (roomId) {
-        socket.to(roomId).emit('rtc:answer', payload);
-        socket.to(roomId).emit('answer', payload);
-      } else {
-        socket.broadcast.emit('rtc:answer', payload);
-        socket.broadcast.emit('answer', payload);
-      }
-    });
-
-    /**
-     * rtc:ice-candidate
-     * Multiplexed WebRTC ICE Candidate event
-     */
-    socket.on('rtc:ice-candidate', (data: { targetSocketId?: string; roomId?: string; candidate: any; senderUserId?: string }) => {
-      const senderConn = socketToUserMap.get(socket.id);
-      const roomId = data.roomId || senderConn?.roomId;
-      const senderUserId = String(user?.id || socket.id);
-
-      console.log(`[WebRTC Module] rtc:ice-candidate relayed from ${senderUserId} (${socket.id}) -> Target: ${data.targetSocketId || roomId || 'room'}`);
-
-      const payload = {
-        senderSocketId: socket.id,
-        senderUserId,
-        candidate: data.candidate,
-        roomId,
-        timestamp: new Date().toISOString()
-      };
-
-      if (data.targetSocketId) {
-        socket.to(data.targetSocketId).emit('rtc:ice-candidate', payload);
-        socket.to(data.targetSocketId).emit('ice-candidate', payload);
-      } else if (roomId) {
-        socket.to(roomId).emit('rtc:ice-candidate', payload);
-        socket.to(roomId).emit('ice-candidate', payload);
-      } else {
-        socket.broadcast.emit('rtc:ice-candidate', payload);
-        socket.broadcast.emit('ice-candidate', payload);
-      }
-    });
-
-    // Backward compatibility handlers for existing components
-    socket.on('offer', (data) => {
-      if (!data.offer) return;
-      socket.emit('rtc:offer', data);
-    });
-    socket.on('answer', (data) => {
-      if (!data.answer) return;
-      socket.emit('rtc:answer', data);
-    });
-    socket.on('ice-candidate', (data) => {
-      if (!data.candidate) return;
-      socket.emit('rtc:ice-candidate', data);
-    });
-
-    // 1. join-room: Takes a roomId and userId. Adds the socket to the room and broadcasts user-connected.
-    socket.on('join-room', async (data: { roomId: string; userId?: string; email?: string }) => {
+    socket.on('join-room', (data: { roomId?: string } = {}) => {
       // The member is always the verified socket user; a userId sent by the client is ignored.
-      const roomId = data?.roomId;
-      const userId = String(socket.data.user?.id || '');
-
-      if (!roomId || !userId) {
-        console.error(`[Signaling Server] Join rejected: missing roomId or userId. Socket: ${socket.id}`);
-        socket.emit('error', { message: 'Authentication failed: Missing roomId or userId' });
-        return;
-      }
-
-      try {
-        const user = socket.data.user as { id: string; name?: string } | undefined;
-        const memberName = user?.name || userId;
-        console.log(`[Signaling Server] Member ${memberName} (${userId}) joining room: ${roomId}`);
-
-        // Add socket to the room
-        socket.join(roomId);
-
-        // Register connection in memory maps
-        socketToUserMap.set(socket.id, { socketId: socket.id, userId, roomId });
-
-        if (!roomToSocketsMap.has(roomId)) {
-          roomToSocketsMap.set(roomId, new Set());
-        }
-        roomToSocketsMap.get(roomId)!.add(socket.id);
-
-        // Fetch other peers already in the room
-        const peers = Array.from(roomToSocketsMap.get(roomId) || [])
-          .filter(id => id !== socket.id)
-          .map(id => ({
-            socketId: id,
-            userId: socketToUserMap.get(id)?.userId
-          }));
-
-        // Broadcast a user-connected event to everyone else in that room
-        socket.to(roomId).emit('user-connected', {
-          userId,
-          socketId: socket.id
-        });
-
-        // Send the current room roster to the newly joined peer so they know who to call
-        socket.emit('room-roster', {
-          roomId,
-          peers
-        });
-
-        console.log(`[Signaling Server] Room ${roomId} Roster updated. Total active sockets: ${roomToSocketsMap.get(roomId)?.size}`);
-      } catch (err: any) {
-        console.error(`[Signaling Server] Exception verifying user joining room:`, err.message);
-        socket.emit('error', { message: 'Failed to process room join request' });
-      }
+      if (!isId(data?.roomId)) { socket.emit('error', { message: 'A valid room id is required.' }); return; }
+      leaveCurrentRoom();
+      const roomId = data.roomId;
+      const key = meetingRoom(orgId, roomId);
+      socket.join(key);
+      socketToUserMap.set(socket.id, { socketId: socket.id, userId: user.id, roomId, orgId });
+      if (!roomToSocketsMap.has(key)) roomToSocketsMap.set(key, new Set());
+      roomToSocketsMap.get(key)!.add(socket.id);
+      const peers = Array.from(roomToSocketsMap.get(key) || []).filter((id) => id !== socket.id).map((id) => ({ socketId: id, userId: socketToUserMap.get(id)?.userId }));
+      socket.to(key).emit('user-connected', { userId: user.id, socketId: socket.id });
+      socket.emit('room-roster', { roomId, peers });
     });
 
-    // 2. offer / sdp-offer: Relays a WebRTC SDP offer from one peer to a specific target peer in the room.
-    const handleOffer = (data: { targetSocketId: string; offer: any }) => {
-      const { targetSocketId, offer } = data;
-      const sender = socketToUserMap.get(socket.id);
-
-      if (!targetSocketId || !offer) {
-        console.warn(`[Signaling Server] Offer ignored from ${socket.id}: incomplete payload.`);
-        return;
-      }
-
-      console.log(`[Signaling Server] Relaying SDP Offer from ${sender?.userId || socket.id} to target: ${targetSocketId}`);
-
-      const payload = {
-        senderSocketId: socket.id,
-        senderUserId: sender?.userId,
-        offer
-      };
-
-      socket.to(targetSocketId).emit('offer', payload);
-      socket.to(targetSocketId).emit('sdp-offer', payload);
-    };
-    socket.on('offer', handleOffer);
-    socket.on('sdp-offer', handleOffer);
-
-    // 3. answer / sdp-answer: Relays a WebRTC SDP answer back to the peer who created the offer.
-    const handleAnswer = (data: { targetSocketId: string; answer: any }) => {
-      const { targetSocketId, answer } = data;
-      const sender = socketToUserMap.get(socket.id);
-
-      if (!targetSocketId || !answer) {
-        console.warn(`[Signaling Server] Answer ignored from ${socket.id}: incomplete payload.`);
-        return;
-      }
-
-      console.log(`[Signaling Server] Relaying SDP Answer from ${sender?.userId || socket.id} to target: ${targetSocketId}`);
-
-      const payload = {
-        senderSocketId: socket.id,
-        senderUserId: sender?.userId,
-        answer
-      };
-
-      socket.to(targetSocketId).emit('answer', payload);
-      socket.to(targetSocketId).emit('sdp-answer', payload);
-    };
-    socket.on('answer', handleAnswer);
-    socket.on('sdp-answer', handleAnswer);
-
-    // 4. ice-candidate: Relays WebRTC ICE candidates between peers.
-    socket.on('ice-candidate', (data: { targetSocketId: string; candidate: any }) => {
-      const { targetSocketId, candidate } = data;
-      const sender = socketToUserMap.get(socket.id);
-
-      if (!targetSocketId || !candidate) {
-        console.warn(`[Signaling Server] ICE Candidate ignored from ${socket.id}: incomplete payload.`);
-        return;
-      }
-
-      console.log(`[Signaling Server] Relaying ICE Candidate from ${sender?.userId || socket.id} to target: ${targetSocketId}`);
-
-      socket.to(targetSocketId).emit('ice-candidate', {
-        senderSocketId: socket.id,
-        senderUserId: sender?.userId,
-        candidate
+    socket.on('chat-message', (data: { text?: string } = {}) => {
+      const conn = socketToUserMap.get(socket.id);
+      const body = text(data?.text, 4000);
+      if (!conn || !body) return;
+      socket.to(meetingRoom(orgId, conn.roomId)).emit('chat-message', {
+        sender: user.name, text: body, timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       });
     });
 
-    // 4.5. track-replaced & renegotiate: Handles stream renegotiation when switching webcam to screen share track
-    socket.on('track-replaced', (data: {
-      roomId?: string;
-      targetSocketId?: string;
-      trackType?: 'video' | 'audio' | 'screen';
-      streamType?: 'camera' | 'screen';
-      label?: string;
-      offer?: any;
-      userId?: string;
-    }) => {
-      const sender = socketToUserMap.get(socket.id);
-      const roomId = data.roomId || sender?.roomId;
-      const senderUserId = String(user?.id || socket.id);
-
-      console.log(`[Signaling Server] Track replaced event from user ${senderUserId} (${socket.id}) -> trackType: ${data.trackType || 'video'}, streamType: ${data.streamType || 'screen'}`);
-
-      const payload = {
-        senderSocketId: socket.id,
-        senderUserId,
-        trackType: data.trackType || 'video',
-        streamType: data.streamType || 'screen',
-        label: data.label || 'Screen Share Stream',
-        offer: data.offer || null,
-        timestamp: new Date().toISOString()
-      };
-
-      if (data.targetSocketId) {
-        socket.to(data.targetSocketId).emit('track-replaced', payload);
-      } else if (roomId) {
-        socket.to(roomId).emit('track-replaced', payload);
-      } else {
-        socket.broadcast.emit('track-replaced', payload);
+    const toggle = (event: 'toggle-mute-status' | 'toggle-camera-status') => (data: { roomId?: string; targetUserId?: string; newState?: boolean } = {}) => {
+      const conn = socketToUserMap.get(socket.id);
+      if (!conn || data?.roomId !== conn.roomId) { socket.emit('error', { message: 'Join the room before changing its state.' }); return; }
+      if (!isId(data?.targetUserId) || typeof data?.newState !== 'boolean') return;
+      const { roomId, targetUserId, newState } = data as { roomId: string; targetUserId: string; newState: boolean };
+      const key = meetingRoom(orgId, roomId);
+      if (targetUserId === user.id) { socket.to(key).emit(event, { roomId, targetUserId, newState }); return; }
+      for (const [sid, c] of socketToUserMap.entries()) {
+        if (c.orgId === orgId && c.roomId === roomId && c.userId === targetUserId) io.to(sid).emit(event, { roomId, targetUserId, newState, isOverride: true });
       }
-    });
+      io.to(key).emit(event, { roomId, targetUserId, newState });
+    };
+    socket.on('toggle-mute-status', toggle('toggle-mute-status'));
+    socket.on('toggle-camera-status', toggle('toggle-camera-status'));
 
-    socket.on('renegotiate', (data: { targetSocketId?: string; roomId?: string; offer?: any }) => {
-      const sender = socketToUserMap.get(socket.id);
-      const roomId = data.roomId || sender?.roomId;
-      const payload = {
-        senderSocketId: socket.id,
-        senderUserId: sender?.userId,
-        offer: data.offer
-      };
+    function leaveCurrentRoom() {
+      const conn = socketToUserMap.get(socket.id);
+      if (!conn) return;
+      const key = meetingRoom(orgId, conn.roomId);
+      socket.leave(key);
+      socketToUserMap.delete(socket.id);
+      const set = roomToSocketsMap.get(key);
+      if (set) { set.delete(socket.id); if (set.size === 0) roomToSocketsMap.delete(key); }
+      socket.to(key).emit('user-disconnected', { userId: conn.userId, socketId: socket.id });
+    }
+    socket.on('leave-room', () => leaveCurrentRoom());
 
-      if (data.targetSocketId) {
-        socket.to(data.targetSocketId).emit('renegotiate', payload);
-      } else if (roomId) {
-        socket.to(roomId).emit('renegotiate', payload);
-      }
-    });
-
-    // 5. chat-message: Relays chat messages to other peers in the room.
-    socket.on('chat-message', (data: { text: string; sender: string; timestamp?: string }) => {
-      const userConn = socketToUserMap.get(socket.id);
-      if (userConn) {
-        console.log(`[Signaling Server] Relay chat message from ${userConn.userId} in room ${userConn.roomId}: ${data.text}`);
-        socket.to(userConn.roomId).emit('chat-message', {
-          sender: data.sender || userConn.userId,
-          text: data.text,
-          timestamp: data.timestamp || new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-        });
-      }
-    });
-
-    // Real-time administrative notification overrides & self-state broadcast
-    socket.on('toggle-mute-status', async (data: { roomId: string; targetUserId: string; newState: boolean; userId?: string }) => {
-      const { roomId, targetUserId, newState } = data;
-      const senderConn = socketToUserMap.get(socket.id);
-      const senderUserId = String(socket.data.user?.id || '');
-
-      if (!senderUserId) {
-        console.error(`[Signaling Server] Toggle Mute rejected: unknown sender identity. Socket: ${socket.id}`);
-        socket.emit('error', { message: 'Authentication failed: Unknown sender identity' });
-        return;
-      }
-
-      try {
-        // The actor is the verified socket user and must be connected to this room.
-        const user = socket.data.user as { id: string; name?: string };
-        if (!senderConn || senderConn.roomId !== roomId) {
-          socket.emit('error', { message: 'Join the room before changing its state.' });
-          return;
-        }
-
-        console.log(`[Signaling Server] Verified member ${user.name} (${senderUserId}) muting/unmuting ${targetUserId} to ${newState}`);
-
-        if (targetUserId === senderUserId) {
-          // Self-toggle broadcast to room (Requirement 2)
-          socket.to(roomId).emit('toggle-mute-status', { roomId, targetUserId, newState });
-          console.log(`[Signaling Server] Self-mute status broadcasted to room ${roomId} for user ${targetUserId}`);
-        } else {
-          // Administrative override (Requirement 1)
-          let targetSocketFound = false;
-          for (const [sid, conn] of socketToUserMap.entries()) {
-            if (conn.userId === targetUserId && conn.roomId === roomId) {
-              io.to(sid).emit('toggle-mute-status', { roomId, targetUserId, newState, isOverride: true });
-              targetSocketFound = true;
-              console.log(`[Signaling Server] Dispatched direct administrative mute override to socket: ${sid} for user ${targetUserId}`);
-            }
-          }
-
-          // Broadcast to the room so sidebar UI updates instantly
-          io.to(roomId).emit('toggle-mute-status', { roomId, targetUserId, newState });
-
-          if (!targetSocketFound) {
-            console.warn(`[Signaling Server] Override target user ${targetUserId} not found in room ${roomId}.`);
-          }
-        }
-      } catch (err: any) {
-        console.error(`[Signaling Server] Auth exception in toggle-mute-status:`, err.message);
-        socket.emit('error', { message: 'Internal validation error' });
-      }
-    });
-
-    socket.on('toggle-camera-status', async (data: { roomId: string; targetUserId: string; newState: boolean; userId?: string }) => {
-      const { roomId, targetUserId, newState } = data;
-      const senderConn = socketToUserMap.get(socket.id);
-      const senderUserId = String(socket.data.user?.id || '');
-
-      if (!senderUserId) {
-        console.error(`[Signaling Server] Toggle Camera rejected: unknown sender identity. Socket: ${socket.id}`);
-        socket.emit('error', { message: 'Authentication failed: Unknown sender identity' });
-        return;
-      }
-
-      try {
-        // The actor is the verified socket user and must be connected to this room.
-        const user = socket.data.user as { id: string; name?: string };
-        if (!senderConn || senderConn.roomId !== roomId) {
-          socket.emit('error', { message: 'Join the room before changing its state.' });
-          return;
-        }
-
-        console.log(`[Signaling Server] Verified member ${user.name} (${senderUserId}) toggling camera for ${targetUserId} to ${newState}`);
-
-        if (targetUserId === senderUserId) {
-          // Self-toggle broadcast to room
-          socket.to(roomId).emit('toggle-camera-status', { roomId, targetUserId, newState });
-          console.log(`[Signaling Server] Self-camera status broadcasted to room ${roomId} for user ${targetUserId}`);
-        } else {
-          // Administrative override (Requirement 1)
-          let targetSocketFound = false;
-          for (const [sid, conn] of socketToUserMap.entries()) {
-            if (conn.userId === targetUserId && conn.roomId === roomId) {
-              io.to(sid).emit('toggle-camera-status', { roomId, targetUserId, newState, isOverride: true });
-              targetSocketFound = true;
-              console.log(`[Signaling Server] Dispatched direct administrative camera override to socket: ${sid} for user ${targetUserId}`);
-            }
-          }
-
-          // Broadcast to the room so sidebar UI updates instantly
-          io.to(roomId).emit('toggle-camera-status', { roomId, targetUserId, newState });
-
-          if (!targetSocketFound) {
-            console.warn(`[Signaling Server] Override target user ${targetUserId} not found in room ${roomId}.`);
-          }
-        }
-      } catch (err: any) {
-        console.error(`[Signaling Server] Auth exception in toggle-camera-status:`, err.message);
-        socket.emit('error', { message: 'Internal validation error' });
-      }
-    });
-
-    // 5.5. leave-room: Handles voluntary exit from a WebRTC session room.
-    socket.on('leave-room', (data: { roomId: string }) => {
-      const userConn = socketToUserMap.get(socket.id);
-      if (userConn) {
-        const { roomId, userId } = userConn;
-        console.log(`[Signaling Server] User voluntarily leaving room: ${userId} (${socket.id}) from room ${roomId}`);
-        socket.leave(roomId);
-        socketToUserMap.delete(socket.id);
-        const socketsInRoom = roomToSocketsMap.get(roomId);
-        if (socketsInRoom) {
-          socketsInRoom.delete(socket.id);
-          if (socketsInRoom.size === 0) {
-            roomToSocketsMap.delete(roomId);
-          }
-        }
-        // Broadcast user-disconnected so remaining client handles UI updates immediately
-        socket.to(roomId).emit('user-disconnected', {
-          userId,
-          socketId: socket.id
-        });
-      }
-    });
-
-    // 6. disconnect: Detects when a user leaves and notifies the remaining peers in the room.
     socket.on('disconnect', () => {
-      const userConn = socketToUserMap.get(socket.id);
-
-      if (userConn) {
-        const { roomId, userId } = userConn;
-        console.log(`[Signaling Server] Socket disconnected: ${socket.id} (User: ${userId}) from room ${roomId}`);
-
-        // Clean up in-memory maps
-        socketToUserMap.delete(socket.id);
-        const socketsInRoom = roomToSocketsMap.get(roomId);
-        if (socketsInRoom) {
-          socketsInRoom.delete(socket.id);
-          if (socketsInRoom.size === 0) {
-            roomToSocketsMap.delete(roomId);
-          }
-        }
-
-        // Notify remaining peers in the room
-        socket.to(roomId).emit('user-disconnected', {
-          userId,
-          socketId: socket.id
-        });
-
-        console.log(`[Signaling Server] Broadcasted user-disconnected for ${userId} (${socket.id}) to room ${roomId}`);
-      } else {
-        console.log(`[Signaling Server] Untracked Socket disconnected: ${socket.id}`);
-      }
+      leaveCurrentRoom();
+      // Offline only when this was the user's last connection in the organization.
+      const stillHere = Array.from(io.sockets.sockets.values()).some((s) => s.id !== socket.id && (s.data.user as SocketUser | undefined)?.id === user.id && (s.data.user as SocketUser).orgId === orgId);
+      if (!stillHere) { presenceMap.delete(user.id); io.to(ORG).emit('presence:sync', Array.from(presenceMap.values())); }
     });
 
-    // ===========================================================================
-    // MODULE 7: REAL-TIME CRM DATA SYNCHRONIZATION & CONFLICT RESOLUTION
-    // ===========================================================================
-    const crmStateStore = new Map<string, { version: number; lastModified: number; data: any; updatedBy: string }>();
+    // ---------------------------------------------------------------- CRM sync (organization store, role-checked)
+    const allowed = (entityType: unknown, perm: 'edit' | 'delete'): entityType is string =>
+      typeof entityType === 'string' && Object.prototype.hasOwnProperty.call(ENTITY_MODULE, entityType) && canAccess(user.role, ENTITY_MODULE[entityType], perm);
+    const deny = (entityType: unknown, entityId: unknown, reason: string) =>
+      socket.emit('crm:sync:denied', { entityType: typeof entityType === 'string' ? entityType.slice(0, 20) : null, entityId: isId(entityId) ? entityId : null, reason });
 
-    socket.on('crm:sync:ping', (data: { clientTimestamp: number }) => {
+    socket.on('crm:sync:ping', (data: { clientTimestamp?: number } = {}) => {
       socket.emit('crm:sync:pong', {
-        clientTimestamp: data.clientTimestamp,
+        clientTimestamp: Number.isFinite(data?.clientTimestamp) ? data.clientTimestamp : null,
         serverTimestamp: Date.now(),
-        activeConnections: io.engine.clientsCount || 1,
+        activeConnections: io.sockets.adapter.rooms.get(ORG)?.size || 1,
       });
     });
 
     socket.on('crm:sync:request_state', () => {
-      const stateSummary: Record<string, { version: number; lastModified: number; updatedBy: string }> = {};
-      for (const [key, value] of crmStateStore.entries()) {
-        stateSummary[key] = {
-          version: value.version,
-          lastModified: value.lastModified,
-          updatedBy: value.updatedBy
-        };
-      }
-      socket.emit('crm:sync:init', {
-        serverTime: Date.now(),
-        totalEntities: crmStateStore.size,
-        vectorClock: stateSummary,
-        activeClients: io.engine.clientsCount || 1
-      });
+      const vectorClock: Record<string, { version: number; lastModified: number; updatedBy: string }> = {};
+      for (const [key, v] of crmStateStore.entries()) vectorClock[key] = { version: v.version, lastModified: v.lastModified, updatedBy: v.updatedBy };
+      socket.emit('crm:sync:init', { serverTime: Date.now(), totalEntities: crmStateStore.size, vectorClock, activeClients: io.sockets.adapter.rooms.get(ORG)?.size || 1 });
     });
 
-    socket.on('crm:entity:update', (payload: {
-      entityType: 'contact' | 'lead' | 'deal' | 'event' | 'task';
-      entityId: string;
-      version: number;
-      patch: Record<string, any>;
-      clientTimestamp: number;
-      author?: string;
-    }) => {
-      const key = `${payload.entityType}:${payload.entityId}`;
+    const applyUpdate = (entityType: string, entityId: string, patch: Record<string, unknown>, version?: unknown) => {
+      const key = `${entityType}:${entityId}`;
       const existing = crmStateStore.get(key);
-      const author = payload.author || user?.id || socket.id;
-
-      if (existing) {
-        // Conflict Detection: If incoming version is equal or less than server version, concurrent edit occurred
-        if (payload.version <= existing.version) {
-          console.warn(`[CRM Sync] Concurrent Conflict detected on ${key}! Incoming v${payload.version} vs Server v${existing.version}`);
-          
-          // Conflict Resolution Strategy: Deterministic Last-Write-Wins with Field-Level 3-Way Merge
-          const mergedData = {
-            ...existing.data,
-            ...payload.patch,
-            _conflictResolution: {
-              timestamp: Date.now(),
-              strategy: 'Field-level 3-Way Merge (Last-Write-Wins)',
-              previousVersion: existing.version,
-              resolvedVersion: existing.version + 1,
-              competingAuthors: [existing.updatedBy, author]
-            }
-          };
-
-          const newVersion = existing.version + 1;
-          crmStateStore.set(key, {
-            version: newVersion,
-            lastModified: Date.now(),
-            data: mergedData,
-            updatedBy: author
-          });
-
-          // Notify sender of conflict resolution
-          socket.emit('crm:sync:conflict', {
-            entityType: payload.entityType,
-            entityId: payload.entityId,
-            strategy: 'Field-level 3-Way Merge',
-            resolvedVersion: newVersion,
-            mergedData
-          });
-
-          // Broadcast reconciled entity to all clients
-          io.emit('crm:entity:updated', {
-            entityType: payload.entityType,
-            entityId: payload.entityId,
-            version: newVersion,
-            data: mergedData,
-            updatedBy: author,
-            wasReconciled: true,
-            timestamp: Date.now()
-          });
-          return;
-        }
-      }
-
-      // No conflict: Clean optimistic update
+      if (!existing && crmStateStore.size >= MAX_CRM_ENTRIES_PER_ORG) return null;
+      const conflict = !!existing && typeof version === 'number' && version <= existing.version;
       const newVersion = (existing?.version || 0) + 1;
-      const updatedData = { ...(existing?.data || {}), ...payload.patch };
+      const data: Record<string, unknown> = { ...(existing?.data || {}), ...patch };
+      if (conflict) data._conflictResolution = { timestamp: Date.now(), strategy: 'Field-level 3-Way Merge (Last-Write-Wins)', previousVersion: existing!.version, resolvedVersion: newVersion, competingAuthors: [existing!.updatedBy, user.id] };
+      crmStateStore.set(key, { version: newVersion, lastModified: Date.now(), data, updatedBy: user.id });
+      return { entityType, entityId, version: newVersion, data, updatedBy: user.id, wasReconciled: conflict, timestamp: Date.now() };
+    };
 
-      crmStateStore.set(key, {
-        version: newVersion,
-        lastModified: Date.now(),
-        data: updatedData,
-        updatedBy: author
-      });
-
-      // Broadcast update to all other connected clients
-      socket.broadcast.emit('crm:entity:updated', {
-        entityType: payload.entityType,
-        entityId: payload.entityId,
-        version: newVersion,
-        data: updatedData,
-        updatedBy: author,
-        wasReconciled: false,
-        timestamp: Date.now()
-      });
-
-      // Acknowledge to sender
-      socket.emit('crm:entity:ack', {
-        entityType: payload.entityType,
-        entityId: payload.entityId,
-        version: newVersion,
-        timestamp: Date.now()
-      });
+    socket.on('crm:entity:update', (payload: { entityType?: string; entityId?: string; version?: number; patch?: unknown } = {}) => {
+      if (!allowed(payload?.entityType, 'edit')) return deny(payload?.entityType, payload?.entityId, 'forbidden');
+      if (!isId(payload.entityId) || !validPatch(payload.patch)) return deny(payload.entityType, payload.entityId, 'invalid');
+      const u = applyUpdate(payload.entityType, payload.entityId, payload.patch, payload.version);
+      if (!u) return deny(payload.entityType, payload.entityId, 'limit');
+      if (u.wasReconciled) {
+        socket.emit('crm:sync:conflict', { entityType: u.entityType, entityId: u.entityId, strategy: 'Field-level 3-Way Merge', resolvedVersion: u.version, mergedData: u.data });
+        io.to(ORG).emit('crm:entity:updated', u);
+        return;
+      }
+      socket.to(ORG).emit('crm:entity:updated', u);
+      socket.emit('crm:entity:ack', { entityType: u.entityType, entityId: u.entityId, version: u.version, timestamp: Date.now() });
     });
 
-    socket.on('crm:entity:batch_update', (payload: {
-      updates: Array<{
-        entityType: 'contact' | 'lead' | 'deal' | 'event' | 'task';
-        entityId: string;
-        version?: number;
-        patch: Record<string, any>;
-      }>;
-      clientTimestamp: number;
-      author?: string;
-    }) => {
-      if (!Array.isArray(payload?.updates)) return;
-      const author = payload.author || user?.id || socket.id;
-      const updatedList: any[] = [];
-
+    socket.on('crm:entity:batch_update', (payload: { updates?: Array<{ entityType?: string; entityId?: string; version?: number; patch?: unknown }> } = {}) => {
+      if (!Array.isArray(payload?.updates) || payload.updates.length > MAX_BATCH) return deny(null, null, 'invalid');
+      const updated: any[] = [];
       for (const item of payload.updates) {
-        const key = `${item.entityType}:${item.entityId}`;
-        const existing = crmStateStore.get(key);
-        const newVersion = (existing?.version || 0) + 1;
-        const updatedData = { ...(existing?.data || {}), ...item.patch };
-
-        crmStateStore.set(key, {
-          version: newVersion,
-          lastModified: Date.now(),
-          data: updatedData,
-          updatedBy: author
-        });
-
-        updatedList.push({
-          entityType: item.entityType,
-          entityId: item.entityId,
-          version: newVersion,
-          data: updatedData,
-          updatedBy: author,
-          wasReconciled: false,
-          timestamp: Date.now()
-        });
+        if (!allowed(item?.entityType, 'edit')) { deny(item?.entityType, item?.entityId, 'forbidden'); continue; }
+        if (!isId(item.entityId) || !validPatch(item.patch)) { deny(item.entityType, item.entityId, 'invalid'); continue; }
+        const u = applyUpdate(item.entityType, item.entityId, item.patch);
+        if (u) updated.push(u);
       }
-
-      socket.broadcast.emit('crm:entity:batch_updated', {
-        updates: updatedList,
-        timestamp: Date.now()
-      });
-
-      for (const u of updatedList) {
-        socket.broadcast.emit('crm:entity:updated', u);
+      if (updated.length) {
+        socket.to(ORG).emit('crm:entity:batch_updated', { updates: updated, timestamp: Date.now() });
+        for (const u of updated) socket.to(ORG).emit('crm:entity:updated', u);
       }
-
-      socket.emit('crm:entity:batch_ack', {
-        count: updatedList.length,
-        timestamp: Date.now()
-      });
+      socket.emit('crm:entity:batch_ack', { count: updated.length, timestamp: Date.now() });
     });
 
-    socket.on('crm:entity:delete', (payload: { entityType: string; entityId: string }) => {
-      const key = `${payload.entityType}:${payload.entityId}`;
-      crmStateStore.delete(key);
-      io.emit('crm:entity:deleted', {
-        entityType: payload.entityType,
-        entityId: payload.entityId,
-        timestamp: Date.now()
-      });
+    socket.on('crm:entity:delete', (payload: { entityType?: string; entityId?: string } = {}) => {
+      if (!allowed(payload?.entityType, 'delete')) return deny(payload?.entityType, payload?.entityId, 'forbidden');
+      if (!isId(payload.entityId)) return deny(payload.entityType, payload.entityId, 'invalid');
+      crmStateStore.delete(`${payload.entityType}:${payload.entityId}`);
+      io.to(ORG).emit('crm:entity:deleted', { entityType: payload.entityType, entityId: payload.entityId, timestamp: Date.now() });
     });
   });
 
