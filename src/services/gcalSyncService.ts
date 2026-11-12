@@ -10,7 +10,7 @@
  * routes report "not configured", and failures are returned as errors.
  */
 import { randomUUID } from 'node:crypto';
-import { google } from 'googleapis';
+import { google } from '../server/integrations/googleClients';
 import { assertId, getDocStore } from '../server/data/docStore';
 import { channelToken, getGoogleTokens, saveGoogleTokens } from '../server/integrations/googleTokens';
 

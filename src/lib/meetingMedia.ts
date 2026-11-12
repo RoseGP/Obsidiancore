@@ -4,11 +4,17 @@
  * exposes remote video tracks, reports who is speaking, and carries meeting chat over the data channel.
  * Remote participants are identified by their roster id (the token identity), so the UI can match tiles.
  */
-import { ConnectionQuality, ConnectionState, Room, RoomEvent, Track, type LocalTrackPublication, type Participant, type RemoteParticipant, type RemoteTrack } from 'livekit-client';
+// Types only at module level: the LiveKit SDK (~1.3 MB) is loaded on the first connect(), not with the app.
+import type { ConnectionQuality, LocalTrackPublication, Participant, RemoteParticipant, RemoteTrack, Room } from 'livekit-client';
+
+type LiveKit = typeof import('livekit-client');
+let livekit: LiveKit | null = null;
+/** The LiveKit SDK, loaded once on first use. */
+export async function loadLiveKit(): Promise<LiveKit> { return (livekit ??= await import('livekit-client')); }
 
 export type NetworkQuality = 'excellent' | 'good' | 'poor' | 'lost' | 'unknown';
-const toQuality = (q: ConnectionQuality | undefined): NetworkQuality =>
-  q === ConnectionQuality.Excellent ? 'excellent' : q === ConnectionQuality.Good ? 'good' : q === ConnectionQuality.Poor ? 'poor' : q === ConnectionQuality.Lost ? 'lost' : 'unknown';
+const toQuality = (lk: LiveKit, q: ConnectionQuality | undefined): NetworkQuality =>
+  q === lk.ConnectionQuality.Excellent ? 'excellent' : q === lk.ConnectionQuality.Good ? 'good' : q === lk.ConnectionQuality.Poor ? 'poor' : q === lk.ConnectionQuality.Lost ? 'lost' : 'unknown';
 
 export type MediaStatus = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'not_configured' | 'failed' | 'disconnected';
 
@@ -35,20 +41,33 @@ interface Handlers {
 
 export class MeetingMedia {
   private room: Room | null = null;
+  /** Set once the SDK is loaded (always before `room` exists). */
+  private lk: LiveKit | null = null;
+  /** Bumped by connect()/disconnect() so a connect that finishes loading after a newer call does nothing. */
+  private generation = 0;
   private pubs: { audio?: LocalTrackPublication; video?: LocalTrackPublication; screen?: LocalTrackPublication } = {};
   private audioHost: HTMLDivElement | null = null;
   private audioEls = new Map<string, HTMLMediaElement>();
 
   constructor(private h: Handlers) {}
 
-  get connected() { return this.room?.state === ConnectionState.Connected; }
+  get connected() { return !!this.lk && this.room?.state === this.lk.ConnectionState.Connected; }
   get identity() { return this.room?.localParticipant.identity ?? null; }
 
   async connect(url: string, token: string, local: MediaStream | null) {
     this.disconnect();
+    const gen = this.generation;
+    this.h.onStatus('connecting');
+    let lk: LiveKit;
+    try { lk = await loadLiveKit(); } catch {
+      if (gen === this.generation) this.h.onStatus('failed', 'Couldn\u2019t load audio and video. Check your connection and try again.');
+      return;
+    }
+    if (gen !== this.generation) return; // disconnected or reconnected while the SDK was loading
+    this.lk = lk;
+    const { Room, RoomEvent, Track } = lk;
     const room = new Room({ adaptiveStream: true, dynacast: true });
     this.room = room;
-    this.h.onStatus('connecting');
     room
       .on(RoomEvent.TrackSubscribed, (track: RemoteTrack, _pub, p: RemoteParticipant) => {
         if (track.kind === Track.Kind.Audio) this.playAudio(`${p.identity}:${track.sid}`, track);
@@ -64,7 +83,7 @@ export class MeetingMedia {
       .on(RoomEvent.ParticipantDisconnected, () => this.emit())
       .on(RoomEvent.ActiveSpeakersChanged, () => this.emit())
       .on(RoomEvent.ConnectionQualityChanged, (q: ConnectionQuality, p: Participant) => {
-        if (p.identity === room.localParticipant.identity) this.h.onLocalQuality?.(toQuality(q));
+        if (p.identity === room.localParticipant.identity) this.h.onLocalQuality?.(toQuality(lk, q));
         else this.emit();
       })
       .on(RoomEvent.Reconnecting, () => this.h.onStatus('reconnecting', 'Reconnecting audio and video…'))
@@ -89,8 +108,8 @@ export class MeetingMedia {
   }
 
   private async publishLocal(stream: MediaStream) {
-    const lp = this.room?.localParticipant;
-    if (!lp) return;
+    const lp = this.room?.localParticipant, Track = this.lk?.Track;
+    if (!lp || !Track) return;
     const [audio] = stream.getAudioTracks();
     const [video] = stream.getVideoTracks();
     try {
@@ -107,8 +126,8 @@ export class MeetingMedia {
   async setCamEnabled(on: boolean) { const p = this.pubs.video; if (p) await (on ? p.unmute() : p.mute()); }
 
   async publishScreen(track: MediaStreamTrack) {
-    const lp = this.room?.localParticipant;
-    if (!lp) return;
+    const lp = this.room?.localParticipant, Track = this.lk?.Track;
+    if (!lp || !Track) return;
     await this.unpublishScreen();
     this.pubs.screen = await lp.publishTrack(track, { source: Track.Source.ScreenShare });
   }
@@ -127,6 +146,7 @@ export class MeetingMedia {
   }
 
   disconnect() {
+    this.generation++;
     const room = this.room;
     this.room = null;
     this.pubs = {};
@@ -135,8 +155,9 @@ export class MeetingMedia {
   }
 
   private emit() {
-    const room = this.room;
-    if (!room) return this.h.onRemote({});
+    const room = this.room, lk = this.lk;
+    if (!room || !lk) return this.h.onRemote({});
+    const { Track } = lk;
     const speaking = new Set(room.activeSpeakers.map((p: Participant) => p.identity));
     const out: Record<string, RemoteMedia> = {};
     room.remoteParticipants.forEach((p) => {
@@ -150,7 +171,7 @@ export class MeetingMedia {
         micMuted: !mic || mic.isMuted,
         camOff: !cam || cam.isMuted,
         isSpeaking: speaking.has(p.identity),
-        quality: toQuality(p.connectionQuality),
+        quality: toQuality(lk, p.connectionQuality),
       };
     });
     this.h.onRemote(out);

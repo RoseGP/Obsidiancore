@@ -55,6 +55,7 @@ import { guard, PUBLIC } from './src/server/routeGuards';
 import { isExplicitDevOrTest } from './src/server/runtimeEnv';
 import { apiRateLimit, errorHandler, installProcessErrorLogging, notFoundHandler, requestContext, requestLogger } from './src/server/http/middleware';
 import { logger } from './src/server/http/logger';
+import { installGracefulShutdown, serveBuiltApp } from './src/server/http/production';
 import magicLinkRouter from './src/routes/magicLinkApi';
 import crmAgentRouter from './src/routes/crmAgentApi';
 import webFormsRouter from './src/routes/webFormsApi';
@@ -177,17 +178,16 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
-    app.get('*', (_req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
-    });
+    // Hashed assets cached for a year, index.html revalidated, missing chunks → 404 (src/server/http/production.ts).
+    serveBuiltApp(app, path.join(process.cwd(), 'dist'));
   }
 
   const httpServer = http.createServer(app);
 
   // Initialize Unified Real-Time Socket.io Server for Data Synchronization & WebRTC Signaling
-  initializeSignalingServer(httpServer);
+  const io = initializeSignalingServer(httpServer);
+  // SIGTERM/SIGINT: stop accepting connections, finish in-flight requests, then exit (SHUTDOWN_TIMEOUT_MS, default 10 s).
+  installGracefulShutdown(httpServer, { beforeClose: () => { io.disconnectSockets(true); } });
 
   // Ends meetings whose plan time limit has passed, even if nobody is connected.
   startMeetingSweeper();

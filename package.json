@@ -3,9 +3,12 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "NODE_ENV=development tsx server.ts",
-    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --log-override:empty-import-meta=silent --outfile=dist/server.cjs",
     "start": "NODE_ENV=production node dist/server.cjs",
     "lint": "tsc --noEmit && node scripts/lint-guards.mjs",
     "test": "npx tsx src/tests/messagingIntegration.test.ts",
@@ -35,7 +38,7 @@
     "test:api-key": "npx tsx src/server/__tests__/apiKeyAuth.test.ts",
     "typecheck": "tsc --noEmit",
     "test:communication": "npx tsx src/routes/__tests__/communication.test.ts",
-    "test:ci": "npm run -s test && npm run -s test:lead-intelligence && npm run -s test:command-center && npm run -s test:meeting-notes && npm run -s test:account && npm run -s test:dashboard && npm run -s test:communication && npm run -s test:messaging && npm run -s test:video && npm run -s test:invoicing && npm run -s test:proposals && npm run -s test:social-accounts && npm run -s test:local-seo && npm run -s test:voice-ivr && npm run -s test:security && npm run -s test:meeting-controls && npm run -s test:meeting-room && npm run -s test:http && npm run -s test:magic-link && npm run -s test:crm-agent && npm run -s test:web-forms && npm run -s test:web-forms-tab && npm run -s test:meeting-session && npm run -s test:meeting-plans && npm run -s test:meeting-summary && npm run -s test:assistant && npm run -s test:ai && npm run -s test:embed && npm run -s test:api-key && npm run -s test:google && npm run -s test:contacts && npm run -s test:tasks && npm run -s test:timeline && npm run -s test:crm-screens && npm run -s test:audit && npm run -s test:rbac && npm run -s test:compliance && npm run -s test:payments && npm run -s test:pipeline && npm run -s test:search && npm run -s test:availability && npm run -s test:greet && npm run -s test:analytics && npm run -s test:billing-page",
+    "test:ci": "npm run -s test && npm run -s test:lead-intelligence && npm run -s test:command-center && npm run -s test:meeting-notes && npm run -s test:account && npm run -s test:dashboard && npm run -s test:communication && npm run -s test:messaging && npm run -s test:video && npm run -s test:invoicing && npm run -s test:proposals && npm run -s test:social-accounts && npm run -s test:local-seo && npm run -s test:voice-ivr && npm run -s test:security && npm run -s test:meeting-controls && npm run -s test:meeting-room && npm run -s test:http && npm run -s test:production && npm run -s test:page-boundary && npm run -s test:magic-link && npm run -s test:crm-agent && npm run -s test:web-forms && npm run -s test:web-forms-tab && npm run -s test:meeting-session && npm run -s test:meeting-plans && npm run -s test:meeting-summary && npm run -s test:assistant && npm run -s test:ai && npm run -s test:embed && npm run -s test:api-key && npm run -s test:google && npm run -s test:contacts && npm run -s test:tasks && npm run -s test:timeline && npm run -s test:crm-screens && npm run -s test:audit && npm run -s test:rbac && npm run -s test:compliance && npm run -s test:payments && npm run -s test:pipeline && npm run -s test:search && npm run -s test:availability && npm run -s test:greet && npm run -s test:analytics && npm run -s test:billing-page",
     "test:billing-page": "npx tsx src/features/billing/__tests__/billingPage.test.tsx",
     "test:analytics": "npx tsx src/server/crm/analytics/__tests__/analytics.test.ts && npx tsx src/routes/__tests__/reportsApi.test.ts && npx tsx src/features/reports/__tests__/reportsView.test.tsx",
     "test:google": "npx tsx src/server/__tests__/googleTokens.test.ts",
@@ -56,11 +59,15 @@
     "test:tasks": "npx tsx src/server/crm/__tests__/tasks.test.ts",
     "test:timeline": "npx tsx src/server/crm/__tests__/timeline.test.ts",
     "test:crm-screens": "npx tsx src/features/crm-records/__tests__/views.test.tsx",
-    "test:command-center": "npx tsx src/routes/__tests__/commandCenter.test.ts"
+    "test:command-center": "npx tsx src/routes/__tests__/commandCenter.test.ts",
+    "test:production": "npx tsx src/server/http/__tests__/production.test.ts",
+    "test:page-boundary": "npx tsx src/components/__tests__/pageBoundary.test.tsx"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.132.1",
     "@google/genai": "^2.4.0",
+    "@googleapis/calendar": "^20.1.0",
+    "@googleapis/oauth2": "^10.0.1",
     "@hookform/resolvers": "^5.9.1",
     "@tailwindcss/vite": "^4.1.14",
     "@tanstack/react-query": "^5.102.8",
@@ -84,7 +91,6 @@
     "express-rate-limit": "^8.7.1",
     "firebase": "^12.15.0",
     "firebase-admin": "^14.1.0",
-    "googleapis": "^178.0.0",
     "ioredis": "^6.0.0",
     "jsonwebtoken": "^9.0.2",
     "jspdf": "^4.2.1",
@@ -98,7 +104,7 @@
     "nodemailer": "^10.0.0",
     "openai": "^7.8.0",
     "pg": "^8.23.0",
-    "postal-mime": "^3.0.0",
+    "postal-mime": "^4.2.1",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
     "react-hook-form": "^7.87.0",

@@ -18,7 +18,7 @@ import { assertId, getDocStore, newId, type DocStore } from '../data/docStore';
 import { TenancyError } from '../tenancy/orgs';
 import { recordAudit } from '../audit/auditLog';
 import { inboxMessagesByEmail } from '../../routes/messagingPlatform';
-import { LIKELY, POSSIBLE, buildIndex, findMatchingPairs, levelOf, matchAgainst, matchLeadsToContacts, type MatchLevel } from './analytics/entityMatch';
+import { LIKELY, POSSIBLE, buildIndex, clusterMatches, findMatchingPairs, levelOf, matchAgainst, matchLeadsToContacts, matchScore, type MatchLevel } from './analytics/entityMatch';
 
 export const normEmail = (v: unknown) => (typeof v === 'string' ? v.trim().toLowerCase() : '');
 export const normPhone = (v: unknown) => { const d = String(v ?? '').replace(/\D/g, ''); return d.length >= 7 ? d.slice(-10) : ''; };
@@ -64,6 +64,8 @@ function contactFields(input: ContactInput, partial: boolean) {
 export function validEmail(e: string) { return !e || (e.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)); }
 
 /** Why two records look like the same person (empty when they don't). */
+/** Reasons from the exact rules below: a pair with one of them is always grouped, whatever the fuzzy score. */
+const EXACT_REASONS = new Set(['Same email', 'Same phone', 'Same name and company']);
 export function duplicateReasons(a: any, b: any): string[] {
   const why: string[] = [];
   const ea = [a.email, ...(a.altEmails || [])].map(normEmail).filter(Boolean);
@@ -213,17 +215,15 @@ export class ContactService {
       const cur = pairs.get(k);
       pairs.set(k, { a, b, score: Math.max(cur?.score ?? 0, 0.9), reasons: [...new Set([...exact, ...(cur?.reasons || [])])] });
     }
-    const parent = rows.map((_: any, i: number) => i);
-    const find = (x: number): number => { while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; };
-    for (const p of pairs.values()) { const ra = find(p.a), rb = find(p.b); if (ra !== rb) parent[rb] = ra; }
-    const groups = new Map<number, number[]>();
-    rows.forEach((_: any, i: number) => { const r = find(i); groups.set(r, [...(groups.get(r) || []), i]); });
-    return [...groups.entries()].filter(([, g]) => g.length > 1).map(([root, g]) => {
-      const gp = [...pairs.values()].filter((p) => find(p.a) === root).sort((x, y) => y.score - x.score);
-      const score = gp.length ? gp[0].score : 0;
+    // Complete-linkage grouping: everyone in a group resembles everyone else (no A≈B≈C chains joining two
+    // different people); exact-rule pairs always group. A pair that can't join its group is listed on its own.
+    const edges = [...pairs.values()].map((p) => ({ ...p, mustLink: p.reasons.some((r) => EXACT_REASONS.has(r)) }));
+    return clusterMatches(edges, (i, j) => matchScore(rows[i], rows[j]).score, POSSIBLE).map((c) => {
+      const gp = [...c.edges].sort((x, y) => y.score - x.score);
+      const score = gp[0].score;
       return {
         reasons: [...new Set(gp.flatMap((p) => p.reasons))],
-        contacts: g.map((i) => rows[i]).sort((a: any, b: any) => String(a.createdAt).localeCompare(String(b.createdAt))),
+        contacts: c.members.map((i) => rows[i]).sort((a: any, b: any) => String(a.createdAt).localeCompare(String(b.createdAt))),
         score, level: score >= LIKELY ? 'likely' : 'possible',
         pairs: gp.map((p) => ({ ids: [rows[p.a].id, rows[p.b].id], score: p.score, level: p.score >= LIKELY ? 'likely' : 'possible', reasons: p.reasons, summary: p.reasons.join('; ') })),
       };

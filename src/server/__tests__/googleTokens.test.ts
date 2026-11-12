@@ -73,7 +73,7 @@ assert.equal(r.status, 400); assert.ok(!r.text.includes('<script>alert(1)</scrip
 ok('callback error page doesn’t reflect the error parameter (XSS fixed) and sends a strict CSP');
 
 // Stub Google's token exchange and API calls for the success path.
-const { google } = await import('googleapis');
+const { google } = await import('../integrations/googleClients');
 const proto: any = (google.auth.OAuth2 as any).prototype;
 proto.getToken = async () => ({ tokens: { access_token: 'ya29.BOB', refresh_token: '1//BOB', expiry_date: Date.now() + 3600_000, scope: 'calendar' } });
 proto.revokeToken = async () => ({});

@@ -1,39 +1,23 @@
 import SecurityPolicyGuard from './components/settings/SecurityPolicyGuard';
+import { PageBoundary, lazyPage } from './components/PageBoundary';
 import React, { useState, useCallback } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { DatabaseProvider } from './context/DatabaseContext';
 import { CommandProvider, useCommand, SemanticView } from './context/CommandContext';
 import AuthFlowView from './components/auth/AuthFlowView';
-import ProposalSharePage from './features/proposals/ProposalSharePage';
 import SessionLockScreen from './components/auth/SessionLockScreen';
 import DynamicSidebar from './components/DynamicSidebar';
-import { TasksView } from './features/crm-records';
-import BillingSubscriptionView from './features/billing/BillingSubscriptionView';
 import TopNavProfileDropdown from './components/TopNavProfileDropdown';
 import { NotificationDropdown } from './components/NotificationDropdown';
 import { NotificationProvider } from './context/NotificationContext';
 import { LuxuryNotificationToasts } from './components/notifications/LuxuryNotificationToasts';
 import UnifiedCommandSearchBar from './components/UnifiedCommandSearchBar';
 import DashboardView from './components/DashboardView';
-import GreetHub from './components/greet/GreetHub';
-import MeetingRoom from './features/meeting-room/MeetingRoom';
 import MagicLinkLanding, { takeMagicLinkToken } from './components/auth/MagicLinkLanding';
-import GreetGuestPage from './components/greet/GreetGuestPage';
 import { announceMeetingsChanged, scheduleFromCalendarEvent, scheduleMeeting } from './lib/greetClient';
-import ProductionMessagingPlatform from './components/messaging/ProductionMessagingPlatform';
-import AnalyticsView from './components/AnalyticsView';
-import SettingsView, { SettingsTab } from './components/SettingsView';
-import CalendarView from './components/CalendarView';
-import ProposalsView from './components/ProposalsView';
-import SocialPlannerTab from './components/SocialPlannerTab';
-import GbpView from './components/GbpView';
-import { WebFormsView } from './features/web-forms/WebFormsView';
-import DealsPipelineView from './components/DealsPipelineView';
-import CRMVoiceDialer from './components/CRMVoiceDialer';
-import VideoMeetingWorkspace from './components/greet/VideoMeetingWorkspace';
+import type { SettingsTab } from './components/SettingsView';
 import FloatingMeetingHUD from './components/greet/FloatingMeetingHUD';
 import { MeetingSessionProvider, useMeetingSession } from './context/MeetingSessionContext';
-import PublicSchedulingPage from './components/PublicSchedulingPage';
 import { RealtimeSyncProvider } from './context/RealtimeSyncContext';
 import RealTimeSyncBadge from './components/RealTimeSyncBadge';
 import NotificationPreferencesModal from './components/notifications/NotificationPreferencesModal';
@@ -42,12 +26,32 @@ import QuickActionModal from './components/QuickActionModal';
 import { CRMContact, CRMLead, CalendarEvent, CRMMessage, AppNotification, ActiveView } from './types';
 import { MessageSquare, X, Menu } from 'lucide-react';
 import HelpMenu from './components/HelpMenu';
-import LeadIntelligenceView from './features/lead-intelligence/LeadIntelligenceView';
 import { useTheme } from './context/ThemeContext';
 import ThemeSwitch from './components/ThemeSwitch';
 import { InvitationAcceptor } from './components/OrganizationSettings';
 import { onCrmChanged } from './lib/crmEvents';
 import { useTaskReminders } from './features/crm-records/useTaskReminders';
+
+// Pages load on first use (code splitting); PageBoundary shows loading and contains page errors.
+const ProposalSharePage = lazyPage(() => import('./features/proposals/ProposalSharePage'));
+const TasksView = lazyPage(() => import('./features/crm-records/TasksView'));
+const BillingSubscriptionView = lazyPage(() => import('./features/billing/BillingSubscriptionView'));
+const GreetHub = lazyPage(() => import('./components/greet/GreetHub'));
+const MeetingRoom = lazyPage(() => import('./features/meeting-room/MeetingRoom'));
+const GreetGuestPage = lazyPage(() => import('./components/greet/GreetGuestPage'));
+const ProductionMessagingPlatform = lazyPage(() => import('./components/messaging/ProductionMessagingPlatform'));
+const AnalyticsView = lazyPage(() => import('./components/AnalyticsView'));
+const SettingsView = lazyPage(() => import('./components/SettingsView'));
+const CalendarView = lazyPage(() => import('./components/CalendarView'));
+const ProposalsView = lazyPage(() => import('./components/ProposalsView'));
+const SocialPlannerTab = lazyPage(() => import('./components/SocialPlannerTab'));
+const GbpView = lazyPage(() => import('./components/GbpView'));
+const WebFormsView = lazyPage(() => import('./features/web-forms/WebFormsView').then((m) => ({ default: m.WebFormsView })));
+const DealsPipelineView = lazyPage(() => import('./components/DealsPipelineView'));
+const CRMVoiceDialer = lazyPage(() => import('./components/CRMVoiceDialer'));
+const VideoMeetingWorkspace = lazyPage(() => import('./components/greet/VideoMeetingWorkspace'));
+const PublicSchedulingPage = lazyPage(() => import('./components/PublicSchedulingPage'));
+const LeadIntelligenceView = lazyPage(() => import('./features/lead-intelligence/LeadIntelligenceView'));
 
 // Contacts are the organization's leads (/api/leads, stored per organization on the server); loaded after sign-in.
 const INITIAL_CONTACTS: CRMContact[] = [];
@@ -466,10 +470,10 @@ function AppMain() {
 
   // Proposal links (/?proposal=<token>) are for clients: no CRM account needed.
   const proposalToken = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('proposal') : null;
-  if (proposalToken) return <ProposalSharePage token={proposalToken} />;
+  if (proposalToken) return <PageBoundary><ProposalSharePage token={proposalToken} /></PageBoundary>;
   // GREET guest invitations (/?greet_invite=<token>) are for external guests: no CRM account needed.
   const greetInvite = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('greet_invite') : null;
-  if (greetInvite) return <GreetGuestPage token={greetInvite} />;
+  if (greetInvite) return <PageBoundary><GreetGuestPage token={greetInvite} /></PageBoundary>;
   if (magicToken !== null) return <MagicLinkLanding token={magicToken} onDone={() => setMagicToken(null)} />;
 
   if (!isAuthenticated && !isAuthLoading) {
@@ -489,6 +493,7 @@ function AppMain() {
   if (activeView === 'call_canvas' || activeView === 'video_call') {
     return (
       <div className="obsidian w-screen h-screen overflow-hidden bg-[var(--obsidian-0)]">
+        <PageBoundary resetKey={activeView}>
         <VideoMeetingWorkspace
           contacts={contacts}
           onAddCalendarEvent={handleAddCalendarEvent}
@@ -501,6 +506,7 @@ function AppMain() {
             setActiveView('dashboard');
           }}
         />
+        </PageBoundary>
       </div>
     );
   }
@@ -617,7 +623,7 @@ function AppMain() {
 
         {/* Dynamic Viewport */}
         <main className={`flex-1 min-h-0 relative flex flex-col ${PAGE_SCROLL_VIEWS.has(activeView) ? 'overflow-y-auto overflow-x-hidden' : 'overflow-hidden'}`}>
-          {renderActiveView()}
+          <PageBoundary resetKey={activeView}>{renderActiveView()}</PageBoundary>
         </main>
       </div>
 

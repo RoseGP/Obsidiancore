@@ -294,6 +294,56 @@ export function findMatchingPairs(records: MatchRecord[], min = POSSIBLE): Score
     .filter((p) => p.match.score >= min).sort((x, y) => y.match.score - x.match.score);
 }
 
+// ---------------------------------------------------------------- grouping
+export interface MatchEdge { a: number; b: number; score: number; mustLink?: boolean }
+export interface MatchCluster<E extends MatchEdge> { members: number[]; edges: E[]; split: boolean }
+
+/**
+ * Groups scored pairs into duplicate groups without chaining (complete-linkage agglomerative clustering).
+ *
+ * Plain connected components (single linkage) chain: Dan Brown ≈ Daniel Brown (1.0) and Daniel Brown ≈
+ * Danielle Brown (0.84) would put Dan and Danielle (0.65, different people) in one group, and merging that
+ * group merges two people. Here pairs are taken strongest first (Kruskal order) and two groups join only when
+ * EVERY cross pair scores at least `min`, so every two people in a group look like the same person.
+ *   - `mustLink` pairs (exact rules such as the same email) always join, as before.
+ *   - Cross pairs that weren't a candidate pair are scored with `scoreOf` (cached, computed only when needed).
+ *   - A pair that couldn't join is still returned on its own (`split: true`), so no candidate is hidden.
+ * Deterministic: the result doesn't depend on the input order. Members and groups are sorted.
+ */
+export function clusterMatches<E extends MatchEdge>(edges: E[], scoreOf: (i: number, j: number) => number, min = POSSIBLE): Array<MatchCluster<E>> {
+  const key = (i: number, j: number) => (i < j ? `${i}|${j}` : `${j}|${i}`);
+  const known = new Map<string, number>();
+  for (const e of edges) if (e.a !== e.b) known.set(key(e.a, e.b), Math.max(known.get(key(e.a, e.b)) ?? 0, e.score));
+  const score = (i: number, j: number) => { const k = key(i, j); let s = known.get(k); if (s === undefined) { s = scoreOf(i, j); known.set(k, s); } return s; };
+
+  const parent = new Map<number, number>(), members = new Map<number, number[]>();
+  const find = (x: number): number => {
+    if (!parent.has(x)) { parent.set(x, x); members.set(x, [x]); }
+    let r = x; while (parent.get(r) !== r) r = parent.get(r)!;
+    while (parent.get(x) !== r) { const n = parent.get(x)!; parent.set(x, r); x = n; } // path compression
+    return r;
+  };
+  const coherent = (A: number[], B: number[]) => A.every((i) => B.every((j) => score(i, j) >= min));
+
+  const ordered = edges.filter((e) => e.a !== e.b).sort((x, y) => Number(!!y.mustLink) - Number(!!x.mustLink) || y.score - x.score || Math.min(x.a, x.b) - Math.min(y.a, y.b) || Math.max(x.a, x.b) - Math.max(y.a, y.b));
+  const held: E[] = [];
+  for (const e of ordered) {
+    const ra = find(e.a), rb = find(e.b);
+    if (ra === rb) continue;
+    const A = members.get(ra)!, B = members.get(rb)!;
+    if (!e.mustLink && !coherent(A, B)) { held.push(e); continue; }
+    const [big, small] = A.length >= B.length ? [ra, rb] : [rb, ra]; // union by size
+    parent.set(small, big); members.get(big)!.push(...members.get(small)!); members.delete(small);
+  }
+
+  const byRoot = new Map<number, E[]>();
+  for (const e of ordered) { const r = find(e.a); if (r === find(e.b)) byRoot.set(r, [...(byRoot.get(r) || []), e]); }
+  const out: Array<MatchCluster<E>> = [];
+  for (const [r, list] of byRoot) out.push({ members: [...members.get(r)!].sort((x, y) => x - y), edges: list, split: false });
+  for (const e of held) if (find(e.a) !== find(e.b)) out.push({ members: [Math.min(e.a, e.b), Math.max(e.a, e.b)], edges: [e], split: true });
+  return out.sort((x, y) => y.edges[0].score - x.edges[0].score || x.members[0] - y.members[0] || x.members[1] - y.members[1]);
+}
+
 /** The records in `pool` that look like `candidate`, best first (at or above `min`). */
 export function matchAgainst(candidate: MatchRecord, pool: MatchRecord[], opts: { min?: number; limit?: number; index?: Map<string, number[]>; exclude?: (r: MatchRecord) => boolean } = {}) {
   const index = opts.index ?? buildIndex(pool);

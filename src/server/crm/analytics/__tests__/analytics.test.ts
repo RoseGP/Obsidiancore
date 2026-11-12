@@ -11,7 +11,7 @@ import { buildPipelineHealth } from '../pipelineHealth';
 import { buildSegments } from '../segments';
 import { buildDealActions } from '../dealActions';
 import {
-  blockingKeys, candidatePairs, companySimilarity, findMatchingPairs, jaroWinkler, matchAgainst, matchLeadsToContacts, matchScore, nicknameMatch, soundex,
+  blockingKeys, candidatePairs, clusterMatches, companySimilarity, findMatchingPairs, jaroWinkler, matchAgainst, matchLeadsToContacts, matchScore, nicknameMatch, soundex,
 } from '../entityMatch';
 
 let passed = 0; const ok = (n: string) => { passed++; console.log('  ✓', n); };
@@ -292,6 +292,49 @@ const F = buildForecast(deals, [], NOW, { months: 3 });
     [{ id: 'cB', name: 'Bob Jones', email: 'bob@acme.com' }]);
   assert.equal(leadMatches.length, 1); assert.equal(leadMatches[0].lead.id, 'lead1'); assert.equal(leadMatches[0].contact.id, 'cB'); assert.equal(leadMatches[0].level, 'likely');
   ok('a new contact or an open lead is compared with existing contacts (“this lead looks like contact X”); linked leads are skipped');
+}
+
+// ---------------------------------------------------------------- duplicate grouping (complete linkage)
+{
+  const score = (rows: any[]) => (i: number, j: number) => matchScore(rows[i], rows[j]).score;
+  const edgesOf = (rows: any[]) => findMatchingPairs(rows).map((p) => ({ a: p.a, b: p.b, score: p.match.score }));
+
+  // Dan ≈ Daniel (nickname, 1.0), Daniel ≈ Danielle (0.84), but Dan vs Danielle are different people (< 0.7).
+  const browns = [{ id: 'd1', name: 'Dan Brown', company: 'Globex' }, { id: 'd2', name: 'Daniel Brown', company: 'Globex' }, { id: 'd3', name: 'Danielle Brown', company: 'Globex' }];
+  assert.ok(matchScore(browns[0], browns[2]).score < 0.7, 'fixture: Dan and Danielle must not match');
+  const g = clusterMatches(edgesOf(browns), score(browns));
+  assert.deepEqual(g.map((c) => c.members), [[0, 1], [1, 2]], 'no chain: Dan and Danielle are never in the same group');
+  assert.deepEqual(g.map((c) => c.split), [false, true]);
+  for (const c of g) for (const i of c.members) for (const j of c.members) if (i < j) assert.ok(score(browns)(i, j) >= 0.7);
+  ok('grouping: complete linkage stops A≈B≈C chains (Dan/Daniel/Danielle); the held-back pair is still listed on its own');
+
+  // Chris / Christina / Tina Lee at one company: every pair is at least possible → one group of three.
+  const lees = [{ id: 'l1', name: 'Chris Lee', email: 'chris@acme.com' }, { id: 'l2', name: 'Christina Lee', email: 'clee@acme.com' }, { id: 'l3', name: 'Tina Lee', email: 'tina@acme.com' }];
+  const gl = clusterMatches(edgesOf(lees), score(lees));
+  assert.equal(gl.length, 1); assert.deepEqual(gl[0].members, [0, 1, 2]); assert.equal(gl[0].edges.length, 3);
+  ok('grouping: a consistent cluster (every pair similar) stays one group');
+
+  // Exact-rule pairs always join, even when the fuzzy score of a cross pair is low.
+  const chain = clusterMatches([{ a: 0, b: 1, score: 0.9, mustLink: true }, { a: 1, b: 2, score: 0.9, mustLink: true }], () => 0);
+  assert.equal(chain.length, 1); assert.deepEqual(chain[0].members, [0, 1, 2]); assert.equal(chain[0].split, false);
+  const fuzzyChain = clusterMatches([{ a: 0, b: 1, score: 0.9 }, { a: 1, b: 2, score: 0.9 }], () => 0);
+  assert.deepEqual(fuzzyChain.map((c) => [c.members, c.split]), [[[0, 1], false], [[1, 2], true]]);
+  // An exact pair is placed before fuzzy ones: the fuzzy pair that disagrees with it is the one held back.
+  const exactFirst = clusterMatches([{ a: 0, b: 1, score: 0.95 }, { a: 1, b: 2, score: 0.9, mustLink: true }], () => 0);
+  assert.deepEqual(exactFirst.map((c) => [c.members, c.split]), [[[0, 1], true], [[1, 2], false]]);
+  ok('grouping: exact-rule pairs (mustLink) always group and take precedence; the same pairs as fuzzy matches don’t chain');
+
+  // Deterministic regardless of the input order; unscored cross pairs are only computed when needed (and once).
+  const edges = [{ a: 0, b: 1, score: 0.9 }, { a: 2, b: 3, score: 0.8 }, { a: 1, b: 2, score: 0.75 }, { a: 3, b: 4, score: 0.72 }];
+  let calls = 0; const sc = (i: number, j: number) => { calls++; return (i + j) % 2 ? 0.71 : 0.5; };
+  const one = clusterMatches(edges, sc); const callsOnce = calls;
+  for (let k = 0; k < 6; k++) {
+    const shuffled = [...edges].sort(() => (k % 2 ? 1 : -1) * ((k * 7) % 3 - 1)).map((e) => (k % 2 ? { ...e, a: e.b, b: e.a } : e));
+    assert.deepEqual(clusterMatches(shuffled, sc).map((c) => c.members), one.map((c) => c.members));
+  }
+  assert.ok(callsOnce <= 6, `cross pairs scored lazily (${callsOnce} calls)`);
+  assert.deepEqual(clusterMatches([], sc), []);
+  ok('grouping: same groups for any input order or pair direction; cross pairs scored lazily; empty input → no groups');
 }
 
 // ---------------------------------------------------------------- deal actions

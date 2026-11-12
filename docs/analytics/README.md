@@ -190,6 +190,14 @@ everyone a candidate.
 Each match lists its reasons, e.g. "Same phone; Names match as nicknames (Jon/Jonathan); Same company after
 normalization".
 
+**Grouping pairs (`clusterMatches`, complete linkage).** Pairs become duplicate groups strongest first (Kruskal
+order); two groups join only when *every* cross pair scores ≥ 0.7, so everyone in a group resembles everyone else.
+Plain connected components used to chain: Dan Brown ≈ Daniel Brown (1.0) and Daniel ≈ Danielle Brown (0.84) put
+Dan and Danielle (0.65) in one "likely" group, and merging it merged two people. Exact-rule pairs (same email,
+same phone, same name and company) always join and are placed first. A pair that can't join its group is still
+listed as its own two-person group, so no candidate is hidden (Daniel can appear in two groups). Cross pairs that
+blocking didn't produce are scored on demand and cached. The result doesn't depend on input order.
+
 **Where it is used.**
 - `GET /api/contacts/duplicates` keeps `groups[].reasons` and `groups[].contacts`, and adds `score`, `level`,
   `pairs[]` (ids, score, level, reasons, summary) and `leadMatches[]` (open leads that look like an existing

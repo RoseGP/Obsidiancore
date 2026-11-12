@@ -10,7 +10,7 @@
  *   POST   /api/gcal/webhook         public: Google push notifications, verified by the per-channel token
  */
 import { Router, type Request, type Response } from 'express';
-import { google } from 'googleapis';
+import { google } from '../server/integrations/googleClients';
 import { getDocStore } from '../server/data/docStore';
 import { consumeOAuthState, createOAuthState, deleteGoogleTokens, getGoogleConnection, verifyChannelToken } from '../server/integrations/googleTokens';
 import { requireTenant, sendError, tenantOf } from '../server/tenancy/middleware';

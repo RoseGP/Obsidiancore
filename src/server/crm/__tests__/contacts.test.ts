@@ -70,6 +70,24 @@ assert.equal(r.body.groups[0].level, 'likely'); assert.ok(r.body.groups[0].reaso
 assert.equal(r.body.groups[0].pairs.length, 1); assert.deepEqual([...r.body.groups[0].pairs[0].ids].sort(), [hana.id, hana2.id].sort());
 ok('possible-duplicates list: a fuzzy "possible" match, then "likely" once the company matches after normalization (Acme Inc / acme inc.)');
 
+// No chaining (own organization): Dan ≈ Daniel and Daniel ≈ Danielle, but Dan and Danielle are different people.
+{
+  const ids: Record<string, string> = {};
+  for (const name of ['Dan Brown', 'Daniel Brown', 'Danielle Brown']) {
+    const c = await as('quinn').post(C, { name, company: 'Globex', force: true });
+    assert.equal(c.status, 201); ids[name] = c.body.contact.id;
+  }
+  const d = await as('quinn').get(`${C}/duplicates`);
+  assert.equal(d.status, 200);
+  const sets = d.body.groups.map((g: any) => g.contacts.map((c: any) => c.name).sort().join(' + '));
+  assert.ok(!d.body.groups.some((g: any) => g.contacts.length > 2), `no three-person group: ${sets.join(' | ')}`);
+  assert.equal(d.body.groups[0].level, 'likely'); assert.deepEqual(d.body.groups[0].contacts.map((c: any) => c.id).sort(), [ids['Dan Brown'], ids['Daniel Brown']].sort());
+  assert.ok(sets.includes('Daniel Brown + Danielle Brown'), 'the weaker Daniel/Danielle pair is still offered for review');
+  assert.ok(!sets.some((s: string) => s.includes('Dan Brown') && s.includes('Danielle Brown')), 'Dan and Danielle are never grouped');
+  assert.equal((await as('olivia').get(`${C}?q=brown`)).body.count, 0, 'other organizations don’t see them');
+}
+ok('possible-duplicates list: groups don’t chain different people together (Dan/Daniel/Danielle), and no pair is hidden');
+
 r = await as('olivia').get(`${C}?q=hana`); assert.equal(r.body.count, 2);
 r = await as('olivia').get(`${C}?q=0100`); assert.equal(r.body.count, 1);
 r = await as('olivia').get(`${C}?tag=vip`); assert.equal(r.body.count, 1);
