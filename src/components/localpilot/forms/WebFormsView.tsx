@@ -71,6 +71,47 @@ function fetchSnippet(endpoint: string) {
 </script>`;
 }
 
+function reactSnippet(endpoint: string) {
+  return `// React (any framework that renders React: Vite, Next.js, Remix…)
+import { useRef, useState } from 'react';
+
+export function ContactForm() {
+  const shownAt = useRef(Date.now());
+  const [status, setStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
+  const [errors, setErrors] = useState<string[]>([]);
+
+  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setStatus('sending'); setErrors([]);
+    const data = { ...Object.fromEntries(new FormData(e.currentTarget)), _ts: shownAt.current, pageUrl: location.href };
+    try {
+      const res = await fetch('${endpoint}', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify(data),
+      });
+      const out = await res.json();
+      if (res.ok) { setStatus('sent'); e.currentTarget.reset(); }
+      else { setErrors(out.fields?.map((f: { message: string }) => f.message) ?? [out.error]); setStatus('error'); }
+    } catch { setErrors(['Network error. Please try again.']); setStatus('error'); }
+  }
+
+  if (status === 'sent') return <p role="status">Thanks! We'll be in touch soon.</p>;
+  return (
+    <form onSubmit={onSubmit}>
+      <label>Name <input name="name" required maxLength={120} /></label>
+      <label>Email <input name="email" type="email" required /></label>
+      <label>Message <textarea name="message" maxLength={4000} /></label>
+      <label><input type="checkbox" name="consent" value="true" required /> I agree to be contacted about my request.</label>
+      <input type="text" name="_hp" tabIndex={-1} autoComplete="off" aria-hidden="true" style={{ position: 'absolute', left: -9999 }} />
+      {errors.length > 0 && <ul role="alert">{errors.map((m) => <li key={m}>{m}</li>)}</ul>}
+      <button type="submit" disabled={status === 'sending'}>{status === 'sending' ? 'Sending…' : 'Send'}</button>
+    </form>
+  );
+}`;
+}
+
+const SNIPPETS = { html: { label: 'Simple HTML form', make: htmlSnippet }, js: { label: 'JavaScript (no page reload)', make: fetchSnippet }, react: { label: 'React', make: reactSnippet } } as const;
+
 export const WebFormsView: React.FC = () => {
   const [state, setState] = useState<'loading' | 'ready' | 'forbidden' | 'error'>('loading');
   const [error, setError] = useState('');
@@ -84,7 +125,7 @@ export const WebFormsView: React.FC = () => {
   const [webhookInput, setWebhookInput] = useState('');
   const [redirectInput, setRedirectInput] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
-  const [snippet, setSnippet] = useState<'html' | 'js'>('html');
+  const [snippet, setSnippet] = useState<keyof typeof SNIPPETS>('html');
   const [confirmRotate, setConfirmRotate] = useState(false);
   const [readOnly, setReadOnly] = useState(false);
 
@@ -164,15 +205,15 @@ export const WebFormsView: React.FC = () => {
             <h2 id="wf-step1" className="text-sm font-semibold text-slate-900 flex items-center gap-2"><Code2 className="h-4 w-4 text-slate-500" />1. Add the form to your website</h2>
             <p className="text-xs text-slate-500">Paste this where you want the form (or send it to whoever manages your website). Style it to match your site.</p>
           </div>
-          <div role="tablist" aria-label="Form code type" className="flex rounded-lg border border-slate-200 p-0.5 text-xs">
-            {(['html', 'js'] as const).map((k) => (
-              <button key={k} role="tab" aria-selected={snippet === k} onClick={() => setSnippet(k)} className={`rounded-md px-2.5 py-1 font-medium ${snippet === k ? 'bg-slate-900 text-white' : 'text-slate-600 hover:text-slate-900'}`}>{k === 'html' ? 'Simple HTML form' : 'JavaScript (no page reload)'}</button>
+          <div role="tablist" aria-label="Form code type" className="flex flex-wrap rounded-lg border border-slate-200 p-0.5 text-xs">
+            {(Object.keys(SNIPPETS) as (keyof typeof SNIPPETS)[]).map((k) => (
+              <button key={k} role="tab" aria-selected={snippet === k} onClick={() => setSnippet(k)} className={`rounded-md px-2.5 py-1 font-medium ${snippet === k ? 'bg-slate-900 text-white' : 'text-slate-600 hover:text-slate-900'}`}>{SNIPPETS[k].label}</button>
             ))}
           </div>
         </div>
         <div className="relative">
-          <pre className="max-h-72 overflow-auto rounded-lg bg-slate-900 p-4 text-[12px] leading-relaxed text-slate-100" tabIndex={0} aria-label="Form code"><code>{snippet === 'html' ? htmlSnippet(endpoint) : fetchSnippet(endpoint)}</code></pre>
-          <div className="absolute right-2 top-2"><CopyButton text={snippet === 'html' ? htmlSnippet(endpoint) : fetchSnippet(endpoint)} label="Copy form code" /></div>
+          <pre className="max-h-72 overflow-auto rounded-lg bg-slate-900 p-4 text-[12px] leading-relaxed text-slate-100" tabIndex={0} aria-label="Form code"><code>{SNIPPETS[snippet].make(endpoint)}</code></pre>
+          <div className="absolute right-2 top-2"><CopyButton text={SNIPPETS[snippet].make(endpoint)} label="Copy form code" /></div>
         </div>
         <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
           <span>Form address:</span><code className="rounded bg-slate-100 px-1.5 py-0.5 text-slate-900 break-all">{endpoint}</code><CopyButton text={endpoint} label="Copy form address" />

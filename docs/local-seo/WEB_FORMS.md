@@ -149,3 +149,24 @@ The Website forms page generates this with your form address (and a fetch versio
 
 The legacy `POST /api/leads/capture` (hashed lead-capture key) still works for existing forms but tells the caller
 whether the lead already existed; new forms should use this endpoint.
+
+## Other website stacks and hosting
+
+The endpoint is plain HTTP, so the website's framework doesn't matter:
+- **Static sites / site builders** (plain HTML, WordPress custom HTML block, Webflow/Squarespace code embed): use the
+  HTML form. Builders that only allow their own form widgets need their "send to webhook" option pointed at the
+  endpoint (send JSON with the same field names), or Zapier/Make in between.
+- **React, Vue, Svelte, Next.js, etc.**: post JSON with `fetch` (the UI has a React example). No server code is
+  needed on the website: secrets stay in this server.
+- **If you'd rather run the endpoint on your own hosting** (serverless function, Cloudflare Worker), the logic to
+  port is `submission.ts` (validation + spam checks), the duplicate check, and an adapter; keep CRM keys in that
+  platform's secret store, and replace the in-memory rate limiter with the platform's (e.g. Cloudflare rate limiting
+  rules) because serverless instances don't share memory.
+
+## CAPTCHA (optional, not built in)
+
+The honeypot, timing check, link/markup checks and rate limits stop most automated spam without bothering
+visitors. If a form is still targeted, a CAPTCHA such as Cloudflare Turnstile or hCaptcha can be added: the widget
+goes on the website, and the server must verify its token with the provider's verify endpoint (secret key in an
+environment variable) before `submit()`. This isn't implemented yet; don't add a widget without the server check,
+because a client-only CAPTCHA protects nothing.
