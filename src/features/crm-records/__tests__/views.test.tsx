@@ -81,6 +81,17 @@ await wait(() => text().includes('Call Hana about the renewal'), 'task under Don
 ok('Tasks: completing moves it to Done');
 await act(async () => { root.render(React.createElement('div')); });
 
+// Header AI Assistant button opens the existing dashboard copilot; summary tiles switch lists.
+const navigated: string[] = [];
+await act(async () => { root.render(React.createElement(TasksView, { onNavigate: (v: string) => navigated.push(v) })); });
+await wait(() => !!button('AI Assistant') && text().includes('Due today'), 'tasks header and summary');
+await click(button('AI Assistant'), 'ai assistant');
+assert.deepEqual(navigated, ['dashboard']);
+await click([...document.querySelectorAll('section[aria-label="Task summary"] button')].find((b) => b.textContent?.includes('Overdue')), 'overdue tile');
+assert.equal([...document.querySelectorAll('[role="tab"]')].find((t) => t.getAttribute('aria-selected') === 'true')?.textContent?.startsWith('Overdue'), true);
+ok('Tasks: the header AI Assistant button opens the copilot; the Overdue tile opens the Overdue list');
+await act(async () => { root.render(React.createElement('div')); });
+
 // ---- Dashboard card ----
 const r1 = await g.fetch('/api/tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'Send the proposal', dueDate: new Date(Date.now() - 60_000).toISOString() }) });
 assert.equal(r1.status, 201);
