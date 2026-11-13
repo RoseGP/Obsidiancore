@@ -1,0 +1,286 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Obsidian Core Board</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=block" rel="stylesheet">
+<style>
+:root{
+  --bg:#08090c; --win:#0e1015; --panel:#13161d; --panel2:#171a22; --line:rgba(170,185,215,.11); --line2:rgba(170,185,215,.18);
+  --t1:#e8ebf2; --t2:#a7aebd; --t3:#6f7686; --violet:#8b7cff; --violet2:#6d5df5; --cyan:#5ee0f2; --ok:#4fd6a0; --warn:#f0b45a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:1920px;height:1080px;background:var(--bg);font-family:Inter,system-ui,sans-serif;color:var(--t1);-webkit-font-smoothing:antialiased}
+.board{display:grid;grid-template-columns:1fr 1fr;gap:28px;padding:28px;height:1080px}
+.win{position:relative;border:1px solid var(--line2);border-radius:16px;background:var(--win);overflow:hidden;box-shadow:0 30px 80px -30px rgba(0,0,0,.8),inset 0 1px 0 rgba(255,255,255,.04)}
+.win::before{content:"";position:absolute;inset:0;background-image:linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px);background-size:32px 32px;opacity:.28;mask-image:radial-gradient(ellipse at 50% 40%,#000 0%,transparent 75%);pointer-events:none}
+.bar{position:relative;height:60px;display:flex;align-items:center;justify-content:space-between;padding:0 24px;border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:10px;font-weight:600;font-size:15px;letter-spacing:-.01em}
+.muted{color:var(--t2)} .dim{color:var(--t3)}
+.mono{font-family:'JetBrains Mono',ui-monospace,monospace}
+.pill{display:inline-flex;align-items:center;gap:7px;height:28px;padding:0 11px;border:1px solid var(--line2);border-radius:999px;font-size:12px;color:var(--t2);background:rgba(255,255,255,.02)}
+.dot{width:7px;height:7px;border-radius:50%;display:inline-block}
+
+/* ---------- Login ---------- */
+.login{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;height:calc(100% - 60px - 64px)}
+.login .card{width:400px}
+.emblem-lg{display:flex;flex-direction:column;align-items:center;gap:14px;margin-bottom:34px}
+.wordmark{font-size:22px;font-weight:600;letter-spacing:-.015em}
+h1{font-size:30px;font-weight:600;letter-spacing:-.025em;text-align:center}
+.sub{margin-top:8px;text-align:center;font-size:14px;color:var(--t2)}
+label{display:block;font-size:12.5px;font-weight:500;color:var(--t2);margin-bottom:7px}
+.field{height:46px;border:1px solid var(--line2);border-radius:10px;background:var(--panel);display:flex;align-items:center;gap:10px;padding:0 14px;font-size:14px;color:var(--t1)}
+.field.focus{border-color:rgba(139,124,255,.75);box-shadow:0 0 0 4px rgba(139,124,255,.14)}
+.field svg{flex:none}
+.row{display:flex;justify-content:space-between;align-items:baseline}
+.link{color:#b3a9ff;font-size:12.5px;font-weight:500;text-decoration:none}
+.btn{height:46px;border-radius:10px;display:flex;align-items:center;justify-content:center;gap:9px;font-size:14.5px;font-weight:600;width:100%}
+.btn.primary{background:linear-gradient(180deg,#9284ff,#7262f3);color:#fff;box-shadow:0 8px 24px -10px rgba(114,98,243,.8),inset 0 1px 0 rgba(255,255,255,.22)}
+.btn.magic{background:rgba(94,224,242,.06);border:1px solid rgba(94,224,242,.45);color:#c9f6fc}
+.or{display:flex;align-items:center;gap:12px;color:var(--t3);font-size:12px;margin:22px 0}
+.or::before,.or::after{content:"";flex:1;height:1px;background:var(--line2)}
+.hint{margin-top:10px;text-align:center;font-size:12.5px;color:var(--t3)}
+.foot{position:absolute;left:0;right:0;bottom:0;height:64px;border-top:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 24px;font-size:12.5px;color:var(--t3)}
+.secure{display:flex;align-items:center;gap:8px;color:var(--t2)}
+
+/* ---------- Scan ---------- */
+.titlerow{position:relative;display:flex;justify-content:space-between;align-items:flex-end;padding:22px 24px 0}
+h2{font-size:24px;font-weight:600;letter-spacing:-.02em}
+.grid3{position:relative;display:grid;grid-template-columns:262px minmax(0,1fr) 262px;gap:16px;padding:18px 24px 0}
+.panel{border:1px solid var(--line);border-radius:12px;background:linear-gradient(180deg,rgba(23,26,34,.82),rgba(17,19,26,.82));backdrop-filter:blur(6px)}
+.status{padding:13px 14px;margin-bottom:10px}
+.status:last-child{margin-bottom:0}
+.st-h{display:flex;align-items:center;justify-content:space-between;font-size:13px;font-weight:600}
+.st-h .ic{display:flex;align-items:center;gap:9px}
+.tag{font-size:11px;font-weight:600;padding:3px 8px;border-radius:999px}
+.t-ok{color:var(--ok);background:rgba(79,214,160,.1)} .t-run{color:var(--cyan);background:rgba(94,224,242,.1)} .t-q{color:var(--t2);background:rgba(255,255,255,.05)} .t-v{color:#b3a9ff;background:rgba(139,124,255,.12)}
+.st-d{margin-top:7px;font-size:12px;color:var(--t2);display:flex;justify-content:space-between}
+.track{margin-top:9px;height:4px;border-radius:4px;background:rgba(255,255,255,.06);overflow:hidden}
+.fill{height:100%;border-radius:4px}
+.core{display:flex;flex-direction:column;align-items:center;justify-content:flex-start}
+.scanbar{width:100%;margin-top:14px}
+.scanbar .track{height:8px;margin-top:10px}
+.feed{padding:14px 14px 6px;height:100%}
+.feed h3,.sect{font-size:13px;font-weight:600;display:flex;justify-content:space-between;align-items:center}
+.ev{display:grid;grid-template-columns:58px 1fr;gap:8px;padding:8px 0;border-top:1px solid var(--line);font-size:12px;line-height:1.4}
+.ev:first-of-type{border-top:0}
+.ev .time{font-size:11px;color:var(--t3);padding-top:1px}
+.ev b{font-weight:500;color:var(--t1)}
+.ev .meta{color:var(--t3);font-size:11px}
+.bottom{position:relative;display:grid;grid-template-columns:1fr 1fr 1fr 1.55fr;gap:12px;padding:16px 24px 0}
+.metric{padding:14px 15px}
+.metric .k{font-size:12px;color:var(--t2)}
+.metric .v{font-size:24px;font-weight:600;letter-spacing:-.02em;margin-top:5px;font-variant-numeric:tabular-nums}
+.metric .s{font-size:11.5px;color:var(--t3);margin-top:3px}
+.srcs{padding:14px 15px}
+.srcgrid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px 10px;margin-top:10px}
+.src{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--t1)}
+.src .s2{color:var(--t3);margin-left:auto;font-size:11px}
+
+.scan{display:flex;flex-direction:column}
+.scan .grid3{flex:1;min-height:0;padding-top:22px}
+.scan .grid3>.col{display:flex;flex-direction:column;gap:12px}
+.scan .grid3>.col .status{flex:1;margin:0;display:flex;flex-direction:column;justify-content:center;padding:16px 18px}
+.scan .core{justify-content:center}
+.scan .bottom{padding-bottom:20px}
+.scan .feed{display:flex;flex-direction:column}
+.scan .feed .evs{flex:1;display:flex;flex-direction:column;justify-content:space-between}
+.scan .ev{padding:9px 0}
+.steps{display:flex;align-items:center;gap:10px;color:var(--t2)}
+.step{display:flex;align-items:center;gap:7px}
+.step i{width:18px;height:18px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-style:normal;font-size:10.5px;font-weight:600}
+.sep{width:22px;height:1px;background:var(--line2)}
+.scan .foot{position:relative}
+.st-x{margin-top:10px;font-size:11px;color:var(--t3);display:flex;justify-content:space-between}
+</style></head>
+<body><div class="board">
+
+<!-- ===================== LOGIN ===================== -->
+<section class="win">
+  <div class="bar">
+    <div class="brand"><svg width="22" height="22" viewBox="0 0 64 64"><use href="#emblem"/></svg>Obsidian Core</div>
+    <div class="muted" style="font-size:13px">Need help? <span class="link" style="font-size:13px">Contact support</span></div>
+  </div>
+
+  <div class="login"><div class="card">
+    <div class="emblem-lg">
+      <svg width="76" height="76" viewBox="0 0 64 64"><use href="#emblem"/></svg>
+      <div class="wordmark">Obsidian Core</div>
+    </div>
+    <h1>Welcome back</h1>
+    <p class="sub">Sign in to your business-AI workspace.</p>
+
+    <div style="margin-top:32px">
+      <label>Work email</label>
+      <div class="field focus">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8a91a1" stroke-width="1.8"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg>
+        <span>maya.chen@northwind.co</span><span style="width:1.5px;height:18px;background:#b3a9ff;margin-left:-6px"></span>
+      </div>
+    </div>
+    <div style="margin-top:18px">
+      <div class="row"><label>Password</label><a class="link">Forgot password?</a></div>
+      <div class="field">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8a91a1" stroke-width="1.8"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+        <span style="letter-spacing:3px;color:var(--t2)">••••••••••••</span>
+        <svg style="margin-left:auto" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6f7686" stroke-width="1.8"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>
+      </div>
+    </div>
+
+    <div class="btn primary" style="margin-top:26px">Sign in
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></div>
+
+    <div class="or">or sign in without a password</div>
+
+    <div class="btn magic">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#5ee0f2" stroke-width="1.8"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/><path d="M19 2v3M17.5 3.5h3" /></svg>
+      Send a magic link</div>
+    <p class="hint">We’ll email you a one-time sign-in link. It expires in 15 minutes.</p>
+  </div></div>
+
+  <div class="foot">
+    <div class="secure"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#4fd6a0" stroke-width="1.8"><path d="M12 3 4 6v6c0 4.5 3.4 8.3 8 9 4.6-.7 8-4.5 8-9V6l-8-3Z"/><path d="m9 12 2 2 4-4"/></svg>Secure access to your workspace</div>
+    <div>Two-step verification supported · <span class="muted">Privacy</span> · <span class="muted">Terms</span></div>
+  </div>
+</section>
+
+<!-- ===================== SCAN ===================== -->
+<section class="win scan">
+  <div class="bar">
+    <div class="brand"><svg width="22" height="22" viewBox="0 0 64 64"><use href="#emblem"/></svg>Obsidian Core
+      <span class="dim" style="font-weight:400;margin:0 4px">/</span><span class="muted" style="font-weight:500">Northwind Partners</span></div>
+    <div style="display:flex;gap:10px;align-items:center">
+      <span class="pill"><span class="dot" style="background:var(--ok);box-shadow:0 0 8px var(--ok)"></span>Signed in · Two-step verified</span>
+      <span style="width:30px;height:30px;border-radius:50%;background:#262236;border:1px solid rgba(139,124,255,.4);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#cfc8ff">MC</span>
+    </div>
+  </div>
+
+  <div class="titlerow">
+    <div>
+      <div class="dim" style="font-size:12.5px;font-weight:500;margin-bottom:5px">Step 3 of 4 · Security verification</div>
+      <h2>Preparing your workspace</h2>
+    </div>
+    <div class="muted" style="font-size:13px;text-align:right">Welcome, Maya. This takes about a minute.<br><span class="dim mono" style="font-size:11.5px">Scan started 09:41:12</span></div>
+  </div>
+
+  <div class="grid3">
+    <!-- status panels -->
+    <div class="col">
+      <div class="panel status">
+        <div class="st-h"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#4fd6a0" stroke-width="1.9"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>Workspace</span><span class="tag t-ok">Ready</span></div>
+        <div class="st-d"><span>Org, roles and settings loaded</span></div>
+        <div class="track"><div class="fill" style="width:100%;background:var(--ok)"></div></div>
+        <div class="st-x"><span>12 members · 8 roles</span><span class="mono">Done in 4 s</span></div>
+      </div>
+      <div class="panel status">
+        <div class="st-h"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#4fd6a0" stroke-width="1.9"><path d="M9 15 15 9M10 6l1.5-1.5a4.2 4.2 0 0 1 6 6L16 12M14 18l-1.5 1.5a4.2 4.2 0 0 1-6-6L8 12"/></svg>Data connections</span><span class="tag t-ok">5 of 6</span></div>
+        <div class="st-d"><span>Slack needs re-authorizing</span><span class="mono dim">83%</span></div>
+        <div class="track"><div class="fill" style="width:83%;background:var(--ok)"></div></div>
+        <div class="st-x"><span>CRM, Gmail, Calendar, Stripe, Drive</span><span class="mono">Done</span></div>
+      </div>
+      <div class="panel status" style="border-color:rgba(94,224,242,.35);box-shadow:0 0 0 1px rgba(94,224,242,.08),0 10px 30px -18px rgba(94,224,242,.6)">
+        <div class="st-h"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#5ee0f2" stroke-width="1.9"><path d="M12 3 4 6v6c0 4.5 3.4 8.3 8 9 4.6-.7 8-4.5 8-9V6l-8-3Z"/></svg>Security check</span><span class="tag t-run">Verifying</span></div>
+        <div class="st-d"><span>Permissions & encryption keys</span><span class="mono" style="color:var(--cyan)">64%</span></div>
+        <div class="track"><div class="fill" style="width:64%;background:linear-gradient(90deg,#3fb7d8,var(--cyan))"></div></div>
+        <div class="st-x"><span>214 of 334 checks passed</span><span class="mono">~12 s</span></div>
+      </div>
+      <div class="panel status">
+        <div class="st-h"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#8a91a1" stroke-width="1.9"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/></svg>AI readiness</span><span class="tag t-q">Queued</span></div>
+        <div class="st-d"><span>Index records for the assistant</span><span class="mono dim">0%</span></div>
+        <div class="track"><div class="fill" style="width:0%"></div></div>
+        <div class="st-x"><span>Starts after security check</span><span class="mono">~20 s</span></div>
+      </div>
+    </div>
+
+    <!-- core -->
+    <div class="core">
+      <svg style="width:100%;max-width:368px;height:auto" viewBox="0 0 300 300">
+        <defs>
+          <radialGradient id="glow" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#5ee0f2" stop-opacity=".30"/><stop offset=".45" stop-color="#7a6cff" stop-opacity=".12"/><stop offset="1" stop-color="#7a6cff" stop-opacity="0"/></radialGradient>
+          <linearGradient id="arc" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5ee0f2"/><stop offset="1" stop-color="#8b7cff"/></linearGradient>
+          <filter id="soft"><feGaussianBlur stdDeviation="2.2"/></filter>
+        </defs>
+        <circle cx="150" cy="150" r="148" fill="url(#glow)"/>
+        <!-- tick ring -->
+        <g id="ticks" stroke="rgba(170,185,215,.22)" stroke-width="1"></g>
+        <circle cx="150" cy="150" r="128" fill="none" stroke="rgba(170,185,215,.10)" stroke-width="6"/>
+        <!-- progress arc 68% -->
+        <circle cx="150" cy="150" r="128" fill="none" stroke="url(#arc)" stroke-width="6" stroke-linecap="round" stroke-dasharray="546.9 804.2" transform="rotate(-90 150 150)"/>
+        <circle cx="150" cy="150" r="128" fill="none" stroke="url(#arc)" stroke-width="10" stroke-dasharray="546.9 804.2" transform="rotate(-90 150 150)" filter="url(#soft)" opacity=".5"/>
+        <!-- lattice -->
+        <g id="lattice" fill="none" stroke-width=".9"></g>
+        <circle cx="150" cy="150" r="58" fill="#0b0d12" stroke="rgba(94,224,242,.35)"/>
+        <circle cx="150" cy="150" r="58" fill="url(#glow)" opacity=".55"/>
+        <text x="150" y="152" text-anchor="middle" font-family="Inter" font-weight="600" font-size="34" fill="#eef9fc" letter-spacing="-1">68%</text>
+        <text x="150" y="174" text-anchor="middle" font-family="Inter" font-weight="500" font-size="12" fill="#8fdcea">Core scan</text>
+      </svg>
+      <div class="scanbar">
+        <div class="row" style="font-size:13px"><span style="font-weight:600">Scanning workspace data</span><span class="mono" style="font-size:12px;color:var(--cyan)">68%</span></div>
+        <div class="track"><div class="fill" style="width:68%;background:linear-gradient(90deg,#5ee0f2,#8b7cff);box-shadow:0 0 12px rgba(94,224,242,.6)"></div></div>
+        <div class="row dim" style="font-size:11.5px;margin-top:8px"><span>32,840 of 48,210 records</span><span>About 30 s left</span></div>
+      </div>
+    </div>
+
+    <!-- activity -->
+    <div class="panel feed">
+      <h3>Activity <span class="pill" style="height:22px;font-size:11px;padding:0 8px"><span class="dot" style="background:var(--cyan);width:6px;height:6px"></span>Live</span></h3>
+      <div class="evs" style="margin-top:8px">
+        <div class="ev"><span class="time mono">09:41:52</span><span><b>Verifying role permissions</b><br><span class="meta">8 roles · 214 grants</span></span></div>
+        <div class="ev"><span class="time mono">09:41:47</span><span><b>Encryption keys confirmed</b><br><span class="meta">AES-256 · rotated 12 days ago</span></span></div>
+        <div class="ev"><span class="time mono">09:41:39</span><span><b>Deals scanned</b><br><span class="meta">1,204 deals · 3 pipelines</span></span></div>
+        <div class="ev"><span class="time mono">09:41:31</span><span><b>Contacts deduplicated</b><br><span class="meta">18 likely duplicates flagged</span></span></div>
+        <div class="ev"><span class="time mono">09:41:24</span><span><b style="color:var(--warn)">Slack token expired</b><br><span class="meta">Reconnect from Integrations</span></span></div>
+        <div class="ev"><span class="time mono">09:41:18</span><span><b>Gmail and Calendar synced</b><br><span class="meta">Last 90 days</span></span></div>
+        <div class="ev"><span class="time mono">09:41:12</span><span><b>Core scan started</b><br><span class="meta">Workspace northwind-partners</span></span></div>
+        <div class="ev"><span class="time mono">09:41:10</span><span><b>Signed in with magic link</b><br><span class="meta">Two-step code accepted</span></span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="bottom">
+    <div class="panel metric"><div class="k">Records indexed</div><div class="v">32,840</div><div class="s">of 48,210 total</div></div>
+    <div class="panel metric"><div class="k">Open pipeline</div><div class="v">$4.62M</div><div class="s">1,204 deals in 3 pipelines</div></div>
+    <div class="panel metric"><div class="k">AI models</div><div class="v" style="font-size:17px;margin-top:9px">Claude · Gemini</div><div class="s" style="margin-top:6px">Available after indexing</div></div>
+    <div class="panel srcs">
+      <div class="sect">Connected sources <span class="dim" style="font-size:11.5px;font-weight:500">5 of 6</span></div>
+      <div class="srcgrid">
+        <div class="src"><span class="dot" style="background:var(--ok)"></span>CRM</div>
+        <div class="src"><span class="dot" style="background:var(--ok)"></span>Gmail</div>
+        <div class="src"><span class="dot" style="background:var(--ok)"></span>Calendar</div>
+        <div class="src"><span class="dot" style="background:var(--ok)"></span>Stripe</div>
+        <div class="src"><span class="dot" style="background:var(--ok)"></span>Drive</div>
+        <div class="src"><span class="dot" style="background:var(--warn)"></span>Slack<span class="s2">Reconnect</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="foot">
+    <div class="steps">
+      <span class="step"><i style="background:rgba(79,214,160,.14);color:var(--ok)">✓</i>Workspace</span><span class="sep"></span>
+      <span class="step"><i style="background:rgba(79,214,160,.14);color:var(--ok)">✓</i>Data</span><span class="sep"></span>
+      <span class="step" style="color:var(--t1);font-weight:500"><i style="background:rgba(94,224,242,.16);color:var(--cyan);box-shadow:0 0 0 1px rgba(94,224,242,.5)">3</i>Security</span><span class="sep"></span>
+      <span class="step"><i style="background:rgba(255,255,255,.06);color:var(--t3)">4</i>AI readiness</span>
+    </div>
+    <div>We’ll notify you when the assistant is ready.</div>
+  </div>
+</section>
+
+</div>
+
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <linearGradient id="eg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7ee8f5"/><stop offset="1" stop-color="#8b7cff"/></linearGradient>
+    <symbol id="emblem" viewBox="0 0 64 64">
+      <polygon points="32,3 57,17.5 57,46.5 32,61 7,46.5 7,17.5" fill="#101219" stroke="url(#eg)" stroke-width="2.2"/>
+      <polygon points="32,14 47.6,23 47.6,41 32,50 16.4,41 16.4,23" fill="none" stroke="url(#eg)" stroke-width="1.4" opacity=".55" transform="rotate(30 32 32)"/>
+      <circle cx="32" cy="32" r="7.5" fill="url(#eg)"/>
+      <circle cx="32" cy="32" r="3" fill="#0b0d12"/>
+    </symbol>
+  </defs>
+</svg>
+<script>
+const ns='http://www.w3.org/2000/svg';
+const t=document.getElementById('ticks');
+for(let i=0;i<120;i++){const a=i*3*Math.PI/180,r1=140,r2=i%10===0?147:143;const l=document.createElementNS(ns,'line');
+ l.setAttribute('x1',150+r1*Math.cos(a));l.setAttribute('y1',150+r1*Math.sin(a));l.setAttribute('x2',150+r2*Math.cos(a));l.setAttribute('y2',150+r2*Math.sin(a));t.appendChild(l);}
+const g=document.getElementById('lattice');
+for(let i=0;i<18;i++){const e=document.createElementNS(ns,'ellipse');e.setAttribute('cx',150);e.setAttribute('cy',150);e.setAttribute('rx',104);e.setAttribute('ry',40);
+ e.setAttribute('transform',`rotate(${i*10} 150 150)`);e.setAttribute('stroke',i%2?'rgba(139,124,255,.38)':'rgba(94,224,242,.42)');g.appendChild(e);}
+for(const r of [82,100]){const c=document.createElementNS(ns,'circle');c.setAttribute('cx',150);c.setAttribute('cy',150);c.setAttribute('r',r);c.setAttribute('stroke','rgba(94,224,242,.18)');c.setAttribute('stroke-dasharray','2 5');g.appendChild(c);}
+</script>
+</body></html>
