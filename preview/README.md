@@ -5,7 +5,8 @@
 file and needs no server or install.
 
 **It is a build output, not source.** Change the app in `src/`, then rebuild this file. Don't edit `index.html`
-by hand. It was rebuilt on `updated-dashboard` after the security pass (role matrix enforcement, validation, real-time isolation).
+by hand. Last rebuilt with the Obsidian Core sign-in page, the start-up loading page and the workspace check after
+sign-in (the CRM screens are unchanged). The stand-in's `/api/orgs/me` lists the organization with `id` (as the server does).
 
 ## What it contains
 - The full React app (`src/`), built with Vite as a single file with `VITE_ENABLE_SANDBOX_LOGIN=true` so the
