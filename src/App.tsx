@@ -5,6 +5,8 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { DatabaseProvider } from './context/DatabaseContext';
 import { CommandProvider, useCommand, SemanticView } from './context/CommandContext';
 import AuthFlowView from './components/auth/AuthFlowView';
+import AppLoadingScreen from './components/auth/AppLoadingScreen';
+import WorkspaceStartup from './components/auth/WorkspaceStartup';
 import SessionLockScreen from './components/auth/SessionLockScreen';
 import DynamicSidebar from './components/DynamicSidebar';
 import TopNavProfileDropdown from './components/TopNavProfileDropdown';
@@ -131,6 +133,17 @@ function AppMain() {
   const [meetingRoomCode, setMeetingRoomCode] = useState('');
   // An emailed sign-in link (/auth/magic#token=…), read and removed from the URL once at startup.
   const [magicToken, setMagicToken] = useState<string | null>(() => takeMagicLinkToken());
+  // Start-up: a loading page while the saved sign-in is restored, then (only after a fresh sign-in) the
+  // workspace check (WorkspaceStartup). Restoring an existing session goes straight to the app.
+  const [bootDone, setBootDone] = useState(() => !isAuthLoading);
+  const [startup, setStartup] = useState(false);
+  const signInShown = React.useRef(false);
+  React.useEffect(() => { if (!isAuthLoading) setBootDone(true); }, [isAuthLoading]);
+  React.useLayoutEffect(() => {
+    if (!isAuthenticated) { if (bootDone || magicToken !== null) signInShown.current = true; return; }
+    if (signInShown.current) { signInShown.current = false; setStartup(true); }
+  }, [isAuthenticated, bootDone, magicToken]);
+  const finishStartup = useCallback(() => setStartup(false), []);
   const [showNotificationPreferencesModal, setShowNotificationPreferencesModal] = useState<boolean>(false);
   const [settingsDefaultTab, setSettingsDefaultTab] = useState<SettingsTab>('account');
   const [isQuickActionModalOpen, setIsQuickActionModalOpen] = useState(false);
@@ -476,7 +489,9 @@ function AppMain() {
   if (greetInvite) return <PageBoundary><GreetGuestPage token={greetInvite} /></PageBoundary>;
   if (magicToken !== null) return <MagicLinkLanding token={magicToken} onDone={() => setMagicToken(null)} />;
 
-  if (!isAuthenticated && !isAuthLoading) {
+  if (!isAuthenticated && !bootDone && isAuthLoading) return <AppLoadingScreen />;
+  // After start-up the sign-in page stays up while a sign-in is in progress (isLoading is true then too).
+  if (!isAuthenticated && (bootDone || !isAuthLoading)) {
     return (
       <div className="min-h-screen bg-[var(--app-bg)]">
         <AuthFlowView onSuccess={() => showToast('Authenticated to Obsidian CRM workspace!')} />
@@ -517,6 +532,9 @@ function AppMain() {
       <InvitationAcceptor onResult={showToast} />
       {/* Explains two-step / session-age refusals and applies the organization's idle sign-out */}
       <SecurityPolicyGuard onOpenSecurity={() => navigateTo('security_access')} />
+
+      {/* Right after sign-in: check the workspace before opening it */}
+      {startup && <WorkspaceStartup onDone={finishStartup} />}
 
       {/* Session Lock Screen Overlay */}
       {isSessionLocked && <SessionLockScreen />}

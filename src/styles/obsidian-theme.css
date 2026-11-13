@@ -750,3 +750,32 @@
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
 }
+
+/* Sign-in, start-up and workspace-preparation screens: always the dark "Obsidian Core" look
+   (design: docs/design/sign-in-board). Only the tokens change, so components inside keep using var(--…). */
+.oc-screen {
+  color-scheme: dark;
+  --app-bg: #08090C; --surface: #0E1015; --surface-raised: #13161D; --surface-sunken: #12141B;
+  --border: rgb(170 185 215 / 0.13); --border-strong: rgb(170 185 215 / 0.22);
+  --text: #E8EBF2; --text-muted: #A7AEBD; --text-subtle: #7A8191;
+  --accent: #7A6BF4; --accent-hover: #8E80FF; --accent-text: #B3A9FF; --accent-soft: rgb(139 124 255 / 0.14); --accent-contrast: #FFFFFF;
+  --focus-ring: #8E80FF;
+  --success: #4FD6A0; --success-soft: rgb(79 214 160 / 0.12);
+  --warning: #F0B45A; --warning-soft: rgb(240 180 90 / 0.12);
+  --danger: #FF7A90; --danger-soft: rgb(255 122 144 / 0.12);
+  --info: #5EE0F2; --info-soft: rgb(94 224 242 / 0.1);
+  --oc-cyan: #5EE0F2; --oc-cyan-soft: rgb(94 224 242 / 0.08); --oc-cyan-line: rgb(94 224 242 / 0.45);
+  background: var(--app-bg); color: var(--text);
+}
+/* Faint drafting grid behind the content, fading out from the centre. */
+/* The element itself sets its positioning (relative, or fixed for overlays): an unlayered `position` here would override Tailwind. */
+.oc-grid { isolation: isolate; }
+.oc-grid::before {
+  content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none; opacity: 0.35;
+  background-image: linear-gradient(var(--border) 1px, transparent 1px), linear-gradient(90deg, var(--border) 1px, transparent 1px);
+  background-size: 32px 32px; mask-image: radial-gradient(ellipse at 50% 40%, #000 0%, transparent 72%);
+}
+.oc-panel { border: 1px solid var(--border); border-radius: 12px; background: linear-gradient(180deg, rgb(23 26 34 / 0.85), rgb(17 19 26 / 0.85)); }
+@keyframes oc-spin { to { transform: rotate(360deg); } }
+.oc-spin { animation: oc-spin 28s linear infinite; transform-origin: 50% 50%; transform-box: fill-box; }
+.oc-spin-fast { animation: oc-spin 2.4s linear infinite; transform-origin: 50% 50%; transform-box: fill-box; }

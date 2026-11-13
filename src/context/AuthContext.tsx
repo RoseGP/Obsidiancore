@@ -230,7 +230,8 @@ function getClientBrowserInfo(): { browser: string; device: string } {
   return { browser, device };
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+/** Exported for component tests (they render screens with a stub value). */
+export const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);

@@ -1,34 +1,14 @@
 import TwoStepSignInPrompt from './TwoStepSignInPrompt';
 import React, { useEffect, useState, useMemo } from 'react';
-import { 
-  ShieldCheck, 
-  Lock, 
-  Mail, 
-  User, 
-  Building2, 
-  ArrowRight, 
-  CheckCircle2, 
-  AlertCircle, 
-  Sparkles, 
-  Eye, 
-  EyeOff, 
-  RefreshCw, 
-  ChevronRight, 
-  KeyRound, 
-  Check, 
-  X,
-  MessageSquare,
-  Share2,
-  PhoneCall,
-  Globe,
-  Layers,
-  Zap,
-  Shield
-} from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import { ShieldCheck, Lock, Mail, User, Building2, ArrowRight, ArrowLeft, CheckCircle2, AlertCircle, Sparkles, Eye, EyeOff, Loader2, X } from 'lucide-react';
+import { CoreEmblem, CoreWordmark } from './CoreVisuals';
 import { useAuth } from '../../context/AuthContext';
 import { SANDBOX_LOGIN_ENABLED } from '../../context/AuthContext';
 
+/**
+ * Sign-in page (design: docs/design/sign-in-board): password sign-in, an email sign-in link ("Send a magic link"),
+ * password reset, account creation, Google, and the two-step prompt. Always the dark Obsidian Core look.
+ */
 export type AuthMode = 'login' | 'signup' | 'reset' | 'magic';
 
 interface AuthFlowViewProps {
@@ -94,15 +74,15 @@ export default function AuthFlowView({
 
     switch (score) {
       case 1:
-        return { score: 1, label: 'Weak', color: 'bg-rose-500', percent: 25 };
+        return { score: 1, label: 'Weak', color: 'bg-[var(--danger)]', percent: 25 };
       case 2:
-        return { score: 2, label: 'Fair', color: 'bg-amber-500', percent: 50 };
+        return { score: 2, label: 'Fair', color: 'bg-[var(--warning)]', percent: 50 };
       case 3:
-        return { score: 3, label: 'Good', color: 'bg-blue-500', percent: 75 };
+        return { score: 3, label: 'Good', color: 'bg-[var(--oc-cyan)]', percent: 75 };
       case 4:
-        return { score: 4, label: 'Strong & Secure', color: 'bg-emerald-500', percent: 100 };
+        return { score: 4, label: 'Strong & Secure', color: 'bg-[var(--success)]', percent: 100 };
       default:
-        return { score: 0, label: 'Too Short', color: 'bg-rose-600', percent: 15 };
+        return { score: 0, label: 'Too Short', color: 'bg-[var(--danger)]', percent: 15 };
     }
   }, [password]);
 
@@ -206,555 +186,213 @@ export default function AuthFlowView({
     if (onSuccess) onSuccess();
   };
 
+  const go = (m: AuthMode) => { setMode(m); setLocalError(null); clearAuthError(); setResetSentEmail(null); setMagicSentMessage(null); };
+  const error = localError || authError;
+  const field = 'w-full h-11 rounded-[10px] border border-[var(--border-strong)] bg-[var(--surface-raised)] pl-10 pr-3.5 text-[14px] text-[var(--text)] placeholder:text-[var(--text-subtle)] transition-shadow focus:outline-none focus:border-[var(--accent)] focus:ring-4 focus:ring-[var(--accent-soft)]';
+  const label = 'mb-1.5 block text-[12.5px] font-medium text-[var(--text-muted)]';
+  const iconCls = 'pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-subtle)]';
+  const heading = { login: ['Welcome back', 'Sign in to your business-AI workspace.'], signup: ['Create your workspace', 'Set up Obsidian Core for your team.'], reset: ['Reset your password', 'We’ll email you a link to choose a new one.'], magic: ['Sign in with a magic link', 'We’ll email you a link that signs you in once.'] }[mode];
+  const magicUnavailable = magicStatus && !magicStatus.enabled
+    ? (magicStatus.reason === 'email_not_configured' ? 'Magic links aren’t set up on this server (email delivery isn’t configured).' : 'Magic links aren’t available on this server.')
+    : null;
+
   return (
-    <div className={`min-h-screen w-full flex items-center justify-center p-4 sm:p-6 lg:p-8 bg-[var(--app-bg)] text-[var(--text)] relative overflow-hidden select-none`}>
+    <div className={`oc-screen oc-grid relative flex w-full flex-col ${isModal ? 'max-h-[92vh] overflow-y-auto rounded-2xl border border-[var(--border-strong)] shadow-2xl' : 'min-h-screen'}`}>
       <TwoStepSignInPrompt onSuccess={onSuccess} />
-      {/* Background Decorative Ambient Gradients */}
-      <div className="absolute top-1/4 -left-48 w-96 h-96 bg-indigo-600/15 rounded-full blur-[128px] pointer-events-none" />
-      <div className="absolute bottom-1/4 -right-48 w-96 h-96 bg-purple-600/15 rounded-full blur-[128px] pointer-events-none" />
-      <div className="absolute top-0 right-1/4 w-80 h-80 bg-blue-500/10 rounded-full blur-[96px] pointer-events-none" />
 
-      {/* Main Container */}
-      <div className="w-full max-w-5xl grid grid-cols-1 lg:grid-cols-12 rounded-3xl border border-[var(--border)] bg-[var(--surface)] shadow-2xl backdrop-blur-xl relative z-10 overflow-hidden">
-        
-        {/* LEFT COLUMN: AUTHENTICATION FORM (7 cols on lg) */}
-        <div className="lg:col-span-7 p-6 sm:p-10 flex flex-col justify-between">
-          <div>
-            {/* Header Brand */}
-            <div className="flex items-center justify-between pb-6 border-b border-[var(--border)]">
-              <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-2xl bg-gradient-to-br from-indigo-500 via-indigo-600 to-purple-600 flex items-center justify-center text-white shadow-lg shadow-indigo-500/20">
-                  <ShieldCheck className="h-5 w-5" />
-                </div>
-                <div>
-                  <h1 className="text-base sm:text-lg font-black tracking-tight text-[var(--text)] flex items-center gap-2">
-                    <span>Obsidian</span>
-                    <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded-full bg-indigo-500/20 text-[var(--accent-text)] border border-indigo-400/30">
-                      CRM
-                    </span>
-                  </h1>
-                  <p className="text-[11px] text-[var(--text-muted)]">Omnichannel Customer & Social Platform</p>
-                </div>
-              </div>
+      <header className="flex h-[60px] shrink-0 items-center justify-between border-b border-[var(--border)] px-5 sm:px-6">
+        <CoreWordmark />
+        {isModal && onCancel ? (
+          <button type="button" onClick={onCancel} aria-label="Close" className="rounded-lg p-2 text-[var(--text-muted)] hover:bg-[var(--surface-raised)] hover:text-[var(--text)] cursor-pointer"><X className="h-5 w-5" /></button>
+        ) : <span className="hidden sm:block text-[13px] text-[var(--text-subtle)]">Business-AI CRM</span>}
+      </header>
 
-              {isModal && onCancel && (
-                <button
-                  type="button"
-                  onClick={onCancel}
-                  className="p-2 text-[var(--text-muted)] hover:text-[var(--text)] rounded-xl hover:bg-[var(--surface-sunken)] transition-colors"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              )}
-            </div>
-
-            {/* Mode Selector Tabs (Sign In / Register / Reset) */}
-            <div className="flex items-center gap-2 mt-6 p-1 rounded-2xl bg-[var(--surface-sunken)] border border-[var(--border)] text-xs font-semibold">
-              <button
-                type="button"
-                onClick={() => {
-                  setMode('login');
-                  setLocalError(null);
-                  setResetSentEmail(null);
-                }}
-                className={`flex-1 py-2 px-3 rounded-xl transition-all cursor-pointer ${
-                  mode === 'login'
-                    ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20 font-bold'
-                    : 'text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-sunken)]'
-                }`}
-              >
-                Sign In
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setMode('signup');
-                  setLocalError(null);
-                  setResetSentEmail(null);
-                }}
-                className={`flex-1 py-2 px-3 rounded-xl transition-all cursor-pointer ${
-                  mode === 'signup'
-                    ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20 font-bold'
-                    : 'text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-sunken)]'
-                }`}
-              >
-                Create Account
-              </button>
-
-              {mode === 'reset' && (
-                <button
-                  type="button"
-                  className="flex-1 py-2 px-3 rounded-xl bg-purple-600 text-white font-bold cursor-default"
-                >
-                  Password Reset
-                </button>
-              )}
-              {mode === 'magic' && (
-                <span className="flex-1 py-2 px-3 rounded-xl bg-indigo-600 text-white font-bold text-center">
-                  Email Link
-                </span>
-              )}
-            </div>
-
-            {/* Error Notification Alert */}
-            <AnimatePresence>
-              {(localError || authError) && (
-                <motion.div
-                  initial={{ opacity: 0, y: -8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -8 }}
-                  className="mt-4 p-3.5 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-[var(--danger)] text-xs flex items-start gap-2.5"
-                >
-                  <AlertCircle className="h-4 w-4 text-[var(--danger)] shrink-0 mt-0.5" />
-                  <div className="flex-1 leading-relaxed">
-                    {localError || authError}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setLocalError(null);
-                      clearAuthError();
-                    }}
-                    className="text-[var(--danger)] hover:text-[var(--danger)]"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            {/* SIGN-IN LINK CONFIRMATION SCREEN */}
-            {mode === 'magic' && magicSentMessage ? (
-              <div className="py-8 text-center space-y-4" role="status" aria-live="polite">
-                <div className="h-16 w-16 rounded-2xl bg-[var(--success-soft)] border border-[var(--border)] text-[var(--success)] flex items-center justify-center mx-auto">
-                  <Mail className="h-8 w-8" />
-                </div>
-                <div className="space-y-1.5 max-w-sm mx-auto">
-                  <h3 className="text-base font-bold text-[var(--text)]">Check your inbox</h3>
-                  <p className="text-xs text-[var(--text-muted)] leading-relaxed">{magicSentMessage}</p>
-                  <p className="text-[11px] text-[var(--text-subtle)]">Open the link in this browser. If nothing arrives in a few minutes, check your spam folder or ask again.</p>
-                </div>
-                <div className="pt-2 flex flex-col gap-2 max-w-xs mx-auto">
-                  <button type="button" onClick={() => { setMagicSentMessage(null); }} className="w-full py-2.5 rounded-xl border border-[var(--border)] bg-[var(--surface)] hover:bg-[var(--surface-sunken)] text-[var(--text)] text-xs font-bold transition-all cursor-pointer">
-                    Use a different email
-                  </button>
-                  <button type="button" onClick={() => { setMode('login'); setMagicSentMessage(null); }} className="text-xs text-[var(--text-muted)] hover:text-[var(--text)] underline cursor-pointer">
-                    Back to sign in with a password
-                  </button>
-                </div>
-              </div>
-            ) : mode === 'reset' && resetSentEmail ? (
-              <div className="py-8 text-center space-y-4">
-                <div className="h-16 w-16 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 text-[var(--success)] flex items-center justify-center mx-auto shadow-lg shadow-emerald-500/10">
-                  <CheckCircle2 className="h-8 w-8" />
-                </div>
-                <div className="space-y-1.5 max-w-sm mx-auto">
-                  <h3 className="text-base font-bold text-[var(--text)]">Password Recovery Email Dispatched</h3>
-                  <p className="text-xs text-[var(--text-muted)] leading-relaxed">
-                    We sent a secure password reset link to <strong className="text-[var(--text)]">{resetSentEmail}</strong>. 
-                    Please follow the instructions in the email to update your credentials.
-                  </p>
-                </div>
-                <div className="pt-2 flex flex-col gap-2 max-w-xs mx-auto">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMode('login');
-                      setResetSentEmail(null);
-                    }}
-                    className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition-all cursor-pointer"
-                  >
-                    Return to Sign In
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleSubmit}
-                    disabled={isSubmitting}
-                    className="text-xs text-[var(--text-muted)] hover:text-[var(--text)] underline cursor-pointer"
-                  >
-                    Resend Email
-                  </button>
-                </div>
-              </div>
-            ) : (
-              /* PRIMARY AUTH FORM */
-              <form onSubmit={handleSubmit} className="mt-5 space-y-4">
-                {/* SIGN UP ONLY: Full Name & Company */}
-                {mode === 'signup' && (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                    <div className="space-y-1.5">
-                      <label className="text-[11px] font-semibold text-[var(--text-muted)] block">Full Name</label>
-                      <div className="relative">
-                        <User className="h-4 w-4 text-[var(--text-subtle)] absolute left-3.5 top-1/2 -translate-y-1/2" />
-                        <input
-                          type="text"
-                          required
-                          value={displayName}
-                          onChange={(e) => setDisplayName(e.target.value)}
-                          placeholder="e.g. Rene Pierrette"
-                          className="w-full pl-10 pr-3.5 py-2.5 rounded-xl bg-[var(--surface)] border border-[var(--border)] text-xs text-[var(--text)] placeholder:text-[var(--text-subtle)] focus:outline-none focus:border-indigo-500 transition-colors"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <label className="text-[11px] font-semibold text-[var(--text-muted)] block">Company / Workspace</label>
-                      <div className="relative">
-                        <Building2 className="h-4 w-4 text-[var(--text-subtle)] absolute left-3.5 top-1/2 -translate-y-1/2" />
-                        <input
-                          type="text"
-                          value={companyName}
-                          onChange={(e) => setCompanyName(e.target.value)}
-                          placeholder="e.g. Acme Studio Inc."
-                          className="w-full pl-10 pr-3.5 py-2.5 rounded-xl bg-[var(--surface)] border border-[var(--border)] text-xs text-[var(--text)] placeholder:text-[var(--text-subtle)] focus:outline-none focus:border-indigo-500 transition-colors"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Email Address */}
-                <div className="space-y-1.5">
-                  <label className="text-[11px] font-semibold text-[var(--text-muted)] block">Work Email Address</label>
-                  <div className="relative">
-                    <Mail className="h-4 w-4 text-[var(--text-subtle)] absolute left-3.5 top-1/2 -translate-y-1/2" />
-                    <input
-                      type="email"
-                      required
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      placeholder="name@company.com"
-                      className="w-full pl-10 pr-3.5 py-2.5 rounded-xl bg-[var(--surface)] border border-[var(--border)] text-xs text-[var(--text)] placeholder:text-[var(--text-subtle)] focus:outline-none focus:border-indigo-500 transition-colors font-mono"
-                    />
-                  </div>
-                </div>
-
-                {/* Password Input (Hidden for Reset and sign-in link modes) */}
-                {mode !== 'reset' && mode !== 'magic' && (
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <label className="text-[11px] font-semibold text-[var(--text-muted)]">Password</label>
-                      {mode === 'login' && (
-                        <button
-                          type="button"
-                          onClick={() => setMode('reset')}
-                          className="text-[11px] text-[var(--accent-text)] hover:text-[var(--accent-text)] hover:underline cursor-pointer"
-                        >
-                          Forgot password?
-                        </button>
-                      )}
-                    </div>
-                    <div className="relative">
-                      <Lock className="h-4 w-4 text-[var(--text-subtle)] absolute left-3.5 top-1/2 -translate-y-1/2" />
-                      <input
-                        type={showPassword ? 'text' : 'password'}
-                        required
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        placeholder="••••••••••••"
-                        className="w-full pl-10 pr-10 py-2.5 rounded-xl bg-[var(--surface)] border border-[var(--border)] text-xs text-[var(--text)] placeholder:text-[var(--text-subtle)] focus:outline-none focus:border-indigo-500 transition-colors font-mono"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowPassword(!showPassword)}
-                        className="p-1 text-[var(--text-subtle)] hover:text-[var(--text-muted)] absolute right-3 top-1/2 -translate-y-1/2"
-                      >
-                        {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                      </button>
-                    </div>
-
-                    {/* Password Strength Meter (Signup mode) */}
-                    {mode === 'signup' && password.length > 0 && (
-                      <div className="space-y-1.5 pt-1">
-                        <div className="flex items-center justify-between text-[10px]">
-                          <span className="text-[var(--text-muted)]">Strength:</span>
-                          <span className={`font-semibold ${
-                            passwordStrength.score >= 3 ? 'text-[var(--success)]' : 'text-[var(--warning)]'
-                          }`}>
-                            {passwordStrength.label}
-                          </span>
-                        </div>
-                        <div className="h-1.5 w-full bg-[var(--border)] rounded-full overflow-hidden">
-                          <div 
-                            className={`h-full transition-all duration-300 ${passwordStrength.color}`}
-                            style={{ width: `${passwordStrength.percent}%` }}
-                          />
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* SIGN UP ONLY: Confirm Password & Role */}
-                {mode === 'signup' && (
-                  <>
-                    <div className="space-y-1.5">
-                      <label className="text-[11px] font-semibold text-[var(--text-muted)] block">Confirm Password</label>
-                      <div className="relative">
-                        <Lock className="h-4 w-4 text-[var(--text-subtle)] absolute left-3.5 top-1/2 -translate-y-1/2" />
-                        <input
-                          type={showPassword ? 'text' : 'password'}
-                          required
-                          value={confirmPassword}
-                          onChange={(e) => setConfirmPassword(e.target.value)}
-                          placeholder="••••••••••••"
-                          className="w-full pl-10 pr-3.5 py-2.5 rounded-xl bg-[var(--surface)] border border-[var(--border)] text-xs text-[var(--text)] placeholder:text-[var(--text-subtle)] focus:outline-none focus:border-indigo-500 transition-colors font-mono"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <label className="text-[11px] font-semibold text-[var(--text-muted)] block">Operational Role</label>
-                      <select
-                        value={selectedRole}
-                        onChange={(e) => setSelectedRole(e.target.value)}
-                        className="w-full px-3.5 py-2.5 rounded-xl bg-[var(--surface)] border border-[var(--border)] text-xs text-[var(--text)] focus:outline-none focus:border-indigo-500"
-                      >
-                        <option value="Executive Director">Executive Director (Full Admin)</option>
-                        <option value="VP of Enterprise Sales">VP of Enterprise Sales</option>
-                        <option value="Customer Success Lead">Customer Success Lead</option>
-                        <option value="Growth & Marketing Director">Growth & Marketing Director</option>
-                        <option value="Solutions Architect">Solutions Architect</option>
-                      </select>
-                    </div>
-
-                    <div className="flex items-center gap-2 pt-1 text-xs text-[var(--text-muted)]">
-                      <input
-                        type="checkbox"
-                        id="terms-check"
-                        checked={termsAccepted}
-                        onChange={(e) => setTermsAccepted(e.target.checked)}
-                        className="h-4 w-4 rounded accent-indigo-600 cursor-pointer"
-                      />
-                      <label htmlFor="terms-check" className="cursor-pointer text-[11px]">
-                        I accept the Enterprise SLA, Privacy Protocol & Security Standards
-                      </label>
-                    </div>
-                  </>
-                )}
-
-                {/* LOGIN ONLY: Remember Me checkbox */}
-                {mode === 'login' && (
-                  <div className="flex items-center justify-between text-xs pt-1">
-                    <label className="flex items-center gap-2 text-[var(--text-muted)] cursor-pointer text-[11px]">
-                      <input
-                        type="checkbox"
-                        checked={rememberMe}
-                        onChange={(e) => setRememberMe(e.target.checked)}
-                        className="h-3.5 w-3.5 rounded accent-indigo-600"
-                      />
-                      <span>Keep my session active on this workstation</span>
-                    </label>
-                  </div>
-                )}
-
-                {/* PRIMARY SUBMIT BUTTON */}
-                <button
-                  type="submit"
-                  disabled={isSubmitting || isLoading}
-                  className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-indigo-600 via-indigo-500 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-xs font-bold shadow-lg shadow-indigo-600/25 active:scale-[0.99] transition-all cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50"
-                >
-                  {isSubmitting ? (
-                    <>
-                      <RefreshCw className="h-4 w-4 animate-spin" />
-                      <span>{mode === 'reset' ? 'Sending Recovery Link...' : mode === 'magic' ? 'Sending Sign-In Link...' : 'Authenticating...'}</span>
-                    </>
-                  ) : (
-                    <>
-                      <span>
-                        {mode === 'login' && 'Sign In to Workspace'}
-                        {mode === 'signup' && 'Create CRM Workspace'}
-                        {mode === 'reset' && 'Send Password Recovery Email'}
-                        {mode === 'magic' && 'Email Me a Sign-In Link'}
-                      </span>
-                      <ArrowRight className="h-4 w-4" />
-                    </>
-                  )}
-                </button>
-
-                {mode === 'magic' && (
-                  <p className="text-[11px] text-[var(--text-subtle)] leading-relaxed">We'll email you a link that signs you in once. It expires in 15 minutes.</p>
-                )}
-
-                {(mode === 'reset' || mode === 'magic') && (
-                  <button
-                    type="button"
-                    onClick={() => setMode('login')}
-                    className="w-full text-center text-xs text-[var(--text-muted)] hover:text-[var(--text)] pt-1 cursor-pointer"
-                  >
-                    ← Back to Sign In
-                  </button>
-                )}
-              </form>
-            )}
-
-            {/* OR DIVIDER */}
-            {mode !== 'reset' && mode !== 'magic' && (
-              <>
-                <div className="flex items-center gap-3 my-5">
-                  <div className="flex-1 h-px bg-[var(--border)]" />
-                  <span className="text-[10px] uppercase font-bold text-[var(--text-subtle)] tracking-wider">or sign in with</span>
-                  <div className="flex-1 h-px bg-[var(--border)]" />
-                </div>
-
-                {/* EMAIL SIGN-IN LINK (passwordless) */}
-                {mode === 'login' && (
-                  <div className="mb-2.5">
-                    <button
-                      type="button"
-                      id="btn-magic-link"
-                      onClick={() => { setMode('magic'); setLocalError(null); setMagicSentMessage(null); }}
-                      disabled={!magicStatus?.enabled || isSubmitting}
-                      aria-describedby={magicStatus && !magicStatus.enabled ? 'magic-link-unavailable' : undefined}
-                      className="w-full py-2.5 px-4 rounded-xl bg-[var(--surface)] hover:bg-[var(--surface-sunken)] border border-[var(--border)] text-[var(--text)] text-xs font-semibold flex items-center justify-center gap-2.5 transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      <Mail className="h-4 w-4 text-[var(--accent-text)]" />
-                      <span>Email me a sign-in link</span>
-                    </button>
-                    {magicStatus && !magicStatus.enabled && (
-                      <p id="magic-link-unavailable" className="mt-1 text-center text-[10.5px] text-[var(--text-subtle)]">
-                        {magicStatus.reason === 'email_not_configured' ? 'Email sign-in links aren\u2019t set up on this server (email delivery isn\u2019t configured).' : 'Email sign-in links aren\u2019t available on this server.'}
-                      </p>
-                    )}
-                  </div>
-                )}
-
-                {/* GOOGLE SIGN IN BUTTON */}
-                <button
-                  type="button"
-                  onClick={handleGoogleSignIn}
-                  disabled={googleLoading || isSubmitting}
-                  className="w-full py-2.5 px-4 rounded-xl bg-[var(--surface-sunken)] hover:bg-[var(--border)] border border-[var(--border)] text-[var(--text)] text-xs font-semibold flex items-center justify-center gap-2.5 transition-all cursor-pointer shadow-xs active:scale-[0.99] disabled:opacity-50"
-                >
-                  {googleLoading ? (
-                    <RefreshCw className="h-4 w-4 animate-spin text-[var(--accent-text)]" />
-                  ) : (
-                    <svg className="h-4 w-4" viewBox="0 0 24 24">
-                      <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-                      <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-                      <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
-                      <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
-                    </svg>
-                  )}
-                  <span>Continue with Google OAuth</span>
-                </button>
-
-                {/* 1-CLICK DEMO LOGIN: development builds only, or VITE_ENABLE_SANDBOX_LOGIN=true (e.g. a staging preview). Never in production. */}
-                {SANDBOX_LOGIN_ENABLED && (
-                <div className="mt-5 p-3.5 rounded-2xl bg-[var(--accent-soft)] border border-indigo-500/20">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-[11px] font-bold text-[var(--accent-text)] flex items-center gap-1.5">
-                      <Sparkles className="h-3.5 w-3.5 text-[var(--accent-text)]" />
-                      <span>Instant Sandbox Preview</span>
-                    </span>
-                    <span className="text-[10px] text-[var(--text-muted)]">1-click test persona</span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => handleDemoAccess('Class-5 Executive', 'Rene Pierrette', 'sandbox-owner@example.com')}
-                      className="px-2.5 py-1.5 rounded-xl bg-[var(--surface-sunken)] hover:bg-[var(--border)] border border-[var(--border)] text-left text-[11px] text-[var(--text)] transition-colors cursor-pointer"
-                    >
-                      <strong className="block text-[var(--text)]">Rene Pierrette</strong>
-                      <span className="text-[10px] text-[var(--text-muted)]">Executive Director</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDemoAccess('VP of Enterprise Sales', 'Marcus Chen', 'sandbox-sales@example.com')}
-                      className="px-2.5 py-1.5 rounded-xl bg-[var(--surface-sunken)] hover:bg-[var(--border)] border border-[var(--border)] text-left text-[11px] text-[var(--text)] transition-colors cursor-pointer"
-                    >
-                      <strong className="block text-[var(--text)]">Marcus Chen</strong>
-                      <span className="text-[10px] text-[var(--text-muted)]">VP of Sales</span>
-                    </button>
-                  </div>
-                </div>
-                )}
-              </>
-            )}
+      <main className="flex flex-1 items-center justify-center px-5 py-10 sm:py-14">
+        <div className="w-full max-w-[400px]">
+          <div className="mb-8 flex flex-col items-center gap-3.5">
+            <CoreEmblem size={68} />
+            <span className="text-[21px] font-semibold tracking-[-0.015em]">Obsidian Core</span>
           </div>
+          <h1 className="text-center text-[28px] font-semibold tracking-[-0.025em] text-balance">{heading[0]}</h1>
+          <p className="mt-2 text-center text-[14px] text-[var(--text-muted)]">{heading[1]}</p>
 
-          {/* Footer Security Badges */}
-          <div className="pt-6 mt-6 border-t border-[var(--border)] flex items-center justify-between text-[11px] text-[var(--text-subtle)]">
-            <div className="flex items-center gap-1.5">
-              <Shield className="h-3.5 w-3.5 text-[var(--success)]" />
-              <span>SOC-2 & GDPR Encrypted</span>
+          {error && (
+            <div role="alert" className="mt-6 flex items-start gap-2.5 rounded-[10px] border border-[var(--danger)]/30 bg-[var(--danger-soft)] p-3 text-[13px] text-[var(--danger)]">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+              <span className="flex-1 leading-relaxed">{error}</span>
+              <button type="button" aria-label="Dismiss" onClick={() => { setLocalError(null); clearAuthError(); }} className="cursor-pointer"><X className="h-3.5 w-3.5" /></button>
             </div>
-            <span>v2.8 Enterprise Cloud</span>
-          </div>
-        </div>
+          )}
 
-        {/* RIGHT COLUMN: SAAS PRODUCT CAPABILITIES SHOWCASE (5 cols on lg) */}
-        <div className="hidden lg:flex lg:col-span-5 bg-gradient-to-br from-[var(--surface-sunken)] to-[var(--app-bg)] p-8 border-l border-[var(--border)] flex-col justify-between relative overflow-hidden">
-          {/* Subtle glow */}
-          <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
-
-          {/* Top Feature Pill */}
-          <div className="space-y-4 relative z-10">
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-indigo-500/20 text-[var(--accent-text)] border border-indigo-400/30">
-              <Zap className="h-3.5 w-3.5" />
-              <span>Omnichannel Intelligence</span>
-            </span>
-
-            <h2 className="text-xl font-bold tracking-tight text-[var(--text)] leading-snug">
-              Unify Client Messaging, Telephony & Social Marketing in One Desk.
-            </h2>
-            <p className="text-xs text-[var(--text-muted)] leading-relaxed">
-              Consolidate WhatsApp, Email, Instagram, Telephony, and Social campaigns with enterprise audit compliance and live customer sync.
-            </p>
-
-            {/* Feature Showcase Grid */}
-            <div className="space-y-3 pt-3">
-              {[
-                {
-                  icon: MessageSquare,
-                  title: 'Omnichannel Inbox',
-                  desc: 'Unified threaded conversations across WhatsApp, SMS & Email.'
-                },
-                {
-                  icon: PhoneCall,
-                  title: 'Integrated Softphone',
-                  desc: 'WebRTC voice dialing with live consultation notes.'
-                },
-                {
-                  icon: Share2,
-                  title: 'Social Planner Hub',
-                  desc: 'Multi-account scheduled publishing across 30+ networks.'
-                },
-                {
-                  icon: ShieldCheck,
-                  title: 'Session Management',
-                  desc: 'Inactivity auto-lock and remote device revocation.'
-                }
-              ].map((feat, i) => (
-                <div key={i} className="p-3 rounded-2xl bg-[var(--surface-sunken)] border border-[var(--border)] flex items-start gap-3">
-                  <div className="h-8 w-8 rounded-xl bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-[var(--accent-text)] shrink-0">
-                    <feat.icon className="h-4 w-4" />
+          {mode === 'magic' && magicSentMessage ? (
+            <div className="mt-8 space-y-4 text-center" role="status" aria-live="polite">
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[var(--oc-cyan-soft)] text-[var(--oc-cyan)] ring-1 ring-[var(--oc-cyan-line)]"><Mail className="h-6 w-6" /></div>
+              <div className="space-y-1.5">
+                <h2 className="text-[16px] font-semibold">Check your inbox</h2>
+                <p className="text-[13px] leading-relaxed text-[var(--text-muted)]">{magicSentMessage}</p>
+                <p className="text-[12px] text-[var(--text-subtle)]">Open the link in this browser. If nothing arrives in a few minutes, check your spam folder or ask again.</p>
+              </div>
+              <div className="flex flex-col gap-2 pt-1">
+                <button type="button" onClick={() => setMagicSentMessage(null)} className="h-11 w-full rounded-[10px] border border-[var(--border-strong)] bg-[var(--surface-raised)] text-[13.5px] font-semibold hover:border-[var(--text-subtle)] cursor-pointer">Use a different email</button>
+                <button type="button" onClick={() => go('login')} className="text-[13px] text-[var(--text-muted)] underline-offset-2 hover:text-[var(--text)] hover:underline cursor-pointer">Back to sign in with a password</button>
+              </div>
+            </div>
+          ) : mode === 'reset' && resetSentEmail ? (
+            <div className="mt-8 space-y-4 text-center" role="status" aria-live="polite">
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[var(--success-soft)] text-[var(--success)]"><CheckCircle2 className="h-6 w-6" /></div>
+              <div className="space-y-1.5">
+                <h2 className="text-[16px] font-semibold">Check your inbox</h2>
+                <p className="text-[13px] leading-relaxed text-[var(--text-muted)]">We sent a password reset link to <strong className="text-[var(--text)]">{resetSentEmail}</strong>. Follow it to choose a new password.</p>
+              </div>
+              <div className="flex flex-col gap-2 pt-1">
+                <button type="button" onClick={() => go('login')} className="h-11 w-full rounded-[10px] bg-[var(--accent)] text-[13.5px] font-semibold text-white hover:bg-[var(--accent-hover)] cursor-pointer">Back to sign in</button>
+                <button type="button" onClick={handleSubmit} disabled={isSubmitting} className="text-[13px] text-[var(--text-muted)] underline-offset-2 hover:text-[var(--text)] hover:underline disabled:opacity-50 cursor-pointer">Send it again</button>
+              </div>
+            </div>
+          ) : (
+            <form onSubmit={handleSubmit} className="mt-8 space-y-[18px]" noValidate>
+              {mode === 'signup' && (
+                <div className="grid grid-cols-1 gap-[18px] sm:grid-cols-2">
+                  <div>
+                    <label htmlFor="auth-name" className={label}>Full name</label>
+                    <div className="relative"><User className={iconCls} aria-hidden="true" /><input id="auth-name" type="text" autoComplete="name" required value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="Rene Pierrette" className={field} /></div>
                   </div>
                   <div>
-                    <h4 className="text-xs font-bold text-[var(--text)]">{feat.title}</h4>
-                    <p className="text-[11px] text-[var(--text-muted)]">{feat.desc}</p>
+                    <label htmlFor="auth-company" className={label}>Company</label>
+                    <div className="relative"><Building2 className={iconCls} aria-hidden="true" /><input id="auth-company" type="text" autoComplete="organization" value={companyName} onChange={(e) => setCompanyName(e.target.value)} placeholder="Acme Studio" className={field} /></div>
                   </div>
                 </div>
-              ))}
-            </div>
-          </div>
+              )}
 
-          {/* Bottom Security Guarantee */}
-          <div className="pt-6 border-t border-[var(--border)] relative z-10">
-            <div className="flex items-center gap-3">
-              <div className="h-9 w-9 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-[var(--success)]">
-                <Check className="h-4 w-4 stroke-[3]" />
-              </div>
               <div>
-                <span className="text-xs font-bold text-[var(--text)] block">Enterprise Data Locality</span>
-                <span className="text-[10px] text-[var(--text-muted)]">Firebase Firestore Enterprise • Hardware AES-256</span>
+                <label htmlFor="auth-email" className={label}>Work email</label>
+                <div className="relative"><Mail className={iconCls} aria-hidden="true" /><input id="auth-email" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@company.com" className={field} /></div>
+              </div>
+
+              {mode !== 'reset' && mode !== 'magic' && (
+                <div>
+                  <div className="flex items-baseline justify-between">
+                    <label htmlFor="auth-password" className={label}>Password</label>
+                    {mode === 'login' && <button type="button" onClick={() => go('reset')} className="text-[12.5px] font-medium text-[var(--accent-text)] hover:underline underline-offset-2 cursor-pointer">Forgot password?</button>}
+                  </div>
+                  <div className="relative">
+                    <Lock className={iconCls} aria-hidden="true" />
+                    <input id="auth-password" type={showPassword ? 'text' : 'password'} autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} required value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••••••" className={`${field} pr-11`} />
+                    <button type="button" onClick={() => setShowPassword(!showPassword)} aria-label={showPassword ? 'Hide password' : 'Show password'} className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-[var(--text-subtle)] hover:text-[var(--text-muted)] cursor-pointer">
+                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                  {mode === 'signup' && password.length > 0 && (
+                    <div className="mt-2 space-y-1.5">
+                      <div className="flex justify-between text-[11.5px]"><span className="text-[var(--text-muted)]">Strength</span><span className={passwordStrength.score >= 3 ? 'font-semibold text-[var(--success)]' : 'font-semibold text-[var(--warning)]'}>{passwordStrength.label}</span></div>
+                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-[var(--surface-raised)]"><div className={`h-full transition-all duration-300 ${passwordStrength.color}`} style={{ width: `${passwordStrength.percent}%` }} /></div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {mode === 'signup' && (
+                <>
+                  <div>
+                    <label htmlFor="auth-confirm" className={label}>Confirm password</label>
+                    <div className="relative"><Lock className={iconCls} aria-hidden="true" /><input id="auth-confirm" type={showPassword ? 'text' : 'password'} autoComplete="new-password" required value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="••••••••••••" className={field} /></div>
+                  </div>
+                  <div>
+                    <label htmlFor="auth-role" className={label}>Your role</label>
+                    <select id="auth-role" value={selectedRole} onChange={(e) => setSelectedRole(e.target.value)} className={`${field} pl-3.5`}>
+                      <option value="Executive Director">Executive Director (Full Admin)</option>
+                      <option value="VP of Enterprise Sales">VP of Enterprise Sales</option>
+                      <option value="Customer Success Lead">Customer Success Lead</option>
+                      <option value="Growth & Marketing Director">Growth & Marketing Director</option>
+                      <option value="Solutions Architect">Solutions Architect</option>
+                    </select>
+                  </div>
+                  <label htmlFor="terms-check" className="flex items-start gap-2.5 text-[12.5px] text-[var(--text-muted)] cursor-pointer">
+                    <input type="checkbox" id="terms-check" checked={termsAccepted} onChange={(e) => setTermsAccepted(e.target.checked)} className="mt-0.5 h-4 w-4 rounded accent-[var(--accent)]" />
+                    <span>I accept the Terms of Service and Privacy Policy</span>
+                  </label>
+                </>
+              )}
+
+              {mode === 'login' && (
+                <label className="flex items-center gap-2.5 text-[12.5px] text-[var(--text-muted)] cursor-pointer">
+                  <input type="checkbox" checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)} className="h-4 w-4 rounded accent-[var(--accent)]" />
+                  <span>Keep me signed in on this device</span>
+                </label>
+              )}
+
+              <button type="submit" disabled={isSubmitting || isLoading}
+                className="flex h-11 w-full items-center justify-center gap-2 rounded-[10px] bg-gradient-to-b from-[#9284FF] to-[#7262F3] text-[14.5px] font-semibold text-white shadow-[0_8px_24px_-10px_rgb(114_98_243/0.8),inset_0_1px_0_rgb(255_255_255/0.2)] transition-[filter] hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer">
+                {isSubmitting ? (
+                  <><Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />{mode === 'reset' ? 'Sending reset link…' : mode === 'magic' ? 'Sending magic link…' : mode === 'signup' ? 'Creating workspace…' : 'Signing in…'}</>
+                ) : (
+                  <>{mode === 'login' ? 'Sign in' : mode === 'signup' ? 'Create workspace' : mode === 'reset' ? 'Send reset link' : 'Send a magic link'}<ArrowRight className="h-4 w-4" aria-hidden="true" /></>
+                )}
+              </button>
+
+              {mode === 'magic' && <p className="text-center text-[12.5px] text-[var(--text-subtle)]">The link signs you in once and expires in 15 minutes.</p>}
+              {(mode === 'reset' || mode === 'magic') && (
+                <button type="button" onClick={() => go('login')} className="mx-auto flex items-center gap-1.5 text-[13px] text-[var(--text-muted)] hover:text-[var(--text)] cursor-pointer"><ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />Back to sign in</button>
+              )}
+            </form>
+          )}
+
+          {mode === 'login' && (
+            <>
+              <div className="my-6 flex items-center gap-3 text-[12px] text-[var(--text-subtle)]"><span className="h-px flex-1 bg-[var(--border-strong)]" />or sign in without a password<span className="h-px flex-1 bg-[var(--border-strong)]" /></div>
+              <button type="button" id="btn-magic-link" onClick={() => go('magic')} disabled={!magicStatus?.enabled || isSubmitting}
+                aria-describedby={magicUnavailable ? 'magic-link-unavailable' : 'magic-link-hint'}
+                className="flex h-11 w-full items-center justify-center gap-2.5 rounded-[10px] border border-[var(--oc-cyan-line)] bg-[var(--oc-cyan-soft)] text-[14.5px] font-semibold text-[#C9F6FC] transition-colors hover:bg-[rgb(94_224_242/0.14)] disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer">
+                <Mail className="h-[17px] w-[17px] text-[var(--oc-cyan)]" aria-hidden="true" />Send a magic link
+              </button>
+              {magicUnavailable
+                ? <p id="magic-link-unavailable" className="mt-2.5 text-center text-[12px] text-[var(--text-subtle)]">{magicUnavailable}</p>
+                : <p id="magic-link-hint" className="mt-2.5 text-center text-[12.5px] text-[var(--text-subtle)]">We’ll email you a one-time sign-in link. It expires in 15 minutes.</p>}
+            </>
+          )}
+
+          {(mode === 'login' || mode === 'signup') && (
+            <button type="button" onClick={handleGoogleSignIn} disabled={googleLoading || isSubmitting}
+              className="mt-3 flex h-11 w-full items-center justify-center gap-2.5 rounded-[10px] border border-[var(--border-strong)] bg-[var(--surface-raised)] text-[13.5px] font-semibold text-[var(--text)] transition-colors hover:border-[var(--text-subtle)] disabled:opacity-50 cursor-pointer">
+              {googleLoading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : (
+                <svg className="h-4 w-4" viewBox="0 0 24 24" aria-hidden="true">
+                  <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                  <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
+                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
+                </svg>
+              )}
+              Continue with Google
+            </button>
+          )}
+
+          {mode === 'login' && <p className="mt-6 text-center text-[13px] text-[var(--text-muted)]">New to Obsidian Core? <button type="button" onClick={() => go('signup')} className="font-medium text-[var(--accent-text)] hover:underline underline-offset-2 cursor-pointer">Create an account</button></p>}
+          {mode === 'signup' && <p className="mt-6 text-center text-[13px] text-[var(--text-muted)]">Already have an account? <button type="button" onClick={() => go('login')} className="font-medium text-[var(--accent-text)] hover:underline underline-offset-2 cursor-pointer">Sign in</button></p>}
+
+          {/* 1-click test personas: development builds only, or VITE_ENABLE_SANDBOX_LOGIN=true (e.g. a staging preview). Never in production. */}
+          {SANDBOX_LOGIN_ENABLED && mode === 'login' && (
+            <div className="oc-panel mt-6 p-3.5">
+              <div className="mb-2 flex items-center justify-between text-[12px]">
+                <span className="flex items-center gap-1.5 font-semibold text-[var(--accent-text)]"><Sparkles className="h-3.5 w-3.5" aria-hidden="true" />Sandbox sign-in</span>
+                <span className="text-[var(--text-subtle)]">Development only</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <button type="button" onClick={() => handleDemoAccess('Class-5 Executive', 'Rene Pierrette', 'sandbox-owner@example.com')} className="rounded-lg border border-[var(--border)] bg-[var(--surface-raised)] px-3 py-2 text-left text-[12px] hover:border-[var(--border-strong)] cursor-pointer">
+                  <strong className="block">Rene Pierrette</strong><span className="text-[11px] text-[var(--text-muted)]">Executive Director</span>
+                </button>
+                <button type="button" onClick={() => handleDemoAccess('VP of Enterprise Sales', 'Marcus Chen', 'sandbox-sales@example.com')} className="rounded-lg border border-[var(--border)] bg-[var(--surface-raised)] px-3 py-2 text-left text-[12px] hover:border-[var(--border-strong)] cursor-pointer">
+                  <strong className="block">Marcus Chen</strong><span className="text-[11px] text-[var(--text-muted)]">VP of Sales</span>
+                </button>
               </div>
             </div>
-          </div>
+          )}
         </div>
+      </main>
 
-      </div>
+      <footer className="flex min-h-[60px] shrink-0 flex-wrap items-center justify-between gap-x-6 gap-y-1 border-t border-[var(--border)] px-5 py-3 text-[12.5px] text-[var(--text-subtle)] sm:px-6">
+        <span className="flex items-center gap-2 text-[var(--text-muted)]"><ShieldCheck className="h-[15px] w-[15px] text-[var(--success)]" aria-hidden="true" />Secure access to your workspace</span>
+        <span>Two-step verification supported</span>
+      </footer>
     </div>
   );
 }
